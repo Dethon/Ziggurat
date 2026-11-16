@@ -58,7 +58,7 @@ public sealed class QueueEffect : IDisposable
         }
     }
 
-    // Taken back into the composer, words and files, to be reworked and sent again as a new message.
+    // Its files come back as ready attachments, already uploaded, so a rework never uploads them again.
     public async Task HandleEditAsync(string topicId, string queuedId)
     {
         if (await WithdrawAsync(topicId, queuedId, () => _messagingService.TakeBackQueuedAsync(topicId, queuedId))

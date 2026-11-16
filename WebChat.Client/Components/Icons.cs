@@ -155,8 +155,8 @@ public static class Icons
     public static readonly IconGlyph Pencil = Stroked(
         """<path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />""");
 
-    // A queued chip's file count, beside the chip's stroked actions; the composer keeps the filled one
-    // among its own.
+    // Stroked to sit beside a queue chip's stroked actions; the composer's filled controls keep the filled
+    // one.
     public static readonly IconGlyph PaperclipStroked = Stroked(
         """<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />""");
 

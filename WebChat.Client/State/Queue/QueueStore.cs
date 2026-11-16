@@ -4,19 +4,20 @@ using Domain.Extensions;
 
 namespace WebChat.Client.State.Queue;
 
-// The hub told the page a topic's queue as it is now.
+// The whole queue rather than what changed in it, so a page that missed a push is set right by the next.
 public record QueueChanged(QueueChangedNotification Notification) : IAction;
 
-// A stop handed back messages this person queued on a topic, waiting for one of their pages to take.
+// Only that there are some: the hub hands them to the first of the person's pages to ask, so they land
+// in one composer rather than in every page the person has open.
 public record QueueReturned(string TopicId) : IAction;
 
-// The reader takes their own queued message back into the composer, to rework and send again.
+// Taken back rather than changed where it waits: the hub never rewrites a queued message, so the
+// reworked words go out again as a new one.
 public record EditQueuedMessage(string TopicId, string QueuedId) : IAction;
 
-// The reader removes their own queued message, and the files uploaded for it, before it runs.
 public record RemoveQueuedMessage(string TopicId, string QueuedId) : IAction;
 
-// The reader steers their own running turn with their queued message: sent into it at its next tool boundary.
+// Steered only into the reader's own running turn: the agent cuts a turn for the person it acts for alone.
 public record SteerQueuedMessage(string TopicId, string QueuedId) : IAction;
 
 // The hub let go of a message this page withdrew: its chip goes now, ahead of the hub's own telling,
