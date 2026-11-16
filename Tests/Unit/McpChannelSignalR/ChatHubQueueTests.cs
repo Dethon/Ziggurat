@@ -352,6 +352,27 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.GetQueue(TopicId)).ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+        var second = (await fran.GetQueue(TopicId)).First(item => item.Content == "second");
+
+        await fran.RemoveQueued(TopicId, second.Id);
+
+        (await fran.GetQueue(TopicId)).Select(item => item.Content).ShouldBe(["third"]);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("third");
+        await FinishTurnAsync("answer three");
+        await wire.Ended;
+        Sent().ShouldBe(["first", "third"]);
+        wire.Said().ShouldNotContain("user: second");
+    }
+
     private static readonly AttachmentReference Photo = new()
     {
         Id = "7-42/abc",

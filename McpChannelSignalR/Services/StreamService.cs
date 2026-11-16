@@ -212,6 +212,31 @@ public sealed class StreamService(
         }
     }
 
+    // A queued message taken out of its queue by the person who sent it, in the same step as a turn's
+    // end would take it as the head, so it is either withdrawn or sent, never both.
+    public Withdrawal Withdraw(string topicId, string queuedId, Account by)
+    {
+        lock (_streamLock)
+        {
+            var queue = _queues.GetValueOrDefault(topicId) ?? [];
+            var at = queue.FindIndex(m => m.Id == queuedId);
+            if (at < 0)
+            {
+                return Withdrawal.AlreadySent;
+            }
+
+            var message = queue[at];
+            if (message.Sender.Principal.Account != by)
+            {
+                return Withdrawal.NotTheSenders;
+            }
+
+            queue.RemoveAt(at);
+            _queueRevision++;
+            return new Withdrawal(message);
+        }
+    }
+
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
 
     // Whether the stream a queued turn was taken from is still the topic's: a stop, or a stop and a

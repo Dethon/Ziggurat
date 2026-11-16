@@ -600,6 +600,23 @@ public sealed class ChatHub(
         return [.. streamService.QueueOf(topicId).Messages.Select(m => m.ToItem())];
     }
 
+    // A queued message its sender withdraws before its turn starts.
+    public async Task RemoveQueued(string topicId, string queuedId) =>
+        await WithdrawAsync(topicId, queuedId);
+
+    private async Task<QueuedMessage> WithdrawAsync(string topicId, string queuedId)
+    {
+        await SessionToReadAsync(topicId);
+        var withdrawal = streamService.Withdraw(topicId, queuedId, SignedIn.Account);
+        if (withdrawal.Message is not { } withdrawn)
+        {
+            throw new HubException(withdrawal.Refusal);
+        }
+
+        await _queueNews.TellAsync(withdrawn.Sender);
+        return withdrawn;
+    }
+
     // Admitted as any send is — the capability guard, then the accounts service's word for the
     // session — before it waits, so an obvious refusal shows at once; it is vouched for again as it
     // leaves. Either way the place the caller held on the running stream is given up: by queueing,

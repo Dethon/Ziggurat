@@ -24,4 +24,10 @@ public static class TopicRefusals
 
     // A turn is writing to the conversation, and would write over the change.
     public const string ReplyRunning = "A reply is still being written. Wait for it to finish, or stop it.";
+
+    // A queued message whose turn started before the person removed or took it back.
+    public const string AlreadySent = "This message was already sent.";
+
+    // A queued message is withdrawn by the person who sent it alone, whoever else sees the queue.
+    public const string NotTheSenders = "Only the person who sent this message can remove or edit it.";
 }

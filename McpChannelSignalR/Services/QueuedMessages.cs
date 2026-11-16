@@ -23,3 +23,12 @@ public sealed record QueueSnapshot(IReadOnlyList<QueuedMessage> Messages, long R
     public QueueChangedNotification ToNotification(string topicId, string spaceSlug) =>
         new(topicId, [.. Messages.Select(m => m.ToItem())], Revision, spaceSlug);
 }
+
+// What taking a queued message back came to: the message, or why not — it left the queue already, or
+// it is somebody else's.
+public sealed record Withdrawal(QueuedMessage? Message, string? Refusal = null)
+{
+    public static Withdrawal AlreadySent { get; } = new(null, TopicRefusals.AlreadySent);
+
+    public static Withdrawal NotTheSenders { get; } = new(null, TopicRefusals.NotTheSenders);
+}
