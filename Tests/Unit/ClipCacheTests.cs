@@ -11,14 +11,14 @@ public class ClipCacheTests : IDisposable
     public async Task AClipMadeOnce_IsReadBackOnTheNextRun_WithoutBeingMadeAgain()
     {
         var made = 0;
-        Task Make(string path)
+        Task make(string path)
         {
             made++;
             return File.WriteAllBytesAsync(path, [1, 2, 3]);
         }
 
-        var first = await ClipCache.GetAsync(_root, "key", "clip.mp4", Make);
-        var second = await ClipCache.GetAsync(_root, "key", "clip.mp4", Make);
+        var first = await ClipCache.GetAsync(_root, "key", "clip.mp4", make);
+        var second = await ClipCache.GetAsync(_root, "key", "clip.mp4", make);
 
         made.ShouldBe(1);
         second.ShouldBe(first);
