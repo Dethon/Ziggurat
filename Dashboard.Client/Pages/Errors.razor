@@ -20,7 +20,7 @@
 
             <section class="section">
                 <h3>Breakdown</h3>
-                <DynamicChart Data="state.Breakdown.AsChartData()" ChartType="DynamicChart.ChartMode.HorizontalBar"
+                <DynamicChart Data="ChartData(state)" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="Error Count" />
             </section>
 
@@ -62,6 +62,12 @@
     private HouseholdNames _names = new([], Answered: false);
 
     protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
+
+    // A household's server is named as the list below names it, not by its tunnel address.
+    private Dictionary<string, decimal> ChartData(ErrorsState state) =>
+        state.GroupBy == ErrorDimension.Service
+            ? state.Breakdown.GroupBy(e => _names.ServiceLabel(e.Key)).ToDictionary(g => g.Key, g => (decimal)g.Sum(e => e.Value))
+            : state.Breakdown.AsChartData();
 
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [

@@ -21,7 +21,7 @@
             </section>
 
             <section class="section">
-                <h3>@MetricLabel(state) by stage</h3>
+                <h3>@MetricLabel(state) by @(DimensionOptions.FirstOrDefault(o => o.Value == state.GroupBy.ToString())?.Label.ToLowerInvariant() ?? "stage")</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@MetricLabel(state)"
                               Unit="ms" UseFullLabels="true" />
