@@ -48,6 +48,29 @@ public sealed class HostMountDirectory : IDisposable
         }
     }
 
+    // A container that wrote its mount as root (Home Assistant does) leaves files this process cannot
+    // remove, and a slot that cannot be emptied is passed over for good. One more run of the same image,
+    // as root, empties it — on the same path, so no new staging mount. Run once the writer has stopped:
+    // a running one writes again. A teardown that cannot reach Docker fails nothing; the slot is passed
+    // over next time instead.
+    public async Task<bool> TryEmptyAsRootAsync(string image)
+    {
+        try
+        {
+            await using var cleaner = TestContainers.Container(image, "mount-cleanup")
+                .WithEntrypoint("sh", "-c", "rm -rf /m/..?* /m/.[!.]* /m/*")
+                .WithBindMount(Path, "/m")
+                .WithWaitStrategy(TestContainers.OneShot())
+                .Build();
+            await cleaner.StartAsync();
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         TryEmpty(Path);
