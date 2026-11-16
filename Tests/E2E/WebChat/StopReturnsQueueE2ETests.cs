@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Tests.E2E.Fixtures;
+using static Tests.E2E.WebChat.QueueE2E;
 using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
@@ -18,7 +19,8 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
         var tag = Guid.NewGuid().ToString("N")[..4];
         var ana = await fixture.CreatePageSignedInAsync((await fixture.PersonAsync($"Ana {tag}", "member")).Session);
-        await using var carlosContext = await ContextOfAsync(ana, (await fixture.PersonAsync($"Carlos {tag}", "member")).Session);
+        await using var carlosContext = await ContextOfAsync(
+            ana, (await fixture.PersonAsync($"Carlos {tag}", "member")).Session, fixture.WebChatUrl);
         var anaWords = $"Reply with only the word ALPHA{tag}. Do not call any tools.";
         var carlosWords = $"Reply with only the word CHARLIE{tag}. Do not call any tools.";
 
@@ -29,21 +31,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
 
         try
         {
-            // The model occasionally answers the demand with plain text and no tool call; then there
-            // is no reply held open to queue behind, so it is asked again once that one is over.
-            for (var attempt = 0; ; attempt++)
-            {
-                await SendAsync(ana, $"{topic}: IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-                try
-                {
-                    await ana.Locator(".approval-modal").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                    break;
-                }
-                catch (TimeoutException) when (attempt < 2)
-                {
-                    await IdleAsync(ana);
-                }
-            }
+            await HoldOnAnApprovalAsync(ana, $"{topic}: {ToolDemand}");
 
             // Shared while its reply waits on the approval, whose overlay covers the header: the press is
             // dispatched on the toggle itself.
@@ -54,7 +42,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
 
             await GotoWebChatAsync(carlos, fixture.WebChatUrl);
             await SelectAgentAsync(carlos);
-            await OpenTopicAsync(carlos, topic);
+            await OpenTopicPastTheOverlayAsync(carlos, topic);
 
             // Carlos's page has heard the reply start, so his send queues rather than opening a turn.
             await Assertions.Expect(carlos.Locator("[data-testid=composer-cancel]"))
@@ -99,7 +87,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             var fresh = await carlosContext.NewPageAsync();
             await GotoWebChatAsync(fresh, fixture.WebChatUrl);
             await SelectAgentAsync(fresh);
-            await OpenTopicAsync(fresh, topic);
+            await OpenTopicPastTheOverlayAsync(fresh, topic);
             await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
@@ -108,45 +96,5 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
         {
             await DrainPendingApprovalsAsync(ana);
         }
-    }
-
-    // The held approval's overlay can reach a member's page and covers the whole viewport, and rejecting
-    // it would end the very turn the queue waits behind: the press is dispatched on the row itself, once
-    // the row is there.
-    private static async Task OpenTopicAsync(IPage page, string topic)
-    {
-        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = topic });
-        await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
-        await row.DispatchEventAsync("click");
-    }
-
-    private static ILocator UserMessage(IPage page, string words) =>
-        page.Locator(".chat-message.user", new PageLocatorOptions { HasText = words });
-
-    private static async Task SendAsync(IPage page, string words)
-    {
-        var input = page.Locator("textarea.chat-input");
-        await input.FillAsync(words);
-        await input.PressAsync("Enter");
-    }
-
-    // A reply on a live model ends when it ends.
-    private static Task IdleAsync(IPage page) =>
-        Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
-            .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-
-    // The fixture keeps one page of its own at a time, and this test needs two people at once.
-    private async Task<IBrowserContext> ContextOfAsync(IPage beside, string session)
-    {
-        var context = await beside.Context.Browser!.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
-        await context.AddCookiesAsync(
-        [
-            new Cookie
-            {
-                Name = WebChatE2EFixture.SessionCookieName, Value = session, Url = fixture.WebChatUrl,
-                HttpOnly = true, SameSite = SameSiteAttribute.Lax
-            }
-        ]);
-        return context;
     }
 }
