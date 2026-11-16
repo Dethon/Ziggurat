@@ -24,7 +24,13 @@ public static class SugaryDatabase
             Directory.CreateDirectory(directory);
         }
 
-        await db.Database.MigrateAsync(ct);
+        // Only when a migration is pending: the migrator builds the design-time model and diffs it on
+        // every call, applied or not, and a store already current is every start but the first. A model
+        // change no migration carries is MigrationsMatchTheModelTests' to catch, not each start's.
+        if ((await db.Database.GetPendingMigrationsAsync(ct)).Any())
+        {
+            await db.Database.MigrateAsync(ct);
+        }
     }
 }
 
