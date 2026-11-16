@@ -156,6 +156,14 @@ public sealed class AttachmentStore(
         return record is null ? null : await File.ReadAllBytesAsync(record.Path, ct);
     }
 
+    public void Delete(string id)
+    {
+        if (ResolveDirectory(id) is { } directory)
+        {
+            TryDeleteDirectory(directory);
+        }
+    }
+
     public void DeleteConversation(string conversationId)
     {
         var directory = Path.Combine(settings.StoragePath, ConversationKey(conversationId));

@@ -108,6 +108,25 @@ public sealed class FakeChatMessagingService : IChatMessagingService
             : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(SendChunks());
     }
 
+    public string? LastRerunOf { get; private set; }
+
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendRerunAsync(
+        string topicId, string message, string? correlationId, AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments, string rerunOf)
+    {
+        LastRerunOf = rerunOf;
+        return SendMessageAsync(topicId, message, correlationId, configPatch, attachments);
+    }
+
+    public bool Continued { get; private set; }
+
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendContinueAsync(
+        string topicId, string? correlationId, AgentConfigPatch? configPatch)
+    {
+        Continued = true;
+        return SendMessageAsync(topicId, "", correlationId, configPatch);
+    }
+
     // Answers before the wire would: the real connection opens a hub stream by pulling its
     // first chunk, so a real resume does not come back until the reply next speaks. That
     // timing is modelled one seam down, in FakeHubConnection, and pinned by

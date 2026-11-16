@@ -67,15 +67,65 @@ public sealed class StreamingService(
         }
     }
 
+    public async Task RerunAsync(
+        StoredTopic topic,
+        string message,
+        string rerunOf,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference> attachments)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            // The hub refuses to rewrite a topic a reply is running on, so there is nothing to enqueue
+            // a reroll behind.
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                return;
+            }
+
+            await StartNewStreamAsync(
+                new Outgoing(topic, message, null, configPatch ?? GetConfigPatch(topic), attachments, [], rerunOf), seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    public async Task ContinueAsync(StoredTopic topic)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                return;
+            }
+
+            await StartNewStreamAsync(
+                new Outgoing(topic, "", null, GetConfigPatch(topic), null, [], Continuation: true), seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
     // One message on its way out: what to say, where it goes, and the composer entries the send
     // empties when it lands. Six arguments travelled together through four methods before this.
+    // RerunOf: the message the conversation ends on, answered again (a reroll).
     private sealed record Outgoing(
         StoredTopic Topic,
         string Message,
         string? CorrelationId,
         AgentConfigPatch? ConfigPatch,
         IReadOnlyList<AttachmentReference>? Attachments,
-        IReadOnlyList<ComposerAttachment> Sending);
+        IReadOnlyList<ComposerAttachment> Sending,
+        string? RerunOf = null,
+        bool Continuation = false);
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
@@ -211,9 +261,15 @@ public sealed class StreamingService(
     // this is the one stream verb that raises a toast.
     private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(Outgoing outgoing)
     {
-        var chunks = await messagingService.SendMessageAsync(
-            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
-            outgoing.ConfigPatch, outgoing.Attachments);
+        var chunks = outgoing.Continuation
+            ? await messagingService.SendContinueAsync(outgoing.Topic.TopicId, outgoing.CorrelationId, outgoing.ConfigPatch)
+            : outgoing.RerunOf is { } rerunOf
+            ? await messagingService.SendRerunAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments, rerunOf)
+            : await messagingService.SendMessageAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments);
         if (chunks.IsLive)
         {
             return chunks.Value!;
@@ -346,6 +402,10 @@ public sealed class StreamingService(
             // be read up to. A topic nobody is looking at keeps its badge.
             await MarkReadIfViewedAsync(topic);
 
+            // The turn was stored before its stream ended, so the history now names what it drew. Not
+            // awaited: ending this reader waits on nothing the next turn does not need.
+            _ = LearnEntryIdsAsync(topic);
+
             // The conversation has been written to, so its row has a new preview, a new position
             // and possibly a badge — none of which this client can work out for itself now that
             // the server owns all three.
@@ -361,6 +421,39 @@ public sealed class StreamingService(
         }
 
         await topicService.MarkTopicReadAsync(topic.AgentId, topic.ChatId, topic.TopicId);
+    }
+
+    // A turn the person stopped is kept by the agent after the stop ended its stream, so the first read
+    // can come before it: asked again, a little later each time, until what the page drew is named.
+    private static readonly TimeSpan[] LearnAgainAfter =
+        [TimeSpan.Zero, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4)];
+
+    private async Task LearnEntryIdsAsync(StoredTopic topic)
+    {
+        try
+        {
+            foreach (var wait in LearnAgainAfter)
+            {
+                await Task.Delay(wait);
+                var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
+                if (!history.IsLive)
+                {
+                    return;
+                }
+
+                dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!));
+                if (messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, [])
+                    .All(m => m.EntryId is not null || m.IsError || m.NoReply
+                              || (string.IsNullOrEmpty(m.Content) && m.Attachments is not { Count: > 0 })))
+                {
+                    return;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Nobody awaits this: unnamed bubbles only lack their actions until the topic is next read.
+        }
     }
 
     private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>

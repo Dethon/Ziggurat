@@ -38,6 +38,22 @@ public interface ITopicService
     Task<HubResult<IReadOnlyList<ChatHistoryMessage>>> GetHistoryAsync(string agentId, long chatId, long threadId);
     Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug);
 
+    // Rewrites of a conversation (ChatHub.DeleteFrom and its siblings). lastSeen is the entry id of the
+    // last stored message the page shows, so a line that moved on is refused rather than cut blind.
+    Task<HubResult<Nothing>> DeleteFromAsync(string agentId, string topicId, long chatId, string entryId, string? lastSeen);
+
+    Task<HubResult<Nothing>> PutAsideFromAsync(string agentId, string topicId, long chatId, string entryId, string? lastSeen);
+
+    Task<HubResult<Nothing>> EditInPlaceAsync(
+        string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen);
+
+    Task<HubResult<Nothing>> PutAsideReplyAsync(string agentId, string topicId, long chatId, string userEntryId, string? lastSeen);
+
+    Task<HubResult<ForkedTopic>> ForkAsync(string agentId, string topicId, long chatId, string entryId);
+
+    Task<HubResult<Nothing>> SwitchVersionAsync(
+        string agentId, string topicId, long chatId, string slot, int index, string? lastSeen);
+
     // The signed-in person's household's spaces, in the order it puts them: the hub's to say, from
     // the household's configuration, since this page's host knows nobody.
     Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync();

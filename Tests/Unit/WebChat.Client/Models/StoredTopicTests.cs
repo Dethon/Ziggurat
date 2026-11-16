@@ -38,4 +38,43 @@ public class StoredTopicTests
     [InlineData("pablo", false, null, false)]
     public void MayContinue_IsTheHubsRule(string? owner, bool shared, string? viewer, bool expected) =>
         new StoredTopic { OwnerId = owner, Shared = shared }.MayContinue(viewer).ShouldBe(expected);
+
+    // Rewriting is continuing, on a topic over its own conversation that no other channel goes on
+    // showing (TopicMirrors): the hub refuses the rest, and a control it refuses does nothing.
+    [Fact]
+    public void MyOwnChatClientTopic_IsMineToRewrite() =>
+        Own("t").MayRewrite("me").ShouldBeTrue();
+
+    [Fact]
+    public void AMirroredTopic_IsNotRewritten()
+    {
+        var topic = Own("t");
+        topic.Mirrored = true;
+
+        topic.MayRewrite("me").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ATopicOverAnotherConversation_IsNotRewritten()
+    {
+        var topic = Own("t");
+        topic.ChatId = 1;
+
+        topic.MayRewrite("me").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void AnotherPersonsPrivateTopic_IsNotMineToRewrite()
+    {
+        var topic = Own("t");
+        topic.OwnerId = "pablo";
+
+        topic.MayRewrite("me").ShouldBeFalse();
+    }
+
+    private static StoredTopic Own(string topicId)
+    {
+        var id = global::Domain.Conversations.ConversationIdGenerator.CreateFor(topicId);
+        return new StoredTopic { TopicId = topicId, ChatId = id.ChatId, ThreadId = id.ThreadId, OwnerId = "me" };
+    }
 }

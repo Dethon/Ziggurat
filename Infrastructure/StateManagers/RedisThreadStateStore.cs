@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
@@ -40,9 +41,117 @@ public sealed class RedisThreadStateStore(
 
     private readonly TopicSearchDocuments _searchDocuments = new(redis, retention.PurgeHorizon);
 
+    private const string HistoryPrefix = "agent-key:";
+
     public async Task DeleteAsync(AgentKey key)
     {
-        await _db.KeyDeleteAsync(key.ToString());
+        var history = key.ToString();
+        await _db.KeyDeleteAsync([history, VersionsKey(history)]);
+    }
+
+    // Beside a conversation's line, under the same name: the versions put aside at each slot, and the
+    // mark a running turn holds (IThreadStateStore.MarkTurnInFlightAsync).
+    public static string VersionsKey(string historyKey) => $"agent-versions:{Unprefixed(historyKey)}";
+
+    public static string TurnInFlightKey(string historyKey) => $"agent-turn:{Unprefixed(historyKey)}";
+
+    private static string Unprefixed(string historyKey) =>
+        historyKey.StartsWith(HistoryPrefix, StringComparison.Ordinal) ? historyKey[HistoryPrefix.Length..] : historyKey;
+
+    public async Task<ConversationHistory> GetConversationAsync(string key)
+    {
+        var (_, history) = await ReadConversationAsync(key);
+        return history;
+    }
+
+    private async Task<(RedisValue[] Raw, ConversationHistory History)> ReadConversationAsync(string key)
+    {
+        var raw = await _db.ListRangeAsync(key);
+        var fields = await _db.HashGetAllAsync(VersionsKey(key));
+        return (raw, new ConversationHistory(
+            [.. raw.Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)],
+            fields.ToDictionary(f => f.Name.ToString(), f => JsonSerializer.Deserialize<SlotVersions>(f.Value.ToString())!)));
+    }
+
+    // Read, decided in Domain, then written only if the line is still the one read and no turn began
+    // meanwhile — the same two things checked on the read, checked again inside the transaction.
+    public async Task<RewriteOutcome> RewriteAsync(string key, HistoryRewrite rewrite)
+    {
+        var (raw, history) = await ReadConversationAsync(key);
+        if (await _db.KeyExistsAsync(TurnInFlightKey(key)))
+        {
+            return new RewriteRefused(RewriteRefusal.TurnInFlight);
+        }
+
+        var outcome = HistoryRewrite.Apply(history, rewrite, time.GetUtcNow());
+        if (outcome is not Rewritten { After: var after })
+        {
+            return outcome;
+        }
+
+        var transaction = _db.CreateTransaction();
+        transaction.AddCondition(Condition.ListLengthEqual(key, raw.Length));
+        if (raw.Length > 0)
+        {
+            transaction.AddCondition(Condition.ListIndexEqual(key, raw.Length - 1, raw[^1]));
+        }
+
+        transaction.AddCondition(Condition.KeyNotExists(TurnInFlightKey(key)));
+        var versionsKey = VersionsKey(key);
+        _ = transaction.KeyDeleteAsync([key, versionsKey]);
+        if (after.Messages.Count > 0)
+        {
+            _ = transaction.ListRightPushAsync(key, Serialize(after.Messages));
+            _ = transaction.KeyExpireAsync(key, _expiration);
+        }
+
+        if (after.Versions.Count > 0)
+        {
+            _ = transaction.HashSetAsync(versionsKey,
+            [
+                .. after.Versions.Select(v => new HashEntry(v.Key, JsonSerializer.Serialize(v.Value)))
+            ]);
+            _ = transaction.KeyExpireAsync(versionsKey, _expiration);
+        }
+
+        if (!await transaction.ExecuteAsync())
+        {
+            return new RewriteRefused(RewriteRefusal.Changed);
+        }
+
+        await RestampAsync(key, after.Messages);
+        return outcome;
+    }
+
+    public async Task MarkTurnInFlightAsync(string key, TimeSpan expiry) =>
+        await _db.StringSetAsync(TurnInFlightKey(key), "1", expiry);
+
+    public async Task ClearTurnInFlightAsync(string key) =>
+        await _db.KeyDeleteAsync(TurnInFlightKey(key));
+
+    // The topic's record told what the rewritten line holds: its count, every reader's position no
+    // further than that, its preview from the last thing said, and what it is found by. Its place in
+    // the list is left, since a rewrite is not something said.
+    private async Task RestampAsync(string historyKey, IReadOnlyList<ChatMessage> line)
+    {
+        if (AgentKey.ChatConversationParts(historyKey) is not { } parts
+            || await HolderAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not (var household, var topicId))
+        {
+            return;
+        }
+
+        var result = await _db.ScriptEvaluateAsync(
+            _recountScript,
+            [TopicKey(household, parts.AgentId, parts.ChatId, topicId)],
+            [Shown(line), Snippet(line) ?? "", (long)_expiration.TotalMilliseconds]);
+        if (result.IsNull)
+        {
+            return;
+        }
+
+        var topic = JsonSerializer.Deserialize<TopicMetadata>(result.ToString())!;
+        await _db.KeyExpireAsync(ConversationKey(parts.AgentId, parts.ChatId, parts.ThreadId), _expiration);
+        await _searchDocuments.WriteAsync(topic, wholeText: Text(Readable(line)));
     }
 
     public async Task<ChatMessage[]?> GetMessagesAsync(string key)
@@ -87,6 +196,9 @@ public sealed class RedisThreadStateStore(
 
         await _db.ListRightPushAsync(key, Serialize(messages));
         await _db.KeyExpireAsync(key, _expiration);
+
+        // The versions beside the line live as long as it does.
+        await _db.KeyExpireAsync(VersionsKey(key), _expiration);
         await StampLastWriteAsync(key, messages);
     }
 
@@ -105,7 +217,7 @@ public sealed class RedisThreadStateStore(
         }
 
         await _db.ScriptEvaluateAsync(
-            _uncountScript, [TopicKey(household, parts.AgentId, parts.ChatId, topicId)], [Readable(dropped).Count()]);
+            _uncountScript, [TopicKey(household, parts.AgentId, parts.ChatId, topicId)], [Shown(dropped)]);
     }
 
     // Lua numbers are doubles and a WebChat chat id is a 63-bit hash, so the id is noise from
@@ -161,6 +273,27 @@ public sealed class RedisThreadStateStore(
         redis.call('SET', KEYS[1], updated, 'KEEPTTL')
         """;
 
+    // A line rewritten: what it now holds counted, every position past that brought back to it, and its
+    // preview the last thing said on it (none when nothing is).
+    private static readonly string _recountScript =
+        $$"""
+        local json = redis.call('GET', KEYS[1])
+        if not json then return nil end
+        local topic = cjson.decode(json)
+        local count = tonumber(ARGV[1])
+        topic['MessageCount'] = count
+        if (topic['ReadPosition'] or 0) > count then topic['ReadPosition'] = count end
+        if type(topic['ReadBy']) == 'table' then
+            for person, position in pairs(topic['ReadBy']) do
+                if position > count then topic['ReadBy'][person] = count end
+            end
+        end
+        if ARGV[2] == '' then topic['LastMessageSnippet'] = nil else topic['LastMessageSnippet'] = ARGV[2] end
+        {{KeepWideIds}}
+        redis.call('SET', KEYS[1], updated, 'PX', ARGV[3])
+        return updated
+        """;
+
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
     // clock would keep the record alive months past the history it describes. The reader's own
     // position alone (ReadBy): the shared ReadPosition is what a topic read before was left at.
@@ -203,7 +336,7 @@ public sealed class RedisThreadStateStore(
                 // Counted in the same messages a reader is shown, so a badge means what a person
                 // would count on screen. The raw list holds tool and system turns too, and one
                 // reply with six tool calls would otherwise badge as seven unread.
-                Readable(appended).Count(),
+                Shown(appended),
                 (long)_expiration.TotalMilliseconds
             ]);
 
@@ -228,17 +361,9 @@ public sealed class RedisThreadStateStore(
     // A call the person turned down reads as a line of the reply: the turn ends on it with no text,
     // and a transcript of text alone showed the question with nothing under it.
     private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
-        messages.Where(m =>
-            (m.Role == ChatRole.User || m.Role == ChatRole.Assistant || m.Role == ChatRole.Tool)
-            && (!string.IsNullOrWhiteSpace(TextOf(m)) || m.GetAttachments() is { Count: > 0 }));
+        messages.Where(Transcript.IsShown);
 
-    private static string TextOf(ChatMessage message) =>
-        message.Role == ChatRole.Tool
-            ? string.Join("\n", message.Contents.OfType<FunctionResultContent>()
-                .Select(c => ApprovalRejection.ToolOf(c.Result?.ToString()))
-                .OfType<string>()
-                .Select(ApprovalRejection.Line))
-            : string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
+    private static string TextOf(ChatMessage message) => Transcript.TextOf(message);
 
     private static string Text(IEnumerable<ChatMessage> messages) =>
         string.Join(
@@ -532,14 +657,8 @@ public sealed class RedisThreadStateStore(
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
-        var messages = await GetMessagesAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
-
-        // Projected from the same set a badge counts, so unread never says more than the
-        // transcript shows.
-        if (messages is null)
-        {
-            return [];
-        }
+        var conversation = await GetConversationAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
+        var messages = conversation.Messages;
 
         // A turn's format is on its request alone; the answers until the next request are its.
         var formats = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
@@ -554,18 +673,149 @@ public sealed class RedisThreadStateStore(
             formats[message] = format;
         }
 
-        return Readable(messages)
-                .Select(m => new ChatHistoryMessage(
-                    m.MessageId,
-                    m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
-                    TextOf(m),
-                    m.GetAuthorId(),
-                    m.GetTimestamp(),
-                    m.GetAttachments(),
-                    m.GetSenderId(),
-                    IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
-                    ResponseFormat: formats[m]))
-                .ToList();
+        var names = new Dictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance);
+        foreach (var (index, message) in messages.Index())
+        {
+            names[message] = HistoryEntries.IdAt(messages, index);
+        }
+
+        // A turn's tool calls are hidden; the reply they lead to names them.
+        var tools = new Dictionary<ChatMessage, IReadOnlyList<string>>(ReferenceEqualityComparer.Instance);
+        List<string> calling = [];
+        foreach (var message in messages)
+        {
+            calling.AddRange(message.Contents.OfType<FunctionCallContent>().Select(c => BareToolName(c.Name)));
+            if (message.Role == ChatRole.User)
+            {
+                calling.Clear();
+            }
+            else if (calling.Count > 0 && message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(TextOf(message)))
+            {
+                tools[message] = [.. calling.Distinct()];
+                calling.Clear();
+            }
+        }
+
+        // A continued reply is one reply: what followed a Continue is drawn as the rest of the reply it
+        // continues (ContinuesPrevious), which is cut off only if the last of it was.
+        var continues = Continued(messages);
+        var rest = continues
+            .GroupBy(x => x.Value, x => x.Key, ReferenceEqualityComparer.Instance)
+            .ToDictionary(g => (ChatMessage)g.Key!, g => g.ToList(), ReferenceEqualityComparer.Instance);
+
+        // Projected from the same set a badge counts, so unread never says more than the
+        // transcript shows.
+        var readable = Readable(messages).ToList();
+        var projected = readable
+            .Select(m => new ChatHistoryMessage(
+                m.MessageId,
+                m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
+                TextOf(m),
+                m.GetAuthorId(),
+                m.GetTimestamp(),
+                m.GetAttachments(),
+                m.GetSenderId(),
+                IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
+                ResponseFormat: formats[m],
+                EntryId: names[m],
+                ToolsCalled: tools.GetValueOrDefault(m),
+                Model: m.Role == ChatRole.User ? null : m.GetModel(),
+                IsInterrupted: m.IsInterrupted() && !rest.ContainsKey(m)
+                               && !(continues.TryGetValue(m, out var root) && !ReferenceEquals(rest[root][^1], m)),
+                ContinuesPrevious: continues.ContainsKey(m)))
+            .ToList();
+
+        return WithVersions(conversation, readable, projected);
+    }
+
+    // How many bubbles messages make: what a reader is shown, a reply after a Continue being the rest of
+    // the one before it rather than one more.
+    private static int Shown(IReadOnlyList<ChatMessage> messages)
+    {
+        var continuing = false;
+        return messages.Count(m =>
+        {
+            if (m.Role == ChatRole.User)
+            {
+                continuing = m.IsContinuation();
+            }
+
+            return !(continuing && m.Role == ChatRole.Assistant && !m.IsFailedTurn()) && Readable([m]).Any();
+        });
+    }
+
+    // Each reply read after a Continue, to the reply it continues (the first of a chain of continues).
+    private static Dictionary<ChatMessage, ChatMessage> Continued(IReadOnlyList<ChatMessage> messages)
+    {
+        var continued = new Dictionary<ChatMessage, ChatMessage>(ReferenceEqualityComparer.Instance);
+        ChatMessage? reply = null;
+        var continuing = false;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                continuing = message.IsContinuation() && reply is not null;
+                reply = continuing ? reply : null;
+                continue;
+            }
+
+            if (message.Role != ChatRole.Assistant || string.IsNullOrWhiteSpace(TextOf(message)))
+            {
+                continue;
+            }
+
+            // A failed Continue's error is the error it is, and carries nothing on.
+            if (message.IsFailedTurn())
+            {
+                continuing = false;
+                continue;
+            }
+
+            if (continuing)
+            {
+                continued[message] = continued.GetValueOrDefault(reply!) ?? reply!;
+            }
+
+            reply = message;
+        }
+
+        return continued;
+    }
+
+    // mcp__timers__timer_set is timer_set to a person.
+    private static string BareToolName(string name) =>
+        name.LastIndexOf("__", StringComparison.Ordinal) is var at and >= 0 ? name[(at + 2)..] : name;
+
+    // Each slot's versions on the first bubble after it, the one a person flips. A slot ending the line
+    // with nothing after it — a reroll stopped or failed — is drawn as a line saying so, carrying them. A
+    // slot inside a version put aside is not on the line, and draws nothing.
+    private static IReadOnlyList<ChatHistoryMessage> WithVersions(
+        ConversationHistory conversation, IReadOnlyList<ChatMessage> readable, List<ChatHistoryMessage> projected)
+    {
+        var messages = conversation.Messages;
+        var shown = readable.Index().ToDictionary(x => x.Item, x => x.Index, ReferenceEqualityComparer.Instance);
+        ChatHistoryMessage? noReply = null;
+        foreach (var slot in conversation.Versions.Keys)
+        {
+            var after = slot == HistoryRewrite.Root ? -1 : HistoryEntries.IndexOf(messages, slot);
+            if (after is not { } at || conversation.PositionAt(slot) is not { } position)
+            {
+                continue;
+            }
+
+            var versions = new MessageVersions(slot, position.Index, position.Count);
+            if (messages.Skip(at + 1).FirstOrDefault(shown.ContainsKey) is { } first)
+            {
+                projected[shown[first]] = projected[shown[first]] with { Versions = versions };
+            }
+            else if (at + 1 == messages.Count)
+            {
+                noReply = new ChatHistoryMessage(
+                    null, ChatRole.Assistant.Value, "", null, null, Versions: versions, NoReply: true);
+            }
+        }
+
+        return noReply is null ? projected : [.. projected, noReply];
     }
 
     public Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId) =>

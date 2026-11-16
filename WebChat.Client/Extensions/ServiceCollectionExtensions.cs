@@ -101,6 +101,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicSelectionEffect>();
             services.AddScoped<OpenTopicEffect>();
             services.AddScoped<TopicDeleteEffect>();
+            services.AddScoped<HistoryEditEffect>();
             services.AddScoped<TopicPagingEffect>();
             services.AddScoped<TopicFilterEffect>();
             services.AddScoped<InitializationEffect>();

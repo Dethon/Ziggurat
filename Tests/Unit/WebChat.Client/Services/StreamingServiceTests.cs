@@ -159,6 +159,47 @@ public sealed class StreamingServiceTests : IDisposable
             [("user", "Yo pongo el vino.", "Carlos"), ("assistant", "Apuntado.", null)]);
     }
 
+    // The page names what it streamed once the agent stored it, so its bubbles can be rewritten or
+    // forked from without a reload.
+    [Fact]
+    public async Task SendMessageAsync_OnceTheReplyEnds_NamesItsBubblesFromTheHistory()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "test", CorrelationId = "mine" }]));
+        _messagingService.EnqueueMessages(new ChatStreamMessage { Content = "Apuntado.", MessageId = "m1" });
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "Apuntado.", null, null, EntryId: "e2"));
+
+        await SendAndDrainAsync(topic);
+
+        await Eventually.Until(() => MessagesFor(topic.TopicId).All(m => m.EntryId is not null),
+            "the page reads the history once the reply ends");
+        MessagesFor(topic.TopicId).Select(m => m.EntryId).ShouldBe(["e1", "e2"]);
+    }
+
+    // A stopped reply is kept by the agent after the stop ends the stream, so the first read can come too
+    // early: the page asks again until what it streamed is named.
+    [Fact]
+    public async Task SendMessageAsync_AReplyKeptAfterItsStreamEnded_IsStillNamed()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "test", CorrelationId = "mine" }]));
+        _messagingService.EnqueueMessages(new ChatStreamMessage { Content = "Once upon ", MessageId = "m1" });
+        _topicService.HistoryAnswers.Enqueue([]);
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "Once upon ", null, null, EntryId: "e2", IsInterrupted: true));
+
+        await SendAndDrainAsync(topic);
+
+        await Eventually.Until(() => MessagesFor(topic.TopicId).All(m => m.EntryId is not null),
+            "the page asks again once the agent has kept the reply");
+        MessagesFor(topic.TopicId).Last().IsInterrupted.ShouldBeTrue();
+    }
+
     // Carlos says "ok" twice in a shared topic: the second is a message of its own, not the first one
     // again — the page drew only the first until a reload.
     [Fact]

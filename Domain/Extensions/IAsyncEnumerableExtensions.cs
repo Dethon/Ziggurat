@@ -128,6 +128,23 @@ public static class IAsyncEnumerableExtensions
             await onCompletion(state, ct);
         }
 
+        // after runs however the enumeration ends: completed, faulted, cancelled, or let go of unread.
+        public async IAsyncEnumerable<TSource> Finally(
+            Func<Task> after, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            try
+            {
+                await foreach (var item in source.WithCancellation(ct))
+                {
+                    yield return item;
+                }
+            }
+            finally
+            {
+                await after();
+            }
+        }
+
         public async IAsyncEnumerable<TSource> IgnoreCancellation(
             [EnumeratorCancellation] CancellationToken ct = default)
         {

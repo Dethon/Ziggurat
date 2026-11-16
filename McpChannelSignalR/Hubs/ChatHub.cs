@@ -15,6 +15,7 @@ using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.AI;
 
 namespace McpChannelSignalR.Hubs;
 
@@ -397,13 +398,65 @@ public sealed class ChatHub(
         }
     }
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
+    public IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
         string? correlationId,
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments,
+        CancellationToken cancellationToken) =>
+        SendTurn(topicId, message, correlationId, configPatch, attachments, rerunOf: null, cancellationToken);
+
+    // A reroll's turn: the person's message the conversation already ends on (rerunOf, its entry id),
+    // sent again as itself so the agent answers it again rather than hearing it twice. A method of its
+    // own, because an installed page from before binds SendMessage's arguments as they were.
+    public IAsyncEnumerable<ChatStreamMessage> SendRerun(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
+        string rerunOf,
+        CancellationToken cancellationToken) =>
+        SendTurn(topicId, message, correlationId, configPatch, attachments, rerunOf, cancellationToken);
+
+    // Continue: the model carries on the reply that was cut off — stopped, or out of room — with an ask of
+    // its own words the conversation keeps hidden (Continuation). Allowed wherever a message may be sent.
+    public async IAsyncEnumerable<ChatStreamMessage> SendContinue(
+        string topicId,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
         [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (await SessionToContinueAsync(topicId) is { } session)
+        {
+            var messages = await threadStore.GetMessagesAsync(new AgentKey(session.Identity.ConversationId, session.AgentId).ToString()) ?? [];
+            // Back to the person's turn, past any Continue's ask (a continuation stopped before it said anything).
+            var lastReply = messages.Reverse().TakeWhile(m => !Transcript.StartsPersonsTurn(m))
+                .FirstOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrEmpty(m.Text));
+            if (lastReply?.IsInterrupted() != true)
+            {
+                throw new HubException(TopicRefusals.NothingToContinue);
+            }
+        }
+
+        await foreach (var chunk in SendTurn(
+                           topicId, Continuation.Instruction, correlationId, configPatch, null, rerunOf: null, cancellationToken,
+                           continuation: true))
+        {
+            yield return chunk;
+        }
+    }
+
+    private async IAsyncEnumerable<ChatStreamMessage> SendTurn(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
+        string? rerunOf,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        bool continuation = false)
     {
         if (await SessionToContinueAsync(topicId) is not { } session)
         {
@@ -418,8 +471,9 @@ public sealed class ChatHub(
         var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
+        // The stream's prompt is what a page joining it draws as the person's message: Continue's ask is none.
         var (broadcastChannel, linkedToken) =
-            streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
+            streamService.GetOrCreateStream(topicId, continuation ? "" : message, userId, cancellationToken);
         streamService.TryIncrementPending(topicId);
 
         // Subscribe before emitting so no early reply chunks are lost
@@ -457,15 +511,18 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Write user message to buffer for other browsers
-        var timestamp = DateTimeOffset.UtcNow;
-        var userMessage = new ChatStreamMessage
+        // Write user message to buffer for other browsers; Continue's ask is nobody's message to draw.
+        if (!continuation)
         {
-            Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
-            Attachments = attachments
-        };
-        await streamService.WriteMessageAsync(topicId, userMessage);
+            var timestamp = DateTimeOffset.UtcNow;
+            var userMessage = new ChatStreamMessage
+            {
+                Content = message,
+                UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
+                Attachments = attachments
+            };
+            await streamService.WriteMessageAsync(topicId, userMessage);
+        }
 
         // The other browsers on the topic - a member reading a shared one, the same person's phone -
         // follow a stream they are told started, replaying the message just buffered; the one sending
@@ -487,6 +544,8 @@ public sealed class ChatHub(
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
+                RerunOf = rerunOf,
+                Continuation = continuation,
                 Attachments = attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },
@@ -937,6 +996,147 @@ public sealed class ChatHub(
         await (stored is null
             ? hubSender.SendToGroupAsync(TopicAudience.Space(SignedIn.TenantId, spaceSlug), "OnTopicChanged", notification)
             : hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification));
+    }
+
+    // The message and everything after it on the line leave the conversation; on a reply, its whole turn.
+    public async Task DeleteFrom(string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new CutFrom(entryId, lastSeen));
+    }
+
+    // An edit's re-run, before the page sends the edited words: the message and what followed it are
+    // kept as a version of the slot before it, and the line ends there.
+    public async Task PutAsideFrom(string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new PutAsideFrom(entryId, lastSeen));
+    }
+
+    // A message or a reply corrected in place, no turn run; the old line is kept as a version.
+    public async Task EditInPlace(string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new EditInPlace(entryId, text, lastSeen));
+    }
+
+    // A reroll, before the page sends the person's message again (SendRerun): the reply after it is kept
+    // as a version, and the line ends on the message.
+    public async Task PutAsideReply(string agentId, string topicId, long chatId, string userEntryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new PutAsideReply(userEntryId, lastSeen));
+    }
+
+    // The slot shows another of its versions, by its place in the order a person flips through them.
+    public async Task SwitchVersion(string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new SwitchVersion(slot, index, lastSeen));
+    }
+
+    // A new topic of the forker's, private, holding the line up to the message forked from (HistoryFork),
+    // its files copied into its own conversation. Seeing the topic is enough: a sees-all reader, and a
+    // topic another channel goes on showing, are forked like any other.
+    public async Task<ForkedTopic> Fork(string agentId, string topicId, long chatId, string entryId)
+    {
+        var source = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                     ?? throw new HubException(NoSuchConversation);
+        RequireSees(source);
+        var from = new AgentKey(new ConversationIdentity(source.ChatId, source.ThreadId).ConversationId, agentId);
+        var fork = HistoryFork.Of(await threadStore.GetMessagesAsync(from.ToString()) ?? [], entryId)
+                   ?? throw new HubException(TopicRefusals.Changed);
+
+        var forkId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(forkId);
+        var to = new AgentKey(identity.ConversationId, agentId);
+        var topic = new TopicMetadata(
+            forkId, identity.ChatId, identity.ThreadId, agentId, $"{source.Name} (fork)", DateTimeOffset.UtcNow, null,
+            source.SpaceSlug, OwnerId: SignedIn.UserId, TenantId: SignedIn.TenantId, Shared: false, OwnerName: TurnSender);
+        await threadStore.SaveTopicAsync(topic);
+
+        var copied = new List<ChatMessage>();
+        foreach (var message in fork.Messages)
+        {
+            copied.Add(await WithOwnFilesAsync(message, to, source.SpaceSlug));
+        }
+
+        if (copied.Count > 0)
+        {
+            await threadStore.AppendMessagesAsync(to.ToString(), copied);
+        }
+
+        await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, identity.ChatId, forkId, SignedIn.UserId);
+        return new ForkedTopic(
+            await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, identity.ChatId, forkId) ?? topic, fork.ComposerText);
+    }
+
+    // A message's files copied into the fork's conversation, when this store holds them all; one another
+    // channel keeps (a Telegram photo) is fetched from that channel by its reference, as before. Where
+    // the files landed in the sandbox is kept as it is: those paths are the household's sandbox's, not
+    // the conversation's, and the copy reads them as the original did.
+    private async Task<ChatMessage> WithOwnFilesAsync(ChatMessage message, AgentKey to, string spaceSlug)
+    {
+        if (message.GetAttachments() is not { Count: > 0 } attachments)
+        {
+            return message;
+        }
+
+        var copies = new List<AttachmentReference>();
+        foreach (var attachment in attachments)
+        {
+            if (await attachmentService.CopyAsync(attachment.Id, to, spaceSlug, Context.ConnectionAborted) is not { } copy)
+            {
+                return message;
+            }
+
+            copies.Add(copy);
+        }
+
+        message.SetAttachments(copies);
+        message.SetAttachmentChannelId(ChannelIds.SignalR);
+        message.SetAttachmentHouseholdId(null);
+        return message;
+    }
+
+    // A topic this person may write in, over its own conversation, that no other channel goes on
+    // showing and no reply is being written to.
+    private async Task<(TopicMetadata Topic, string Key)> RewritableAsync(string agentId, string topicId, long chatId)
+    {
+        var topic = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                    ?? throw new HubException(NoSuchConversation);
+        RequireMayContinue(topic);
+        if (streamService.IsStreaming(topicId))
+        {
+            throw new HubException(TopicRefusals.ReplyRunning);
+        }
+
+        var key = new AgentKey(new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId, agentId).ToString();
+        if (TopicMirrors.IsMirrored(topic, await threadStore.GetMessagesAsync(key) ?? []))
+        {
+            throw new HubException(TopicRefusals.Mirrored);
+        }
+
+        return (topic, key);
+    }
+
+    private async Task RewriteAsync(TopicMetadata topic, string key, HistoryRewrite rewrite)
+    {
+        switch (await threadStore.RewriteAsync(key, rewrite))
+        {
+            case RewriteRefused { Reason: RewriteRefusal.TurnInFlight }:
+                throw new HubException(TopicRefusals.ReplyRunning);
+            case RewriteRefused { Reason: RewriteRefusal.NotRerunnable }:
+                throw new HubException(TopicRefusals.NotRerunnable);
+            case RewriteRefused:
+                throw new HubException(TopicRefusals.Changed);
+            case Rewritten rewritten:
+                attachmentService.Delete(rewritten.AttachmentsNoLongerHeld());
+                var spaceSlug = HeardIn(topic.SpaceSlug);
+                await hubSender.SendToTopicAsync(
+                    topic, spaceSlug, "OnHistoryChanged", new HistoryChangedNotification(topic.TopicId, spaceSlug));
+                break;
+        }
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)

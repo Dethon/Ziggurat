@@ -19,6 +19,13 @@ public static class ChatHistoryMessageExtensions
             Timestamp = history.Timestamp,
             Attachments = history.Attachments,
             IsError = history.IsError,
-            ResponseFormat = history.ResponseFormat
+            ResponseFormat = history.ResponseFormat,
+            EntryId = history.EntryId,
+            Versions = history.Versions,
+            NoReply = history.NoReply,
+            ToolsCalled = history.ToolsCalled,
+            Model = history.Model,
+            IsInterrupted = history.IsInterrupted,
+            ContinuesPrevious = history.ContinuesPrevious
         };
 }

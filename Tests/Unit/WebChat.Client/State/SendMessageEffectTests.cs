@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -63,6 +64,64 @@ public sealed class SendMessageEffectTests : IDisposable
             new ComposerStore(_dispatcher),
             _spaceStore,
             _logger);
+    }
+
+    // A reroll answers the message already shown again: it opens the stream asking for that, on the
+    // model it was asked on, and draws no second copy of the message.
+    [Fact]
+    public async Task SendRerun_OpensARerunStream_AndDrawsNoNewMessage()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Role = "user", Content = "hola", EntryId = "u1" }]));
+        var patch = new AgentConfigPatch { Model = "other/model" };
+        var rerun = new TaskCompletionSource();
+        _mockStreamingService
+            .Setup(s => s.RerunAsync(It.IsAny<StoredTopic>(), "hola", "u1", patch, It.IsAny<IReadOnlyList<AttachmentReference>>()))
+            .Callback(() => rerun.TrySetResult())
+            .Returns(Task.CompletedTask);
+
+        _dispatcher.Dispatch(new SendRerun("topic-1", "hola", [], "u1", patch));
+        await rerun.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _messagesStore.State.MessagesByTopic["topic-1"].ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ContinueReply_AsksForTheCutOffReplyToGoOn()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        var asked = new TaskCompletionSource();
+        _mockStreamingService.Setup(s => s.ContinueAsync(It.IsAny<StoredTopic>()))
+            .Callback(() => asked.TrySetResult()).Returns(Task.CompletedTask);
+
+        _dispatcher.Dispatch(new ContinueReply("topic-1"));
+
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    // A Continue that failed is retried as Continue: sending the question again would answer it twice.
+    [Fact]
+    public void RetryLastMessage_AfterAFailedContinue_ContinuesAgain()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1",
+        [
+            new ChatMessageModel { Role = "user", Content = "a story" },
+            new ChatMessageModel { Role = "assistant", Content = "Once upon ", IsInterrupted = true },
+            new ChatMessageModel { Role = "assistant", Content = "refused", IsError = true }
+        ]));
+        ContinueReply? continued = null;
+        var sent = 0;
+        using var a = _dispatcher.RegisterHandler<ContinueReply>(x => continued = x);
+        using var b = _dispatcher.RegisterHandler<SendMessage>(_ => sent++);
+
+        _dispatcher.Dispatch(new RetryLastMessage("topic-1"));
+
+        continued.ShouldBe(new ContinueReply("topic-1"));
+        sent.ShouldBe(0);
     }
 
     [Fact]

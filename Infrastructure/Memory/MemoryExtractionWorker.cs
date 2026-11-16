@@ -259,6 +259,16 @@ public class MemoryExtractionWorker(
             ? await threadStateStore.GetMessagesAsync(request.ThreadStateKey)
             : null;
 
+        // A person rewrote the conversation before this extraction ran: the message the anchor ended
+        // on is no longer where it was, and a window cut from what is there now was never said that way.
+        if (request.Anchor is { LastEntryId: { } last, PersistedMessageCount: var count }
+            && (thread is null || count < 1 || thread.Length < count || thread[count - 1].GetEntryId() != last))
+        {
+            logger.LogInformation(
+                "Extraction dropped: the conversation {Key} was rewritten since its turn", request.ThreadStateKey);
+            return [];
+        }
+
         // What a failed turn's person was told is no fact about them: their own words are kept, the
         // answer the failure gave them is not.
         return ExtractionWindow.Build(

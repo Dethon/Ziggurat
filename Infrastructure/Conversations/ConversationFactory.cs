@@ -10,7 +10,7 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
     public async Task<ConversationCreation> CreateAsync(CreateConversationParams p, CancellationToken ct = default)
     {
         var topicId = ConversationIdGenerator.NewTopicId();
-        return await SaveAsync(topicId, ConversationIdGenerator.CreateFor(topicId), p);
+        return await SaveAsync(topicId, ConversationIdGenerator.CreateFor(topicId), p, p.Mirrored);
     }
 
     public async Task<ConversationCreation?> CreateOverAsync(
@@ -19,11 +19,11 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
         var held = await store.GetTopicByChatIdAndThreadIdAsync(p.AgentId, identity.ChatId, identity.ThreadId, ct);
         return held is not null
             ? null
-            : await SaveAsync(ConversationIdGenerator.NewTopicId(), identity, p);
+            : await SaveAsync(ConversationIdGenerator.NewTopicId(), identity, p, mirrored: true);
     }
 
     private async Task<ConversationCreation> SaveAsync(
-        string topicId, ConversationIdentity identity, CreateConversationParams p)
+        string topicId, ConversationIdentity identity, CreateConversationParams p, bool mirrored)
     {
         // A group's conversation is everyone's in it, so nobody owns its topic and the household
         // shares it, though the turn that opened it acts for its sender. The household is still
@@ -43,7 +43,8 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
             TenantId: account?.TenantId ?? p.GuestTenantId,
             Shared: owner is null,
             // A fire opens its person's topic under the service's sender, which is no name of theirs.
-            OwnerName: owner is null || ServiceSenders.IsService(p.Sender) ? null : p.Sender);
+            OwnerName: owner is null || ServiceSenders.IsService(p.Sender) ? null : p.Sender,
+            Mirrored: mirrored);
 
         await store.SaveTopicAsync(topic);
         return new ConversationCreation(identity, topic);

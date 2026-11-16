@@ -22,6 +22,15 @@ public record StreamStartedNotification(
     string TopicId,
     string? SpaceSlug = null);
 
+// A fork: the new topic, and the words of the message it was forked from, handed back to the composer.
+public record ForkedTopic(TopicMetadata Topic, string? ComposerText);
+
+// A person rewrote the conversation — deleted, edited, rerolled, switched a version — so every page on
+// it reads its history again.
+public record HistoryChangedNotification(
+    string TopicId,
+    string? SpaceSlug = null);
+
 // Taking the prompt off every browser showing it is the whole of this push. What an approval let
 // through is written into the topic's stream, which is the one route a tool call travels by.
 // AnsweredElsewhere: the question was answered on another of its asker's channels, so a card still

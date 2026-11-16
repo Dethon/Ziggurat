@@ -33,6 +33,8 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IDisposable _sendMessageRegistration;
     private readonly IDisposable _cancelStreamingRegistration;
     private readonly IDisposable _retryLastMessageRegistration;
+    private readonly IDisposable _sendRerunRegistration;
+    private readonly IDisposable _continueRegistration;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -68,6 +70,10 @@ public sealed class SendMessageEffect : IDisposable
         _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
             HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
         _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
+        _sendRerunRegistration = dispatcher.RegisterHandler<SendRerun>(action =>
+            HandleSendRerunAsync(action).LogFaults(_logger, nameof(SendRerun)));
+        _continueRegistration = dispatcher.RegisterHandler<ContinueReply>(action =>
+            HandleContinueAsync(action.TopicId).LogFaults(_logger, nameof(ContinueReply)));
     }
 
     private async Task HandleCancelStreamingAsync(string topicId)
@@ -228,11 +234,56 @@ public sealed class SendMessageEffect : IDisposable
         return source.Length > 50 ? source[..50] + "..." : source;
     }
 
+    // The message is shown already: nothing is drawn for it, and the reply streams in under it.
+    private async Task HandleSendRerunAsync(SendRerun action)
+    {
+        if (_topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == action.TopicId) is not { } topic)
+        {
+            return;
+        }
+
+        if (_sessionService.CurrentTopic?.TopicId != topic.TopicId
+            && !(await _sessionService.StartSessionAsync(topic)).IsLive)
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        await _streamingService.RerunAsync(topic, action.Message, action.RerunOf, action.ConfigPatch, action.Attachments);
+    }
+
+    // Continue's ask is hidden, so nothing is drawn for it: the reply streams on under the one it carries on.
+    private async Task HandleContinueAsync(string topicId)
+    {
+        if (_topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId) is not { } topic)
+        {
+            return;
+        }
+
+        if (_sessionService.CurrentTopic?.TopicId != topic.TopicId
+            && !(await _sessionService.StartSessionAsync(topic)).IsLive)
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        await _streamingService.ContinueAsync(topic);
+    }
+
     private void HandleRetryLastMessage(RetryLastMessage action)
     {
         _dispatcher.Dispatch(new RemoveTrailingErrors(action.TopicId));
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
+
+        // What failed was a Continue, carrying on the cut-off reply the conversation now ends on: it is
+        // retried as one, since sending the question again would answer it twice.
+        if (messages.LastOrDefault() is { Role: "assistant", IsInterrupted: true })
+        {
+            _dispatcher.Dispatch(new ContinueReply(action.TopicId));
+            return;
+        }
+
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
@@ -255,5 +306,7 @@ public sealed class SendMessageEffect : IDisposable
         _sendMessageRegistration.Dispose();
         _cancelStreamingRegistration.Dispose();
         _retryLastMessageRegistration.Dispose();
+        _sendRerunRegistration.Dispose();
+        _continueRegistration.Dispose();
     }
 }

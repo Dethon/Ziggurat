@@ -26,6 +26,10 @@ public static class ChatMessageExtensions
     private const string LandingFailuresKey = "LandingFailures";
     private const string OfflineServersKey = "OfflineServers";
     private const string FailedTurnKey = "FailedTurn";
+    private const string EntryIdKey = "EntryId";
+    private const string ModelKey = "Model";
+    private const string InterruptedKey = "Interrupted";
+    private const string ContinuationKey = "Continuation";
 
     extension(ChatMessage message)
     {
@@ -44,6 +48,80 @@ public static class ChatMessageExtensions
         {
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[FailedTurnKey] = true;
+        }
+
+        public void UnmarkFailedTurn() => message.AdditionalProperties?.Remove(FailedTurnKey);
+
+        // A reply cut off before it ended — the person stopped it, or it ran out of room to say more —
+        // kept as far as it got and read by the model like anything said. Continue picks it up.
+        public bool IsInterrupted() =>
+            message.AdditionalProperties?.GetValueOrDefault(InterruptedKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkInterrupted()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[InterruptedKey] = true;
+        }
+
+        public void UnmarkInterrupted() => message.AdditionalProperties?.Remove(InterruptedKey);
+
+        // The hidden ask of a Continue (Continuation): read by the model, never drawn, counted or remembered.
+        public bool IsContinuation() =>
+            message.AdditionalProperties?.GetValueOrDefault(ContinuationKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkContinuation()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ContinuationKey] = true;
+        }
+
+        // The message's own name in its conversation, given as it is stored: how a page addresses one
+        // message to rewrite or fork from. Not MessageId, which is the provider's per-call response id
+        // that approvals and the stream's bubbles are keyed by.
+        public string? GetEntryId() =>
+            message.AdditionalProperties?.GetValueOrDefault(EntryIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetEntryId(string entryId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[EntryIdKey] = entryId;
+        }
+
+        // The model the turn ran on, as the agent resolved it: on the person's message as the turn
+        // starts, and on every reply message it kept.
+        public string? GetModel() =>
+            message.AdditionalProperties?.GetValueOrDefault(ModelKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetModel(string? model)
+        {
+            if (model is null)
+            {
+                message.AdditionalProperties?.Remove(ModelKey);
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ModelKey] = model;
         }
 
         public string? GetSenderId()

@@ -15,6 +15,11 @@ public interface IChatMessagingService
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
         IReadOnlyList<AttachmentReference>? attachments = null);
     // seen: what of the stream the page drew from its state, so the wire starts with the rest (StreamSeen).
+    Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendRerunAsync(
+        string topicId, string message, string? correlationId, AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments, string rerunOf);
+    Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendContinueAsync(
+        string topicId, string? correlationId, AgentConfigPatch? configPatch);
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null);
     Task<HubResult<StreamState>> GetStreamStateAsync(string topicId);
     Task<HubResult<Nothing>> CancelTopicAsync(string topicId);

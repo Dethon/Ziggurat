@@ -24,4 +24,30 @@ public record ChatHistoryMessage(
 
     // The structured answer its turn asked for (ResponseFormat.Name), on the request an app composed and
     // on the answer it got: how the chat tells an app's request from a typed one, and reads the answer.
-    string? ResponseFormat = null);
+    string? ResponseFormat = null,
+
+    // The message's name in its conversation (HistoryEntries), what a page rewrites or forks from.
+    string? EntryId = null,
+
+    // The message begins a place the conversation branched: which version of how many is shown, and the
+    // slot to switch it by.
+    MessageVersions? Versions = null,
+
+    // Not a message: the line a slot with nothing shown is drawn as (a reroll stopped or failed), which
+    // carries the slot's versions.
+    bool NoReply = false,
+
+    // The tools the turn this reply ends called, by their bare names: what running the message before
+    // it again may do again.
+    IReadOnlyList<string>? ToolsCalled = null,
+
+    // The model a reply was written by, as its turn resolved it; none on a person's message.
+    string? Model = null,
+
+    // A reply cut off before it ended (stopped, or out of room), which Continue picks up.
+    bool IsInterrupted = false,
+
+    // The rest of the reply before it, after a Continue: drawn in that reply's bubble.
+    bool ContinuesPrevious = false);
+
+public sealed record MessageVersions(string Slot, int Index, int Count);

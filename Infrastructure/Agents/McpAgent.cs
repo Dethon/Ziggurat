@@ -295,6 +295,10 @@ public sealed class McpAgent : DisposableAgent
     {
         var turnConfig = ResolveTurnConfig(messageList, options);
         var effectiveModel = turnConfig.ModelOverride ?? _model;
+
+        // The model this turn runs on, as resolved: the history store keeps it on every reply message,
+        // so a reroll on another model is told apart from the reply beside it.
+        messageList.LastOrDefault(m => m.Role == ChatRole.User)?.SetModel(effectiveModel);
         var source = RunCoreStreamingInnerAsync(messageList, thread, options, turnConfig, ct);
 
         using var total = _metricsPublisher.MeasureLatency(
@@ -336,8 +340,12 @@ public sealed class McpAgent : DisposableAgent
 
         options ??= CreateRunOptions(session, conversationContext, turnConfig);
 
+        // What the reply streams goes to the history as it passes, so a reply the person stops is kept
+        // as far as it got.
+        _history.BeginCollecting(thread);
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
+            _history.Collect(thread, update);
             yield return update;
         }
     }

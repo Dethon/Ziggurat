@@ -119,7 +119,8 @@ public class MemoryRecallHook(
             // Read before the agent is handed this turn, which is what the anchor's factory
             // says it needs and what the chat monitor test pins.
             var (persisted, persistedCount, stateKey) = await TryFetchThreadAsync(thread);
-            var anchor = MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(persistedCount);
+            var anchor = MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(
+                persistedCount, persisted?.LastOrDefault()?.GetEntryId());
 
             // Started before the search so the two still overlap. A user can have a profile
             // and no memories, and on the voice path that profile is what carries how the

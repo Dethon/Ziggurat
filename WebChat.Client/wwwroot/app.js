@@ -704,3 +704,17 @@ window.alertTone = {
         oscillator.stop(start + 0.2);
     }
 };
+
+// A bubble's actions menu opens below its button unless the messages area has no room for it there
+// and more above: a menu past the area's bottom sits under the composer, where a thumb must scroll to it.
+window.messageActions = {
+    opensUp: function (button, menuHeight) {
+        if (!button) return false;
+        const area = button.closest('.messages-area');
+        const bounds = area ? area.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        const rect = button.getBoundingClientRect();
+        const below = bounds.bottom - rect.bottom;
+        const above = rect.top - bounds.top;
+        return below < menuHeight && above > below;
+    }
+};

@@ -109,46 +109,53 @@
         string? accReasoning = null;
         string? accToolCalls = null;
         string? accContent = null;
+        MessageVersions? accVersions = null;
+        bool? accInterrupted = null;
         ChatMessageModel? anchor = null;
 
         for (var i = 0; i < messages.Count; i++)
         {
             var message = messages[i];
 
-            if (message.Role != "assistant")
+            if (message.Role != "assistant" || message.NoReply)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
                 result.Add(message);
                 continue;
             }
 
+            // What followed a Continue is the rest of the reply before it, so it joins that bubble.
+            var continues = message.ContinuesPrevious && accContent is not null;
             if (!string.IsNullOrEmpty(message.Content))
             {
-                if (accContent is not null)
+                if (accContent is not null && !continues)
                 {
                     // Previous message(s) already had content — flush them as a separate bubble
-                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
                 }
 
-                accContent = message.Content;
+                accContent = continues ? accContent + message.Content : message.Content;
+                accInterrupted = message.IsInterrupted;
             }
 
+            accVersions ??= message.Versions;
             accReasoning = MessageFieldMerger.Merge(
                 accReasoning, message.Reasoning, MessageFieldMerger.ReasoningSeparator);
             accToolCalls = MessageFieldMerger.Merge(
                 accToolCalls, message.ToolCalls, MessageFieldMerger.ToolCallsSeparator);
 
-            // Prefer the message that carries content as anchor for MessageId/Timestamp
-            anchor = anchor is null || !string.IsNullOrEmpty(message.Content) ? message : anchor;
+            // Prefer the message that carries content as anchor for MessageId/Timestamp; a continuation
+            // keeps the reply it continues as the bubble's own.
+            anchor = anchor is null || (!string.IsNullOrEmpty(message.Content) && !continues) ? message : anchor;
 
             var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
             if (!nextIsAssistant)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
             }
         }
 
-        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
         return result;
 
         static void Flush(
@@ -156,7 +163,9 @@
             ref ChatMessageModel? anchor,
             ref string? content,
             ref string? reasoning,
-            ref string? toolCalls)
+            ref string? toolCalls,
+            ref MessageVersions? versions,
+            ref bool? interrupted)
         {
             if (anchor is null)
             {
@@ -167,13 +176,17 @@
             {
                 Content = content ?? "",
                 Reasoning = reasoning,
-                ToolCalls = toolCalls
+                ToolCalls = toolCalls,
+                Versions = versions ?? anchor.Versions,
+                IsInterrupted = interrupted ?? anchor.IsInterrupted
             });
 
             anchor = null;
             content = null;
             reasoning = null;
             toolCalls = null;
+            versions = null;
+            interrupted = null;
         }
     }
 
@@ -239,6 +252,94 @@
         }
     }
 
+    // The message being edited in place of its bubble, by entry id: a reload that keeps it keeps the
+    // edit open, one that drops it closes it.
+    private string? _editingEntryId;
+
+    private void HandleEditInPlace(ChatMessageModel message, string text)
+    {
+        _editingEntryId = null;
+        if (_topicId is not null && message.EntryId is not null)
+        {
+            Dispatcher.Dispatch(new EditMessageInPlace(_topicId, message.EntryId, text));
+        }
+    }
+
+    private void HandleEditAndRerun(ChatMessageModel message, string text)
+    {
+        _editingEntryId = null;
+        if (_topicId is not null && message.EntryId is not null)
+        {
+            Dispatcher.Dispatch(new EditAndRerun(_topicId, message.EntryId, text));
+        }
+    }
+
+    private bool MayRewrite => !_isStreaming && _topic?.MayRewrite(_currentUserId) == true;
+
+    private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message, int index) =>
+        MessageActionsLogic.For(message, new MessageActionContext(
+            _isStreaming, _topic?.MayRewrite(_currentUserId) == true,
+            IsLastReply: index == _messages.Count - 1 && AnswersAPerson(index),
+            IsLast: index == _messages.Count - 1,
+            MayContinue: _topic?.MayContinue(_currentUserId) == true));
+
+    // The reply at an index answers a person's own message, which a reroll may send again: not a turn a
+    // service started (a fire, a login), which acted for whoever its delegation named.
+    private bool AnswersAPerson(int index) =>
+        _messages.Take(index).LastOrDefault(m => m.Role == "user") is { } asked && ServiceNotice.Of(asked) is null;
+
+    // The models the topic's agent may be run on, a reroll's choice.
+    private IReadOnlyList<PatchableModel> RerollModels =>
+        TopicsStore.State.Agents.FirstOrDefault(a => a.Id == _topic?.AgentId)?.PatchableModels ?? [];
+
+    private string? AgentModel =>
+        TopicsStore.State.Agents.FirstOrDefault(a => a.Id == _topic?.AgentId)?.DefaultModel;
+
+    private void Reroll(string? model)
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new RerollLastReply(
+                _topicId, model is null ? null : new AgentConfigPatch { Model = model }));
+        }
+    }
+
+    private void HandleSwitchVersion(MessageVersions versions, int index)
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new SwitchMessageVersion(_topicId, versions.Slot, index));
+        }
+    }
+
+    private void HandleAction(ChatMessageModel message, MessageActionChoice choice)
+    {
+        if (_topicId is null || message.EntryId is null)
+        {
+            return;
+        }
+
+        switch (choice.Kind)
+        {
+            case MessageActionKind.Continue:
+                Dispatcher.Dispatch(new ContinueReply(_topicId));
+                break;
+            case MessageActionKind.Reroll:
+            case MessageActionKind.RerollWith:
+                Reroll(choice.Model);
+                break;
+            case MessageActionKind.Edit:
+                _editingEntryId = message.EntryId;
+                break;
+            case MessageActionKind.Fork:
+                Dispatcher.Dispatch(new ForkFrom(_topicId, message.EntryId));
+                break;
+            case MessageActionKind.Delete:
+                Dispatcher.Dispatch(new DeleteMessagesFrom(_topicId, message.EntryId));
+                break;
+        }
+    }
+
     private bool ShouldShowAvatar(int index)
     {
         if (index == 0)
@@ -296,11 +397,51 @@
                 continue;
             }
 
+            if (message is { NoReply: true, Versions: { } slotVersions })
+            {
+                // A reply streaming in is the answer this line stood for.
+                if (!_isStreaming)
+                {
+                    <div class="no-reply-line">
+                        <span>No reply</span>
+                        <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
+                                         OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
+                        @if (MayRewrite && index == _messages.Count - 1 && AnswersAPerson(index))
+                        {
+                            <button class="btn-retry" @onclick="@(() => Reroll(null))">
+                                <Icon Glyph="Icons.Retry" Size="14" />
+                                Answer again
+                            </button>
+                        }
+                    </div>
+                }
+
+                continue;
+            }
+
+            if (_editingEntryId is not null && message.EntryId == _editingEntryId)
+            {
+                <MessageEditor Text="@message.Content"
+                               Tools="@MessageActionsLogic.ToolsFrom(_messages, index)"
+                               AllowSave="true"
+                               AllowRerun="@(message.Role == "user")"
+                               OnSave="@(text => HandleEditInPlace(message, text))"
+                               OnRerun="@(text => HandleEditAndRerun(message, text))"
+                               OnCancel="@(() => _editingEntryId = null)" />
+                continue;
+            }
+
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
                          ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
                          OnRetry="@HandleRetry"
+                         Actions="@ActionsFor(message, index)"
+                         RerollModels="@RerollModels"
+                         AgentModel="@AgentModel"
+                         MaySwitchVersions="@MayRewrite"
+                         OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
+                         OnAction="@(action => HandleAction(message, action))"
                          TopicOwnerId="@_topic?.OwnerId"
                          TopicOwnerName="@_topic?.OwnerName" />
         }

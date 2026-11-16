@@ -49,6 +49,68 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnGetHistory { get; set; }
 
+    public Exception? ThrowOnDeleteFrom { get; set; }
+
+    // Answers given before the history SetHistory holds, one per read: what a read made too early saw.
+    public Queue<List<ChatHistoryMessage>> HistoryAnswers { get; } = new();
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId, string? LastSeen)> DeletedFrom { get; } = [];
+
+    public List<(string AgentId, string TopicId, long ChatId, string Slot, int Index, string? LastSeen)> SwitchedVersions { get; } = [];
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId, string? LastSeen)> PutAside { get; } = [];
+
+    public Exception? ThrowOnPutAside { get; set; }
+
+    public ForkedTopic? ForkAnswer { get; set; }
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId)> Forked { get; } = [];
+
+    public Task<HubResult<ForkedTopic>> ForkAsync(string agentId, string topicId, long chatId, string entryId)
+    {
+        Forked.Add((agentId, topicId, chatId, entryId));
+        return Task.FromResult(NotLive || ForkAnswer is null
+            ? HubResult<ForkedTopic>.NotLive
+            : HubResult<ForkedTopic>.Answered(ForkAnswer));
+    }
+
+    public List<(string AgentId, string TopicId, long ChatId, string UserEntryId, string? LastSeen)> RepliesPutAside { get; } = [];
+
+    public Task<HubResult<Nothing>> PutAsideReplyAsync(
+        string agentId, string topicId, long chatId, string userEntryId, string? lastSeen)
+    {
+        RepliesPutAside.Add((agentId, topicId, chatId, userEntryId, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId, string Text, string? LastSeen)> EditedInPlace { get; } = [];
+
+    public Task<HubResult<Nothing>> EditInPlaceAsync(
+        string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen)
+    {
+        EditedInPlace.Add((agentId, topicId, chatId, entryId, text, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
+    public Task<HubResult<Nothing>> PutAsideFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        if (ThrowOnPutAside is not null)
+        {
+            return Task.FromException<HubResult<Nothing>>(ThrowOnPutAside);
+        }
+
+        PutAside.Add((agentId, topicId, chatId, entryId, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
+    public Task<HubResult<Nothing>> SwitchVersionAsync(
+        string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
+    {
+        SwitchedVersions.Add((agentId, topicId, chatId, slot, index, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
     public Exception? ThrowOnDeleteTopic { get; set; }
 
     public Exception? ThrowOnSaveTopic { get; set; }
@@ -286,6 +348,19 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
+    public Task<HubResult<Nothing>> DeleteFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        recorder?.Record($"delete-from:{topicId}:{entryId}");
+        if (ThrowOnDeleteFrom is not null)
+        {
+            return Task.FromException<HubResult<Nothing>>(ThrowOnDeleteFrom);
+        }
+
+        DeletedFrom.Add((agentId, topicId, chatId, entryId, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
     public async Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)
     {
         recorder?.Record($"delete:{topicId}");
@@ -322,6 +397,11 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         if (NotLive)
         {
             return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.NotLive);
+        }
+
+        if (HistoryAnswers.TryDequeue(out var early))
+        {
+            return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(early));
         }
 
         return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(

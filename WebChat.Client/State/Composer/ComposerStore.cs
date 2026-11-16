@@ -37,6 +37,10 @@ public record DictationEnded : IAction;
 
 public record DictationTranscribed(string Text) : IAction;
 
+// Words handed to the composer from elsewhere — a fork's, from the message it was forked from — which
+// land in the box as a transcript does, for the person to send.
+public record OfferComposerText(string Text) : IAction;
+
 // Thrown away: slid to discard, the trash button, Escape, a topic change, or a hidden tab. No
 // request was made and nothing reaches the composer.
 public record DictationDiscarded : IAction;
@@ -94,6 +98,11 @@ public sealed class ComposerStore : IDisposable
                 Status = DictationStatus.Idle,
                 Transcript = new PendingTranscript(a.Text, Stamp())
             }
+        },
+
+        OfferComposerText a => state with
+        {
+            Dictation = state.Dictation with { Transcript = new PendingTranscript(a.Text, Stamp()) }
         },
 
         DictationDiscarded => state with

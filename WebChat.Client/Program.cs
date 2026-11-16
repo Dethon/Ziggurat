@@ -64,6 +64,7 @@ _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<OpenTopicEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
+_ = app.Services.GetRequiredService<HistoryEditEffect>();
 _ = app.Services.GetRequiredService<TopicPagingEffect>();
 _ = app.Services.GetRequiredService<TopicFilterEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();

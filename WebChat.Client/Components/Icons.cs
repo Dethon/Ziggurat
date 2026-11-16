@@ -146,6 +146,24 @@ public static class Icons
     public static readonly IconGlyph Retry = Stroked(
         """<polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />""");
 
+    // A slot's versions, flipped one way or the other.
+    public static readonly IconGlyph ChevronLeft = Stroked("""<polyline points="15 18 9 12 15 6" />""");
+
+    public static readonly IconGlyph ChevronRight = Stroked("""<polyline points="9 18 15 12 9 6" />""");
+
+    // A bubble's actions menu.
+    public static readonly IconGlyph Pencil = Stroked(
+        """<path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />""");
+
+    public static readonly IconGlyph More = Stroked(
+        """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");
+
+    public static readonly IconGlyph Fork = Stroked(
+        """<circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10" /><path d="M18 9a6 6 0 0 1-6 6H6" />""");
+
+    public static readonly IconGlyph TrashStroked = Stroked(
+        """<polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />""");
+
     public static readonly IconGlyph Sun = Stroked(
         """
         <circle cx="12" cy="12" r="5" />

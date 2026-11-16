@@ -21,6 +21,17 @@ public interface IStreamingService
     // written and puts it on screen; reading attaches to the wire, and that call does not
     // come back until the reply's next chunk does. A caller that did them as one would show
     // the reply only once the agent spoke again.
+    // A reroll's turn, on a topic with no reply running: the message it ends on answered again.
+    Task RerunAsync(
+        StoredTopic topic,
+        string message,
+        string rerunOf,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference> attachments);
+
+    // Continue, on a topic with no reply running: the cut-off last reply carried on.
+    Task ContinueAsync(StoredTopic topic);
+
     bool TryShowResumedStream(StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId);
 
     Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null);

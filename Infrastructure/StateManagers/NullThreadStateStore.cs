@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.AI;
 
@@ -7,6 +8,16 @@ namespace Infrastructure.StateManagers;
 
 public sealed class NullThreadStateStore : IThreadStateStore
 {
+    public Task<ConversationHistory> GetConversationAsync(string key) =>
+        Task.FromResult(new ConversationHistory([], new Dictionary<string, SlotVersions>()));
+
+    public Task<RewriteOutcome> RewriteAsync(string key, HistoryRewrite rewrite) =>
+        Task.FromResult<RewriteOutcome>(new RewriteRefused(RewriteRefusal.NotFound));
+
+    public Task MarkTurnInFlightAsync(string key, TimeSpan expiry) => Task.CompletedTask;
+
+    public Task ClearTurnInFlightAsync(string key) => Task.CompletedTask;
+
     public Task<ChatMessage[]?> GetMessagesAsync(string key) => Task.FromResult<ChatMessage[]?>(null);
 
     public Task<long> GetMessageCountAsync(string key) => Task.FromResult(0L);

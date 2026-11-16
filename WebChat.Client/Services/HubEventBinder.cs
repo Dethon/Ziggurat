@@ -31,7 +31,9 @@ public sealed class HubEventBinder(IHubEventDispatcher hubEventDispatcher) : IHu
             connection.On<AgentsUpdatedNotification>(
                 "OnAgentsUpdated", hubEventDispatcher.HandleAgentsUpdated),
             connection.On<AccessChangedNotification>(
-                "OnAccessChanged", hubEventDispatcher.HandleAccessChanged)
+                "OnAccessChanged", hubEventDispatcher.HandleAccessChanged),
+            connection.On<HistoryChangedNotification>(
+                "OnHistoryChanged", hubEventDispatcher.HandleHistoryChanged)
         ]);
     }
 

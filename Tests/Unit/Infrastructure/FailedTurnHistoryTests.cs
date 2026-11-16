@@ -63,12 +63,13 @@ public class FailedTurnHistoryTests
         _stored.Last().IsFailedTurn().ShouldBeTrue();
     }
 
+    // A stopped turn is no failure: the person's message is kept as said, and nothing is marked failed.
     [Fact]
     public async Task AStoppedTurn_IsNotKeptAsFailed()
     {
         await RunAsync(new ThrowingClient(new OperationCanceledException()), "Hola");
 
-        _stored.ShouldBeEmpty();
+        _stored.Select(m => (m.Text, m.IsFailedTurn())).ShouldBe([("Hola", false)]);
     }
 
     [Fact]

@@ -1,0 +1,119 @@
+@* A bubble's actions, behind one tap target: the app is used on a phone, where nothing hovers. A
+   rewrite that discards anything, or runs tools again, is asked about once more inside the menu. *@
+
+@inject IJSRuntime Js
+
+@code {
+    [Parameter] public IReadOnlyList<MessageActionKind> Actions { get; set; } = [];
+    [Parameter] public EventCallback<MessageActionChoice> OnAction { get; set; }
+
+    // The models a reroll may be run on (the agent's patchable models).
+    [Parameter] public IReadOnlyList<PatchableModel> Models { get; set; } = [];
+
+    // The tools running the reply again may call again.
+    [Parameter] public IReadOnlyList<string> Tools { get; set; } = [];
+
+    private bool _open;
+    private bool _up;
+    private ElementReference _button;
+    private MessageActionKind? _confirming;
+    private string? _model;
+    private bool _pickingModel;
+
+    // Room for the longest menu: five items, or a question and its two answers.
+    private const int MenuHeight = 260;
+
+    private async Task Toggle()
+    {
+        _open = !_open;
+        Reset();
+        if (_open)
+        {
+            try
+            {
+                _up = await Js.InvokeAsync<bool>("messageActions.opensUp", _button, MenuHeight);
+            }
+            catch (JSException)
+            {
+                _up = false;
+            }
+        }
+    }
+
+    private void Close()
+    {
+        _open = false;
+        Reset();
+    }
+
+    private void Reset()
+    {
+        _confirming = null;
+        _model = null;
+        _pickingModel = false;
+    }
+
+    private async Task Choose(MessageActionKind action, string? model = null)
+    {
+        if (action == MessageActionKind.RerollWith && model is null)
+        {
+            _pickingModel = true;
+            return;
+        }
+
+        if (MessageActionLabels.AsksFirst(action, Tools) && _confirming != action)
+        {
+            _confirming = action;
+            _model = model;
+            _pickingModel = false;
+            return;
+        }
+
+        Close();
+        await OnAction.InvokeAsync(new MessageActionChoice(action, model));
+    }
+}
+
+<div class="message-actions">
+    <button class="btn-message-actions" @ref="_button" @onclick="Toggle" aria-label="Message actions" aria-haspopup="menu"
+            aria-expanded="@(_open ? "true" : "false")" title="More">
+        <Icon Glyph="Icons.More" Size="14" />
+    </button>
+
+    @if (_open)
+    {
+        <div class="message-actions-backdrop" @onclick="Close"></div>
+        <div class="message-actions-menu @(_up ? "up" : "")" role="menu">
+            @if (_confirming is { } confirming)
+            {
+                <div class="message-actions-question">@MessageActionLabels.Question(confirming, Tools)</div>
+                <button role="menuitem" class="message-action danger" @onclick="() => Choose(confirming, _model)">
+                    @MessageActionLabels.Confirm(confirming)
+                </button>
+                <button role="menuitem" class="message-action" @onclick="Close">Cancel</button>
+            }
+            else if (_pickingModel)
+            {
+                <div class="message-actions-question">Reroll on</div>
+                @foreach (var model in Models)
+                {
+                    <button role="menuitem" class="message-action" @onclick="() => Choose(MessageActionKind.RerollWith, model.Id)">
+                        @model.Name
+                    </button>
+                }
+                <button role="menuitem" class="message-action" @onclick="Close">Cancel</button>
+            }
+            else
+            {
+                @foreach (var action in Actions.Where(a => a != MessageActionKind.RerollWith || Models.Count > 0))
+                {
+                    <button role="menuitem" class="message-action @(action == MessageActionKind.Delete ? "danger" : "")"
+                            @onclick="() => Choose(action)">
+                        <Icon Glyph="@MessageActionLabels.Glyph(action)" Size="14" />
+                        @MessageActionLabels.Label(action)
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>

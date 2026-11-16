@@ -69,6 +69,25 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
         expected.Dispose();
     }
 
+    // The turn on the conversation is over, however it ended: a rewrite may be made again. The history
+    // store clears the mark as it keeps a turn; this covers a turn whose reply was let go of unread.
+    public async Task EndTurnAsync(AgentKey key)
+    {
+        if (threadStateStore is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await threadStateStore.ClearTurnInFlightAsync(key.ToString());
+        }
+        catch (Exception)
+        {
+            // The mark expires by itself; a store that cannot be reached now only delays rewrites.
+        }
+    }
+
     public async Task ClearAsync(AgentKey key)
     {
         if (_isDisposed != 0)

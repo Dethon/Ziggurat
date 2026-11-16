@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Messages;
@@ -9,6 +11,30 @@ public record AddMessage(string TopicId, ChatMessageModel Message, string? Strea
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
+
+// A person deleting a message and everything after it on the line (HistoryEditEffect).
+public record DeleteMessagesFrom(string TopicId, string EntryId) : IAction;
+
+// A person sending their message again in other words, what followed it kept as a version.
+public record EditAndRerun(string TopicId, string EntryId, string Text) : IAction;
+
+// A person correcting a message or a reply in place, no turn run, the old line kept as a version.
+public record EditMessageInPlace(string TopicId, string EntryId, string Text) : IAction;
+
+// A person asking for the last reply again, on another model when one is named.
+public record RerollLastReply(string TopicId, AgentConfigPatch? ConfigPatch = null) : IAction;
+
+// A person forking a conversation from a message into a new topic of their own.
+public record ForkFrom(string TopicId, string EntryId) : IAction;
+
+// A person flipping a slot to another of its versions (HistoryEditEffect).
+public record SwitchMessageVersion(string TopicId, string Slot, int Index) : IAction;
+
+// Somebody rewrote a conversation, so a page holding it reads it again (HistoryEditEffect).
+public record HistoryChanged(string TopicId) : IAction;
+
+// The history read once a streamed turn was stored, naming the bubbles the stream drew.
+public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> History) : IAction;
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
@@ -77,6 +103,13 @@ public sealed class MessagesStore : IDisposable
             LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId)),
             FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.Without(a.TopicId)
         },
+
+        EntryIdsLearned a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => state with
+        {
+            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, EntryIdNaming.Apply(msgs, a.History))
+        },
+
+        EntryIdsLearned => state,
 
         ClearAllMessages => MessagesState.Initial,
 

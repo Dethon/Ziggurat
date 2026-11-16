@@ -45,6 +45,29 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, long chatId, long threadId) =>
         liveConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId, threadId);
 
+    public Task<HubResult<Nothing>> DeleteFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen) =>
+        liveConnection.InvokeAsync("DeleteFrom", agentId, topicId, chatId, entryId, lastSeen);
+
+    public Task<HubResult<Nothing>> PutAsideFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen) =>
+        liveConnection.InvokeAsync("PutAsideFrom", agentId, topicId, chatId, entryId, lastSeen);
+
+    public Task<HubResult<Nothing>> EditInPlaceAsync(
+        string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen) =>
+        liveConnection.InvokeAsync("EditInPlace", agentId, topicId, chatId, entryId, text, lastSeen);
+
+    public Task<HubResult<Nothing>> PutAsideReplyAsync(
+        string agentId, string topicId, long chatId, string userEntryId, string? lastSeen) =>
+        liveConnection.InvokeAsync("PutAsideReply", agentId, topicId, chatId, userEntryId, lastSeen);
+
+    public Task<HubResult<ForkedTopic>> ForkAsync(string agentId, string topicId, long chatId, string entryId) =>
+        liveConnection.InvokeAsync<ForkedTopic>("Fork", agentId, topicId, chatId, entryId);
+
+    public Task<HubResult<Nothing>> SwitchVersionAsync(
+        string agentId, string topicId, long chatId, string slot, int index, string? lastSeen) =>
+        liveConnection.InvokeAsync("SwitchVersion", agentId, topicId, chatId, slot, index, lastSeen);
+
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug) =>
         liveConnection.InvokeAsync("JoinSpace", spaceSlug);
 

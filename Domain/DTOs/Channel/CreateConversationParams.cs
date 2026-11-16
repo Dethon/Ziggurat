@@ -28,4 +28,8 @@ public record CreateConversationParams
     // The conversation is several people's (a Telegram group's), so its topic is the household's
     // whoever's turn opened it: the others in the group wrote in it too.
     public bool Group { get; init; }
+
+    // The conversation goes on being shown by the channel that asked for it (voice), so its topic is
+    // forked, never rewritten (TopicMirrors).
+    public bool Mirrored { get; init; }
 }
