@@ -1125,6 +1125,50 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         ]);
     }
 
+    // Only the running turn's own person steers it: never another member's turn, nor a turn an agent
+    // started for a schedule; and only the message's sender steers with it. Refused, it keeps its place.
+    [Theory]
+    [InlineData("another member's turn")]
+    [InlineData("a fire")]
+    [InlineData("another member's message")]
+    public async Task ASteer_IsRefused_ForAnotherMembersTurn_AFire_OrAnotherMembersMessage(string running)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        IAsyncEnumerable<ChatStreamMessage>? opened = null;
+        switch (running)
+        {
+            case "another member's turn":
+                opened = marta.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None);
+                break;
+            case "a fire":
+                // As create_conversation announces a schedule's turn in the topic.
+                _streamService.GetOrCreateStream(TopicId, "summarize my mail", "scheduler", CancellationToken.None);
+                _streamService.TryIncrementPending(TopicId);
+                break;
+            default:
+                opened = fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None);
+                break;
+        }
+
+        var wire = opened is null ? null : Read(opened);
+        if (wire is not null)
+        {
+            await AgentWasSentAsync("first");
+        }
+
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        var steerer = running == "another member's message" ? marta : fran;
+
+        var queued = IdOf(await fran.GetQueue(TopicId), "steer me");
+        var refused = await Should.ThrowAsync<HubException>(() => steerer.SteerQueued(TopicId, queued));
+
+        refused.Message.ShouldBe(running == "another member's message" ? TopicRefusals.NotTheSenders : TopicRefusals.NotYourTurn);
+        (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["steer me"]);
+        await Eventually.Settle();
+        SentAsSteers().ShouldBeEmpty();
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
 
