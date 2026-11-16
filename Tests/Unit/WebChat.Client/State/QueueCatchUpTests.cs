@@ -97,6 +97,28 @@ public sealed class QueueCatchUpTests
         resumed.Release();
     }
 
+    // Opening a topic mid-reply resumes its stream, and the open has asked for the queue already: the
+    // resume asking again is a second round trip for the answer the page is about to show.
+    [Fact]
+    public async Task OpeningATopicMidReply_AsksForItsQueueOnce()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        var resumed = new GatedChatStream();
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null));
+        transport.Answer("ResumeStreamFrom", _ => resumed.Chunks());
+        transport.Answer("GetQueue", Queue(revision: 5, Item("q1", "marta's words", "marta", "Marta")));
+
+        Seed(client, open: "topic-1");
+
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "ResumeStreamFrom"));
+        await Eventually.Settle();
+        transport.Calls.Count(call => call.MethodName == "GetQueue").ShouldBe(1);
+        Chips(client).ShouldHaveSingleItem().SenderName.ShouldBe("Marta");
+        resumed.Release();
+    }
+
     private static QueueChangedNotification Queue(long revision, params QueuedMessageItem[] items) =>
         new("topic-1", items, revision, "default");
 

@@ -1,14 +1,16 @@
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using static Tests.E2E.WebChat.QueueE2E;
 using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
 
 // Messages sent while a reply runs wait in the topic's queue, shown as chips above the composer, and
 // run one after the other once it ends — against the stack's real model. The queue is the topic's, so
-// the person's other device opening the topic shows the same chips. The running reply is one
-// held on a tool's approval, so it is still running however long the queueing takes.
+// the person's other device opening the topic shows the same chips, and another member reading it shared
+// sees them named and read-only. The running reply is one held on a tool's approval, so it is still
+// running however long the queueing takes.
 [Collection(WebChatE2ECollections.Queue)]
 [Trait("Category", "E2E")]
 public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
@@ -22,27 +24,11 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
         await GotoWebChatAsync(page, fixture.WebChatUrl);
         await SelectAgentAsync(page);
         var input = page.Locator("textarea.chat-input");
-        var approval = page.Locator(".approval-modal");
         IPage? other = null;
 
         try
         {
-            // The model occasionally answers the demand with plain text and no tool call; then there
-            // is no reply held open to queue behind, so it is asked again once that one is over.
-            for (var attempt = 0; ; attempt++)
-            {
-                await SendAsync(input, $"Queue {tag}: IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-                try
-                {
-                    await approval.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                    break;
-                }
-                catch (TimeoutException) when (attempt < 2)
-                {
-                    await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
-                        .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-                }
-            }
+            await HoldOnAnApprovalAsync(page, $"Queue {tag}: {ToolDemand}");
 
             // Sent while the reply waits on its approval: the composer still sends, with Stop beside
             // Send rather than in its place, and nothing is drawn.
@@ -50,7 +36,7 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(page.Locator("[data-testid=composer-send]")).ToBeVisibleAsync();
             await Assertions.Expect(page.Locator("[data-testid=composer-cancel]")).ToBeVisibleAsync();
             await input.PressAsync("Enter");
-            await SendAsync(input, $"Reply with only the word BRAVO{tag}. Do not call any tools.");
+            await SendAsync(page, $"Reply with only the word BRAVO{tag}. Do not call any tools.");
 
             var chips = page.Locator("[data-testid=queue-chip]");
             await Assertions.Expect(chips).ToHaveCountAsync(2, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
@@ -61,12 +47,10 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
             // The person's other device, opening the topic only now that both wait, asks for the queue
             // and shows the same chips, theirs to edit there too. It is offered the held approval as
             // it connects, so it neither goes through SelectAgentAsync, which turns overlays down,
-            // nor clicks through the overlay: the row is pressed by dispatching the click on it.
+            // nor clicks through the overlay.
             other = await page.Context.NewPageAsync();
             await GotoWebChatAsync(other, fixture.WebChatUrl);
-            var row = other.Locator(".topic-item", new PageLocatorOptions { HasText = $"Queue {tag}" });
-            await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
-            await row.DispatchEventAsync("click");
+            await OpenTopicPastTheOverlayAsync(other, $"Queue {tag}");
             var otherChips = other.Locator("[data-testid=queue-chip]");
             await Assertions.Expect(otherChips).ToHaveCountAsync(2, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
             await Assertions.Expect(otherChips.Nth(0)).ToContainTextAsync($"ALPHA{tag}");
@@ -103,39 +87,61 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
         }
     }
 
-    private static async Task SendAsync(ILocator input, string words)
+    // The queue is the topic's, so another member reading a shared topic sees what its owner queued: the
+    // chip named by its sender, and theirs alone to edit, remove or steer.
+    [SkippableFact]
+    public async Task AMembersQueuedMessage_ShowsOnAnotherMembersPage_NamedAndWithoutActions()
     {
-        await input.FillAsync(words);
-        await input.PressAsync("Enter");
-    }
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var ana = await fixture.CreatePageSignedInAsync((await fixture.PersonAsync($"Ana {tag}", "member")).Session);
+        await using var beaContext = await ContextOfAsync(
+            ana, (await fixture.PersonAsync($"Bea {tag}", "member")).Session, fixture.WebChatUrl);
+        var anaWords = $"Reply with only the word ALPHA{tag}. Do not call any tools.";
 
-    private static ILocator UserMessage(IPage page, string words) =>
-        page.Locator(".chat-message.user", new PageLocatorOptions { HasText = words });
+        await GotoWebChatAsync(ana, fixture.WebChatUrl);
+        await SelectAgentAsync(ana);
+        var topic = $"Shared {tag}";
+        var bea = await beaContext.NewPageAsync();
 
-    private static async Task<bool> AnswerTo(IPage page, string word) =>
-        (await Conversation(page)).Any(line => line.StartsWith("assistant:") && line.Contains(word));
-
-    // The conversation as the page draws it, top to bottom: whose each message is and its words.
-    private static async Task<List<string>> Conversation(IPage page) =>
-        [.. await page.Locator(".chat-message").EvaluateAllAsync<string[]>(
-            """
-            nodes => nodes.map(n => (n.classList.contains('user') ? 'user: ' : 'assistant: ')
-                + (n.querySelector('.message-content')?.innerText ?? '').trim())
-            """)];
-
-    // Waits on the provider, turning down any approval that would hold a turn open meanwhile.
-    private static async Task WaitForAsync(IPage page, Func<Task<bool>> done, string what)
-    {
-        var deadline = DateTime.UtcNow.AddMinutes(4);
-        while (!await done())
+        try
         {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException($"Waited 4 minutes for {what}:\n{string.Join("\n", await Conversation(page))}");
-            }
+            await HoldOnAnApprovalAsync(ana, $"{topic}: {ToolDemand}");
 
-            await RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(2));
-            await page.WaitForTimeoutAsync(500);
+            // Shared while its reply waits on the approval, whose overlay covers the header: the press is
+            // dispatched on the toggle itself.
+            await ana.Locator("[title*='tap to share']").First.DispatchEventAsync("click");
+            await Assertions.Expect(ana.Locator("[title*='tap to make it yours alone']"))
+                .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+
+            await GotoWebChatAsync(bea, fixture.WebChatUrl);
+            await SelectAgentAsync(bea);
+            await OpenTopicPastTheOverlayAsync(bea, topic);
+            await Assertions.Expect(bea.Locator("[data-testid=composer-cancel]"))
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
+            await SendAsync(ana, anaWords);
+
+            var anaChip = ana.Locator("[data-testid=queue-chip]", new PageLocatorOptions { HasText = $"ALPHA{tag}" });
+            await Assertions.Expect(anaChip).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            await Assertions.Expect(anaChip.Locator("[data-testid=queue-chip-edit]")).ToHaveCountAsync(1);
+
+            var beaChip = bea.Locator("[data-testid=queue-chip]", new PageLocatorOptions { HasText = $"ALPHA{tag}" });
+            await Assertions.Expect(beaChip).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            await Assertions.Expect(beaChip.Locator(".queue-chip-sender")).ToHaveTextAsync($"Ana {tag}");
+            await Assertions.Expect(beaChip.Locator("[data-testid=queue-chip-edit]")).ToHaveCountAsync(0);
+            await Assertions.Expect(beaChip.Locator("[data-testid=queue-chip-remove]")).ToHaveCountAsync(0);
+            await Assertions.Expect(beaChip.Locator("[data-testid=queue-chip-steer]")).ToHaveCountAsync(0);
+
+            // Stopped rather than approved, so the queued message goes back to Ana instead of costing a
+            // reply. The approval's overlay covers the composer, so the press is dispatched on Stop itself.
+            await ana.Locator("[data-testid=composer-cancel]").DispatchEventAsync("click");
+            await IdleAsync(ana);
+            await IdleAsync(bea);
+        }
+        finally
+        {
+            await DrainPendingApprovalsAsync(ana);
         }
     }
 }

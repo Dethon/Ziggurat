@@ -25,6 +25,18 @@ public sealed record ComposerAttachment
     public string? Error { get; init; }
 }
 
+// Where words handed to the composer go: after what is typed there (a fork's words, a send that went
+// nowhere), or before it (a message given back from the queue, which was written first).
+public enum TextPlacement
+{
+    After,
+    Before
+}
+
+// Words handed to the composer from elsewhere, waiting to be put into it. Stamped as a transcript is,
+// so the same words handed twice land twice.
+public sealed record HandedWords(string Text, long Stamp, TextPlacement Placement);
+
 public sealed record ComposerState
 {
     public IReadOnlyDictionary<string, IReadOnlyList<ComposerAttachment>> AttachmentsByTopic { get; init; }
@@ -38,6 +50,10 @@ public sealed record ComposerState
     // One dictation at a time, and not per topic: the microphone is a property of the screen
     // rather than of a conversation, and leaving a topic ends whatever it was recording.
     public DictationState Dictation { get; init; } = new();
+
+    // Apart from the dictation: these are not words the microphone heard, and going before what is typed
+    // is theirs alone.
+    public HandedWords? Handed { get; init; }
 
     public IReadOnlyList<ComposerAttachment> For(string? topicId) =>
         topicId is null ? [] : AttachmentsByTopic.GetValueOrDefault(topicId, []);

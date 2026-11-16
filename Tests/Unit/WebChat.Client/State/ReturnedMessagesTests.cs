@@ -35,8 +35,8 @@ public sealed class ReturnedMessagesTests
 
         transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
 
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-        ComposerSelectors.Place("typed", client.Composer.State.Dictation.Transcript!)
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("typed", client.Composer.State.Handed!)
             .ShouldBe("first queued\n\nsecond queued\n\ntyped");
         var file = client.Composer.State.For("topic-1").ShouldHaveSingleItem();
         (file.Status, file.Reference).ShouldBe((AttachmentStatus.Ready, Photo));
@@ -71,12 +71,12 @@ public sealed class ReturnedMessagesTests
             asked.ShouldNotContain("topic-1");
         }
 
-        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+        client.Composer.State.Handed.ShouldBeNull();
 
         client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
 
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued on one");
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued on one");
     }
 
     // A phone asleep through the stop missed the telling, and wakes on the topic it already shows.
@@ -92,8 +92,8 @@ public sealed class ReturnedMessagesTests
         await transport.RaiseReconnectingAsync(null);
         await transport.RaiseReconnectedAsync("connection-2");
 
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued while asleep");
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued while asleep");
     }
 
     // The hub hands them over once, so an answer that lands after the person moved to another topic is
@@ -121,12 +121,12 @@ public sealed class ReturnedMessagesTests
         await TestChat.Eventually(() => Volatile.Read(ref handedOver) == 1);
         await Eventually.Settle();
         client.Topics.State.SelectedTopicId.ShouldBe("topic-2");
-        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+        client.Composer.State.Handed.ShouldBeNull();
 
         client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
 
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued on one");
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued on one");
     }
 
     private static void Seed(ScriptedChatClient client, string open)

@@ -76,12 +76,13 @@ public static class ComposerSelectors
     public static string Append(string? existing, string transcript) =>
         string.IsNullOrWhiteSpace(existing) ? transcript : $"{existing.TrimEnd()} {transcript}";
 
-    // Between messages given back from the queue, and between them and what is typed.
+    // A paragraph break, so each message given back stays a paragraph of its own beside the next and
+    // what is typed.
     public const string ReturnedSeparator = "\n\n";
 
-    // Handed words put where they belong in what is typed, which is never lost: a dictation follows
+    // Handed words put where they belong in what is typed, which is never lost: a fork's words follow
     // it, a message given back from the queue goes before it, since it was written first.
-    public static string Place(string? existing, PendingTranscript words) => words.Placement switch
+    public static string Place(string? existing, HandedWords words) => words.Placement switch
     {
         TextPlacement.Before when !string.IsNullOrWhiteSpace(existing) => $"{words.Text}{ReturnedSeparator}{existing}",
         TextPlacement.Before => words.Text,

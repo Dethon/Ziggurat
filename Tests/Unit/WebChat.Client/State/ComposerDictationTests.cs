@@ -135,6 +135,26 @@ public sealed class ComposerDictationTests
         second.Text.ShouldBe("otra vez");
     }
 
+    // Words handed over from elsewhere are not words the microphone heard: they take a slot of their own,
+    // and what was dictated stays what was dictated.
+    [Fact]
+    public async Task WordsHandedToTheComposer_LeaveTheDictationsTranscriptAlone()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new DictationTranscribed("lo dictado"));
+        client.Dispatcher.Dispatch(new OfferComposerText("lo ofrecido"));
+
+        client.Composer.State.Dictation.Transcript!.Text.ShouldBe("lo dictado");
+        client.Composer.State.Handed.ShouldNotBeNull().Placement.ShouldBe(TextPlacement.After);
+
+        client.Dispatcher.Dispatch(new ReturnToComposer("topic-1", [new ReturnedMessage("q1", "lo devuelto", [], null)]));
+
+        client.Composer.State.Dictation.Transcript!.Text.ShouldBe("lo dictado");
+        client.Composer.State.Handed.ShouldNotBeNull().Text.ShouldBe("lo devuelto");
+        client.Composer.State.Handed.Placement.ShouldBe(TextPlacement.Before);
+    }
+
     // The browser mints the ticket and posts the audio; the ticket is minted here because only
     // the live connection can, and the URL is the one the upload store already resolves to.
     [Fact]

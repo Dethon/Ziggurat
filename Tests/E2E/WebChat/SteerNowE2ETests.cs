@@ -1,6 +1,7 @@
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using static Tests.E2E.WebChat.QueueE2E;
 using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
@@ -21,33 +22,16 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
         var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
         await SelectAgentAsync(page);
-        var input = page.Locator("textarea.chat-input");
-        var approval = page.Locator(".approval-modal");
         var steerWords = $"Reply with only the word STEER{tag}. Do not call any tools.";
 
         try
         {
-            // The model occasionally answers the demand with plain text and no tool call; then there
-            // is no reply held open to steer, so it is asked again once that one is over.
-            for (var attempt = 0; ; attempt++)
-            {
-                await SendAsync(input,
-                    $"Steer {tag}: IMPORTANT: You MUST call a tool right now, before writing anything. Use your file " +
-                    $"search/glob tool to find all files with pattern **/*. Only once the tool has returned, reply " +
-                    $"with the word AFTER{tag} and nothing else. this is a test");
-                try
-                {
-                    await approval.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                    break;
-                }
-                catch (TimeoutException) when (attempt < 2)
-                {
-                    await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
-                        .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-                }
-            }
+            await HoldOnAnApprovalAsync(page,
+                $"Steer {tag}: IMPORTANT: You MUST call a tool right now, before writing anything. Use your file " +
+                $"search/glob tool to find all files with pattern **/*. Only once the tool has returned, reply " +
+                $"with the word AFTER{tag} and nothing else. this is a test");
 
-            await SendAsync(input, steerWords);
+            await SendAsync(page, steerWords);
             var chip = page.Locator("[data-testid=queue-chip]", new PageLocatorOptions { HasText = $"STEER{tag}" });
             await Assertions.Expect(chip).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
 
@@ -80,39 +64,6 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
         finally
         {
             await DrainPendingApprovalsAsync(page);
-        }
-    }
-
-    private static async Task SendAsync(ILocator input, string words)
-    {
-        await input.FillAsync(words);
-        await input.PressAsync("Enter");
-    }
-
-    private static async Task<bool> AnswerTo(IPage page, string word) =>
-        (await Conversation(page)).Any(line => line.StartsWith("assistant:") && line.Contains(word));
-
-    // The conversation as the page draws it, top to bottom: whose each message is and its words.
-    private static async Task<List<string>> Conversation(IPage page) =>
-        [.. await page.Locator(".chat-message").EvaluateAllAsync<string[]>(
-            """
-            nodes => nodes.map(n => (n.classList.contains('user') ? 'user: ' : 'assistant: ')
-                + (n.querySelector('.message-content')?.innerText ?? '').trim())
-            """)];
-
-    // Waits on the provider, turning down any approval that would hold a turn open meanwhile.
-    private static async Task WaitForAsync(IPage page, Func<Task<bool>> done, string what)
-    {
-        var deadline = DateTime.UtcNow.AddMinutes(4);
-        while (!await done())
-        {
-            if (DateTime.UtcNow > deadline)
-            {
-                throw new TimeoutException($"Waited 4 minutes for {what}:\n{string.Join("\n", await Conversation(page))}");
-            }
-
-            await RejectEveryVisibleApprovalAsync(page, TimeSpan.FromSeconds(2));
-            await page.WaitForTimeoutAsync(500);
         }
     }
 }
