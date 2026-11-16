@@ -1,9 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <mask id="cut"><rect width="512" height="512" fill="#fff"/><circle cx="418" cy="418" r="100" fill="#000"/></mask>
+    <clipPath id="cut"><path clip-rule="evenodd" d="M0 0H512V512H0Z M318 418a100 100 0 1 0 200 0a100 100 0 1 0 -200 0Z"/></clipPath>
     <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
   </defs>
-  <g mask="url(#cut)">
+  <g clip-path="url(#cut)">
     <circle cx="236" cy="236" r="168" fill="none" stroke="#60a5fa" stroke-width="62" stroke-dasharray="379.1 1055.6" transform="rotate(-90.00 236 236)"/>
     <circle cx="236" cy="236" r="168" fill="none" stroke="#a78bfa" stroke-width="62" stroke-dasharray="263.0 1055.6" transform="rotate(46.80 236 236)"/>
     <circle cx="236" cy="236" r="168" fill="none" stroke="#34d399" stroke-width="62" stroke-dasharray="189.1 1055.6" transform="rotate(144.00 236 236)"/>

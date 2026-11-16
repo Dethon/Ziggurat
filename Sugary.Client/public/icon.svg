@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <mask id="cut"><rect width="512" height="512" fill="#fff"/><circle cx="418" cy="418" r="100" fill="#000"/></mask>
+    <clipPath id="cut"><path clip-rule="evenodd" d="M0 0H512V512H0Z M318 418a100 100 0 1 0 200 0a100 100 0 1 0 -200 0Z"/></clipPath>
   </defs>
-  <g mask="url(#cut)">
+  <g clip-path="url(#cut)">
     <g transform="translate(-8 -14) scale(1.42) translate(-88 -86) translate(0 -44)">
     <polygon points="318,322 408,226 408,314 318,410" fill="#e3a84f"/>
     <polygon points="318,322 408,226 408,246 318,342" fill="#8e1a3f"/>

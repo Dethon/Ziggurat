@@ -38,25 +38,7 @@ app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 
 app.MapGet("/manifest.webmanifest", () =>
-{
-    var manifest = new
-    {
-        name = "Ziggurat Dashboard",
-        short_name = "Dashboard",
-        start_url = "/",
-        id = "/",
-        scope = "/",
-        display = "standalone",
-        background_color = "#0b0f17",
-        theme_color = "#0b0f17",
-        prefer_related_applications = false,
-        icons = new[]
-        {
-            new { src = "icon.svg", sizes = "any", type = "image/svg+xml" }
-        }
-    };
-    return Results.Json(manifest, contentType: "application/manifest+json");
-});
+    Results.Json(DashboardManifest.Build(), contentType: "application/manifest+json"));
 
 app.MapHub<MetricsHub>("/hubs/metrics");
 app.MapMetricsApi();
