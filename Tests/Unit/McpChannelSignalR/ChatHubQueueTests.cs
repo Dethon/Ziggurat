@@ -373,6 +373,26 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         wire.Said().ShouldNotContain("user: second");
     }
 
+    // Everyone on a shared topic sees the queue; only the sender withdraws a message from it.
+    [Fact]
+    public async Task AnotherMembersRemove_IsRefused_AndTheMessageStillRuns()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        var second = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem();
+
+        var refused = await Should.ThrowAsync<HubException>(() => marta.RemoveQueued(TopicId, second.Id));
+
+        refused.Message.ShouldBe(TopicRefusals.NotTheSenders);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     private static readonly AttachmentReference Photo = new()
     {
         Id = "7-42/abc",
