@@ -253,6 +253,29 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // A page catching up asks for the queue while pushes may still be on their way, so the answer is
+    // numbered as they are and the page keeps whichever was read later.
+    [Fact]
+    public async Task TheQueueAskedFor_IsAnsweredAsItIsTold_WithTheRevisionItWasReadAt()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var told = TellsOfTheQueue();
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null, [Photo])).ShouldBeTrue();
+
+        var asked = await fran.GetQueue(TopicId);
+
+        var latest = Latest(told);
+        (asked.TopicId, asked.Revision, asked.SpaceSlug).ShouldBe((TopicId, latest.Revision, "default"));
+        asked.Items.ShouldBe(latest.Items);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     // A message refused as it is queued is told to its sender; the turn running is no part of it.
     [Fact]
     public async Task AMessageRefusedAsItIsQueued_IsAnsweredToItsSender_AndLeavesTheRunningTurnAlone()
@@ -348,7 +371,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         }
 
         await Task.WhenAll(Task.Run(() => QueueFiveAsync(fran, "fran")), Task.Run(() => QueueFiveAsync(marta, "marta")));
-        var shown = (await fran.GetQueue(TopicId)).Select(item => item.Content).ToList();
+        var shown = (await fran.GetQueue(TopicId)).Items.Select(item => item.Content).ToList();
 
         foreach (var next in shown)
         {
@@ -382,7 +405,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await Eventually.Settle();
 
         Sent().ShouldBe(["first"]);
-        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        (await fran.GetQueue(TopicId)).Items.ShouldBeEmpty();
         var frans = await fran.TakeReturned(TopicId);
         frans.Select(m => m.Content).ShouldBe(["fran one"]);
         frans[0].Attachments.ShouldBe([Photo]);
@@ -576,7 +599,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
         (await marta.EnqueueMessage(TopicId, "from marta", "c-2", null)).ShouldBeTrue();
-        var queuedId = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem().Id;
+        var queuedId = (await marta.GetQueue(TopicId)).Items.ShouldHaveSingleItem().Id;
         await fran.CancelTopic(TopicId);
         await wire.Ended;
         if (takenAlready)
@@ -669,11 +692,11 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
         (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
-        var second = (await fran.GetQueue(TopicId)).First(item => item.Content == "second");
+        var second = (await fran.GetQueue(TopicId)).Items.First(item => item.Content == "second");
 
         await fran.RemoveQueued(TopicId, second.Id);
 
-        (await fran.GetQueue(TopicId)).Select(item => item.Content).ShouldBe(["third"]);
+        (await fran.GetQueue(TopicId)).Items.Select(item => item.Content).ShouldBe(["third"]);
         await FinishTurnAsync("answer one");
         await AgentWasSentAsync("third");
         await FinishTurnAsync("answer three");
@@ -691,7 +714,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
-        var second = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var second = (await marta.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
 
         var refused = await Should.ThrowAsync<HubException>(() => marta.RemoveQueued(TopicId, second.Id));
 
@@ -711,13 +734,13 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("first");
         var patch = new AgentConfigPatch { Model = "sees/pictures", ReasoningEffort = "high" };
         (await fran.EnqueueMessage(TopicId, "second", "c-2", patch, [Photo])).ShouldBeTrue();
-        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var second = (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
 
         var taken = await fran.TakeBackQueued(TopicId, second.Id);
 
         (taken.Id, taken.Content, taken.ConfigPatch).ShouldBe((second.Id, "second", patch));
         taken.Attachments.ShouldBe([Photo]);
-        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        (await fran.GetQueue(TopicId)).Items.ShouldBeEmpty();
         await FinishTurnAsync("answer one");
         await wire.Ended;
         Sent().ShouldBe(["first"]);
@@ -731,12 +754,12 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
-        var second = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var second = (await marta.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
 
         var refused = await Should.ThrowAsync<HubException>(() => marta.TakeBackQueued(TopicId, second.Id));
 
         refused.Message.ShouldBe(TopicRefusals.NotTheSenders);
-        (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id.ShouldBe(second.Id);
+        (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem().Id.ShouldBe(second.Id);
         await FinishTurnAsync("answer one");
         await AgentWasSentAsync("second");
         await FinishTurnAsync("answer two");
@@ -757,7 +780,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             await AgentWasSentAsync($"first {round}");
             (await fran.EnqueueMessage(TopicId, $"raced {round}", null, null)).ShouldBeTrue();
             (await fran.EnqueueMessage(TopicId, $"after {round}", null, null)).ShouldBeTrue();
-            var raced = (await fran.GetQueue(TopicId))[0];
+            var raced = (await fran.GetQueue(TopicId)).Items[0];
 
             var withdrawing = Task.Run(() => takingBack
                 ? fran.TakeBackQueued(TopicId, raced.Id)
@@ -797,7 +820,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("first");
         var photo = await UploadAsync();
         (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
-        var queued = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var queued = (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
 
         if (takingBack)
         {
@@ -834,7 +857,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             (await fran.EnqueueMessage(TopicId, "look again", "c-3", null, [photo])).ShouldBeTrue();
         }
 
-        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId))[0].Id);
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).Items[0].Id);
 
         _attachmentStore.Find(photo.Id).ShouldNotBeNull();
         await FinishTurnAsync("answer one");
@@ -860,7 +883,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             CancellationToken.None);
         (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [theirs])).ShouldBeTrue();
 
-        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id);
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem().Id);
 
         _attachmentStore.Find(theirs.Id).ShouldNotBeNull();
         await FinishTurnAsync("answer one");
@@ -879,7 +902,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
-        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var second = (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
 
         var refused = await Should.ThrowAsync<HubException>(() => takingBack
             ? marta.TakeBackQueued(TopicId, second.Id)
@@ -905,7 +928,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
         (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
-        var second = (await fran.GetQueue(TopicId))[0];
+        var second = (await fran.GetQueue(TopicId)).Items[0];
 
         if (takingBack)
         {
@@ -934,7 +957,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("first");
         var photo = await UploadAsync();
         (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
-        var queued = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var queued = (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
         await FinishTurnAsync("answer one");
         await AgentWasSentAsync("look");
 
@@ -960,7 +983,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
-        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        var second = (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem();
         _sender.Setup(s => s.SendToGroupAsync(
                 It.IsAny<string>(), "OnQueueChanged", It.IsAny<object>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IOException("the backplane is down"));
@@ -974,7 +997,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             await fran.RemoveQueued(TopicId, second.Id);
         }
 
-        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        (await fran.GetQueue(TopicId)).Items.ShouldBeEmpty();
         await FinishTurnAsync("answer one");
         await wire.Ended;
     }
@@ -991,9 +1014,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
         _store.Setup(s => s.GetConversationAsync(It.IsAny<string>())).ThrowsAsync(new IOException("redis is away"));
 
-        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id);
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem().Id);
 
-        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        (await fran.GetQueue(TopicId)).Items.ShouldBeEmpty();
         _attachmentStore.Find(photo.Id).ShouldNotBeNull();
         await FinishTurnAsync("answer one");
         await wire.Ended;

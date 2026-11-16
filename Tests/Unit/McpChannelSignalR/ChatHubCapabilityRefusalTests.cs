@@ -148,7 +148,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
 
         refused.Message.ShouldContain("text/only");
         _streamService.IsStreaming(TopicId).ShouldBeTrue();
-        (await _hub.GetQueue(TopicId)).ShouldBeEmpty();
+        (await _hub.GetQueue(TopicId)).Items.ShouldBeEmpty();
         (await ReceivedAsync()).ShouldBeEmpty();
     }
 

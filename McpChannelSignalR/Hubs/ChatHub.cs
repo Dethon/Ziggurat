@@ -594,10 +594,13 @@ public sealed class ChatHub(
         return refusal is null ? queued : throw new HubException(refusal);
     }
 
-    public async Task<IReadOnlyList<QueuedMessageItem>> GetQueue(string topicId)
+    // Answered as it is pushed, revision and all: a page catching up asks while pushes may still be on
+    // their way, and keeps whichever of the two was read later.
+    public async Task<QueueChangedNotification> GetQueue(string topicId)
     {
-        await SessionToReadAsync(topicId);
-        return [.. streamService.QueueOf(topicId).Messages.Select(m => m.ToItem())];
+        var session = await SessionToReadAsync(topicId);
+        return streamService.QueueOf(topicId)
+            .ToNotification(topicId, session?.SpaceSlug ?? SpaceConfig.DefaultSlug);
     }
 
     // A queued message its sender withdraws before its turn starts, and the files uploaded for it that
