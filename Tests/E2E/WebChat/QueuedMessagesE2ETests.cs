@@ -6,14 +6,15 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 namespace Tests.E2E.WebChat;
 
 // Messages sent while a reply runs wait in the topic's queue, shown as chips above the composer, and
-// run one after the other once it ends — against the stack's real model. The running reply is one
+// run one after the other once it ends — against the stack's real model. The queue is the topic's, so
+// the person's other device opening the topic shows the same chips. The running reply is one
 // held on a tool's approval, so it is still running however long the queueing takes.
 [Collection(WebChatE2ECollections.Queue)]
 [Trait("Category", "E2E")]
 public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
 {
     [SkippableFact]
-    public async Task TwoMessagesQueuedBehindAToolUsingReply_ShowAsChips_AndRunInOrder()
+    public async Task TwoMessagesQueuedBehindAToolUsingReply_ShowAsChipsOnEveryPage_AndRunInOrder()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
         var tag = Guid.NewGuid().ToString("N")[..4];
@@ -22,6 +23,7 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
         await SelectAgentAsync(page);
         var input = page.Locator("textarea.chat-input");
         var approval = page.Locator(".approval-modal");
+        IPage? other = null;
 
         try
         {
@@ -56,6 +58,21 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(chips.Nth(1)).ToContainTextAsync($"BRAVO{tag}");
             await Assertions.Expect(UserMessage(page, $"ALPHA{tag}")).ToHaveCountAsync(0);
 
+            // The person's other device, opening the topic only now that both wait, asks for the queue
+            // and shows the same chips, theirs to edit there too. It is offered the held approval as
+            // it connects, so it neither goes through SelectAgentAsync, which turns overlays down,
+            // nor clicks through the overlay: the row is pressed by dispatching the click on it.
+            other = await page.Context.NewPageAsync();
+            await GotoWebChatAsync(other, fixture.WebChatUrl);
+            var row = other.Locator(".topic-item", new PageLocatorOptions { HasText = $"Queue {tag}" });
+            await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+            await row.DispatchEventAsync("click");
+            var otherChips = other.Locator("[data-testid=queue-chip]");
+            await Assertions.Expect(otherChips).ToHaveCountAsync(2, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            await Assertions.Expect(otherChips.Nth(0)).ToContainTextAsync($"ALPHA{tag}");
+            await Assertions.Expect(otherChips.Nth(1)).ToContainTextAsync($"BRAVO{tag}");
+            await Assertions.Expect(other.Locator("[data-testid=queue-chip-edit]")).ToHaveCountAsync(2);
+
             await page.Locator(".btn-approve").ClickAsync();
 
             // The tool's reply ends, then each queued message runs in turn; any further approval the
@@ -64,6 +81,7 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
                 .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 180_000 });
             await Assertions.Expect(chips).ToHaveCountAsync(0);
+            await Assertions.Expect(other.Locator("[data-testid=queue-chip]")).ToHaveCountAsync(0);
 
             var said = await Conversation(page);
             var alpha = said.IndexOf($"user: Reply with only the word ALPHA{tag}. Do not call any tools.");
@@ -78,6 +96,10 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
         finally
         {
             await DrainPendingApprovalsAsync(page);
+            if (other is not null)
+            {
+                await other.CloseAsync();
+            }
         }
     }
 
