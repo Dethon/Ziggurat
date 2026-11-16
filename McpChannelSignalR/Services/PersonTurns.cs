@@ -57,7 +57,7 @@ public sealed class PersonTurns(
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
     // buffer for an agent that comes back, so this says the turn cannot be answered now rather
     // than claiming it was thrown away.
-    private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
+    internal const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
 
     // What the browser is told when the accounts service could not vouch for the person just now, so
     // no turn could carry its word; nothing was sent, and sending again later may work.
@@ -119,20 +119,49 @@ public sealed class PersonTurns(
     public Task WriteMessageAsync(SenderSnapshot sender, TurnMessage message) =>
         message.Continuation
             ? Task.CompletedTask
-            : streamService.WriteMessageAsync(sender.TopicId, new ChatStreamMessage
-            {
-                Content = message.Content,
-                UserMessage = new UserMessageInfo(sender.UserId, DateTimeOffset.UtcNow, sender.DisplayName, message.CorrelationId),
-                Attachments = message.Attachments
-            });
+            : streamService.WriteMessageAsync(sender.TopicId, MessageOf(sender, message));
+
+    public static ChatStreamMessage MessageOf(SenderSnapshot sender, TurnMessage message) => new()
+    {
+        Content = message.Content,
+        UserMessage = new UserMessageInfo(sender.UserId, DateTimeOffset.UtcNow, sender.DisplayName, message.CorrelationId),
+        Attachments = message.Attachments
+    };
 
     // False when nobody was listening: no reply is coming, so the turn has been ended on the stream in
     // error rather than left holding the topic open — every page on it sees the same end, and it
     // releases the pending prompt the send added.
     public async Task<bool> EmitAsync(VouchedSender vouched, TurnMessage message, CancellationToken ct)
     {
+        var delivered = await SendAsync(vouched, message, steer: false, ct);
+        if (!delivered)
+        {
+            await EndUnheardAsync(vouched.Sender);
+        }
+
+        return delivered;
+    }
+
+    // A steer, sent to come in at the running turn's next tool boundary. Nobody listening ends nothing
+    // here: the turn on the stream is still the running one, which the caller decides about.
+    public Task<bool> SteerAsync(VouchedSender vouched, TurnMessage message, CancellationToken ct) =>
+        SendAsync(vouched, message, steer: true, ct);
+
+    // A turn sent to nobody: no reply is coming, so it is ended on the stream in error rather than left
+    // holding the topic open.
+    public Task EndUnheardAsync(SenderSnapshot sender)
+    {
+        logger.LogWarning(
+            "Nothing is polling for conversation {ConversationId} (topic {TopicId}); " +
+            "answering not live instead of streaming a reply that cannot arrive",
+            sender.Conversation.ConversationId, sender.TopicId);
+        return EndTurnAsync(sender, NotLiveError);
+    }
+
+    private Task<bool> SendAsync(VouchedSender vouched, TurnMessage message, bool steer, CancellationToken ct)
+    {
         var sender = vouched.Sender;
-        var delivered = await notificationEmitter.EmitAsync(
+        return notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
                 ConversationId = sender.Conversation.ConversationId,
@@ -144,21 +173,11 @@ public sealed class PersonTurns(
                 ConfigPatch = message.ConfigPatch,
                 RerunOf = message.RerunOf,
                 Continuation = message.Continuation,
+                Steer = steer,
                 Attachments = message.Attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },
             ct);
-
-        if (!delivered)
-        {
-            logger.LogWarning(
-                "Nothing is polling for conversation {ConversationId} (topic {TopicId}); " +
-                "answering not live instead of streaming a reply that cannot arrive",
-                sender.Conversation.ConversationId, sender.TopicId);
-            await EndTurnAsync(sender, NotLiveError);
-        }
-
-        return delivered;
     }
 
     private Task EndTurnAsync(SenderSnapshot sender, string error) =>

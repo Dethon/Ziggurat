@@ -33,6 +33,16 @@ public sealed class StreamService(
     private readonly Dictionary<string, List<QueuedMessage>> _dispatching = new();
     private long _lastStreamId;
 
+    // Steers sent to the agent whose turns have not started, in the order they were sent: each counts as
+    // pending, so the running turn's end starts the first of them (writing its message there) rather than
+    // the queue's head, and a stop meanwhile returns them to their senders.
+    private readonly Dictionary<string, List<QueuedMessage>> _steers = new();
+
+    // The account whose own turn the topic's stream is running: none for a turn an agent started (a
+    // schedule's, a watch's), and none for a queued turn taken but not started yet. Only that person may
+    // steer it.
+    private readonly Dictionary<string, Account> _runningFor = new();
+
     // What a stop handed back to each sender and no page of theirs has taken yet, in the order it was
     // queued. Kept past the stream it was queued on, under _streamLock, until taken or the topic is
     // deleted: a sender with no page open finds it the next time they open the topic.
@@ -139,6 +149,7 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
+            _runningFor.Remove(topicId);
             if (_responseChannels.TryGetValue(topicId, out var existingChannel))
             {
                 _currentPrompts[topicId] = currentPrompt;
@@ -181,7 +192,7 @@ public sealed class StreamService(
     // which the send gives up by queueing (Enqueue) or by being refused (Release), naming the stream it
     // was held on. The running stream's prompt and sender stay those of the turn it is on.
     public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened, long Stream) OpenOrHold(
-        string topicId, string prompt, string senderId, CancellationToken parentToken)
+        string topicId, string prompt, string senderId, Account person, CancellationToken parentToken)
     {
         lock (_streamLock)
         {
@@ -189,6 +200,11 @@ public sealed class StreamService(
             var (channel, token) = opened
                 ? GetOrCreateStream(topicId, prompt, senderId, parentToken)
                 : (_responseChannels[topicId], TokenOf(topicId, parentToken));
+            if (opened)
+            {
+                _runningFor[topicId] = person;
+            }
+
             _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
             return (channel, token, opened, _streamIds[topicId]);
         }
@@ -236,7 +252,8 @@ public sealed class StreamService(
         lock (_streamLock)
         {
             return new QueueSnapshot(
-                _queues.TryGetValue(topicId, out var queue) ? [.. queue] : [], _queueRevision);
+                _queues.TryGetValue(topicId, out var queue) ? [.. queue] : [], _queueRevision,
+                _runningFor.GetValueOrDefault(topicId)?.UserId);
         }
     }
 
@@ -246,25 +263,97 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
-            var queue = _queues.GetValueOrDefault(topicId) ?? [];
-            var at = queue.FindIndex(m => m.Id == queuedId);
-            if (at < 0)
+            if (Senders(topicId, queuedId, by) is not { } at)
             {
-                return _stopped.TryGetValue(topicId, out var stopped) && stopped.Returned.TryGetValue(queuedId, out var sender)
-                    ? sender == by ? Withdrawal.ReturnedToComposer : Withdrawal.NotTheSenders
-                    : Withdrawal.AlreadySent;
+                return RefusalFor(topicId, queuedId, by);
             }
 
+            var queue = _queues[topicId];
             var message = queue[at];
-            if (message.Sender.Principal.Account != by)
-            {
-                return Withdrawal.NotTheSenders;
-            }
-
             queue.RemoveAt(at);
             _queueRevision++;
             return new Withdrawal(message, [.. queue]);
         }
+    }
+
+    // Where a queued message its caller sent waits in its topic's queue; null when it is not there or
+    // not theirs (RefusalFor says which).
+    private int? Senders(string topicId, string queuedId, Account by) =>
+        (_queues.GetValueOrDefault(topicId) ?? []).FindIndex(m => m.Id == queuedId) is var at and >= 0
+        && _queues[topicId][at].Sender.Principal.Account == by
+            ? at
+            : null;
+
+    private Withdrawal RefusalFor(string topicId, string queuedId, Account by)
+    {
+        if ((_queues.GetValueOrDefault(topicId) ?? []).Any(m => m.Id == queuedId))
+        {
+            return Withdrawal.NotTheSenders;
+        }
+
+        return _stopped.TryGetValue(topicId, out var stopped) && stopped.Returned.TryGetValue(queuedId, out var sender)
+            ? sender == by ? Withdrawal.ReturnedToComposer : Withdrawal.NotTheSenders
+            : Withdrawal.AlreadySent;
+    }
+
+    // A queued message its sender steers the running turn with, taken out of the queue in the same step a
+    // turn's end would take it, while that turn is still their own: it waits as pending, ahead of the
+    // queue, for the running turn to end (Finish), and the caller sends it to the agent now.
+    public Withdrawal Steer(string topicId, string queuedId, Account by)
+    {
+        lock (_streamLock)
+        {
+            if (Senders(topicId, queuedId, by) is not { } at)
+            {
+                return RefusalFor(topicId, queuedId, by);
+            }
+
+            if (_runningFor.GetValueOrDefault(topicId) != by)
+            {
+                return Withdrawal.NotYourTurn;
+            }
+
+            var queue = _queues[topicId];
+            var message = queue[at];
+            queue.RemoveAt(at);
+            SteersOf(topicId).Add(message);
+            _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
+            _queueRevision++;
+            return new Withdrawal(message, [.. queue]);
+        }
+    }
+
+    // A steer the agent could not be sent, back at the head of its queue, while the running turn has not
+    // ended yet; false once it has, and the steer's turn has started on the stream.
+    public bool Unsteer(string topicId, QueuedMessage steer)
+    {
+        lock (_streamLock)
+        {
+            if (!_steers.TryGetValue(topicId, out var steers) || !steers.Remove(steer))
+            {
+                return false;
+            }
+
+            if (!_queues.TryGetValue(topicId, out var queue))
+            {
+                _queues[topicId] = queue = [];
+            }
+
+            queue.Insert(0, steer);
+            _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
+            _queueRevision++;
+            return true;
+        }
+    }
+
+    private List<QueuedMessage> SteersOf(string topicId)
+    {
+        if (!_steers.TryGetValue(topicId, out var steers))
+        {
+            _steers[topicId] = steers = [];
+        }
+
+        return steers;
     }
 
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
@@ -289,9 +378,16 @@ public sealed class StreamService(
         lock (_streamLock)
         {
             var topicId = turn.Message.Sender.TopicId;
-            return IsRunning(topicId, turn.Stream)
-                   && _dispatching.TryGetValue(topicId, out var dispatching)
-                   && dispatching.RemoveAll(m => m.Id == turn.Message.Id) > 0;
+            if (!(IsRunning(topicId, turn.Stream)
+                  && _dispatching.TryGetValue(topicId, out var dispatching)
+                  && dispatching.RemoveAll(m => m.Id == turn.Message.Id) > 0))
+            {
+                return false;
+            }
+
+            _runningFor[topicId] = turn.Message.Sender.Principal.Account!;
+            _queueRevision++;
+            return true;
         }
     }
 
@@ -338,6 +434,12 @@ public sealed class StreamService(
         string topicId,
         ChatStreamMessage message)
     {
+        Write(topicId, message);
+        return Task.CompletedTask;
+    }
+
+    private void Write(string topicId, ChatStreamMessage message)
+    {
         lock (_writeLock)
         {
             // ReSharper disable once InconsistentlySynchronizedField
@@ -346,14 +448,12 @@ public sealed class StreamService(
                 // No subscriber means no stream was ever created — the same designed miss as above,
                 // one map further down.
                 logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
-                return Task.CompletedTask;
+                return;
             }
 
             _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer()).Add(message);
             channel.Write(message);
         }
-
-        return Task.CompletedTask;
     }
 
     // A send joining a stream another send opened (two people sending in a shared topic at once) is
@@ -415,6 +515,18 @@ public sealed class StreamService(
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
             if (remaining > 0)
             {
+                // A turn ending with a steer waiting: the steer's turn is the next, already sent, and the
+                // reply splits here, so its message is written now, before anything of its answer.
+                if (heldOn is null && _steers.TryGetValue(topicId, out var steers) && steers.Count > 0)
+                {
+                    var steer = steers[0];
+                    steers.RemoveAt(0);
+                    Write(topicId, PersonTurns.MessageOf(steer.Sender, steer.Message));
+                    _currentPrompts[topicId] = steer.Message.Content;
+                    _currentSenderIds[topicId] = steer.Sender.UserId;
+                    _runningFor[topicId] = steer.Sender.Principal.Account!;
+                }
+
                 return Queueing.Queued;
             }
 
@@ -468,6 +580,7 @@ public sealed class StreamService(
 
         var head = queue[0];
         queue.RemoveAt(0);
+        _runningFor.Remove(topicId);
         if (!_dispatching.TryGetValue(topicId, out var dispatching))
         {
             _dispatching[topicId] = dispatching = [];
@@ -553,6 +666,7 @@ public sealed class StreamService(
         {
             IReadOnlyList<QueuedMessage> stopped =
             [
+                .. _steers.GetValueOrDefault(topicId) ?? [],
                 .. _dispatching.GetValueOrDefault(topicId) ?? [],
                 .. _queues.GetValueOrDefault(topicId) ?? []
             ];
@@ -673,6 +787,8 @@ public sealed class StreamService(
         _audiences.TryRemove(topicId, out _);
         _streamIds.Remove(topicId);
         _dispatching.Remove(topicId);
+        _steers.Remove(topicId);
+        _runningFor.Remove(topicId);
         if (_queues.Remove(topicId, out var queue) && queue.Count > 0)
         {
             _queueRevision++;

@@ -1089,6 +1089,53 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         Sent().ShouldBe(["first"]);
     }
 
+    // Steer now: the agent is sent the message at once, flagged a steer, to come in at the running
+    // turn's next tool boundary; it goes ahead of everything queued before it, and it is written on the
+    // stream only once the running turn has ended, where the reply splits, never in the middle of it.
+    [Fact]
+    public async Task ASteer_IsSentAtOnceAheadOfTheQueue_AndWrittenOnTheStreamAfterTheRunningTurnEnds()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+
+        await AgentWasSentAsync("steer me");
+        SentAsSteers().ShouldBe(["steer me"]);
+        (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["older"]);
+        await Eventually.Settle();
+        wire.Said().ShouldBe(["user: first"]);
+
+        await FinishTurnAsync("cut short");
+        await Eventually.Until(() => wire.Said().Contains("user: steer me"), "the steer is written once the turn ends");
+        await Eventually.Settle();
+        Sent().ShouldBe(["first", "steer me"]);
+        await FinishTurnAsync("answer to the steer");
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first", "agent: cut short",
+            "user: steer me", "agent: answer to the steer",
+            "user: older", "agent: answer to older"
+        ]);
+    }
+
+    private static string IdOf(QueueChangedNotification queue, string content) =>
+        queue.Items.Single(i => i.Content == content).Id;
+
+    private IReadOnlyList<string> SentAsSteers()
+    {
+        lock (_receivedLock)
+        {
+            return [.. _received.Where(m => m.Steer).Select(m => m.Content)];
+        }
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),

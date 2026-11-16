@@ -31,10 +31,11 @@ public enum Queueing
 public sealed record QueuedTurn(QueuedMessage Message, long Stream);
 
 // A topic's queue as of one change, numbered so a page told of two changes keeps the later.
-public sealed record QueueSnapshot(IReadOnlyList<QueuedMessage> Messages, long Revision)
+// With whose own turn the stream is running, by their account's user id: the one person who may steer it.
+public sealed record QueueSnapshot(IReadOnlyList<QueuedMessage> Messages, long Revision, string? RunningFor = null)
 {
     public QueueChangedNotification ToNotification(string topicId, string spaceSlug) =>
-        new(topicId, [.. Messages.Select(m => m.ToItem())], Revision, spaceSlug);
+        new(topicId, [.. Messages.Select(m => m.ToItem())], Revision, spaceSlug, RunningFor);
 }
 
 // What taking a queued message back came to: the message, with the ones still queued behind it, or why
@@ -46,6 +47,8 @@ public sealed record Withdrawal(QueuedMessage? Message, IReadOnlyList<QueuedMess
     public static Withdrawal NotTheSenders { get; } = new(null, [], TopicRefusals.NotTheSenders);
 
     public static Withdrawal ReturnedToComposer { get; } = new(null, [], TopicRefusals.ReturnedToComposer);
+
+    public static Withdrawal NotYourTurn { get; } = new(null, [], TopicRefusals.NotYourTurn);
 
     // The files the queue still names once this message has left it.
     public IEnumerable<string> StillQueuedAttachments() =>

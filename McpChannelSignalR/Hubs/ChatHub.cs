@@ -467,7 +467,7 @@ public sealed class ChatHub(
 
         // The stream's prompt is what a page joining it draws as the person's message: Continue's ask is none.
         var (broadcastChannel, linkedToken, opened, stream) =
-            streamService.OpenOrHold(topicId, continuation ? "" : message, userId, cancellationToken);
+            streamService.OpenOrHold(topicId, continuation ? "" : message, userId, SignedIn.Account, cancellationToken);
 
         // Subscribe before emitting so no early reply chunks are lost
         var (subscription, carried) = streamService.Join(topicId, broadcastChannel);
@@ -636,6 +636,48 @@ public sealed class ChatHub(
     // are kept, since the composer holds them now.
     public async Task<ReturnedMessage> TakeBackQueued(string topicId, string queuedId) =>
         (await WithdrawAsync(topicId, queuedId)).Message!.ToReturned();
+
+    // Steer now: the caller's queued message sent into the running turn, which must be their own, to come
+    // in at its next tool boundary. Vouched for afresh before it leaves the queue, so a session signed
+    // out meanwhile is refused and the message keeps its place. Taken out of the queue and sent in one
+    // step, in the order the agent hears of turns, so no stop or queued turn's start falls between them.
+    // Its message is written on the stream when the running turn ends (StreamService.Finish).
+    public async Task SteerQueued(string topicId, string queuedId)
+    {
+        await SessionToReadAsync(topicId);
+        var vouching = await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, Context.ConnectionAborted);
+        if (vouching.Account is not { } vouched)
+        {
+            throw new HubException(vouching.Refusal);
+        }
+
+        var steered = await streamService.InAgentOrderAsync(async () =>
+        {
+            var steering = streamService.Steer(topicId, queuedId, SignedIn.Account);
+            if (steering.Message is not { } steer)
+            {
+                return steering;
+            }
+
+            if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer.Message, CancellationToken.None))
+            {
+                if (streamService.Unsteer(topicId, steer))
+                {
+                    return new Withdrawal(null, [], PersonTurns.NotLiveError);
+                }
+
+                await _turns.EndUnheardAsync(steer.Sender);
+            }
+
+            return steering;
+        });
+        if (steered.Message is not { } sent)
+        {
+            throw new HubException(steered.Refusal);
+        }
+
+        await _queueNews.TellOrLogAsync(sent.Sender, logger);
+    }
 
     // The caller's messages a stop handed back on this topic, in the order they were queued, for their
     // composer: taken once, so they land on whichever of the person's pages asks first.

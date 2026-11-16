@@ -49,7 +49,7 @@ public sealed class QueueDispatcher(
         try
         {
             var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
-            await streamService.StartAsync(turn, async () =>
+            var started = await streamService.StartAsync(turn, async () =>
             {
                 await _turns.WriteMessageAsync(sender, queued.Message);
                 if (vouching.Account is not { } account)
@@ -60,6 +60,12 @@ public sealed class QueueDispatcher(
 
                 await _turns.EmitAsync(new VouchedSender(sender, account), queued.Message, CancellationToken.None);
             });
+
+            // Its sender's turn is running now, which the pages are told so its sender may steer it.
+            if (started)
+            {
+                await _news.TellOrLogAsync(sender, logger);
+            }
         }
         catch (Exception ex) when (streamService.IsRunning(sender.TopicId, stream))
         {

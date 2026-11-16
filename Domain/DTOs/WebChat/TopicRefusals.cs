@@ -32,6 +32,10 @@ public static class TopicRefusals
     // was not sent, and it is in their message box, or will be when they next open the conversation.
     public const string ReturnedToComposer = "The reply was stopped, so this message went back to your message box.";
 
-    // A queued message is withdrawn by the person who sent it alone, whoever else sees the queue.
-    public const string NotTheSenders = "Only the person who sent this message can remove or edit it.";
+    // A queued message is withdrawn or steered with by the person who sent it alone, whoever else sees the queue.
+    public const string NotTheSenders = "Only the person who sent this message can remove, edit or steer with it.";
+
+    // Steer now cuts the running turn short, so only the person that turn is for may: never another
+    // member's turn, nor a turn an agent started for a schedule or a watch.
+    public const string NotYourTurn = "Only a reply to your own message can be steered. This message waits its turn.";
 }
