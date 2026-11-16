@@ -37,9 +37,6 @@ app.UseRouting();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 
-app.MapGet("/manifest.webmanifest", () =>
-    Results.Json(DashboardManifest.Build(), contentType: "application/manifest+json"));
-
 app.MapHub<MetricsHub>("/hubs/metrics");
 app.MapMetricsApi();
 
