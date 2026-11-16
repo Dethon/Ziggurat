@@ -34,6 +34,27 @@ public sealed class QueueCatchUpTests
             call.MethodName == "GetQueue" && call.Arguments.SequenceEqual(new object?[] { "topic-1" }));
     }
 
+    // A push read after the hub answered the page's question can land before that answer does: the
+    // answer, being older, changes nothing.
+    [Fact]
+    public async Task AnAnswerOlderThanAPushAlreadyShown_LeavesThePushsQueue()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        transport.Answer("GetQueue", _ =>
+        {
+            transport.Raise("OnQueueChanged", Queue(revision: 9,
+                Item("q1", "marta's words", "marta", "Marta"), Item("q2", "my words", "fran", "Fran")));
+            return Queue(revision: 7, Item("q1", "marta's words", "marta", "Marta"));
+        });
+
+        Seed(client, open: "topic-1");
+
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetQueue"));
+        await Eventually.Settle();
+        Chips(client).Select(chip => chip.Id).ShouldBe(["q1", "q2"]);
+    }
+
     // A phone asleep while the queue ran out missed the pushes that emptied it, and wakes on the topic
     // it already shows, opening nothing.
     [Fact]
