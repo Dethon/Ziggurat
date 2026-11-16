@@ -6,6 +6,7 @@ using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Composer;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Queue;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
@@ -194,6 +195,64 @@ public sealed class QueuedWithdrawalTests
 
         Sends(transport).ShouldBe([("the queued words", new AgentConfigPatch { Model = "picked/now" })]);
     }
+
+    // A retry sends a message that failed earlier, not the composer's: it leaves the returned words'
+    // model for the composer's own send.
+    [Fact]
+    public async Task ARetryWhileReturnedWordsWait_GoesOnThePickersChoice_AndLeavesTheirModelForTheComposer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
+        client.Dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Role = "user", Content = "failed earlier" }]));
+        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
+        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
+        var replies = AnswerEverySend(transport);
+        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+
+        client.Dispatcher.Dispatch(new RetryLastMessage("topic-1"));
+        await TestChat.Eventually(() => Sends(transport).Count == 1);
+        replies.ReleaseAll();
+        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
+        await TestChat.Eventually(() => Sends(transport).Count == 2);
+        replies.ReleaseAll();
+
+        Sends(transport).ShouldBe([("failed earlier", null), ("the queued words", queuedWith)]);
+    }
+
+    // Reworked while the reply still runs, the words wait in the queue again, on the model they had.
+    [Fact]
+    public async Task ATakenBackMessageQueuedAgainWhileTheReplyRuns_IsQueuedOnItsModel_ThenThePickersChoiceResumes()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
+        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
+        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
+        transport.Answer("EnqueueMessage", true);
+        var replies = AnswerEverySend(transport);
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
+        await TestChat.Eventually(() => Queued(transport).Count == 1);
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "and then"));
+        await TestChat.Eventually(() => Queued(transport).Count == 2);
+        replies.ReleaseAll();
+
+        Queued(transport).ShouldBe([("the queued words", queuedWith), ("and then", null)]);
+    }
+
+    private static IReadOnlyList<(string Message, AgentConfigPatch? Patch)> Queued(FakeHubConnection transport) =>
+    [
+        .. transport.Calls
+            .Where(call => call.MethodName == "EnqueueMessage")
+            .Select(call => ((string)call.Arguments[1]!, (AgentConfigPatch?)call.Arguments[3]))
+    ];
 
     private static IReadOnlyList<(string Message, AgentConfigPatch? Patch)> Sends(FakeHubConnection transport) =>
     [
