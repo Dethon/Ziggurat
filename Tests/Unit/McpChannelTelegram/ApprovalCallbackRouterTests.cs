@@ -14,7 +14,7 @@ public class ApprovalCallbackRouterTests
     private readonly Mock<ITelegramBotClient> _botClient = new();
 
     // The person whose message started the turn the approval belongs to.
-    private static readonly IReadOnlySet<long> Asker = new HashSet<long> { 1 };
+    private static readonly IReadOnlySet<long> _asker = new HashSet<long> { 1 };
 
     [Theory]
     [InlineData("tool_approve", "approved")]
@@ -22,7 +22,7 @@ public class ApprovalCallbackRouterTests
     [InlineData("tool_reject", "denied")]
     public async Task RegisterApproval_ThenCallback_ReturnsExpectedResult(string callbackPrefix, string expectedResult)
     {
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), _asker, CancellationToken.None);
 
         var query = CreateCallbackQuery($"{callbackPrefix}:{approvalId}");
         await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
@@ -34,7 +34,7 @@ public class ApprovalCallbackRouterTests
     [Fact]
     public async Task RegisterApproval_Timeout_ReturnsDenied()
     {
-        var (_, resultTask) = _sut.RegisterApproval(TimeSpan.FromMilliseconds(50), Asker, CancellationToken.None);
+        var (_, resultTask) = _sut.RegisterApproval(TimeSpan.FromMilliseconds(50), _asker, CancellationToken.None);
 
         var result = await resultTask;
         result.ShouldBe("denied");
@@ -47,7 +47,7 @@ public class ApprovalCallbackRouterTests
     [Fact]
     public async Task RegisterApproval_Timeout_EditsEveryCopyToSayItWasNotAnsweredInTime()
     {
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromMilliseconds(50), Asker, CancellationToken.None);
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromMilliseconds(50), _asker, CancellationToken.None);
         _sut.Shown(approvalId, _botClient.Object, 100, 7);
         _sut.Shown(approvalId, _botClient.Object, -200, 9);
 
@@ -67,7 +67,7 @@ public class ApprovalCallbackRouterTests
     public async Task RegisterApproval_Cancelled_EditsEveryCopyToSayItIsNoLongerAsked()
     {
         using var cts = new CancellationTokenSource();
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(30), Asker, cts.Token);
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(30), _asker, cts.Token);
         _sut.Shown(approvalId, _botClient.Object, 100, 7);
 
         await cts.CancelAsync();
@@ -82,7 +82,7 @@ public class ApprovalCallbackRouterTests
     public async Task RegisterApproval_Cancelled_ReturnsDenied()
     {
         using var cts = new CancellationTokenSource();
-        var (_, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(30), Asker, cts.Token);
+        var (_, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(30), _asker, cts.Token);
 
         cts.Cancel();
 
@@ -139,7 +139,7 @@ public class ApprovalCallbackRouterTests
     [Fact]
     public async Task HandleCallbackQueryAsync_Approve_EditsMessage()
     {
-        var (approvalId, _) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
+        var (approvalId, _) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), _asker, CancellationToken.None);
 
         var query = CreateCallbackQuery($"tool_approve:{approvalId}", withMessage: true);
         await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);
@@ -154,7 +154,7 @@ public class ApprovalCallbackRouterTests
     [Fact]
     public void CreateApprovalKeyboard_EveryButton_CarriesAFullGuidWithinTheCallbackLimit()
     {
-        var (approvalId, _) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
+        var (approvalId, _) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), _asker, CancellationToken.None);
 
         var buttons = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId).InlineKeyboard.First().ToList();
 
@@ -165,7 +165,7 @@ public class ApprovalCallbackRouterTests
     [Fact]
     public async Task HandleCallbackQueryAsync_SomebodyElsesTap_AnswersNotYoursAndStaysPending()
     {
-        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), _asker, CancellationToken.None);
 
         var query = CreateCallbackQuery($"tool_approve:{approvalId}", withMessage: true, fromUserId: 2);
         var handled = await _sut.HandleCallbackQueryAsync(_botClient.Object, query, CancellationToken.None);

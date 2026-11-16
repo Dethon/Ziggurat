@@ -33,7 +33,7 @@ public sealed class RedisChatMessageStore(
 
     // Longer than any turn runs, approvals waited on included: it only frees a conversation whose agent
     // died mid-turn.
-    private static readonly TimeSpan TurnInFlightExpiry = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan _turnInFlightExpiry = TimeSpan.FromMinutes(15);
 
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
@@ -108,7 +108,7 @@ public sealed class RedisChatMessageStore(
         var redisKey = ResolveRedisKey(context.Session);
 
         // Before the read: a rewrite made after it would be written over by this turn's append.
-        await store.MarkTurnInFlightAsync(redisKey, TurnInFlightExpiry);
+        await store.MarkTurnInFlightAsync(redisKey, _turnInFlightExpiry);
         var stored = await store.GetMessagesAsync(redisKey) ?? [];
         _failedTail.AddOrUpdate(context.Session, FailedTail.Of(stored));
 
