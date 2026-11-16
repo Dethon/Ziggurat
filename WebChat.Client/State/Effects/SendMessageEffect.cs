@@ -306,8 +306,7 @@ public sealed class SendMessageEffect : IDisposable
 
             // With its files. A message can now be nothing but attachments, so re-sending the
             // text alone would ask the model about a picture it was never given. None is still its
-            // own, never "whatever the composer holds": the composer's files and the model its
-            // returned words were queued with wait for the composer's own send.
+            // own, never "whatever the composer holds": the composer's files wait for its own send.
             _dispatcher.Dispatch(new SendMessage(
                 action.TopicId, lastUserMessage.Content, lastUserMessage.Attachments ?? []));
         }

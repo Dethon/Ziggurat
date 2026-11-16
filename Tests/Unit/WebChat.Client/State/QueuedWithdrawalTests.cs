@@ -131,54 +131,10 @@ public sealed class QueuedWithdrawalTests
         client.Composer.State.For("topic-1").ShouldAllBe(file => file.Status == AttachmentStatus.Ready);
     }
 
-    // A message taken back to be reworked was queued on a model of its sender's choosing: the composer's
-    // next send goes on it, whatever the picker shows now, and the send after that on the picker's.
+    // Words handed back to the composer are the person's to send again as they choose: they go out on
+    // whatever the picker shows, never on a model held out of sight from when they were queued.
     [Fact]
-    public async Task ATakenBackMessage_IsSentAgainOnTheModelItWasQueuedWith_ThenThePickersChoiceResumes()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
-        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
-        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
-        var replies = AnswerEverySend(transport);
-        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
-        await TestChat.Eventually(() => Sends(transport).Count == 1);
-        replies.ReleaseAll();
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "and then"));
-        await TestChat.Eventually(() => Sends(transport).Count == 2);
-        replies.ReleaseAll();
-
-        Sends(transport).ShouldBe([("the queued words", queuedWith), ("and then", null)]);
-    }
-
-    // Queued on the agent's own model, it goes out on that one, though the person has picked another since.
-    [Fact]
-    public async Task AMessageAStopReturnedQueuedOnTheAgentsOwnModel_IsSentOnIt_ThoughThePickerShowsAnother()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
-        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on default", [], null)]);
-        var replies = AnswerEverySend(transport);
-        client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/since"));
-        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "queued on default"));
-        await TestChat.Eventually(() => Sends(transport).Count == 1);
-        replies.ReleaseAll();
-
-        Sends(transport).ShouldBe([("queued on default", null)]);
-    }
-
-    // Picking a model after the words came back is the person's choice for them, and the send goes on it.
-    [Fact]
-    public async Task PickingAModelAfterTheWordsCameBack_SendsThemOnThePick()
+    public async Task ATakenBackMessage_IsSentAgainOnThePickersChoice_NotTheModelItWasQueuedWith()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
@@ -188,63 +144,34 @@ public sealed class QueuedWithdrawalTests
         client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
         await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
 
-        client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/now"));
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
         await TestChat.Eventually(() => Sends(transport).Count == 1);
         replies.ReleaseAll();
 
-        Sends(transport).ShouldBe([("the queued words", new AgentConfigPatch { Model = "picked/now" })]);
+        Sends(transport).ShouldBe([("the queued words", null)]);
     }
 
-    // A retry sends a message that failed earlier, not the composer's: it leaves the returned words'
-    // model for the composer's own send.
+    // Reworked while the reply still runs, the words wait in the queue again, on the picker's choice.
     [Fact]
-    public async Task ARetryWhileReturnedWordsWait_GoesOnThePickersChoice_AndLeavesTheirModelForTheComposer()
+    public async Task ATakenBackMessageQueuedAgainWhileTheReplyRuns_IsQueuedOnThePickersChoice()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
-        client.Dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Role = "user", Content = "failed earlier" }]));
-        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
-        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
-        var replies = AnswerEverySend(transport);
-        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-
-        client.Dispatcher.Dispatch(new RetryLastMessage("topic-1"));
-        await TestChat.Eventually(() => Sends(transport).Count == 1);
-        replies.ReleaseAll();
-        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
-        await TestChat.Eventually(() => Sends(transport).Count == 2);
-        replies.ReleaseAll();
-
-        Sends(transport).ShouldBe([("failed earlier", null), ("the queued words", queuedWith)]);
-    }
-
-    // Reworked while the reply still runs, the words wait in the queue again, on the model they had.
-    [Fact]
-    public async Task ATakenBackMessageQueuedAgainWhileTheReplyRuns_IsQueuedOnItsModel_ThenThePickersChoiceResumes()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
-        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
-        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
+        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], new AgentConfigPatch { Model = "picked/then" }));
         transport.Answer("EnqueueMessage", true);
         var replies = AnswerEverySend(transport);
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/now"));
         client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
         await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
 
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
         await TestChat.Eventually(() => Queued(transport).Count == 1);
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "and then"));
-        await TestChat.Eventually(() => Queued(transport).Count == 2);
         replies.ReleaseAll();
 
-        Queued(transport).ShouldBe([("the queued words", queuedWith), ("and then", null)]);
+        Queued(transport).ShouldBe([("the queued words", new AgentConfigPatch { Model = "picked/now" })]);
     }
 
     private static IReadOnlyList<(string Message, AgentConfigPatch? Patch)> Queued(FakeHubConnection transport) =>

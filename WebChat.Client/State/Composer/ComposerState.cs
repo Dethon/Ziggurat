@@ -25,10 +25,6 @@ public sealed record ComposerAttachment
     public string? Error { get; init; }
 }
 
-// A returned message's config patch, held apart from "none returned": a null Patch is a message queued
-// on the agent's own model, which must not go out on whatever the picker shows instead.
-public sealed record ReturnedPatch(AgentConfigPatch? Patch);
-
 public sealed record ComposerState
 {
     public IReadOnlyDictionary<string, IReadOnlyList<ComposerAttachment>> AttachmentsByTopic { get; init; }
@@ -42,12 +38,6 @@ public sealed record ComposerState
     // One dictation at a time, and not per topic: the microphone is a property of the screen
     // rather than of a conversation, and leaving a topic ends whatever it was recording.
     public DictationState Dictation { get; init; } = new();
-
-    // The model and effort the words handed back to a topic's composer (ReturnToComposer) were queued
-    // with, for that composer's next send alone: a message reworked goes out as it was queued, whatever
-    // the picker shows now, and the picker's choice resumes after it, or as soon as the person picks.
-    public IReadOnlyDictionary<string, ReturnedPatch> ReturnedPatches { get; init; } =
-        new Dictionary<string, ReturnedPatch>();
 
     public IReadOnlyList<ComposerAttachment> For(string? topicId) =>
         topicId is null ? [] : AttachmentsByTopic.GetValueOrDefault(topicId, []);

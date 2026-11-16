@@ -46,14 +46,10 @@ public sealed class StreamingService(
             var sending = attachments is null
                 ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
                 : [];
-            var returned = attachments is null ? ReturnedPatchOf(topic) : null;
             var outgoing = new Outgoing(
-                topic, message, correlationId, returned is { } back ? back.Patch : GetConfigPatch(topic),
+                topic, message, correlationId, GetConfigPatch(topic),
                 attachments ?? ComposerSelectors.References(sending),
-                sending)
-            {
-                Returned = returned
-            };
+                sending);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -90,11 +86,7 @@ public sealed class StreamingService(
                 ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
                 : [];
             var references = attachments ?? ComposerSelectors.References(sending);
-            var returned = attachments is null ? ReturnedPatchOf(topic) : null;
-            var outgoing = new Outgoing(topic, message, null, returned is { } back ? back.Patch : GetConfigPatch(topic), references, sending)
-            {
-                Returned = returned
-            };
+            var outgoing = new Outgoing(topic, message, null, GetConfigPatch(topic), references, sending);
 
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (seen.HasStream)
@@ -204,7 +196,6 @@ public sealed class StreamingService(
     // One message on its way out: what to say, where it goes, and the composer entries the send
     // empties when it lands. Six arguments travelled together through four methods before this.
     // RerunOf: the message the conversation ends on, answered again (a reroll).
-    // Returned: the patch of words handed back to the composer that this send carries, spent once it lands.
     private sealed record Outgoing(
         StoredTopic Topic,
         string Message,
@@ -213,10 +204,7 @@ public sealed class StreamingService(
         IReadOnlyList<AttachmentReference>? Attachments,
         IReadOnlyList<ComposerAttachment> Sending,
         string? RerunOf = null,
-        bool Continuation = false)
-    {
-        public ReturnedPatch? Returned { get; init; }
-    }
+        bool Continuation = false);
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
@@ -241,11 +229,6 @@ public sealed class StreamingService(
         AgentSettingsSelectors.GetConfigPatch(
             agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
 
-    // A send from the composer takes the patch its returned words were queued with, if any, in place of
-    // the picker's; a retry brings its own files and is not the composer's.
-    private ReturnedPatch? ReturnedPatchOf(StoredTopic topic) =>
-        composerStore.State.ReturnedPatches.GetValueOrDefault(topic.TopicId);
-
     // By local id, so a file picked during the send's round trip stays in the composer instead of
     // being swept away with the ones that travelled.
     private void ClearSent(Outgoing sent)
@@ -253,11 +236,6 @@ public sealed class StreamingService(
         if (sent.Sending.Count > 0)
         {
             dispatcher.Dispatch(new ClearAttachments(sent.Topic.TopicId, sent.Sending.Select(a => a.LocalId).ToList()));
-        }
-
-        if (sent.Returned is { } returned)
-        {
-            dispatcher.Dispatch(new ReturnedPatchSent(sent.Topic.TopicId, returned));
         }
     }
 

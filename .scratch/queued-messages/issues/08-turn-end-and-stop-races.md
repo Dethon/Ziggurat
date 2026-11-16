@@ -15,7 +15,7 @@ A turn must end once, however it ends.
 
 **Withdrawing after a stop.** A Remove or Edit that loses to a Stop answers "already sent", although the message went back to the composer. It must say the message went back to the composer.
 
-**Edit keeps the model.** Edit drops the queued message's config patch, so the message is re-sent on whatever the picker shows now. The composer must keep the returned patch and send with it.
+**Edit keeps the model.** Edit drops the queued message's config patch, so the message is re-sent on whatever the picker shows now. The composer must keep the returned patch and send with it. *(Reverted after review: the user chose that returned words go out on the picker's choice; see the notes.)*
 
 **Blocked by:** 06.
 
@@ -26,7 +26,7 @@ A turn must end once, however it ends.
 - [x] A message admitted concurrently with a stop is returned to its sender, never emitted (hub seam, run under two concurrent test processes).
 - [x] A dispatch interrupted by a stop between writing and emitting returns the message, and the page shows it in the composer, not as a sent message (hub and client seams).
 - [x] A Remove or Edit that loses to a Stop gets a refusal that says the message went back to the composer (hub seam).
-- [x] A taken-back or returned message is sent again on the model it was queued with (client seam).
+- [x] ~~A taken-back or returned message is sent again on the model it was queued with (client seam).~~ Reverted after review: it is sent on the picker's choice (`QueuedWithdrawalTests`).
 - [x] The queue E2E collection still passes.
 
 **Notes from the implementation:**
@@ -34,7 +34,8 @@ A turn must end once, however it ends.
 - One semaphore (`StreamService.InAgentOrderAsync`, every topic, in-memory steps only) orders what reaches the agent: the stop's locked step then its cancel, a queued turn's start (claim, write, emit) and `SendTurn`'s emit. The stop now ends the stream before the cancel goes out, so a send in between opens a stream of its own; its emit waits for the cancel.
 - The dispatcher vouches before the turn starts, so "written, not emitted" no longer exists; a refused sender's message is still written before the refusal.
 - A message admitted as the stop lands is returned (`Queueing.Returned`) and `EnqueueMessage` answers true. The topic's last stopped stream and the ids it returned are kept until the topic is deleted, which is what the Remove/Edit refusal (`TopicRefusals.ReturnedToComposer`) reads, so it holds after a page took them.
-- Edit keeps the model: `ComposerState.ReturnedPatches` holds, per topic, the patch of the earliest returned message (wrapped, so "queued on the agent's own" is not "none"); a patch already held wins over a later return. The composer's next send there goes on it, whether it opens a stream or is queued again; it is spent when that send lands, and any pick in the model or effort menu drops it. A retry now sends its own files (none is `[]`, not null), so it neither takes the held patch nor, as it used to, the composer's ready files. Not shown on screen: a person who deletes the returned words sends their next message on that topic on the held model.
+- **Reverted after the branch review (user's call):** the held model below was not in the spec and sent the next message on a model the picker never showed, so it is gone; returned words go out on the picker's choice. The retry's own files (`[]`, not the composer's) stay.
+- (Superseded) Edit keeps the model: `ComposerState.ReturnedPatches` holds, per topic, the patch of the earliest returned message (wrapped, so "queued on the agent's own" is not "none"); a patch already held wins over a later return. The composer's next send there goes on it, whether it opens a stream or is queued again; it is spent when that send lands, and any pick in the model or effort menu drops it. A retry now sends its own files (none is `[]`, not null), so it neither takes the held patch nor, as it used to, the composer's ready files. Not shown on screen: a person who deletes the returned words sends their next message on that topic on the held model.
 - An installed page from before, which never takes returns, now hears `EnqueueMessage` answer true for a message a stop returned as it was admitted, so it clears the words and does not get them back; before, it re-sent them behind the cancel.
 - A queued turn that started just before the stop is the turn the stop cancels: its message stays drawn and is not returned.
 - The client test that a returned message is never drawn (`QueuedSendTests`) was green on its first run, the hub no longer having a written-not-emitted state: it pins the page's half.
