@@ -338,7 +338,7 @@ public sealed class McpAgent : DisposableAgent
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
-        options = options is null or TurnRunOptions
+        options = AreTheAgentsToBuild(options)
             ? CreateRunOptions(session, conversationContext, turnConfig, (options as TurnRunOptions)?.Steering)
             : options;
 
@@ -352,6 +352,10 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
+    // None, or the group's, which carry what the turn needs beside the options rather than in their
+    // place: the agent builds its own either way. Anything else is a caller's replacing them.
+    private static bool AreTheAgentsToBuild(AgentRunOptions? options) => options is null or TurnRunOptions;
+
     // One resolution site for the whole patch, and one rejection rule for both fields: fall
     // back to the configured value and warn. A bad override never costs the user a turn, but
     // it never disappears silently either.
@@ -361,7 +365,7 @@ public sealed class McpAgent : DisposableAgent
         // instructions, tools, reasoning effort and the config patch. Non-channel callers
         // (harnesses, benchmarks) legitimately do this, so it stays possible — but an agent
         // running stripped of what makes it that agent must not look like a normal turn.
-        if (suppliedOptions is not null and not TurnRunOptions)
+        if (!AreTheAgentsToBuild(suppliedOptions))
         {
             _logger?.LogWarning(
                 "Agent '{AgentName}' ran with caller-supplied AgentRunOptions; this turn uses none of " +
