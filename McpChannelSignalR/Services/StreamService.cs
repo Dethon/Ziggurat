@@ -515,6 +515,17 @@ public sealed class StreamService(
         }
     }
 
+    // A deleted topic: its stream cancelled, its queue dropped and whatever a stop returned in it
+    // forgotten, since nothing said in a deleted conversation is kept.
+    public void Forget(string topicId)
+    {
+        lock (_streamLock)
+        {
+            CancelStream(topicId);
+            _returned.Keys.Where(key => key.TopicId == topicId).ToList().ForEach(key => _returned.Remove(key));
+        }
+    }
+
     public void CancelStream(string topicId)
     {
         lock (_streamLock)

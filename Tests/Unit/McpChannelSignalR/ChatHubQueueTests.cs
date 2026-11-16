@@ -482,6 +482,27 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second", "third"]);
     }
 
+    // A deleted conversation keeps nothing of what was said or queued in it, returned messages included.
+    [Fact]
+    public async Task DeletingTheTopic_DropsWhatAStopReturned()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        _store.Setup(s => s.GetTopicAsync("home", "jack", 7, TopicId))
+            .ReturnsAsync(new TopicMetadata(TopicId, 7, 42, "jack", "Chat", DateTimeOffset.UtcNow, null,
+                OwnerId: "fran", TenantId: "home", Shared: true));
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        await fran.DeleteTopic("jack", TopicId, 7, 42);
+
+        (await marta.TakeReturned(TopicId)).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {

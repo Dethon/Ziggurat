@@ -976,7 +976,7 @@ public sealed class ChatHub(
         });
 
         sessionService.EndSession(topicId);
-        streamService.CancelStream(topicId);
+        streamService.Forget(topicId);
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
         await threadStore.DeleteAsync(new AgentKey(identity.ConversationId, agentId));
