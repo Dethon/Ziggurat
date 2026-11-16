@@ -7,6 +7,13 @@ namespace WebChat.Client.State.Queue;
 // The hub told the page a topic's queue as it is now.
 public record QueueChanged(QueueChangedNotification Notification) : IAction;
 
+// The reader takes their own queued message back into the composer, to rework and send again.
+public record EditQueuedMessage(string TopicId, string QueuedId) : IAction;
+
+// The hub let go of a message this page withdrew: its chip goes now, ahead of the hub's own telling,
+// so a second press does not ask again about a message already withdrawn.
+public record QueuedMessageWithdrawn(string TopicId, string QueuedId) : IAction;
+
 // A topic's queue as the hub last told it, with the revision it was read at.
 public sealed record TopicQueue(IReadOnlyList<QueuedMessageItem> Items, long Revision);
 
@@ -56,6 +63,13 @@ public sealed class QueueStore : IDisposable
         QueueChanged { Notification: var told }
             when !state.ByTopic.TryGetValue(told.TopicId, out var shown) || told.Revision > shown.Revision =>
             state with { ByTopic = state.ByTopic.SetItem(told.TopicId, new TopicQueue(told.Items, told.Revision)) },
+        QueuedMessageWithdrawn { TopicId: var topicId, QueuedId: var queuedId }
+            when state.ByTopic.TryGetValue(topicId, out var shown) =>
+            state with
+            {
+                ByTopic = state.ByTopic.SetItem(
+                    topicId, shown with { Items = [.. shown.Items.Where(item => item.Id != queuedId)] })
+            },
         _ => state
     };
 }

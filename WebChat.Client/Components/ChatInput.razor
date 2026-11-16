@@ -69,7 +69,7 @@
             if (dictation.Transcript is { } transcript && transcript.Stamp != _lastTranscriptStamp)
             {
                 _lastTranscriptStamp = transcript.Stamp;
-                _inputText = ComposerSelectors.Append(_inputText, transcript.Text);
+                _inputText = ComposerSelectors.Place(_inputText, transcript);
             }
 
             StateHasChanged();

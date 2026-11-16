@@ -41,6 +41,11 @@ public record DictationTranscribed(string Text) : IAction;
 // land in the box as a transcript does, for the person to send.
 public record OfferComposerText(string Text) : IAction;
 
+// Queued messages given back to their sender's composer on a topic — one taken back to be edited —
+// in the order they were queued: their words before whatever is typed there, each joined by a blank
+// line, and their files back as ready attachments, already uploaded.
+public record ReturnToComposer(string TopicId, IReadOnlyList<ReturnedMessage> Messages) : IAction;
+
 // Thrown away: slid to discard, the trash button, Escape, a topic change, or a hidden tab. No
 // request was made and nothing reaches the composer.
 public record DictationDiscarded : IAction;
@@ -104,6 +109,8 @@ public sealed class ComposerStore : IDisposable
         {
             Dictation = state.Dictation with { Transcript = new PendingTranscript(a.Text, Stamp()) }
         },
+
+        ReturnToComposer a => Returned(state, a),
 
         DictationDiscarded => state with
         {
@@ -170,6 +177,35 @@ public sealed class ComposerStore : IDisposable
 
         _ => state
     };
+
+    private static ComposerState Returned(ComposerState state, ReturnToComposer returned)
+    {
+        var text = string.Join(
+            ComposerSelectors.ReturnedSeparator,
+            returned.Messages.Select(m => m.Content).Where(content => !string.IsNullOrWhiteSpace(content)));
+        IReadOnlyList<ComposerAttachment> files =
+        [
+            .. state.For(returned.TopicId),
+            .. returned.Messages.SelectMany(m => m.Attachments).Select(reference => new ComposerAttachment
+            {
+                LocalId = Guid.NewGuid().ToString("N"),
+                FileName = reference.FileName,
+                MediaType = reference.MediaType,
+                SizeBytes = reference.SizeBytes,
+                Status = AttachmentStatus.Ready,
+                PercentComplete = 100,
+                Reference = reference
+            })
+        ];
+
+        return state with
+        {
+            AttachmentsByTopic = state.AttachmentsByTopic.With(returned.TopicId, files),
+            Dictation = text.Length == 0
+                ? state.Dictation
+                : state.Dictation with { Transcript = new PendingTranscript(text, Stamp(), TextPlacement.Before) }
+        };
+    }
 
     private static ComposerState Dictating(ComposerState state, DictationStatus status) => state with
     {

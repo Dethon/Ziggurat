@@ -36,4 +36,7 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         IReadOnlyList<AttachmentReference>? attachments = null) =>
         liveConnection.InvokeAsync<bool>(
             "EnqueueMessage", topicId, message, correlationId, configPatch, attachments);
+
+    public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync<ReturnedMessage>("TakeBackQueued", topicId, queuedId);
 }

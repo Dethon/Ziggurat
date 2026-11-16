@@ -25,9 +25,17 @@ public enum SendControl
 // The composer's controls: Send or the microphone, and Stop beside them while the reply runs.
 public sealed record ComposerControls(SendControl Main, bool Stop);
 
+// Where words handed to the composer go: after what is typed there (a dictation, a fork's words), or
+// before it (a message given back from the queue, which was written first).
+public enum TextPlacement
+{
+    After,
+    Before
+}
+
 // Words waiting to be put into the composer. The stamp is what makes the same sentence dictated
 // twice two events rather than one: a person who repeats themselves must still get both.
-public sealed record PendingTranscript(string Text, long Stamp);
+public sealed record PendingTranscript(string Text, long Stamp, TextPlacement Placement = TextPlacement.After);
 
 public sealed record DictationState
 {

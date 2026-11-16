@@ -26,4 +26,5 @@ public interface IChatMessagingService
     Task<HubResult<bool>> EnqueueMessageAsync(
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
         IReadOnlyList<AttachmentReference>? attachments = null);
+    Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId);
 }

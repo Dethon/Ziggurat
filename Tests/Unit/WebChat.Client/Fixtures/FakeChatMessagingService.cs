@@ -214,4 +214,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
             ? HubResult<bool>.NotLive
             : HubResult<bool>.Answered(_enqueueResult));
     }
+
+    public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
+        Task.FromResult(HubResult<ReturnedMessage>.NotLive);
 }

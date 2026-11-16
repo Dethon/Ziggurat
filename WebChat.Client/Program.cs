@@ -70,6 +70,7 @@ _ = app.Services.GetRequiredService<TopicFilterEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<OfferedApprovalsEffect>();
 _ = app.Services.GetRequiredService<RingingAlertsEffect>();
+_ = app.Services.GetRequiredService<QueueEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<AccessChangedEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();

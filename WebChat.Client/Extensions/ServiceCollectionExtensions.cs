@@ -120,6 +120,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicShareEffect>();
             services.AddScoped<OfferedApprovalsEffect>();
             services.AddScoped<RingingAlertsEffect>();
+            services.AddScoped<QueueEffect>();
 
             return services;
         }
