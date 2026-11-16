@@ -4,6 +4,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Helpers;
 using WebChat.Client.State.Composer;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Queue;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -20,7 +21,9 @@ public sealed class QueueEffect : IDisposable
     private readonly ILogger<QueueEffect> _logger;
     private readonly IDisposable[] _registrations;
 
-    public QueueEffect(Dispatcher dispatcher, IChatMessagingService messagingService, ILogger<QueueEffect> logger)
+    public QueueEffect(
+        Dispatcher dispatcher, TopicsStore topics, ConnectionStore connection, IChatMessagingService messagingService,
+        ILogger<QueueEffect> logger)
     {
         _dispatcher = dispatcher;
         _messagingService = messagingService;
@@ -33,6 +36,15 @@ public sealed class QueueEffect : IDisposable
                 if (a.TopicId is { } topicId)
                 {
                     CatchUpAsync(topicId).LogFaults(logger, nameof(SelectTopic));
+                }
+            }),
+
+            // A page not live while the queue changed (a phone asleep) wakes on the topic it already shows.
+            connection.BecameLiveAgain.Subscribe(_ =>
+            {
+                if (topics.State.SelectedTopicId is { } topicId)
+                {
+                    CatchUpAsync(topicId).LogFaults(logger, nameof(ConnectionStore.BecameLiveAgain));
                 }
             }),
             dispatcher.RegisterHandler<EditQueuedMessage>(a =>

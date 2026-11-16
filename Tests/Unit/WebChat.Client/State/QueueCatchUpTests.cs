@@ -34,6 +34,25 @@ public sealed class QueueCatchUpTests
             call.MethodName == "GetQueue" && call.Arguments.SequenceEqual(new object?[] { "topic-1" }));
     }
 
+    // A phone asleep while the queue ran out missed the pushes that emptied it, and wakes on the topic
+    // it already shows, opening nothing.
+    [Fact]
+    public async Task BecomingLiveAgainOnTheTopic_ShowsTheQueueAsItIsNow()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetQueue"));
+        transport.Raise("OnQueueChanged", Queue(revision: 5, Item("q1", "marta's words", "marta", "Marta")));
+        await TestChat.Eventually(() => Chips(client).Count == 1);
+        transport.Answer("GetQueue", Queue(revision: 9));
+
+        await transport.RaiseReconnectingAsync(null);
+        await transport.RaiseReconnectedAsync("connection-2");
+
+        await TestChat.Eventually(() => Chips(client).Count == 0);
+    }
+
     private static QueueChangedNotification Queue(long revision, params QueuedMessageItem[] items) =>
         new("topic-1", items, revision, "default");
 
