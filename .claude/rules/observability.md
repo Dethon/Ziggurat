@@ -74,7 +74,8 @@ fail — it keeps trying.
 - **`ConnectionStore` is the only source of connection status**: connecting, live or reconnecting,
   with no permanent disconnected state, because the module never gives up. The page-load path does
   not report a failed request as a lost connection. The indicator lives in the layout, so every page
-  shows it; the overview reads the same store.
+  shows it — the overview included, which no longer draws a second one (the badge keeps
+  `.connection-status`, which the overview's E2E reads).
 - **`MetricsCatchUp` walks the family table** for the range each family already holds, so a
   recovery does not move the user's group-by, metric or time choices. It is awaited as the last step
   of becoming live. On the **first** epoch it is normally skipped, because the ordinary page load

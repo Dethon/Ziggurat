@@ -67,8 +67,6 @@
     private static double AvgDuration(SchedulesState state) =>
         state.Events.Count > 0 ? state.Events.Average(e => e.DurationMs) : 0;
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
 
     private string _sortColumn = "Time";
     private bool _sortAsc;

@@ -69,8 +69,6 @@
         new("Error Type", nameof(ErrorDimension.ErrorType)),
     ];
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
 
     private static string ShortName(string name)
     {
