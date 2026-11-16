@@ -512,7 +512,9 @@ public sealed class StreamService(
             return stopped;
         });
 
-    private async Task<T> InAgentOrderAsync<T>(Func<Task<T>> step)
+    // A step that tells the agent of a turn, taken in turn with the starts and stops above: a send that
+    // opened a stream while a stop was ending the last one reaches the agent after that stop's cancel.
+    public async Task<T> InAgentOrderAsync<T>(Func<Task<T>> step)
     {
         await _agentOrder.WaitAsync();
         try

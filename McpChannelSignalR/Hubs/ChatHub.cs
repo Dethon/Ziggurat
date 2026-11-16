@@ -536,7 +536,7 @@ public sealed class ChatHub(
             await threadStore.TopicOfAsync(session), sender.SpaceSlug, "OnStreamStarted",
             new StreamStartedNotification(topicId, sender.SpaceSlug));
 
-        await _turns.EmitAsync(vouched, turn, cancellationToken);
+        await streamService.InAgentOrderAsync(() => _turns.EmitAsync(vouched, turn, cancellationToken));
 
         await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
         {

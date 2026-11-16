@@ -47,6 +47,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     private readonly HouseholdSpacesAccounts _households = new();
     private readonly Lock _receivedLock = new();
     private readonly List<ChannelMessageNotification> _received = [];
+    private readonly List<string> _arrived = [];
     private readonly string _uploads = Path.Combine(Path.GetTempPath(), $"queue-uploads-{Guid.NewGuid():N}");
     private readonly AttachmentStore _attachmentStore;
     private readonly AttachmentService _attachments;
@@ -529,6 +530,32 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         (await SentSoFarAsync()).ShouldBe(["first"]);
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second", "third"]);
+    }
+
+    // The stop ends the stream before the agent hears the cancel, so a send in between opens a stream of
+    // its own: its message must reach the agent after the cancel, or the cancel would take its turn too.
+    [Fact]
+    public async Task ASendOpeningAStreamAsTheStopReachesTheAgent_ReachesItAfterTheCancel_AndIsAnswered()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var stopped = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+
+        Wire? next = null;
+        _inboxClock.WhenNextPutInTheInbox(() =>
+        {
+            next = Read(marta.SendMessage(TopicId, "new", "c-2", null, null, CancellationToken.None));
+            _inboxClock.WaitForAnotherPut(TimeSpan.FromSeconds(2));
+        });
+        await fran.CancelTopic(TopicId);
+        await stopped.Ended;
+        await AgentWasSentAsync("new");
+
+        (await ArrivedSoFarAsync()).ShouldBe(["first", "cancel", "new"]);
+        await FinishTurnAsync("answer new");
+        await next!.Ended;
+        next.Said().ShouldBe(["user: new", "agent: answer new"]);
     }
 
     // A deleted conversation keeps nothing of what was said or queued in it, returned messages included.
@@ -1035,25 +1062,39 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     // Everything the agent was sent until now, the inbox drained first.
     private async Task<IReadOnlyList<string>> SentSoFarAsync()
     {
-        var items = await _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        await DrainInboxAsync();
+        return Sent();
+    }
+
+    // What reached the agent, in the order it arrived: each message's words, and "cancel" for a stop's.
+    private async Task<IReadOnlyList<string>> ArrivedSoFarAsync()
+    {
+        await DrainInboxAsync();
         lock (_receivedLock)
         {
-            _received.AddRange(items.Select(i => i.Message).OfType<ChannelMessageNotification>());
+            return [.. _arrived];
         }
-
-        return Sent();
     }
 
     private async Task AgentWasSentAsync(string content) =>
         await Eventually.Until(async () =>
         {
-            var items = await _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+            await DrainInboxAsync();
             lock (_receivedLock)
             {
-                _received.AddRange(items.Select(i => i.Message).OfType<ChannelMessageNotification>());
                 return _received.Any(m => m.Content == content);
             }
         }, $"the agent is sent \"{content}\"");
+
+    private async Task DrainInboxAsync()
+    {
+        var items = await _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        lock (_receivedLock)
+        {
+            _received.AddRange(items.Select(i => i.Message).OfType<ChannelMessageNotification>());
+            _arrived.AddRange(items.Select(i => i.Message?.Content ?? (i.Cancel is not null ? "cancel" : i.Kind.ToString())));
+        }
+    }
 
     // As send_reply finishes a turn: its last words, marked complete.
     private Task FinishTurnAsync(string answer) =>
