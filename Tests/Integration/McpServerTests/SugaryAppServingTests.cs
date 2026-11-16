@@ -72,4 +72,17 @@ public sealed class SugaryAppServingTests : IDisposable
         session["estimates"]!.GetValue<bool>().ShouldBeTrue();
         session["labels"]!.GetValue<bool>().ShouldBeTrue();
     }
+
+    // What the app keeps on the phone for one person — a meal she has not saved — is shown to nobody
+    // else signed in there after her, so the app is told who is signed in now.
+    [Fact]
+    public async Task TheSession_NamesWhoThePhoneIsSignedInAs()
+    {
+        await using var server = await SugaryServer.StartAsync(webRoot: _webRoot);
+
+        (await server.As(SugaryServer.Her).GetFromJsonAsync<JsonNode>("/api/session"))!["person"]!.GetValue<string>()
+            .ShouldBe(SugaryServer.Her.UserId);
+        (await server.As(SugaryServer.Him).GetFromJsonAsync<JsonNode>("/api/session"))!["person"]!.GetValue<string>()
+            .ShouldBe(SugaryServer.Him.UserId);
+    }
 }

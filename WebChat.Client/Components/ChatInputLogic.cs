@@ -1,3 +1,5 @@
+using WebChat.Client.Models;
+
 namespace WebChat.Client.Components;
 
 public static class ChatInputLogic
@@ -17,4 +19,12 @@ public static class ChatInputLogic
         && !uploadInFlight
         && capabilityRefusal is null
         && (!string.IsNullOrWhiteSpace(inputText) || readyAttachments > 0);
+
+    // What the composer says in a topic the viewer may read and not write in — another person's
+    // private one, seen by whoever sees all conversations — rather than taking a message the hub
+    // refuses, which showed as sent and then as the server unreachable.
+    public static string? ReadOnlyNote(StoredTopic? topic, string? viewerId) =>
+        topic is null || topic.MayContinue(viewerId)
+            ? null
+            : $"{topic.OwnerName ?? "Someone else"}'s conversation is private: you can read it, and only they can write in it.";
 }

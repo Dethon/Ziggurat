@@ -12,6 +12,9 @@ public record ClearMessages(string TopicId) : IAction;
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
+// The message a retry sends again, taken back so the retry stands in its place.
+public record RemoveLastMessage(string TopicId) : IAction;
+
 public record RetryLastMessage(string TopicId) : IAction;
 
 public record ClearAllMessages : IAction;
@@ -62,6 +65,11 @@ public sealed class MessagesStore : IDisposable
             },
 
         RemoveTrailingErrors => state,
+
+        RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) && msgs.Count > 0 =>
+            state with { MessagesByTopic = state.MessagesByTopic.With(a.TopicId, msgs.Take(msgs.Count - 1).ToList()) },
+
+        RemoveLastMessage => state,
 
         ClearMessages a => state with
         {

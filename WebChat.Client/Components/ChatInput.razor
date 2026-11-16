@@ -8,6 +8,7 @@
 @inject ConnectionStore ConnectionStore
 @inject ComposerStore ComposerStore
 @inject AgentSettingsStore AgentSettingsStore
+@inject UserIdentityStore UserIdentityStore
 @inject DictationEffect Dictation
 
 @code {
@@ -31,6 +32,7 @@
     private ElementReference _micRef;
     private DictationState _dictation = new();
     private long _lastTranscriptStamp;
+    private string? _readOnlyNote;
 
     protected override void OnInitialized()
     {
@@ -73,6 +75,11 @@
             StateHasChanged();
         });
 
+        // Whether this viewer may write in the open topic: the topic, its sharing and who is signed in
+        // can each change it.
+        Subscribe(TopicsStore.StateObservable, state => state.Topics, _ => UpdateDisabledState());
+        Subscribe(UserIdentityStore.StateObservable, state => state.SignedIn?.UserId, _ => UpdateDisabledState());
+
         // Switching model is the fix for a capability refusal, so the refusal has to follow it.
         Subscribe(AgentSettingsStore.StateObservable, state => state.ByAgent, _ => UpdateAttachments());
     }
@@ -96,7 +103,9 @@
 
     private void UpdateDisabledState()
     {
-        _disabled = string.IsNullOrEmpty(_selectedAgentId) || !_isConnected;
+        _readOnlyNote = ChatInputLogic.ReadOnlyNote(
+            TopicsStore.State.Topics.FirstOrDefault(t => t.TopicId == _topicId), UserIdentityStore.State.SignedIn?.UserId);
+        _disabled = string.IsNullOrEmpty(_selectedAgentId) || !_isConnected || _readOnlyNote is not null;
     }
 
     private void UpdateAttachments()
@@ -201,6 +210,11 @@
      @ondragenter="HandleDragEnter"
      @ondragleave="HandleDragLeave"
      @ondrop="HandleDragLeave">
+
+    @if (_readOnlyNote is not null)
+    {
+        <div class="composer-hint" role="note">@_readOnlyNote</div>
+    }
 
     @if (Refusal is not null)
     {

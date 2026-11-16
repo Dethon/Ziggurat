@@ -97,6 +97,7 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
                 .WithEnvironment("VFSBRIDGEURL", $"http://host.docker.internal:{bridgePort}{VfsBridgeApi.Route}")
                 // The deployment secret its /mcp asks for, as compose hands it every MCP server.
                 .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+                .WithCallTokensFromTheTestProcess()
                 // The published port answers before Kestrel has bound anything — Docker's proxy
                 // accepts the connection and the app then resets it — so a TCP check returns while
                 // the server is still starting and every test fails on a reset. `GET /mcp` is the

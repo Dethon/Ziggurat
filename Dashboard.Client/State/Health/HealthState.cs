@@ -1,6 +1,8 @@
 namespace Dashboard.Client.State.Health;
 
-public record ServiceHealth(string Service, bool IsHealthy, string? LastSeen);
+// A tile is a service of one household, or of the deployment when Household is null: two
+// households' voice servers are two tiles.
+public record ServiceHealth(string Service, bool IsHealthy, string? LastSeen, string? Household = null);
 
 public record HealthState
 {

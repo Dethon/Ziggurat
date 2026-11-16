@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 
@@ -20,6 +21,11 @@ public record FileSystemResolution(IFileSystemBackend Backend, string RelativePa
     // before there is any path to resolve. Static so that stays one implementation rather than two.
     public static string ToVirtualPath(string mountPoint, string backendPath) =>
         $"{mountPoint.TrimEnd('/')}/{backendPath.TrimStart('/')}";
+
+    // The resolution as one caller sees it: a backend that tells its server who is calling answers
+    // for this caller; any other is the same backend.
+    public FileSystemResolution As(ConversationContext? caller) =>
+        Backend is ICallerBoundBackend bound ? this with { Backend = bound.As(caller) } : this;
 }
 
 public interface IVirtualFileSystemRegistry

@@ -106,7 +106,7 @@ public static class AttachmentHydration
             message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinDepth);
         var channelId = message.GetAttachmentChannelId();
         var shown = attachments.Count > 0 && !string.IsNullOrWhiteSpace(channelId)
-            ? await ShowAsync(attachments, source, channelId!, withinDepth, ct)
+            ? await ShowAsync(attachments, source, channelId!, message.GetAttachmentHouseholdId(), withinDepth, ct)
             : [];
 
         // The files first, then where they landed: a path named ahead of a picture the model could
@@ -139,6 +139,7 @@ public static class AttachmentHydration
         IReadOnlyList<AttachmentReference> attachments,
         IAttachmentSource source,
         string channelId,
+        string? householdId,
         bool withinDepth,
         CancellationToken ct)
     {
@@ -146,7 +147,7 @@ public static class AttachmentHydration
         foreach (var attachment in attachments)
         {
             var bytes = withinDepth
-                ? await source.FetchAsync(channelId, attachment.Id, ct)
+                ? await source.FetchAsync(channelId, householdId, attachment.Id, ct)
                 : null;
             contents.Add(bytes is not null
                 ? new DataContent(bytes, attachment.MediaType)

@@ -1,6 +1,8 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
@@ -14,17 +16,25 @@ using Tests.Unit.Domain;
 namespace Tests.Unit.Domain.Monitor;
 
 // The agent a message is for is resolved once, before the message is grouped, so the group key,
-// the agent built for it and the context stamped on the turn all name the same one.
+// the agent built for it and the context stamped on the turn all name the same one: the channel's
+// own default where the deployment gives it one, else the household's.
 public class ChatMonitorAgentRoutingTests
 {
     private static readonly AgentDefaults _defaults = new()
     {
-        Fallback = "jonas",
-        ByChannel = new Dictionary<string, string> { ["voice"] = "nabu" }
+        ByChannel = new Dictionary<string, string> { ["sugary"] = "sugary" }
     };
 
+    // Every household's default is its own: these name theirs by the household they are asked for, and
+    // any other household runs with none (a household the agent cannot read refuses its turn).
+    private static readonly IAgentDefinitionProvider _households = Households(new Dictionary<string, string>
+    {
+        ["@nobody"] = "jonas",
+        ["elsewhere"] = "ana"
+    });
+
     [Theory]
-    [InlineData("voice", null, "nabu")]
+    [InlineData("sugary", null, "sugary")]
     [InlineData("telegram", null, "jonas")]
     [InlineData("voice", "jack", "jack")]
     public async Task ChannelWithoutAnAgentId_BuildsTheChannelsDefaultAgent(
@@ -41,7 +51,9 @@ public class ChatMonitorAgentRoutingTests
             new Mock<IMetricsPublisher>().Object,
             null,
             new Mock<ILogger<ChatMonitor>>().Object,
-            _defaults);
+            TestAssertions.Verifier(),
+            _defaults,
+            agentDefinitions: _households);
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -50,6 +62,99 @@ public class ChatMonitorAgentRoutingTests
         // The same id keyed the group, so a defaulted message and one naming the agent
         // explicitly share a conversation instead of running two agents over it.
         created.Key.AgentId.ShouldBe(expected);
+    }
+
+    // A satellite's turn goes to the voice agent of the household it is for — the one its owner marked,
+    // whichever template it came from — and a guest's, who has no account, to that of the household
+    // whose own voice server heard them.
+    [Theory]
+    [InlineData(null, "voz-home")]
+    [InlineData("elsewhere", "jonas-elsewhere")]
+    public async Task ASatellitesTurn_BuildsTheVoiceAgentOfTheHouseholdItIsFor(string? ownServerOf, string expected)
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(channelId: "voice", agentId: null);
+        var channel = MonitorTestMocks.CreateChannel("voice", message);
+        if (ownServerOf is not null)
+        {
+            channel = new FakeChannelConnection { ChannelId = "voice", Household = ChannelHousehold.Own(ownServerOf, home: false) };
+            channel.WriteMessage(message with { Assertion = TestAssertions.OfGuest(ownServerOf, "voice") });
+            channel.Complete();
+        }
+
+        var factory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
+        var monitor = new ChatMonitor(
+            [channel],
+            factory,
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            _defaults,
+            agentDefinitions: _households);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        factory.Created.ShouldHaveSingleItem().AgentId.ShouldBe(expected);
+        // Built for the satellite's channel, so it answers under the voice rules whatever its template.
+        factory.Channels.ShouldHaveSingleItem().ShouldBe("voice");
+    }
+
+    // A household's people reach its own default, which another household's need not share.
+    [Fact]
+    public async Task AChannelWithNoDefault_BuildsTheDefaultOfTheHouseholdTheMessageIsFor()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(channelId: "telegram", agentId: null) with
+        {
+            Principal = new Principal("telegram", "42", new Account("elsewhere", "acct-9"))
+        };
+        var factory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
+
+        var monitor = new ChatMonitor(
+            [MonitorTestMocks.CreateChannel("telegram", message)],
+            factory,
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            _defaults,
+            agentDefinitions: _households);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        factory.Created.ShouldHaveSingleItem().AgentId.ShouldBe("ana");
+    }
+
+    // A chat-client turn's custom agent is filed under the person's account, while its sender is
+    // only the name the account goes by: the agent is built for the account the turn acts for, and
+    // the sender still names the person to everything keyed by it.
+    [Fact]
+    public async Task AChatClientTurn_BuildsItsAgentForTheAccountItActsFor()
+    {
+        var account = new Account("home", "acct-1");
+        var message = MonitorTestMocks.CreateChannelMessage(channelId: "signalr", agentId: "custom-1") with
+        {
+            Sender = "Fran",
+            Principal = new Principal("signalr", "acct-1", account)
+        };
+        var factory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
+
+        var monitor = new ChatMonitor(
+            [MonitorTestMocks.CreateChannel("signalr", message)],
+            factory,
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            _defaults);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        var created = factory.Created.ShouldHaveSingleItem();
+        created.Account.ShouldBe(account);
+        created.UserId.ShouldBe("Fran");
     }
 
     // The defaults reach the monitor through the container, and the parameter carrying them has a
@@ -64,24 +169,39 @@ public class ChatMonitorAgentRoutingTests
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
             .Setup(h => h.EnrichAsync(
-                It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((MemoryExtraction?)null);
 
         await using var provider = new ServiceCollection()
             .AddLogging()
-            .AddSingleton<IReadOnlyList<IChannelConnection>>(
+            .AddSingleton<IConnectionSet<IChannelConnection>>(
                 [MonitorTestMocks.CreateChannel("telegram", message)])
             .AddSingleton<IAgentFactory>(factory)
             .AddSingleton(MonitorTestMocks.CreateThreadResolver())
             .AddSingleton(new Mock<IMetricsPublisher>().Object)
             .AddSingleton(recallHook.Object)
             .AddSingleton(_defaults)
+            .AddSingleton(_households)
+            .AddSingleton(TestAssertions.Verifier())
             .AddSingleton<ChatMonitor>()
             .BuildServiceProvider();
 
         await provider.GetRequiredService<ChatMonitor>().Monitor(CancellationToken.None);
 
         factory.Created.ShouldHaveSingleItem().AgentId.ShouldBe("jonas");
+    }
+
+    private static IAgentDefinitionProvider Households(IReadOnlyDictionary<string, string> defaults)
+    {
+        var provider = new Mock<IAgentDefinitionProvider>();
+        provider
+            .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string? household, CancellationToken _) =>
+                HouseholdAgents.Fixed([], defaults.GetValueOrDefault(household ?? "@nobody")) with
+                {
+                    VoiceAgent = household is null ? "voz-home" : $"jonas-{household}"
+                });
+        return provider.Object;
     }
 }

@@ -1,3 +1,4 @@
+using Domain.Agents;
 using McpChannelSignalR.Attachments;
 
 namespace Tests.Unit.McpChannelSignalR;
@@ -8,6 +9,12 @@ public sealed class FakeConversationLiveness : IConversationLiveness
 {
     public HashSet<string> Alive { get; } = [];
 
-    public Task<bool> IsAliveAsync(string conversationId, CancellationToken ct) =>
-        Task.FromResult(Alive.Contains(conversationId));
+    // What each sweep asked about, the agent its files named included.
+    public List<AgentKey> Asked { get; } = [];
+
+    public Task<bool> IsAliveAsync(AgentKey conversation, CancellationToken ct)
+    {
+        Asked.Add(conversation);
+        return Task.FromResult(Alive.Contains(conversation.ConversationId));
+    }
 }

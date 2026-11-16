@@ -51,7 +51,8 @@ public class ChatMonitoringTests
             new ChatThreadResolver(),
             metrics,
             null,
-            NullLogger<ChatMonitor>.Instance);
+            NullLogger<ChatMonitor>.Instance,
+            TestAssertions.Verifier());
 
         return new Harness(
             new ChatMonitoring(monitor, metrics, clock, NullLogger<ChatMonitoring>.Instance, Schedule()),

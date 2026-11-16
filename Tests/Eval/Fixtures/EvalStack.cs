@@ -8,7 +8,10 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
+using Domain.Security.Signing;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
@@ -17,6 +20,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
+using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpServerHomeAssistant.Modules;
 using McpServerHomeAssistant.Settings;
@@ -46,10 +50,10 @@ using WebSearchSettings = McpServerWebSearch.Settings.McpSettings;
 namespace Tests.Eval.Fixtures;
 
 // Everything one scenario runs against: the real MCP servers in process, the outermost externals
-// faked, and the agent built by the real factory from the shipped definition in
-// Agent/appsettings.json. Only the configured endpoint urls are rewritten — reconstructing the
-// wiring here would test a composition no deployment uses, which is the failure ADR-0030 exists
-// to prevent.
+// faked, and the agent built by the real factory from the shipped settings in
+// Agent/appsettings.json, driving the eval's own copies of today's agents (TestAgents). Only the
+// configured endpoint urls are rewritten — reconstructing the wiring here would test a composition
+// no deployment uses, which is the failure ADR-0030 exists to prevent.
 public sealed class EvalStack : IAsyncDisposable
 {
     // The satellites a scenario's voice turn can come from and ring on. Two rooms, because a
@@ -184,7 +188,7 @@ public sealed class EvalStack : IAsyncDisposable
 
         if (dialled.Contains("mcp-websearch"))
         {
-            hosted["mcp-websearch"] = await stack.StartWebSearchAsync();
+            hosted["mcp-websearch"] = await stack.StartWebSearchAsync(redisConnectionString);
         }
 
         if (dialled.Contains(Sugary))
@@ -199,7 +203,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // The compose hosts a run of this agent can reach: its own servers, and its workers' when it
     // has any. By host name, the way Rewrite matches an endpoint to the server standing in for it.
-    public static IReadOnlyList<string> Dialled(AgentSettings settings, string agentId)
+    public static IReadOnlyList<string> Dialled(TestAgentSettings settings, string agentId)
     {
         var agent = settings.Agents.Single(a => a.Id == agentId);
         var workers = agent.EnabledFeatures.Any(feature =>
@@ -210,10 +214,28 @@ public sealed class EvalStack : IAsyncDisposable
         return
         [
             .. agent.McpServerEndpoints.Concat(workers)
-                .Select(endpoint => new Uri(endpoint).Host)
+                .Select(HostOf)
                 .Distinct(StringComparer.Ordinal)
         ];
     }
+
+    // The compose host an endpoint stands for: a URL's, or for a household's own server named by its
+    // name, the host the deployment ran it at before it moved to the household's site (vault ->
+    // mcp-vault), which is the server this stack hosts in its place.
+    public static string HostOf(string endpoint) =>
+        TunnelCredentialProtocol.IsServerName(endpoint)
+            ? endpoint.StartsWith("mcp-", StringComparison.Ordinal) ? endpoint : $"mcp-{endpoint}"
+            : new Uri(endpoint).Host;
+
+    // Where each household server the definitions name is reached in this stack: the server it hosts
+    // in that server's place, dialled directly — the eval runs no tunnel.
+    public static InProcessOwnServers OwnServers(TestAgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
+        new(settings.Agents.SelectMany(a => a.McpServerEndpoints)
+            .Concat(settings.SubAgents.SelectMany(w => w.McpServerEndpoints))
+            .Where(TunnelCredentialProtocol.IsServerName)
+            .Distinct(StringComparer.Ordinal)
+            .Where(name => hosted.ContainsKey(HostOf(name)))
+            .ToDictionary(name => name, name => hosted[HostOf(name)]));
 
     private async Task<string> StartBridgeAsync()
     {
@@ -234,6 +256,9 @@ public sealed class EvalStack : IAsyncDisposable
         // replaced at the transport rather than at the adapter: the adapters, their token header
         // and their failure mapping are production code a scenario is entitled to exercise.
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // No accounts service: the eval household's timers are shown in the pinned clock's zone, as
+        // its schedules are read in it.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
         builder.Services.AddHttpClient(VoiceHubHttp.ClientName, client =>
             {
                 client.BaseAddress = new Uri("http://voice-hub.eval/");
@@ -249,8 +274,15 @@ public sealed class EvalStack : IAsyncDisposable
     // Through the server's own create path, with the same JSON a model would write. Writing into
     // the store directly would arm a timer the server itself could not have produced, and a
     // scenario about changing a running timer would then be reading a state that never occurs.
-    private async Task ArmAsync(TimerFileSystem timers, Scenario scenario)
+    // Armed as the eval account, as its turn's call would be: a timer is its household's, and the
+    // turn finds only its own household's.
+    private async Task ArmAsync(TimerFileSystem server, Scenario scenario)
     {
+        var timers = server.For(new FileSystemCaller(
+            new ConversationContext(scenario.AgentId, "eval:arm", EvalRun.UserId, new ReplyTarget("signalr", "eval:arm"),
+                Principal: new Principal("signalr", EvalRun.UserId, EvalRun.Account),
+                Identity: IdentityClaims.Person(EvalRun.UserId, EvalRun.Tenant, "signalr", [])),
+            null));
         foreach (var seed in scenario.Armed.OrderByDescending(a => a.RunningFor))
         {
             Clock.SetUtcNow(scenario.Instant - seed.RunningFor);
@@ -346,7 +378,7 @@ public sealed class EvalStack : IAsyncDisposable
     // from a table, and the browser is a local Chromium rather than the remote hardened Firefox a
     // deployment connects to. Everything between them — the tools, the session manager, the
     // accessibility snapshot, the modal dismisser — is the deployment's own.
-    private async Task<string> StartWebSearchAsync()
+    private async Task<string> StartWebSearchAsync(string redisConnectionString)
     {
         Web = await EvalWeb.StartAsync();
 
@@ -360,15 +392,23 @@ public sealed class EvalStack : IAsyncDisposable
                 ApiKey = "eval",
                 ApiUrl = EvalWeb.SearchApiUrl
             },
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            // Every turn acts for the run's account (EvalRun), so a turn can browse as its person
+            // and hand them a login from any channel; the link's address is a placeholder nothing
+            // opens. No state key: nothing is remembered between runs. The handoff's links live on
+            // the run's Redis.
+            RedisConnectionString = redisConnectionString,
+            Handoff = new HandoffConfiguration { PublicBaseUrl = EvalWeb.HandoffBase }
         });
 
         // The typed client keeps its name from the interface it is registered against.
         builder.Services.AddHttpClient(nameof(IWebSearchClient))
             .ConfigurePrimaryHttpMessageHandler(() => Web.SearchTransport);
 
-        builder.Services.Replace(ServiceDescriptor.Singleton<IWebBrowser>(
-            _ => new PlaywrightWebBrowser(browserFactory: LaunchAsync)));
+        // The one browser behind every role the module gives it — the tabs browsed, the tabs a
+        // person logs in on, their contexts — so a handoff opens in the browser the turn reads.
+        builder.Services.Replace(ServiceDescriptor.Singleton(sp => new PlaywrightWebBrowser(
+            browserFactory: LaunchAsync, personStates: sp.GetRequiredService<IPersonStateStore>())));
 
         return await StartAsync(builder, port);
     }
@@ -394,7 +434,11 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureSugary(EvalSugaryLog.Settings(_sugaryPath));
+        var settings = EvalSugaryLog.Settings(_sugaryPath);
+        builder.Services.ConfigureSugary(settings);
+        // No accounts service: her household keeps the home's zone, as on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+            new EveryHouseholdIn(McpServerSugary.Modules.ConfigModule.HomeZone(settings))));
 
         var endpoint = await StartAsync(builder, port);
         await EvalSugaryLog.SeedAsync(_servers[^1].Services);
@@ -406,7 +450,7 @@ public sealed class EvalStack : IAsyncDisposable
     // than a per-run prefix, so the slate is wiped on the way in: a schedule left behind by the
     // previous run would show up in this one's listing and count against its ceiling.
     private async Task<string> StartSchedulingAsync(
-        AgentSettings shipped, string redisConnectionString)
+        TestAgentSettings shipped, string redisConnectionString)
     {
         await ClearSchedulesAsync(redisConnectionString);
 
@@ -423,14 +467,14 @@ public sealed class EvalStack : IAsyncDisposable
             Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // A stack with no accounts service: the eval household's schedules are read in the zone the
+        // pinned clock is in, as the home's are on the deployment, and its agents — the directories
+        // under /schedules — are the shipped agents, as the home's are, so a scenario that schedules
+        // work writes into the same directory a deployment would.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(
+            Clock.LocalTimeZone, [.. shipped.Agents.Select(a => new HouseholdAgentName(a.Id, a.Name, a.Description))])));
 
         var endpoint = await StartAsync(builder, port);
-
-        // What the channel registration does in production, on a stack that dials no channels: the
-        // agent directories under /schedules are the shipped agents, so a scenario that schedules
-        // work writes into the same directory a deployment would.
-        _servers[^1].Services.GetRequiredService<IMutableAgentCatalog>().Replace(
-            [.. shipped.Agents.Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description))]);
 
         return endpoint;
     }
@@ -439,10 +483,19 @@ public sealed class EvalStack : IAsyncDisposable
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
         var database = connection.GetDatabase();
-        var ids = await database.SetMembersAsync("schedules");
+        var server = connection.GetServer(connection.GetEndPoints()[0]);
 
-        await Task.WhenAll(ids.Select(id => database.KeyDeleteAsync($"schedule:{id}")));
-        await database.KeyDeleteAsync(["schedules", "schedules:due"]);
+        // Every household's: a schedule is kept under the household that wrote it (RedisScheduleStore).
+        List<RedisKey> keys = [RedisScheduleStore.DueSetKey];
+        foreach (var pattern in (string[])["schedule@*", "schedules@*"])
+        {
+            await foreach (var key in server.KeysAsync(database.Database, pattern))
+            {
+                keys.Add(key);
+            }
+        }
+
+        await database.KeyDeleteAsync([.. keys]);
     }
 
     private async Task<string> StartAsync(WebApplicationBuilder builder, int port)
@@ -456,25 +509,29 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with four edits and no fifth: the secrets come from user
+    // The shipped configuration, with five edits and no sixth: the secrets come from user
     // secrets rather than from the environment the container would have had, nothing dials a
     // channel — the boundary of an eval is the agent, and what a channel does with a reply
     // afterwards is covered by the channel and end-to-end suites — the model is whatever
-    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, and
-    // the deployment secret is the one every server this stack hosts is gated behind.
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, the
+    // deployment secret is the one every server this stack hosts is gated behind, and the agent
+    // signs with the suite's key.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
-    private static AgentSettings ShippedSettings(string redisConnectionString) =>
+    private static TestAgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
             ChannelEndpoints = [],
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            // The suite's fixed agent key, which every server this stack hosts checks a call token
+            // against (TestJwks), instead of one generated into a directory.
+            Signing = TestSigningKeys.Settings(TestSigningKeys.Agent)
         };
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, Recording recording, Scenario scenario,
+        TestAgentSettings shipped, Recording recording, Scenario scenario,
         IReadOnlyDictionary<string, string> hosted)
     {
         var settings = scenario.Workers == WorkerMode.None
@@ -484,6 +541,9 @@ public sealed class EvalStack : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAgent(settings);
+        // The eval's own copies of today's agents, as every household's: a pass measures today's
+        // definitions, whatever any household's configuration says.
+        services.AddSingleton<IHouseholdAgentSource>(settings.Households);
         services.AddSubAgents(settings.SubAgents);
         services.AddSingleton<IToolInvocationObserver>(recording);
         // Registered after the agent's own publisher so it wins the resolution: what the chat
@@ -499,6 +559,9 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         services.AddSingleton<IVfsBridge>(Bridge);
+        // A household server the definition names by its name is the one this stack hosts in its
+        // place, reached without a tunnel.
+        services.AddSingleton<IOwnServers>(OwnServers(settings, hosted));
         // After the agent's own source, so it wins the resolution: the channel's fetch, answered
         // from the scenario's files because nothing here dials the channel that would hold them.
         services.AddSingleton<IAttachmentSource>(Attachments);
@@ -522,15 +585,21 @@ public sealed class EvalStack : IAsyncDisposable
     // the alternative is a scenario that cannot run at all. The agent under test therefore has a
     // smaller toolset than the shipped one until every family's servers are hosted, and which
     // sections it actually got is readable in the dump's assembled prompt.
+    //
+    // A household server named by its name stays named, and is resolved to the server standing in
+    // for it when the session is built (OwnServers).
     private static string[] Rewrite(IEnumerable<string> endpoints, IReadOnlyDictionary<string, string> hosted) =>
         [.. endpoints
-            .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
-            .Where(rewritten => rewritten is not null)];
+            .Select(endpoint => TunnelCredentialProtocol.IsServerName(endpoint)
+                ? hosted.ContainsKey(HostOf(endpoint)) ? endpoint : null
+                : hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
+            .Where(rewritten => rewritten is not null)
+            .Select(rewritten => rewritten!)];
 
     // One agent without the feature that gives it workers: no tool to call them with and no
     // section telling it they exist. Everything else about it, and everything about every other
     // agent, is the shipped definition.
-    public static AgentSettings Alone(AgentSettings settings, string agentId) =>
+    public static TestAgentSettings Alone(TestAgentSettings settings, string agentId) =>
         settings with
         {
             Agents =
@@ -550,7 +619,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // A worker's endpoints as much as an agent's. A canned worker dials nothing and never
     // noticed; one that really runs dials what its own profile names.
-    public static AgentSettings Rehosted(AgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
+    public static TestAgentSettings Rehosted(TestAgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
         shipped with
         {
             Agents =
@@ -560,8 +629,20 @@ public sealed class EvalStack : IAsyncDisposable
             SubAgents =
             [
                 .. shipped.SubAgents.Select(w => w with { McpServerEndpoints = Rewrite(w.McpServerEndpoints, hosted) })
-            ]
+            ],
+            // The deployment's shared servers too: the agent holds a credential for each it names, and
+            // only the stack's own are given one.
+            SharedServers = new SharedServers
+            {
+                Scheduling = Rehosted(shipped.SharedServers.Scheduling, hosted),
+                Timers = Rehosted(shipped.SharedServers.Timers, hosted),
+                Sugary = Rehosted(shipped.SharedServers.Sugary, hosted),
+                Idealista = Rehosted(shipped.SharedServers.Idealista, hosted)
+            }
         };
+
+    private static string? Rehosted(string? endpoint, IReadOnlyDictionary<string, string> hosted) =>
+        endpoint is null ? null : Rewrite([endpoint], hosted).FirstOrDefault();
 
     public async ValueTask DisposeAsync()
     {

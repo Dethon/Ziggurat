@@ -1,4 +1,5 @@
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -14,10 +15,10 @@ public record DoseDto(
 // where a failed bind would be a bare 400; the time and the units are nullable for the same reason,
 // and so a missing time is refused rather than stored as the first day of the calendar. MealId is
 // what an installed app from before a dose could be for several meals still sends, and is heard as
-// a list of one.
+// a list of one. Loaded is what the sheet opened with, on a change (StaleEdits).
 public record SaveDoseRequest(
     DateTimeOffset? TakenAt, double? Units, string? Kind, string? Note, IReadOnlyList<Guid>? MealIds = null,
-    Guid? MealId = null)
+    Guid? MealId = null, SaveDoseRequest? Loaded = null)
 {
     // Each meal once, in the order she picked them.
     public IReadOnlyList<Guid> Meals => [.. (MealIds ?? (MealId is { } one ? [one] : [])).Distinct()];
@@ -68,11 +69,23 @@ public static class DoseEndpoints
     }
 
     private static async Task<IResult> ReplaceAsync(
-        Guid id, SaveDoseRequest request, SugaryDbContext db, CancellationToken ct)
+        Guid id, SaveDoseRequest request, SugaryDbContext db, HttpContext http, CancellationToken ct)
     {
         if (await db.Doses.FindAsync([id], ct) is not { } dose)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, Compared(loaded), Compared(request),
+                new SaveDoseRequest(dose.TakenAt, dose.Units, SugaryTables.Word(dose.Kind), dose.Note, dose.MealIds));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
         }
 
         if (await ValidateAsync(request, db, ct) is { } problem)
@@ -84,6 +97,10 @@ public static class DoseEndpoints
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToDto(dose));
     }
+
+    // In the stored dose's own terms: its meals as a list, its note as it would be kept.
+    private static SaveDoseRequest Compared(SaveDoseRequest request) =>
+        new(request.TakenAt, request.Units, request.Kind, DoseRules.Note(request.Note), request.Meals);
 
     private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
         await db.Doses.Where(d => d.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();

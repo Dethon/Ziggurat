@@ -161,4 +161,36 @@ public class SugaryFoodApiTests
         (await server.QueryAsync($"select name, carbs_per_100, unit, portion_amount, barcode, source from foods where food_id = '{id}'"))
             .Single()!.AsArray().Select(cell => cell!.ToString()).ShouldBe(["Pan de molde", "46", "g", "32", "8480000823298", "label"]);
     }
+
+    // A food is the household's: one person corrects its carbs while another, on a sheet opened before,
+    // sets its usual portion. Each change stands; the same field changed by both is refused.
+    [Fact]
+    public async Task TwoPeopleChangingOneFood_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var ana = server.As(SugaryServer.Her);
+        var dani = server.As(SugaryServer.Him);
+        var opened = Bread();
+        var id = (await ReadAsync(await ana.PostAsJsonAsync("/api/foods", opened)))["id"]!.GetValue<string>();
+        opened["name"] = "Pan de molde";
+
+        var anas = (JsonObject)opened.DeepClone();
+        anas["carbsPer100g"] = 44;
+        anas["loaded"] = opened.DeepClone();
+        (await ana.PutAsJsonAsync($"/api/foods/{id}", anas)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var danis = (JsonObject)opened.DeepClone();
+        danis["portionGrams"] = 40;
+        danis["loaded"] = opened.DeepClone();
+        var merged = await ReadAsync(await dani.PutAsJsonAsync($"/api/foods/{id}", danis));
+        merged["carbsPer100g"]!.GetValue<double>().ShouldBe(44);
+        merged["portionGrams"]!.GetValue<double>().ShouldBe(40);
+
+        var clash = (JsonObject)opened.DeepClone();
+        clash["carbsPer100g"] = 50;
+        clash["loaded"] = opened.DeepClone();
+        (await dani.PutAsJsonAsync($"/api/foods/{id}", clash)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var kept = (await ReadAsync(await ana.GetAsync("/api/foods"))).AsArray().ShouldHaveSingleItem()!;
+        kept["carbsPer100g"]!.GetValue<double>().ShouldBe(44);
+    }
 }

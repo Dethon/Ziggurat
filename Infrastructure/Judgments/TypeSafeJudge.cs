@@ -49,21 +49,25 @@ public sealed class TypeSafeJudge : IJudge
         _metricsPublisher = metricsPublisher;
         _logger = logger;
         httpClient.BaseAddress = options.BaseAddress;
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
     }
 
-    // The empty key registers a judge that answers absence, so nothing downstream checks the key.
+    // The host's key may be empty: a judgment for a household that brought its own key is still asked
+    // on it, and one with no key at all answers absence without a call, so nothing downstream checks
+    // the key.
     public static IJudge Create(
         HttpClient httpClient, TypeSafeOptions options, IMetricsPublisher metricsPublisher, ILogger logger) =>
-        options.IsConfigured
-            ? new TypeSafeJudge(httpClient, options, metricsPublisher, logger)
-            : UnconfiguredJudge.Instance;
+        new TypeSafeJudge(httpClient, options, metricsPublisher, logger);
 
     public async Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
     {
         if (deadline.IsCancellationRequested)
         {
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
+        }
+
+        if (request.Caller.Payer.Key is null && !_options.IsConfigured)
+        {
+            return new JudgmentOutcome.Absent(AbsenceReason.Unconfigured);
         }
 
         // A turn addressed to the local box sends nothing about itself to a hosted judge. Held
@@ -77,9 +81,20 @@ public sealed class TypeSafeJudge : IJudge
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(Endpoint, Wire(request), _wireJson, deadline);
+            // On the key of the household it is asked for, or the host's own: a household's
+            // judgments are its calls as much as its turns are.
+            var payer = request.Caller.Payer;
+            using var message = new HttpRequestMessage(HttpMethod.Post, Endpoint)
+            {
+                Content = JsonContent.Create(Wire(request), options: _wireJson)
+            };
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", payer.Key?.Reveal() ?? _options.ApiKey);
+            using var response = await _httpClient.SendAsync(message, deadline);
             return response.StatusCode switch
             {
+                // A household's own key refused is the household's to fix, not the host's setting.
+                HttpStatusCode.Unauthorized when payer.Key is not null => await MisconfiguredAsync(
+                    $"household {payer.TenantId}'s OpenRouter key", response, deadline),
                 HttpStatusCode.Unauthorized => await MisconfiguredAsync("openRouter:apiKey", response, deadline),
                 // A model that does not exist, or a question the endpoint refuses: the body says
                 // which, and either way no retry clears it.
@@ -138,7 +153,9 @@ public sealed class TypeSafeJudge : IJudge
         {
             _metricsPublisher.Publish(new TokenUsageEvent
             {
+                TenantId = caller.Payer.TenantId,
                 Sender = caller.Sender ?? "unknown",
+                UserId = caller.UserId,
                 AgentId = caller.AgentId,
                 ConversationId = caller.ConversationId,
                 Model = judgment.Model,
@@ -219,12 +236,4 @@ public sealed class TypeSafeJudge : IJudge
         [property: JsonPropertyName("input_tokens")] int InputTokens,
         [property: JsonPropertyName("output_tokens")] int OutputTokens,
         [property: JsonPropertyName("cost")] decimal? Cost);
-
-    private sealed class UnconfiguredJudge : IJudge
-    {
-        public static readonly UnconfiguredJudge Instance = new();
-
-        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline) =>
-            Task.FromResult<JudgmentOutcome>(new JudgmentOutcome.Absent(AbsenceReason.Unconfigured));
-    }
 }

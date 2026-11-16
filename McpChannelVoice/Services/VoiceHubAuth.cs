@@ -1,12 +1,14 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Mcp.Hosting.Tunnel;
 using McpChannelVoice.Settings;
 
 namespace McpChannelVoice.Services;
 
 // Shared gate for the voice hub's out-of-band HTTP endpoints (announce, dismiss, satellites):
-// 503 when disabled, 404 when a non-loopback caller hits a loopback-only hub, 401 on token mismatch.
+// 503 when disabled, 404 when a non-loopback caller hits a loopback-only hub, 401 on token mismatch;
+// the relay, presenting this hub's tunnel credential, is let through.
 public static class VoiceHubAuth
 {
     public static IResult? Reject(HttpContext ctx, AnnounceSettings settings)
@@ -14,6 +16,14 @@ public static class VoiceHubAuth
         if (!settings.Enabled)
         {
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        }
+
+        // A tunnelled hub is reached by the deployment's timers server through the relay, which
+        // presents the credential this hub's tunnel was opened with: the deployment's announce token
+        // is never a household's to hold. Only while tunnelled — dialled, there is no such credential.
+        if (ctx.RequestServices.GetService<RelayCredential>()?.PresentedBy(ctx.Request) == true)
+        {
+            return null;
         }
 
         // Loopback-only is enforced per-request (by remote IP), never by binding Kestrel to 127.0.0.1,

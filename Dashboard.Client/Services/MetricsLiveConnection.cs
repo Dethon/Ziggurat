@@ -15,7 +15,8 @@ public sealed class MetricsLiveConnection(
     IMetricsCatchUp catchUp,
     DataLoadEffect dataLoad,
     TimeProvider timeProvider,
-    ILogger<MetricsLiveConnection> logger) : IAsyncDisposable
+    ILogger<MetricsLiveConnection> logger,
+    ISignIn signIn) : IAsyncDisposable
 {
     private readonly CancellationTokenSource _disposalCts = new();
     private Task? _connecting;
@@ -218,6 +219,14 @@ public sealed class MetricsLiveConnection(
                 // span a disposal still succeeds, and answering true there would drive the whole
                 // become-live sequence on a module that is gone.
                 return !_disposed;
+            }
+            catch (HttpRequestException refused) when (refused.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                // The proxy's session check: nobody is signed in to this page, and no retry changes
+                // that. Opened again as a full load, the page is answered with sign-in and comes back.
+                logger.LogInformation("Metrics hub refused a signed-out page; sending it to sign in");
+                signIn.SendToSignIn();
+                return false;
             }
             catch (Exception exception)
             {

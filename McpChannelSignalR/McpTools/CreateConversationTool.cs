@@ -20,14 +20,20 @@ public sealed class CreateConversationTool
         IServiceProvider services,
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
         [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
-        [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null)
+        [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null,
+        [Description("Who the turn acts for: a topic minted for it is that account's; one for a turn acting for no account records no household, and nobody sees it")] Principal? principal = null,
+        [Description("The conversation is several people's, a group chat: a topic minted for it is the household's whoever's turn it shows")] bool group = false)
     {
+        // Whose a minted topic is comes from the turn it shows, decided here: the channel that asked
+        // for the conversation to be shown never names where it goes, nor whose it is (ADR 0046).
         var p = new CreateConversationParams
         {
             AgentId = agentId,
             TopicName = topicName,
             Sender = sender,
-            InitialPrompt = initialPrompt
+            InitialPrompt = initialPrompt,
+            Principal = principal,
+            Group = group
         };
 
         if (existingConversationId is null)
@@ -55,14 +61,30 @@ public sealed class CreateConversationTool
         string conversationId, CreateConversationParams p, IServiceProvider services)
     {
         // Only a conversation spelled as a topic spells its own has a history a topic can read.
-        if (services.GetRequiredService<SessionService>().GetTopicIdByConversationId(conversationId) is not null
-            || ConversationIdentity.Parse(conversationId) is not { } identity)
+        var sessions = services.GetRequiredService<SessionService>();
+        var live = sessions.GetSessionByConversationId(conversationId);
+        if (live?.AgentId == p.AgentId || ConversationIdentity.Parse(conversationId) is not { } identity)
         {
             return null;
         }
 
         var creation = await services.GetRequiredService<IConversationFactory>().CreateOverAsync(identity, p);
-        return creation is null ? null : await OpenAsync(creation, p, services);
+        if (creation is not null)
+        {
+            return await OpenAsync(creation, p, services);
+        }
+
+        // A private chat's conversation is the chat's whichever agent answers it — a shared bot's chat
+        // that switched agents, one person writing to two agents' bots — and each agent's history has a
+        // copy of its own. The live session was another agent's, so it moves to this agent's copy,
+        // which the turn is then announced on: the session follows the turn being announced.
+        if (live is not null && await services.GetRequiredService<IThreadStateStore>()
+                .GetTopicByChatIdAndThreadIdAsync(p.AgentId, identity.ChatId, identity.ThreadId) is { } held)
+        {
+            sessions.StartSession(held.TopicId, p.AgentId, identity.ChatId, identity.ThreadId, held.SpaceSlug, held.Name);
+        }
+
+        return null;
     }
 
     private static async Task<string> OpenAsync(
@@ -74,17 +96,34 @@ public sealed class CreateConversationTool
             creation.Topic.TopicId, p.AgentId, creation.Identity.ChatId, creation.Identity.ThreadId,
             spaceSlug: "default", topicName: p.TopicName);
 
-        // Notify WebChat clients so the topic appears without refresh.
+        // Notify WebChat clients so the topic appears without refresh — the ones that may see it.
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
         var notification = new TopicChangedNotification(
-            TopicChangeType.Created, creation.Topic.TopicId, creation.Topic, SpaceSlug: "default");
-        await hubSender.SendToGroupAsync("space:default", "OnTopicChanged", notification);
+            TopicChangeType.Created, creation.Topic.TopicId, creation.Topic, SpaceSlug: creation.Topic.SpaceSlug);
+        await hubSender.SendToTopicAsync(creation.Topic, creation.Topic.SpaceSlug, "OnTopicChanged", notification);
 
         // Create a stream so send_reply chunks have somewhere to go. The stream's
         // currentPrompt seeds the user-role bubble on WebChat, so it must be the
         // originating prompt — falling back to topicName for legacy callers.
         var streamService = services.GetRequiredService<StreamService>();
         streamService.GetOrCreateStream(creation.Topic.TopicId, p.InitialPrompt ?? p.TopicName, p.Sender, CancellationToken.None);
+
+        // Buffered as a later turn's prompt is, so a page that follows the turn draws it with the time
+        // it was sent: the stream's state carries the prompt's words alone.
+        if (!string.IsNullOrWhiteSpace(p.InitialPrompt))
+        {
+            await streamService.WriteMessageAsync(creation.Topic.TopicId, new ChatStreamMessage
+            {
+                Content = p.InitialPrompt,
+                UserMessage = new UserMessageInfo(p.Sender, DateTimeOffset.UtcNow)
+            });
+        }
+
+        // The first turn is streaming now, so the clients told of the topic follow it as they follow any
+        // later turn's: without this a row added at no messages kept no preview and no badge until a
+        // reload, and opening it marked nothing read.
+        await hubSender.SendToTopicAsync(creation.Topic, creation.Topic.SpaceSlug, "OnStreamStarted",
+            new StreamStartedNotification(creation.Topic.TopicId, creation.Topic.SpaceSlug));
 
         return creation.Identity.ConversationId;
     }
@@ -121,13 +160,13 @@ public sealed class CreateConversationTool
         }
 
         // Wake viewing clients: their OnStreamStarted handler resumes the stream
-        // (buffered replay + live subscription) without any client changes.
+        // (buffered replay + live subscription) without any client changes. Only those that may see
+        // the topic are woken, since a private one's activity is its owner's business.
         var spaceSlug = session.SpaceSlug ?? "default";
-        var hubSender = services.GetRequiredService<IHubNotificationSender>();
-        await hubSender.SendToGroupAsync(
-            $"space:{spaceSlug}",
-            "OnStreamStarted",
-            new StreamStartedNotification(topicId, spaceSlug));
+        var topic = await services.GetRequiredService<IThreadStateStore>()
+            .GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId);
+        await services.GetRequiredService<IHubNotificationSender>().SendToTopicAsync(
+            topic, spaceSlug, "OnStreamStarted", new StreamStartedNotification(topicId, spaceSlug));
 
         return conversationId;
     }

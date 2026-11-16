@@ -36,7 +36,8 @@ public sealed class LemonadeChatClient : IChatClient
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
-        Func<string, bool>? modelAcceptsVideo = null)
+        Func<string, bool>? modelAcceptsVideo = null,
+        TimeZoneInfo? turnZone = null)
     {
         _address = host.Address;
         var hasKey = !string.IsNullOrWhiteSpace(host.ApiKey);
@@ -63,7 +64,8 @@ public sealed class LemonadeChatClient : IChatClient
             // A timed-out turn is one the SDK would otherwise send again; the box must never see
             // a turn twice, so the wire's own failures are the only ones and each is thrown once.
             maxRetries: 0,
-            modelAcceptsVideo: modelAcceptsVideo);
+            modelAcceptsVideo: modelAcceptsVideo,
+            turnZone: turnZone);
     }
 
     public async Task<ChatResponse> GetResponseAsync(

@@ -1,7 +1,7 @@
 // The retention policy, for every process that touches a conversation.
 //
-// Three hosts write topic keys — the agent, the chat channel and the voice channel — and they must
-// agree, or a conversation ages on a different clock depending on which of them last wrote to it.
+// Two hosts write topic keys — the agent (its own, and voice's, which it mints) and the chat channel —
+// and they must agree, or a conversation ages on a different clock depending on which of them last wrote to it.
 // So this is one file rather than a block in each host's appsettings.json: it ships beside the
 // RetentionSettings type it fills, in Domain, and every host that references Domain gets it in its
 // own output. Changing a horizon is this edit and nothing else.

@@ -69,3 +69,41 @@ pages each carried their own copy of the same glyph pair before it existed, whic
 seven decisions that happened to agree. A header writes
 `<SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" />` and no page defines a
 `SortIndicator` of its own.
+
+## The service worker answers only the app's own pages
+
+WebChat's published service worker answers a navigation with the cached `index.html`, which is what
+lets an installed app open offline. Some pages on the same host are not the app's — sign-in and a
+link's enrollment (`/accounts/*`, the accounts service) and a login handoff and the logins page
+(`/browse/*`) — and the proxy routes them past it. `otherServicesPages` in
+`service-worker.published.js` lists them so their navigations reach the network; a page added under
+another service needs its path there, or an installed app hands the person the chat instead. The
+signed-out E2E (`ASignedOutBrowser_SignsInAndComesBackAsThemselves`) waits for the worker to control
+the page before signing out, which is the case that loops without it.
+
+A worker from before that list (master's) answered those pages with the app too, so once a new
+worker is active it sends every open `/accounts/*` page on to the network (`reopenAccountsPages`):
+the passkey link the upgrade's migration prints, opened where the old app was installed, reaches
+enrollment without a reload
+(`AnEnrollmentLinkAnOldWorkerAnswered_ReachesEnrollmentOnceTheNewWorkerTakesOver`). Outside
+activation's `waitUntil`, retried until it takes: only a page's active worker may navigate it, and
+inside `waitUntil` the worker is still activating. The price, once per deploy, is a sign-in or
+enrollment page open at that moment reloading under the person, a passkey prompt with it. Never
+`/browse/*`: a login handoff's page is a single-use link, and reloading it would spend it.
+
+Tests of a worker update cannot use a route on the context that updates: an intercepted worker
+script is never byte-compared, so every update check reinstalls the worker (and re-runs its
+activation), and `CreatePageAsync`'s catch-all route arms interception on every E2E context. That
+test installs the old worker on a profile of its own (`OpenProfileAsync`) and opens it again with
+nothing routed. The E2E stack's Caddyfile mirrors the deployment's `@shell` route, without which a
+signed-out browser can never fetch the new worker at all.
+
+## A message is Markdown, never markup
+
+WebChat draws a message through `ChatMarkdown` (`WebChat.Client/Helpers`) alone: Markdig with raw HTML
+disabled, and a link or image whose destination names a scheme other than http(s), mailto or tel
+replaced by its own words. A message is whoever wrote it — another member of a shared topic, or a
+model a page or a household server talked into echoing something — and the page is same-origin with
+the admin API, so markup in it ran as the reader (pass 18: a member's `<img onerror>` in a shared topic
+ran in the owner's page). Never render message text as a `MarkupString` any other way
+(`ChatMarkdownTests`, `WebChatConversationE2ETests.AMessageCarryingMarkup_IsShownAsText_AndRunsNothing`).

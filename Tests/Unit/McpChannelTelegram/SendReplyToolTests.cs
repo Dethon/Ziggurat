@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Household;
 using McpChannelTelegram.McpTools;
 using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,11 +18,9 @@ public class SendReplyToolTests
 
     public SendReplyToolTests()
     {
-        var botRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
-        {
-            ["jack"] = _botClient.Object
-        });
-        botRegistry.RegisterChatAgent(100, "jack");
+        var botRegistry = new BotRegistry(null, _ => _botClient.Object);
+        botRegistry.Replace([new HouseholdTelegramBot("household-home", "jack", "1001:jack")]);
+        botRegistry.RegisterChat(100, botRegistry.All.Single());
 
         _services = new ServiceCollection()
             .AddSingleton(botRegistry)

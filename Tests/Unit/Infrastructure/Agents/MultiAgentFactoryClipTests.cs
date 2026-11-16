@@ -57,7 +57,10 @@ public sealed class MultiAgentFactoryClipTests
             .Returns(new LemonadeChatHostOptions { ApiUrl = "http://lemonade.invalid:13305/api/v1" });
 
         using var client = Factory(services).CreateChatClient(
-            "configured/model", lemonadeTransportHandler: wire);
+            "configured/model", lemonadeTransportHandler: wire,
+            lemonade: new LemonadeHost(
+                new LemonadeChatHostOptions { ApiUrl = "http://lemonade.invalid:13305/api/v1" },
+                new FixedLemonadeModels([new LemonadeModel("sees", [AttachmentKind.Image], null)])));
         await client.GetResponseAsync(
             [ClipMessage()], new ChatOptions { ModelId = LemonadeModelId.Namespaced("sees") });
 

@@ -1,4 +1,4 @@
-@using Markdig
+@using WebChat.Client.Helpers
 @using WebChat.Client.Components.Chat
 @inject UserIdentityStore UserIdentityStore
 @inject IJSRuntime Js
@@ -10,6 +10,11 @@
     [Parameter] public bool IsOwnMessage { get; set; }
     [Parameter] public bool ShowRetry { get; set; }
     [Parameter] public EventCallback OnRetry { get; set; }
+
+    // The topic's owner, by the name stamped when it began: who a message is drawn as when the reader
+    // is somebody else.
+    [Parameter] public string? TopicOwnerId { get; set; }
+    [Parameter] public string? TopicOwnerName { get; set; }
 
     private bool _showReasoning;
     private bool _showToolCalls;
@@ -26,26 +31,10 @@
         StateHasChanged();
     }
 
-    // Static pipeline to avoid allocation on every render
-    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .Build();
+    private static string RenderMarkdown(string? content) => ChatMarkdown.ToHtml(content);
 
-    private static string RenderMarkdown(string? content)
-    {
-        return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
-    }
-
-    private (string? AvatarUrl, string DisplayName) GetSenderInfo()
-    {
-        if (string.IsNullOrEmpty(Message.SenderId))
-            return (null, "Anonymous");
-
-        var user = UserIdentityStore.State.AvailableUsers
-            .FirstOrDefault(u => u.Id == Message.SenderId);
-
-        return (user?.AvatarUrl, Message.SenderId);
-    }
+    private (string? AvatarUrl, string DisplayName) GetSenderInfo() =>
+        SenderLabel.Of(Message.SenderId, UserIdentityStore.State.SignedIn, TopicOwnerId, TopicOwnerName, Message.SenderName);
 
     private string GetMessageClass()
     {
@@ -86,7 +75,7 @@
 
     private string? GetTooltipText()
     {
-        return Message.Role == "user" ? Message.SenderId : null;
+        return Message.Role == "user" ? GetSenderInfo().DisplayName : null;
     }
 
     private string? GetFormattedTimestamp()
@@ -173,7 +162,18 @@
         <MessageAttachments Attachments="@Message.Attachments" />
 
         <div class="message-content">
-            @((MarkupString)RenderMarkdown(Message.Content))
+            @if (StructuredAnswers.MealEstimateOf(Message) is { } estimate)
+            {
+                <MealEstimateView Estimate="estimate" />
+            }
+            else if (Message.Role == "assistant" && JsonOutline.Parse(Message.Content) is { } outline)
+            {
+                <JsonOutlineView Nodes="outline" />
+            }
+            else
+            {
+                @((MarkupString)RenderMarkdown(Message.Content))
+            }
         </div>
 
         @{

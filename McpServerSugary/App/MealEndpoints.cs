@@ -28,7 +28,9 @@ public record SaveMealRequest(
     string? Photo,
     Interval? FirstEstimate,
     IReadOnlyList<MealItem>? Items,
-    MealDoseRequest? Dose = null);
+    MealDoseRequest? Dose = null,
+    // What the sheet opened with, on a change (StaleEdits): its photo and dose are not compared.
+    SaveMealRequest? Loaded = null);
 
 // The rapid insulin she took for a meal, noted as she saves it. Only units and a note: it is rapid
 // and taken at the meal's time by definition, and she can change either from the Log afterwards.
@@ -117,16 +119,28 @@ public static class MealEndpoints
     }
 
     private static async Task<IResult> UpdateAsync(
-        Guid id, SaveMealRequest request, SugaryDbContext db, CancellationToken ct)
+        Guid id, SaveMealRequest request, SugaryDbContext db, HttpContext http, CancellationToken ct)
     {
-        if (Validate(request) is { } problem)
-        {
-            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
-        }
-
         if (await db.Meals.FindAsync([id], ct) is not { } meal)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, Compared(loaded), Compared(request),
+                new SaveMealRequest(meal.EatenAt, meal.Notes, meal.Outcome, null, meal.FirstEstimate, InOrder(meal.Items)));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value with { Photo = request.Photo, Dose = request.Dose };
+        }
+
+        if (Validate(request) is { } problem)
+        {
+            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
 
         Apply(request, meal);
@@ -135,6 +149,8 @@ public static class MealEndpoints
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToDto(meal, (await LinkedAsync(db, [meal.Id], ct))[meal.Id].ToList()));
     }
+
+    private static SaveMealRequest Compared(SaveMealRequest request) => request with { Photo = null, Dose = null, Loaded = null };
 
     // A dose is a fact of what she injected, so it outlives a meal logged wrongly: the meal comes off
     // its list in the same transaction the meal goes in, and any other meal it was for keeps it.

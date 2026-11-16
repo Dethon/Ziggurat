@@ -38,7 +38,7 @@ public class MetricsQueryServiceSkillPreloadTests
             new SkillPreloadEvent { Outcome = SkillPreloadOutcomes.SkippedLemonade, AgentId = "jonas", Channel = "signalr", Timestamp = at.AddHours(1) }
         }.Select(e => new RedisValue(JsonSerializer.Serialize(e, _jsonOptions))).ToArray();
 
-        _db.Setup(d => d.SortedSetRangeByScoreAsync("metrics:skills:2026-09-18", It.IsAny<double>(), It.IsAny<double>(),
+        _db.Setup(d => d.SortedSetRangeByScoreAsync("metrics:skills:deployment:2026-09-18", It.IsAny<double>(), It.IsAny<double>(),
                 It.IsAny<Exclude>(), It.IsAny<Order>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CommandFlags>()))
             .ReturnsAsync(entries);
     }

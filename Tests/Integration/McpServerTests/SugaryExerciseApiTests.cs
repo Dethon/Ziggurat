@@ -301,6 +301,8 @@ public class SugaryExerciseApiTests
             {
                 DatabasePath = path
             });
+            // Kept through every migration, and nobody's until given to the person whose log it was.
+            await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
             var client = await server.SignedInAsync();
 
             (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().Count.ShouldBe(1);
@@ -315,4 +317,27 @@ public class SugaryExerciseApiTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    // One person, two phones: a walk is running, one phone gives it a note, and the other, open on it
+    // since before, stops it. Each change stands; the same field changed on both is refused.
+    [Fact]
+    public async Task TwoPhonesChangingOneSession_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var phone = await server.SignedInAsync();
+        var other = await server.SignedInAsync();
+        var saved = await ReadAsync(await phone.PostAsJsonAsync("/api/exercise",
+            Session(startedAt: Ago(TimeSpan.FromMinutes(20)), endedAt: null)));
+        var url = $"/api/exercise/{saved["id"]!.GetValue<string>()}";
+        var opened = StaleSheet.Opened(saved, "kind", "name", "startedAt", "endedAt", "note");
+
+        (await phone.PutAsJsonAsync(url, StaleSheet.Changed(opened, "note", "hills"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var merged = await ReadAsync(await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "endedAt", Ago(TimeSpan.Zero))));
+
+        merged["note"]!.GetValue<string>().ShouldBe("hills");
+        merged["endedAt"].ShouldNotBeNull();
+        (await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "note", "flat"))).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ListAsync(phone)).Single()!["note"]!.GetValue<string>().ShouldBe("hills");
+    }
+
 }

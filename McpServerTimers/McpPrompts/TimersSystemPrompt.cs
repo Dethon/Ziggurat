@@ -1,32 +1,18 @@
 using System.ComponentModel;
-using Domain.Contracts;
 using Domain.Prompts;
 using ModelContextProtocol.Server;
 
 namespace McpServerTimers.McpPrompts;
 
 [McpServerPromptType]
-public class TimersSystemPrompt(ISatelliteCatalog satellites, TimeProvider time)
+public class TimersSystemPrompt
 {
-    // MCP prompts are fetched while the agent session is built, so the roster fetch must never
-    // hang on a sick hub: it gets a cap far below the named client's 15s timeout, and any failure
-    // fails open to the roster-less static text (create-time errors still name the roster, so the
-    // agent can recover in-conversation). Only the caller's own cancellation propagates.
-    private static readonly TimeSpan _rosterTimeout = TimeSpan.FromSeconds(2);
-
+    // Without a roster. Where a timer can ring is its household's — its own voice server's
+    // satellites, or none — and a prompt is fetched for nobody while a session is built and cached
+    // once for every household this server serves, so a roster here would show every household the
+    // one it was fetched from. The household's satellites are read per call from
+    // /timers/satellites.json instead, through the call's own household.
     [McpServerPrompt(Name = TimerPrompt.Name)]
     [Description(TimerPrompt.Description)]
-    public async Task<string> GetTimerPrompt(CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var timeout = new CancellationTokenSource(_rosterTimeout, time);
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
-            return TimerPrompt.Build(await satellites.GetAllAsync(linked.Token));
-        }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            return TimerPrompt.Build([]);
-        }
-    }
+    public string GetTimerPrompt() => TimerPrompt.Build([]);
 }

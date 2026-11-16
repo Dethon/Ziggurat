@@ -1,0 +1,15 @@
+# Opt-in: give the sandbox the AMD ROCm compute node, so a HIP/ROCm runtime the agent installs into
+# the sandbox home volume can see the GPU. The base file maps only /dev/dri, which is enough for
+# Vulkan/OpenGL/VA-API but not for ROCm, and a host with no /dev/kfd would fail to start the sandbox
+# if the base file named it. Needs RENDER_GID in .env (/dev/kfd is root:render 0660 too). Mutually
+# exclusive with docker-compose.override.no-dri.yml:
+#
+#   docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.rocm.yml up -d mcp-sandbox
+#
+# Device access is necessary, not sufficient: an APU whose gfx target a ROCm build leaves out still
+# enumerates no agents, which is worked around inside the sandbox with HSA_OVERRIDE_GFX_VERSION.
+services:
+  mcp-sandbox:
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/kfd:/dev/kfd

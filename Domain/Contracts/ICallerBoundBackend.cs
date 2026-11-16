@@ -2,10 +2,10 @@ using Domain.DTOs.Channel;
 
 namespace Domain.Contracts;
 
-// A backend that tells the server behind it who is calling. A tool call carries its turn's
-// conversation context with it; an operation the exec bridge makes for a sandbox command runs on
-// the bridge's own request, with no turn in flight, so the bridge hands the caller over explicitly
-// and gets the backend as that caller sees it.
+// A backend that tells the server behind it who is calling, and only as somebody hands the caller
+// over: a file tool the caller its call's arguments carry (ToolCaller), the exec bridge the caller of
+// the command whose operations it answers. Each gets the backend as that caller sees it; the backend
+// itself acts for nobody.
 public interface ICallerBoundBackend
 {
     IFileSystemBackend As(ConversationContext? caller);

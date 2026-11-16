@@ -112,7 +112,7 @@ public class HaWatchEffectsTests
         var facts = new[]
         {
             "'watchId': watch_id", "'name': watch_name", "'agentId': watch_agent", "'deliverTo': watch_deliver_to",
-            "'userId': watch_user", "'prompt': watch_prompt",
+            "'userId': watch_user", "'prompt': watch_prompt", "'promptIndex': 0",
             "'entityId': (trigger.entity_id if trigger.entity_id is defined else none)",
             "'friendlyName': (trigger.to_state.name if trigger.to_state is defined and trigger.to_state else none)",
             "'fromState': (trigger.from_state.state if trigger.from_state is defined and trigger.from_state else none)",
@@ -121,6 +121,25 @@ public class HaWatchEffectsTests
             "'firedAt': now().isoformat()"
         };
         facts.ShouldAllBe(fact => payload.Contains(fact, StringComparison.Ordinal));
+    }
+
+    // The home renders a prompt before posting it, so the post also says which of the watch's prompts
+    // it rendered — a literal, never rendered — and the server runs that prompt as the watch keeps it.
+    [Fact]
+    public async Task EachPromptsCallback_SaysWhichOfTheWatchsPromptsItIs()
+    {
+        var fs = Build(out var client);
+
+        var actions = Actions(await Written(fs, client, "sugar-low",
+            """[{"kind": "prompt", "prompt": "First"}, {"kind": "announce", "text": "Hi", "target": {"all": true}, "insistent": {}}, {"kind": "prompt", "prompt": "Second"}]"""));
+
+        var payloads = actions
+            .Where(a => a!["action"]?.GetValue<string>() == "rest_command.assistant_watch_fired")
+            .Select(a => a!["data"]!["payload"]!.GetValue<string>())
+            .ToList();
+        payloads.Count.ShouldBe(2);
+        payloads[0].ShouldContain("'promptIndex': 0");
+        payloads[1].ShouldContain("'promptIndex': 1");
     }
 
     [Fact]

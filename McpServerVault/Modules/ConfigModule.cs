@@ -3,6 +3,7 @@ using Domain.Prompts;
 using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerVault.McpPrompts;
@@ -40,6 +41,11 @@ public static class ConfigModule
             // without the vault cannot advertise how to write a note.
             .AddSkills(ObsidianVaultSkill.Text)
             .WithPrompts<McpSystemPrompt>();
+
+        if (settings.Metrics.Url.Length > 0)
+        {
+            services.AddMetricsPublishing("mcp-vault", settings.Metrics);
+        }
 
         return services;
     }

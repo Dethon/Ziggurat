@@ -50,7 +50,8 @@ public sealed class StreamResumeServiceTests : IDisposable
             _messagesStore,
             _agentSettingsStore,
             new ComposerStore(_dispatcher),
-            _topicStreams);
+            _topicStreams,
+            new MessagePipeline(_dispatcher, _messagesStore, _topicStreams, NullLogger<MessagePipeline>.Instance));
         var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _topicStreams,
             NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(
@@ -197,6 +198,30 @@ public sealed class StreamResumeServiceTests : IDisposable
     }
 
     #endregion
+
+    // The wire is opened saying what of the stream the page just drew, so it starts with the rest:
+    // Carlos, opening a topic mid-reply, lost the 34 characters written between reading the state and
+    // opening the wire.
+    [Fact]
+    public async Task TryResumeStreamAsync_OpensTheWireSayingWhatItDrewFromTheState()
+    {
+        var topic = CreateTopic(topicId: "topic-1");
+        _messagingService.SetStreamState("topic-1", new StreamState(
+            true, [new ChatStreamMessage { Content = "Se llam", MessageId = "msg-1" }], "msg-1", null, null));
+
+        await _resumeService.TryResumeStreamAsync(topic);
+
+        _messagingService.LastResumeSeen.ShouldBe(new StreamSeen(1, [new SeenMessage("msg-1", 7, 0, 0)]),
+            new StreamSeenComparer());
+    }
+
+    private sealed class StreamSeenComparer : IEqualityComparer<StreamSeen?>
+    {
+        public bool Equals(StreamSeen? x, StreamSeen? y) =>
+            x is not null && y is not null && x.Count == y.Count && x.Messages.SequenceEqual(y.Messages);
+
+        public int GetHashCode(StreamSeen? obj) => obj?.Count ?? 0;
+    }
 
     #region Prompt Handling Tests
 

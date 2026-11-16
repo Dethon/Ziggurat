@@ -9,10 +9,6 @@ public sealed class FakeChatSessionService(CallRecorder? recorder = null) : ICha
 
     public event Action? OnSessionChanged;
 
-    public IReadOnlyList<string> RegisteredUserIds => _registeredUserIds;
-
-    private readonly List<string> _registeredUserIds = [];
-
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
@@ -35,19 +31,6 @@ public sealed class FakeChatSessionService(CallRecorder? recorder = null) : ICha
         CurrentTopic = topic;
         OnSessionChanged?.Invoke();
         return Task.FromResult(HubResult<bool>.Answered(true));
-    }
-
-    public Task<HubResult<Nothing>> RegisterUserAsync(string userId)
-    {
-        recorder?.Record("register-user");
-
-        if (NotLive)
-        {
-            return Task.FromResult(HubResult<Nothing>.NotLive);
-        }
-
-        _registeredUserIds.Add(userId);
-        return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
     public void ClearSession()

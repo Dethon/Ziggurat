@@ -5,6 +5,7 @@ paths:
   - "Infrastructure/Printing/**"
   - "Infrastructure/Clients/Printer/**"
   - "Domain/Prompts/PrintingPrompt.cs"
+  - "Domain/Prompts/Sections/printing_prompt.md"
   - "Domain/Contracts/IPrinter*.cs"
   - "Domain/Contracts/IPrintSpool.cs"
   - "Domain/DTOs/Printing/**"

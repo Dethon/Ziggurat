@@ -10,12 +10,12 @@ namespace Infrastructure.Clients.Voice;
 // exactly when a process-lifetime cache would wrongly reject the new satellite (creates are rare, so
 // the extra GET is free). Resolution is never done locally: the hub's registry dual-keys rooms on
 // Room and DisplayLocation, so forwarding is what keeps create-time validation identical to firing.
-public sealed class HttpSatelliteCatalog(IHttpClientFactory httpClientFactory, string token) : ISatelliteCatalog
+public sealed class HttpSatelliteCatalog(IHttpClientFactory httpClientFactory, string token, string? household = null) : ISatelliteCatalog
 {
     public async Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct)
     {
         using var message = new HttpRequestMessage(HttpMethod.Get, "api/voice/satellites");
-        message.Headers.Add("X-Announce-Token", token);
+        VoiceHubHttp.Address(message, token, household);
 
         using var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
         Answered(response);
@@ -28,7 +28,7 @@ public sealed class HttpSatelliteCatalog(IHttpClientFactory httpClientFactory, s
         {
             Content = JsonContent.Create(target)
         };
-        message.Headers.Add("X-Announce-Token", token);
+        VoiceHubHttp.Address(message, token, household);
 
         using var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
         Answered(response);

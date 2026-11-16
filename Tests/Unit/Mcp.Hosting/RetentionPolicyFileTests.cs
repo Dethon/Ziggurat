@@ -8,13 +8,13 @@ using Shouldly;
 
 namespace Tests.Unit.Mcp.Hosting;
 
-// The retention policy is one file, not a block per host. Three processes write topic keys — the
-// agent, the chat channel and the voice channel — and a conversation that aged on a different
-// clock depending on which of them last wrote to it would be the defect this shape exists to
+// The retention policy is one file, not a block per host. Two processes write topic keys — the
+// agent (voice's among them, which it mints) and the chat channel — and a conversation that aged on
+// a different clock depending on which of them last wrote to it would be the defect this shape exists to
 // prevent.
 //
 // What that costs is invisible from any one host: each reads its own configuration and would look
-// perfectly correct while disagreeing with the other two. So these assert the shared file itself.
+// perfectly correct while disagreeing with the other. So these assert the shared file itself.
 public class RetentionPolicyFileTests
 {
     private sealed record HostSettings

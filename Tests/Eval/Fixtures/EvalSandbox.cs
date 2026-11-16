@@ -48,6 +48,7 @@ public sealed class EvalSandbox : IAsyncDisposable
             // The deployment secret its /mcp asks for, which the stack's agent presents too. The
             // wait presents it as well, or the gate answers 401 before the transport says 405.
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithCallTokensFromTheTestProcess()
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
                 .ForPort(8080)
                 .ForPath("/mcp")

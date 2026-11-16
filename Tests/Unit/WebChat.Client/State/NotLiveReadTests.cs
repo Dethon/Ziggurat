@@ -53,7 +53,7 @@ public sealed class NotLiveReadTests
         var transport = await client.ConnectAsync();
         await SelectFirstAgentAsync(client);
         client.Dispatcher.Dispatch(new TopicsLoaded([StoredTopicOne()]));
-        transport.Answer("GetTopicPage", new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null));
+        transport.Answer("GetTopicPageFiltered", new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null));
 
         await client.Service<AgentSelectionEffect>().HandleAgentChangedAsync("agent-2");
 
@@ -101,7 +101,7 @@ public sealed class NotLiveReadTests
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         await SelectFirstAgentAsync(client);
-        transport.Answer("GetTopicPage", new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null));
+        transport.Answer("GetTopicPageFiltered", new TopicPage([TestChat.Topic("topic-2", 11, 21, "agent-2")], null));
         transport.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[TestChat.HistoryMessage("m-2", "fresh")]);
 
         await client.Service<AgentSelectionEffect>().HandleAgentChangedAsync("agent-2");

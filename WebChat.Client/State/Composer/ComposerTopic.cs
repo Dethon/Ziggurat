@@ -47,7 +47,9 @@ public sealed class ComposerTopic(
             Name = files[0].FileName,
             NameFromFile = true,
             CreatedAt = DateTime.UtcNow,
-            SpaceSlug = spaceStore.State.CurrentSlug
+            SpaceSlug = spaceStore.State.CurrentSlug,
+            OwnerId = state.Viewer?.UserId,
+            TenantId = state.Viewer?.TenantId
         };
 
         var started = await sessionService.StartSessionAsync(topic);
@@ -60,6 +62,7 @@ public sealed class ComposerTopic(
         dispatcher.Dispatch(new SelectTopic(topic.TopicId));
         dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         await topicService.SaveTopicAsync(topic.ToMetadata(), isNew: true);
+        TopicListMoves.ToTheStartersOwn(topic, topicsStore.State, dispatcher);
         return topic.TopicId;
     }
 

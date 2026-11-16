@@ -11,8 +11,8 @@ public record DayNoteDto(DateOnly Day, string Text);
 
 public record SaveDayNoteRequest(string? Text);
 
-// A note on a day of her calendar. The day is the note's key, so writing one sets it and emptying
-// it deletes it: there is never a day with an empty note.
+// A note on a day of the person's calendar. The day is the note's key in their log, so writing one
+// sets it and emptying it deletes it: there is never a day with an empty note.
 public static class DayNoteEndpoints
 {
     public const int MaxLength = 500;
@@ -49,7 +49,8 @@ public static class DayNoteEndpoints
         }
 
         var key = Parse(day)!.Value;
-        var note = await db.DayNotes.FindAsync([key], ct);
+        // The day is a note's key within one person's log, and the context is that person's.
+        var note = await db.DayNotes.FirstOrDefaultAsync(n => n.Day == key, ct);
         if (text == "")
         {
             if (note is not null)

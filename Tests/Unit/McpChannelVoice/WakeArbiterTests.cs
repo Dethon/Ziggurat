@@ -93,25 +93,14 @@ public class WakeArbiterTests
         return (arbiter, time, metrics, conversations);
     }
 
-    // The exact IConversationFactory fake + ReplyTextAccumulator construction from
+    // The exact topic minter fake + ReplyTextAccumulator construction from
     // VoiceConversationManagerTests.Build, so handoff runs against the real manager.
     private static VoiceConversationManager TestConversationManager(ArmedClock clock)
     {
-        var factory = new Mock<IConversationFactory>();
-        var counter = 0;
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                counter++;
-                var topicId = $"topic-{counter}";
-                var identity = ConversationIdGenerator.CreateFor(topicId);
-                var topic = new TopicMetadata(topicId, identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", clock.GetUtcNow(), null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         return new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), clock, TimeSpan.FromMinutes(5),
+            factory, new ReplyTextAccumulator(), clock, TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance);
     }
 
@@ -336,7 +325,7 @@ public class WakeArbiterTests
         holder.Session.MarkSupportsPause();
         waker.Session.MarkSupportsPause();
         var conversationId = await conversations.GetOrCreateAsync(
-            holder.Session, "agent", "hola", CancellationToken.None);
+            holder.Session, "agent", CancellationToken.None);
 
         holder.OpenCapture(time, settings);
         holder.Capture!.Feed(SilentChunk());
@@ -408,7 +397,7 @@ public class WakeArbiterTests
         holder.Session.MarkSupportsPause();
         waker.Session.MarkSupportsPause();
         var holderConversation = await conversations.GetOrCreateAsync(
-            holder.Session, "agent", "hola", CancellationToken.None);
+            holder.Session, "agent", CancellationToken.None);
 
         holder.OpenCapture(time, settings);
         holder.Capture!.Feed(SilentChunk());
@@ -425,7 +414,7 @@ public class WakeArbiterTests
         // bound its own conversation — with the agent's reply to it still in flight.
         time.Advance(TimeSpan.FromMilliseconds(100));
         var wakerConversation = await conversations.GetOrCreateAsync(
-            waker.Session, "agent", "enciende la luz", CancellationToken.None);
+            waker.Session, "agent", CancellationToken.None);
         await SettleAsync(time, settings.WindowMs);
 
         // The stale handoff is skipped so the in-flight reply still routes to the winner,
@@ -483,7 +472,7 @@ public class WakeArbiterTests
         holder.Session.MarkSupportsPause();
         waker.Session.MarkSupportsPause();
         var conversationId = await conversations.GetOrCreateAsync(
-            holder.Session, "agent", "hola", CancellationToken.None);
+            holder.Session, "agent", CancellationToken.None);
 
         holder.OpenCapture(time, settings);
         holder.Capture!.Feed(SilentChunk());

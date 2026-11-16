@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.Prompts;
+using Infrastructure.Agents.ChatClients;
 
 namespace Infrastructure.Agents;
 
@@ -18,7 +19,8 @@ public sealed record AgentSpec
     public required string DisplayName { get; init; }
     public required string PromptName { get; init; }
     public required string Description { get; init; }
-    public required string MetricsAgentId { get; init; }
+    // What the agent's figures are shown under; they are keyed by AgentId, which a rename leaves alone.
+    public required string MetricsAgentName { get; init; }
     public required string RoutingSessionId { get; init; }
     public required string ConversationId { get; init; }
     public required string UserId { get; init; }
@@ -28,13 +30,38 @@ public sealed record AgentSpec
     public ProviderRouting? ProviderRouting { get; init; }
     public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
 
-    // Whether live outposts join the endpoint list above when a session is built. A deliberate
+    // The household this agent's turns are for, which a household server the endpoints name is
+    // resolved against when a session is built. A worker's is its parent's. Null where the turn that
+    // built the agent named none (it acted for nobody), and then no household server is reached.
+    public string? TenantId { get; init; }
+
+    // The household's own OpenRouter key every model call of this agent is sent with; null for the
+    // home household's agents and every agent no household's configuration gave, which are sent with
+    // the deployment's. A worker's is its parent's. It prints as nothing (ModelKey).
+    public ModelKey? Key { get; init; }
+
+    public ModelPayer Payer => new(TenantId, Key);
+
+    // The zone that household's days are read in (an IANA name), which the prompt's date is given in;
+    // null for agents no household's configuration gave, which read the host's.
+    public string? TimeZone { get; init; }
+
+    // The shared servers that household's features turned off: its definitions come without them
+    // already, and a worker this agent spawns drops them from its own profile's list.
+    public IReadOnlyList<string> WithheldServers { get; init; } = [];
+
+    // Whether the household's live outposts join the endpoint list above when a session is built. A deliberate
     // choice per agent, never a default.
     public bool UsesOutposts { get; init; }
 
     // Whether the servers above are dialled for their prompts alone. A subagent always calls
     // tools — it exists to do a delegated task — so only a definition can set it.
     public bool NoTools { get; init; }
+
+    // Tools its servers offer that this agent is not given, by bare name. Empty for an agent; a
+    // subagent is denied the login links (the handoff and the logins page), because its calls
+    // carry its parent's conversation context and only a turn a person is in may send them one.
+    public required IReadOnlySet<string> WithheldTools { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent
@@ -50,13 +77,6 @@ public sealed record AgentSpec
     public string? Language { get; init; }
     public required bool KeepsHistory { get; init; }
 
-    // Whether this build writes each outpost's mount verdict back onto its registration. True for
-    // an agent and false for a subagent: the verdict is a machine's one feedback channel and it
-    // answers "did the agent you registered with mount you", so a collision reached inside a
-    // delegated task is not the operator's to be told about. Its own field rather than a second
-    // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
-    public required bool RecordsOutpostVerdicts { get; init; }
-
     // Asked per turn rather than copied here: part of the list is discovered while the agent
     // runs, so a spec holding the ids would refuse a model that appeared after it was built.
     public required IPatchableModelSource PatchableModels { get; init; }
@@ -65,4 +85,8 @@ public sealed record AgentSpec
     // Lemonade model the host does not offer can name the box the person was asking for. Null
     // where no host is configured, which is also where no Lemonade model can ever be named.
     public string? LemonadeHostAddress { get; init; }
+
+    // The Lemonade box the turn's household runs on — its own, or the deployment's for the home — or
+    // none. A worker carries its parent's.
+    public LemonadeHost? Lemonade { get; init; }
 }

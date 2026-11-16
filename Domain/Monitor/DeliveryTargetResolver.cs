@@ -5,16 +5,25 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, ILogger logger)
+// The topic store is where the agent mints a topic itself, for a fan-out that only attach-only
+// channels deliver. Optional because a host with no topic store (a test harness) leaves such a fire
+// to whatever the channel answers when it has no conversation to attach to.
+//
+// What a turn sends out on a channel by its id goes to the deployment's connection of that id or the
+// turn's household's own, never another household's (HouseholdChannels).
+public class DeliveryTargetResolver(
+    IEnumerable<IChannelConnection> channels, ILogger logger, IConversationFactory? topics = null)
 {
     public async Task<IReadOnlyList<DeliveryTarget>> ResolveAsync(
         ChannelMessage message,
         IChannelConnection originChannel,
         CancellationToken ct)
     {
+        var household = HouseholdChannels.HouseholdOfTurn(message, originChannel);
+        var serving = channels.Serving(household).ToList();
         if (message.ReplyTo is { Count: > 0 } replyTo)
         {
-            return await FanOutAsync(message, replyTo, ct);
+            return await FanOutAsync(message, replyTo, serving, household, ct);
         }
 
         // A review copy is the same fan-out with the sending channel as its first target: the
@@ -24,7 +33,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         // and nothing the channel waits on depends on the host being there (ADR 0046).
         var host = message.ReviewCopy is null
             ? null
-            : channels.FirstOrDefault(c => c.HostsReviewCopies && c.ChannelId != message.ChannelId);
+            : serving.FirstOrDefault(c => c.HostsReviewCopies && c.ChannelId != message.ChannelId);
         if (host is null)
         {
             return [new DeliveryTarget(originChannel, message.ConversationId)];
@@ -33,7 +42,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         var targets = await FanOutAsync(
             message,
             [new ReplyTarget(message.ChannelId, message.ConversationId), new ReplyTarget(host.ChannelId, null)],
-            ct);
+            serving, household, ct);
         if (message.Attachments is { Count: > 0 } attachments
             && targets.FirstOrDefault(t => t.Channel == host) is { Channel: not null } review)
         {
@@ -80,7 +89,8 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
     }
 
     private async Task<IReadOnlyList<DeliveryTarget>> FanOutAsync(
-        ChannelMessage message, IReadOnlyList<ReplyTarget> replyTargets, CancellationToken ct)
+        ChannelMessage message, IReadOnlyList<ReplyTarget> replyTargets, IReadOnlyList<IChannelConnection> serving,
+        string? household, CancellationToken ct)
     {
         var targets = new List<DeliveryTarget>();
         // The first resolved conversation anchors a shared id for the whole fan-out. A
@@ -96,12 +106,12 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         // channel that actually displays the conversation. OrderBy is stable, so the
         // author's ordering is otherwise preserved.
         var replyTo = replyTargets
-            .OrderBy(t => channels.FirstOrDefault(c => c.ChannelId == t.ChannelId)?.AttachOnly == true ? 1 : 0)
+            .OrderBy(t => serving.Find(t.ChannelId, household)?.AttachOnly == true ? 1 : 0)
             .ToList();
         string? shared = null;
         foreach (var target in replyTo)
         {
-            var channel = channels.FirstOrDefault(c => c.ChannelId == target.ChannelId);
+            var channel = serving.Find(target.ChannelId, household);
             if (channel is null)
             {
                 continue;
@@ -113,8 +123,24 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             {
                 try
                 {
+                    // Nothing anchors yet and this channel shows no topic of its own (voice): the agent
+                    // mints the topic, for the principal it verified, so the channel only attaches.
+                    if (shared is null && channel.AttachOnly && channel.IsConnected && topics is not null)
+                    {
+                        shared = (await topics.CreateAsync(new CreateConversationParams
+                        {
+                            AgentId = message.AgentId ?? "default",
+                            TopicName = TopicName(message),
+                            Sender = message.Sender,
+                            InitialPrompt = message.Content,
+                            Principal = message.Principal,
+                            Group = message.ReviewCopy?.Group ?? false
+                        }, ct)).Identity.ConversationId;
+                    }
+
                     conversationId = await channel.CreateConversationAsync(
-                        message.AgentId ?? "default", TopicName(message), message.Sender, message.Content, target.Address, shared, ct);
+                        message.AgentId ?? "default", TopicName(message), message.Sender, message.Content,
+                        target.Address, shared, message.Principal, message.ReviewCopy?.Group ?? false, ct);
                     wasMinted = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -170,6 +196,8 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
                     initialPrompt: message.Content,
                     address: target.Address,
                     existingConversationId: target.ConversationId,
+                    message.Principal,
+                    message.ReviewCopy?.Group ?? false,
                     ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -189,6 +217,11 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             ? (targets[0].Channel.ChannelId, targets[0].ConversationId)
             : (message.ChannelId, message.ConversationId);
         var address = channelId == message.ChannelId ? message.SatelliteId : null;
+        // A person's own message is vouched for by the channel it arrived on, whichever target the
+        // turn resolves to; a fire carries only what its server stamped.
+        static Principal? PrincipalOf(ChannelMessage m) =>
+            m.Principal ?? (m.Origin is null ? new Principal(m.ChannelId, m.Sender) : null);
+
         // An unprompted fire runs on behalf of the person its author named — a schedule's or a
         // watch's `userId` — not as the sender label its server stamps on it ("scheduler",
         // "watch"); a message a person sent themselves names nobody, and the sender is that person.
@@ -197,6 +230,8 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             conversationId,
             message.UserId ?? message.Sender,
             new ReplyTarget(channelId, conversationId, address),
-            message.ConfigPatch?.Model);
+            message.ConfigPatch?.Model,
+            message.Origin?.Kind,
+            PrincipalOf(message));
     }
 }

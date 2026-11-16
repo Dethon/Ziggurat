@@ -14,4 +14,9 @@ public record AgentCatalogEntry(
     string? DefaultReasoningEffort = null,
     IReadOnlyList<PatchableModel>? PatchableModels = null,
     IReadOnlyList<string>? PatchableReasoningEfforts = null,
-    IReadOnlyList<AttachmentKind>? DefaultModelAttachmentKinds = null);
+    IReadOnlyList<AttachmentKind>? DefaultModelAttachmentKinds = null,
+
+    // The agent its household answers by default (its agents section's defaultAgent, else its first),
+    // marked on a household's catalogue for a page with nothing else to open on. False on the
+    // catalogue the agent registers, which belongs to no household's choice.
+    bool IsHouseholdDefault = false);

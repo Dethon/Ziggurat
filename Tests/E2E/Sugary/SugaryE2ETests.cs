@@ -1,8 +1,12 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Conversations;
+using Domain.DTOs.Channel;
+using Domain.Security;
+using McpServerSugary.Channel;
 using Microsoft.Playwright;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -12,9 +16,10 @@ using Tests.E2E.WebChat;
 
 namespace Tests.E2E.Sugary;
 
-// Sugary end to end on the stack: her app sends a meal photo, the real sugary agent estimates it as a
-// turn of the Sugary channel, she saves the meal, the meal is in the table another agent reads under
-// /sugary, and the conversation is a topic WebChat shows under the sugary agent.
+// Sugary end to end on the stack, for one signed-in person: their app sends a meal photo, the real
+// sugary agent estimates it as a turn of the Sugary channel, they save the meal, the meal is in the
+// table another agent reads under /sugary on their turn, and the conversation is a topic their
+// WebChat shows under the sugary agent.
 //
 // This reaches a live model (the shipped sugary agent's, Gemini 3.8 Flash today, through OpenRouter) and
 // so spends money — about a cent. Run it on purpose, never as part of a routine run:
@@ -40,8 +45,12 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         // because the review topic is titled with them, cut at 48 characters.
         var tag = Guid.NewGuid().ToString("N")[..4];
         var words = $"E2E {tag}: a slice of cheese pizza with roasted squash";
+        // One person throughout: their phone asks for the estimate, their log keeps the meal, their
+        // turn reads it under /sugary and their chat client shows the review copy.
+        var person = fixture.NextUserIndex();
+        var account = await fixture.AccountForAsync(person);
 
-        using var app = await SignedInAsync();
+        using var app = SignedIn(account);
 
         // The estimate, as the app's api.estimate sends it.
         var estimate = await EstimateAsync(app, words);
@@ -76,25 +85,31 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         saved.StatusCode.ShouldBe(HttpStatusCode.Created, await saved.Content.ReadAsStringAsync());
         var mealId = (await saved.Content.ReadFromJsonAsync<JsonNode>())!["id"]!.GetValue<string>();
 
-        // Asked as an agent with the mount asks it: the server's query tool over MCP behind the
-        // deployment secret, the statement the agent's own query tool would send.
-        var rows = await QueryMountAsync($"select notes from meals where meal_id = '{mealId}'");
+        // Asked as an agent with the mount asks it on this person's turn: the server's query tool
+        // over MCP behind its credential, the statement the agent's own query tool would send.
+        var rows = await QueryMountAsync($"select notes from meals where meal_id = '{mealId}'", account);
         rows.Count.ShouldBe(1, $"meal {mealId} is not in /sugary's meals: {rows.ToJsonString()}");
         rows[0]![0]!.GetValue<string>().ShouldContain(tag);
 
-        await TheReviewTopicShowsTheEstimateAsync(tag);
+        await TheReviewTopicShowsTheEstimateAsync(person, tag);
     }
 
-    private async Task<HttpClient> SignedInAsync()
+    // The person's phone as the Sugary site's proxy hands its requests on: the session check's four
+    // headers for their account on every request, the assertion signed with the accounts test key the
+    // stack's accounts service publishes, for Sugary's channel.
+    private HttpClient SignedIn(Account account)
     {
         // Past the server's own cap on the turn, so it is the server's 504 that says the wait ran out.
-        var app = new HttpClient(new HttpClientHandler { CookieContainer = new CookieContainer() })
+        var app = new HttpClient
         {
             BaseAddress = new Uri(fixture.SugaryUrl),
             Timeout = WebChatStack.SugaryTurnTimeout + TimeSpan.FromMinutes(1)
         };
-        var signIn = await app.PostAsJsonAsync("/api/session", new { code = WebChatStack.SugaryAccessCode });
-        signIn.StatusCode.ShouldBe(HttpStatusCode.NoContent, await signIn.Content.ReadAsStringAsync());
+        app.DefaultRequestHeaders.Add(ForwardedAccount.UserHeader, account.UserId);
+        app.DefaultRequestHeaders.Add(ForwardedAccount.TenantHeader, account.TenantId);
+        app.DefaultRequestHeaders.Add(ForwardedAccount.RolesHeader, "member");
+        app.DefaultRequestHeaders.Add(
+            ForwardedAccount.AssertionHeader, TestAssertions.Of(account, SugaryChannel.ChannelId));
         return app;
     }
 
@@ -106,6 +121,7 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         // up, and the server answers "not connected" at once until it has — no turn is sent and
         // nothing is spent — so that answer alone is asked again, for a bounded while.
         var connectDeadline = DateTime.UtcNow.AddMinutes(1);
+        var emptyAnswers = 0;
         while (true)
         {
             HttpResponseMessage response;
@@ -137,6 +153,15 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
                 continue;
             }
 
+            // A provider that answered with nothing at all is the provider's turn, not the path
+            // under test (seen beside a second suite), so that alone is asked again — twice at most.
+            if (response.StatusCode == HttpStatusCode.BadGateway
+                && body.Contains("The model returned no answer", StringComparison.Ordinal)
+                && emptyAnswers++ < 2)
+            {
+                continue;
+            }
+
             throw new ShouldAssertException(
                 $"The estimate failed with {(int)response.StatusCode}: {body}. A 502 carrying a reason is the "
                 + "agent's turn failing (the provider refused it, or the answer was outside the schema).");
@@ -165,23 +190,39 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         };
     }
 
-    private async Task<JsonArray> QueryMountAsync(string sql)
+    private async Task<JsonArray> QueryMountAsync(string sql, Account account)
     {
-        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint));
-        var result = await mcp.CallToolAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
+        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint, McpTestSecret.For("mcp-sugary"), audience: "mcp-sugary"));
+        var turn = new ConversationContext("jonas", "e2e-sugary", account.UserId, new ReplyTarget("signalr", "e2e-sugary"),
+            Principal: new Principal("signalr", account.UserId, account));
+        var result = await mcp.CallToolAsync(new CallToolRequestParams
+        {
+            Name = "fs_query",
+            Arguments = new Dictionary<string, JsonElement>
+            {
+                ["path"] = JsonSerializer.SerializeToElement("/"),
+                ["sql"] = JsonSerializer.SerializeToElement(sql)
+            },
+            Meta = new JsonObject
+            {
+                [ChannelProtocol.ConversationContextMetaKey] =
+                    JsonSerializer.SerializeToNode(turn, ChannelProtocol.SerializerOptions)
+            }
+        });
         var answer = JsonNode.Parse(string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))!;
         return answer["rows"]?.AsArray()
                ?? throw new ShouldAssertException($"querying /sugary over MCP failed: {answer.ToJsonString()}");
     }
 
     // The review copy is minted in WebChat's default space (another channel's conversation carries no
-    // space of WebChat's), under the sugary agent, titled with her words. Her photo is copied into
-    // WebChat's store in the background, so it is waited for rather than expected at once.
-    private async Task TheReviewTopicShowsTheEstimateAsync(string tag)
+    // space of WebChat's), under the sugary agent, titled with the person's words, and read by that
+    // person's chat client. Their photo is copied into WebChat's store in the background, so it is
+    // waited for rather than expected at once.
+    private async Task TheReviewTopicShowsTheEstimateAsync(int person, string tag)
     {
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(person);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.DefaultSpaceUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         await WebChatE2ETests.ClickThroughApprovalsAsync(
             page, page.Locator(".agent-seg", new PageLocatorOptions { HasText = "Sugary" }));
@@ -190,11 +231,15 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         await topic.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         await WebChatE2ETests.ClickThroughApprovalsAsync(page, topic);
 
-        await Assertions.Expect(page.Locator(".chat-message.user .message-content").First)
-            .ToContainTextAsync(tag, new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
-        await page.Locator(".chat-message.user .message-attachments").First
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .ToContainTextAsync("items", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        // The app's request is the app's line, its words behind the toggle and its photo shown under it;
+        // the estimate reads as the app shows it.
+        var notice = page.Locator(".service-notice").First;
+        await Assertions.Expect(notice)
+            .ToContainTextAsync("Sent from the Sugary app", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        await notice.Locator(".message-attachments").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await notice.Locator(".service-notice-toggle").ClickAsync();
+        await Assertions.Expect(notice.Locator(".service-notice-prompt")).ToContainTextAsync(tag);
+        await Assertions.Expect(page.Locator(".chat-message.assistant .meal-estimate").First)
+            .ToContainTextAsync("of carbs", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
     }
 }

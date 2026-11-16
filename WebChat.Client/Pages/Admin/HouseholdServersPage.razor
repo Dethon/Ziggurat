@@ -1,0 +1,157 @@
+@page "/admin/servers"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdServersStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household servers</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-servers-heading">
+    <h1 id="admin-servers-heading">Servers</h1>
+    <p class="admin-lede">
+        The household's own servers, run at home, each opening its tunnel to the deployment with a credential
+        minted here. Revoking a credential disconnects the server using it at once, and it cannot connect with
+        it again.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.Minted is { } minted)
+    {
+        <div class="admin-minted" role="region" aria-label="New credential">
+            <p>
+                The tunnel credential for @minted.ServerName. Give it to the server as
+                @ServerCredentialPlace.For(minted.ServerName), and keep it secret: it is not shown again.
+            </p>
+            <p><code class="admin-minted-link" data-server-credential>@minted.Credential</code></p>
+        </div>
+    }
+
+    @if (_state.Servers is { } servers)
+    {
+        @if (servers.Servers.Count == 0)
+        {
+            <p class="admin-status">The household has no servers of its own yet.</p>
+        }
+
+        @foreach (var server in servers.Servers)
+        {
+            <article class="admin-member" aria-label="@server.Name">
+                <header class="admin-agent-header">
+                    <h2>@server.Name</h2>
+                    <span class="admin-agent-meta" data-server-state>
+                        @(server.IsOutpost ? "Outpost · " : "")@StateOf(server)
+                    </span>
+                </header>
+                @if (server.Connection == ServerConnection.Connected)
+                {
+                    <p class="admin-field-hint" data-server-tools>
+                        @(server.Tools is { } tools
+                            ? tools.Count == 0 ? "Offers no tools." : $"Tools: {string.Join(", ", tools)}"
+                            : "Did not list its tools when asked just now.")
+                    </p>
+                }
+
+                @foreach (var credential in server.Credentials)
+                {
+                    <div class="admin-actions" role="group" aria-label="Credential minted @AdminTime.Of(credential.MintedAt)">
+                        <span>Credential minted @AdminTime.Of(credential.MintedAt)@(credential.InUse ? " · in use" : "")</span>
+                        <button type="button" class="admin-secondary" @onclick="() => _confirming = credential.Id">Revoke</button>
+                    </div>
+                    @if (_confirming == credential.Id)
+                    {
+                        <div class="admin-confirm" role="group" aria-label="Revoke @server.Name's credential">
+                            <p>
+                                Revoke this credential? A server using it is disconnected at once and cannot connect with
+                                it again. To replace it without a gap, mint a new one first and restart the server with it.
+                            </p>
+                            <div class="admin-actions">
+                                <button type="button" class="admin-secondary" @onclick="() => _confirming = null">Keep it</button>
+                                <button type="button" class="admin-save" disabled="@_state.Saving"
+                                        @onclick="() => Revoke(credential.Id)">Revoke the credential</button>
+                            </div>
+                        </div>
+                    }
+                }
+
+                <div class="admin-actions">
+                    <button type="button" class="admin-secondary" disabled="@_state.Saving"
+                            @onclick="() => Mint(server.Name)">New credential</button>
+                </div>
+            </article>
+        }
+
+        <form class="admin-form admin-agent-add" @onsubmit="Add" aria-labelledby="admin-server-add-heading">
+            <h2 id="admin-server-add-heading">Add a server</h2>
+            <p class="admin-field-hint">
+                Its name is the one the server runs under: lowercase letters, digits and hyphens. The tenant kit's
+                servers go by these names:
+            </p>
+            <ul class="admin-field-hint" data-kit-servers>
+                @foreach (var kit in ServerCredentialPlace.KitServers)
+                {
+                    <li><code>@kit</code>: @ServerCredentialPlace.WhatItGives(kit)</li>
+                }
+            </ul>
+            <p class="admin-field-hint">
+                A computer of yours the agents may use is <code>outpost-</code> followed by its name, and runs the
+                outpost program with the credential minted here.
+            </p>
+            <label class="admin-field">
+                <span class="admin-field-label">Server name</span>
+                <input name="serverName" @bind="_name" @bind:event="oninput" maxlength="63" autocomplete="off" />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Mint its credential</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's servers</p>
+    }
+</section>
+
+@code {
+    private HouseholdServersState _state = HouseholdServersState.Initial;
+    private string? _confirming;
+    private string _name = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        Subscribe(Store.StateObservable, state => state.Servers, _ => _confirming = null);
+        Subscribe(Store.StateObservable, state => state.Minted, minted =>
+        {
+            if (minted is not null)
+            {
+                _name = "";
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdServers());
+    }
+
+    private static string StateOf(AdminServer server) => server.Connection switch
+    {
+        ServerConnection.Connected => $"Connected since {(server.ConnectedSince is { } since ? AdminTime.Of(since) : "")}",
+        ServerConnection.Offline => "Offline",
+        _ => "State unknown: the deployment could not be asked just now"
+    };
+
+    private void Add() => Mint(_name.Trim());
+
+    private void Mint(string name) => Dispatcher.Dispatch(new AddHouseholdServer(new ServerAddition(name)));
+
+    // The question closes once answered, refused or not.
+    private void Revoke(string credentialId)
+    {
+        _confirming = null;
+        Dispatcher.Dispatch(new RevokeServerCredential(credentialId));
+    }
+}

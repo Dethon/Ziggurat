@@ -15,7 +15,7 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(1280, 900);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
@@ -29,11 +29,12 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         // Tapping the handle cycles to half/full and reveals the search field.
         await TapHearthHandleAsync(page);
@@ -46,11 +47,12 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         // Nothing selected yet, so the top bar carries no conversation block at all.
         await Assertions.Expect(page.Locator(".header .header-conversation")).Not.ToBeAttachedAsync();
@@ -61,7 +63,7 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await Assertions.Expect(page.Locator(".header .connection-status")).ToBeHiddenAsync();
 
         // Once a conversation exists, its name and time show in the top bar.
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
         var chatInput = page.Locator("textarea.chat-input");
         await chatInput.FillAsync("Header title E2E check");
         await chatInput.PressAsync("Enter");
@@ -76,12 +78,13 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // A pending approval leaked by a sibling test can be replayed onto this fresh page at any
         // moment, and .approval-modal-overlay covers the whole viewport: a plain click then spends
@@ -106,7 +109,7 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(1280, 900);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
@@ -126,10 +129,10 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true);
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var staleOffset = await page.EvaluateAsync<string>(
             """
@@ -165,10 +168,10 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true);
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Named per run: an earlier run's rows are still in the list under this same user, and a
         // literal would find whichever of them the list put first. The tag leads because

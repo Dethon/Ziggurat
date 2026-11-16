@@ -1,0 +1,22 @@
+# Lemonade on an NVIDIA GPU, for a host that has one and no Vulkan device a container can use — a
+# development machine under WSL, where the card reaches containers through the NVIDIA runtime
+# (CUDA) and the image's Mesa finds only llvmpipe. The embeddings (llama.cpp) run on CUDA; whisper
+# stays on the CPU, since Lemonade ships no CUDA whisper.cpp and its Vulkan tier would quietly
+# decode on llvmpipe. scripts/smoke-stack.sh applies this when Docker has the nvidia runtime.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.linux.yml \
+#     -f docker-compose.override.nvidia.yml up -d lemonade
+services:
+  lemonade:
+    devices: !reset []
+    environment:
+      STT_BACKEND: cpu
+      LLAMACPP_BACKEND: cuda
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]

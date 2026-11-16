@@ -48,10 +48,12 @@ public class ConfigModuleTests
     {
         using var sp = Build();
 
-        // The three hub-local capabilities are HTTP adapters here, not the in-process registries.
-        sp.GetRequiredService<IInsistentAnnouncer>().ShouldBeOfType<HttpInsistentAnnouncer>();
-        sp.GetRequiredService<IAlertDismisser>().ShouldBeOfType<HttpAlertDismisser>();
-        sp.GetRequiredService<ISatelliteCatalog>().ShouldBeOfType<HttpSatelliteCatalog>();
+        // The three hub-local capabilities are HTTP adapters here, not the in-process registries, and
+        // each household's are bound to it.
+        var voice = sp.GetRequiredService<IHouseholdVoices>().For("0a1b");
+        voice.Announcer.ShouldBeOfType<HttpInsistentAnnouncer>();
+        voice.Dismisser.ShouldBeOfType<HttpAlertDismisser>();
+        voice.Satellites.ShouldBeOfType<HttpSatelliteCatalog>();
         sp.GetRequiredService<ITimerStore>().ShouldBeOfType<InMemoryTimerStore>();
     }
 }

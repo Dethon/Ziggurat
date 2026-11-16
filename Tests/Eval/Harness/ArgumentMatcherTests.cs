@@ -94,4 +94,13 @@ public class ArgumentMatcherTests
         // The string matchers see a boolean as absent, which is why this one exists.
         Arg.Is("snapshot", "true").Matches(call).ShouldBeFalse();
     }
+
+    // "Browsed without asMe" is the same browse whether the flag was left out or passed false.
+    [Fact]
+    public void ANegatedFlagMatcher_PassesAnAbsentOrOtherFlag_AndRefusesTheValue()
+    {
+        Arg.FlagNot("asMe", true).Matches(Args("""{"url":"http://site/x"}""")).ShouldBeTrue();
+        Arg.FlagNot("asMe", true).Matches(Args("""{"url":"http://site/x","asMe":false}""")).ShouldBeTrue();
+        Arg.FlagNot("asMe", true).Matches(Args("""{"url":"http://site/x","asMe":true}""")).ShouldBeFalse();
+    }
 }

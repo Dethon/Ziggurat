@@ -1,3 +1,5 @@
+using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 using Domain.Tools.Files;
 using Mcp.Hosting;
 using McpServerOutpost.Settings;
@@ -30,8 +32,14 @@ public static class OutpostFlags
     // The one value that is not a flag, refused rather than ignored. The reason it is a secret is
     // the reason it cannot be typed: a command line is visible to every process on the machine, so
     // somebody who passed it this way needs to be told it did not work rather than left believing
-    // their outpost is gated.
-    private static readonly string[] _neverFlags = ["--sharedsecret", "--shared-secret", "--secret"];
+    // their outpost is gated. The retired shared secret's spellings too: a person typing one is a
+    // person about to put a secret on a command line.
+    private static readonly string[] _neverFlags =
+        ["--credential", "--tunnel-credential", "--secret", "--sharedsecret", "--shared-secret"];
+
+    // What the outpost no longer has, refused with a message rather than quietly ignored: it opens its
+    // own tunnel, so there is no address to advertise and no port anything dials.
+    private static readonly string[] _retiredFlags = ["--advertise", "--port"];
 
     public static OutpostSettings GetOutpostSettings(this IConfigurationBuilder configBuilder, string[] args)
     {
@@ -53,23 +61,35 @@ public static class OutpostFlags
         var validated = configBuilder.BindSettings<OutpostSettings>();
         configBuilder.Sources.Remove(flags);
         configBuilder.Sources.Add(flags);
-        return configBuilder.Build().Get<OutpostSettings>() ?? validated;
+        var configuration = configBuilder.Build();
+        var settings = configuration.Get<OutpostSettings>() ?? validated;
+
+        // The tunnel's timings are the shared policy file's (Domain/tunnel.json, which the binder
+        // reads), under the section every tunnelled server binds them from.
+        return Checked(settings with
+        {
+            TunnelPolicy = configuration.GetSection("mcp:tunnel").Get<TunnelSettings>() ?? new TunnelSettings()
+        });
     }
 
     internal static string[] Sanitized(string[] args)
     {
-        if (args.FirstOrDefault(names) is { } typed)
+        if (args.FirstOrDefault(arg => Names(arg, _neverFlags)) is { } typed)
         {
             throw new InvalidOperationException(
-                $"'{typed}' cannot be passed on the command line: a command line is visible to every "
-                + "process on this machine, and the shared secret is the one value that is a secret. "
-                + "Set SHAREDSECRET in the environment instead.");
+                $"'{typed.Split('=', 2)[0]}' cannot be passed on the command line: a command line is visible "
+                + "to every process on this machine, and the tunnel credential is the one value that is a "
+                + "secret. Set CREDENTIAL in the environment instead.");
+        }
+
+        if (args.FirstOrDefault(arg => Names(arg, _retiredFlags)) is { } retired)
+        {
+            throw new InvalidOperationException(
+                $"'{retired.Split('=', 2)[0]}' is no longer an outpost flag: the outpost opens its own tunnel "
+                + "to the hub and listens on nothing the hub dials. Start it again without it.");
         }
 
         return [.. args.Select(arg => _booleanFlags.Contains(arg, StringComparer.Ordinal) ? arg + "=true" : arg)];
-
-        static bool names(string arg) =>
-            _neverFlags.Contains(arg.Split('=', 2)[0], StringComparer.OrdinalIgnoreCase);
     }
 
     // One machine's list, replacing the shared default wholesale rather than adding to it: a
@@ -81,5 +101,29 @@ public static class OutpostFlags
         return string.IsNullOrWhiteSpace(settings.Ext)
             ? TextFileExtensions.Default
             : [.. settings.Ext.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
+
+    private static bool Names(string arg, string[] flags) =>
+        flags.Contains(arg.Split('=', 2)[0], StringComparer.OrdinalIgnoreCase);
+
+    // What the binder cannot say for itself: a name no credential can be minted for, and a credential
+    // that was never set — the one value that has to come from the environment.
+    private static OutpostSettings Checked(OutpostSettings settings)
+    {
+        if (!OutpostServerName.IsValidName(settings.Name))
+        {
+            throw new InvalidOperationException(
+                $"'{settings.Name}' cannot be this outpost's --name: its tunnel credential is minted for "
+                + $"'{OutpostServerName.For(settings.Name)}', which must be lowercase letters, digits and "
+                + "hyphens, at most 63 characters.");
+        }
+
+        return settings.Credential.Length > 0
+            ? settings
+            : throw new InvalidOperationException(
+                "This outpost has no tunnel credential. Ask the operator to mint one for "
+                + $"'{OutpostServerName.For(settings.Name)}' (mint-tunnel-credential) and set it as CREDENTIAL "
+                + "in the environment — never as a flag, because a command line is visible to every "
+                + "process on this machine.");
     }
 }

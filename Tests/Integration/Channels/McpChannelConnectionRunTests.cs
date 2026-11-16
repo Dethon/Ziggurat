@@ -114,6 +114,41 @@ public class McpChannelConnectionRunTests
         await run;
     }
 
+    // Each household's own Lemonade box offers what it has now, which changes as a model is loaded or
+    // the box goes off: the channel is told every household's list with the catalog, and again when
+    // one changes, so a household's picker follows its box.
+    [Fact]
+    public async Task RunAsync_AHouseholdsLemonadeModelsChange_RegistersThemAgain()
+    {
+        await ResetAsync();
+        IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>> lemonade = new Dictionary<string, IReadOnlyList<PatchableModel>>
+        {
+            ["kapoor"] = []
+        };
+        await using var server = await StartServerAsync();
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50))
+        {
+            HouseholdLemonadeModels = () => lemonade
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
+        await _registered.WaitAsync(cts.Token);
+        _lastLemonade.ShouldNotBeNull()["kapoor"].ShouldBeEmpty();
+
+        lemonade = new Dictionary<string, IReadOnlyList<PatchableModel>>
+        {
+            ["kapoor"] = [new PatchableModel("lemonade/qwen", "qwen")]
+        };
+        await _registered.WaitAsync(cts.Token);
+
+        Volatile.Read(ref _registerCalls).ShouldBe(2);
+        _lastLemonade!["kapoor"].Select(m => m.Id).ShouldBe(["lemonade/qwen"]);
+        await cts.CancelAsync();
+        await run;
+    }
+
     [Fact]
     public async Task RunAsync_TheServerIsNotThereYet_KeepsRetryingUntilItIs()
     {
@@ -352,13 +387,18 @@ public class McpChannelConnectionRunTests
     {
         [McpServerTool(Name = ChannelProtocol.RegisterAgentsTool)]
         [Description("Take the agent catalog.")]
-        public static string Register(IReadOnlyList<AgentCatalogEntry> agents)
+        public static string Register(
+            IReadOnlyList<AgentCatalogEntry> agents,
+            IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>>? householdLemonadeModels = null)
         {
+            _lastLemonade = householdLemonadeModels;
             Interlocked.Increment(ref _registerCalls);
             _registered.Release();
             return "ok";
         }
     }
+
+    private static volatile IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>>? _lastLemonade;
 
     // State for the session-expiry scenario. The MCP server here answers `server/discover` with a
     // JSON-RPC error so the client falls back to the session-minting initialize handshake, mints a

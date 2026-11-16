@@ -50,6 +50,30 @@ public class PromptBudgetTests
             "Either trim it or raise the budget in PromptManifest and say why.");
     }
 
+    public static TheoryData<string> DocumentsWithNothingToFill =>
+        [.. PromptDocuments.Sections.Where(d => d.Placeholders.Count == 0).Select(d => d.Name)];
+
+    // A document with no hole is its words exactly, so they are measured as they ship; one with
+    // holes is measured filled, as its server serves it or as an agent's prompt composes it.
+    [Theory]
+    [MemberData(nameof(DocumentsWithNothingToFill))]
+    public void Budget_EachDocumentWithNothingToFill_FitsItsDeclaredBudget(string name)
+    {
+        Fits(PromptManifest.Bind(name, PromptDocuments.Section(name).Text));
+    }
+
+    // The served sections are measured from the samples the fixture builds them with; a served
+    // document with no sample would be a budget nothing checks.
+    [Fact]
+    public void Budget_EveryServedDocument_IsMeasuredFromASample()
+    {
+        PromptDocuments.Sections
+            .Where(d => d.Value("served-by") is not null)
+            .Select(d => d.Name)
+            .Where(name => !AgentPromptFixture.ServedText.ContainsKey(name))
+            .ShouldBeEmpty();
+    }
+
     [Fact]
     public void Budget_TheVoiceSection_FitsItsDeclaredBudget()
     {
@@ -139,6 +163,6 @@ public class PromptBudgetTests
     private static void Fits(PromptSection section) =>
         section.IsOverBudget.ShouldBeFalse(
             $"'{section.Name}' is {section.TokenCount} tokens against a budget of " +
-            $"{section.Declaration.TokenBudget}. Either trim it or raise the budget in PromptManifest " +
-            "and say why.");
+            $"{section.Declaration.TokenBudget}. Either trim it or raise the budget in its document's " +
+            "header (Domain/Prompts/Sections) and say why there.");
 }

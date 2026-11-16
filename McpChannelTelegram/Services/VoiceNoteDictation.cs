@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
+using Domain.Metrics;
 using Infrastructure.Clients.Transcription;
 using McpChannelTelegram.Settings;
 using Telegram.Bot;
@@ -39,8 +40,11 @@ public sealed class VoiceNoteDictation(
     // other end, and only one of them is worth recording again for.
     private const string CouldNotUnderstand = "I could not make out that voice note.";
 
-    public async Task<Dictation> ReadAsync(ITelegramBotClient botClient, Voice voice, CancellationToken ct)
+    // The household is the one the sender's linked account belongs to: the recording is heard by
+    // the shared Lemonade on its behalf, and everything recorded about it is its own.
+    public async Task<Dictation> ReadAsync(ITelegramBotClient botClient, Voice voice, string tenantId, CancellationToken ct)
     {
+        var householdMetrics = metrics.ForHousehold(tenantId);
         // Read off the update, so a recording too long to be worth transcribing is refused while
         // the person is still standing there rather than after a download nothing will use.
         if (voice.Duration > settings.MaxLength.TotalSeconds)
@@ -59,11 +63,11 @@ public sealed class VoiceNoteDictation(
 
             var clock = Stopwatch.StartNew();
             var result = await transcriber.TranscribeAsync(
-                Prepare(audio, container) with { Language = settings.Transcription.Language }, ct);
+                Prepare(audio, container) with { Language = settings.Transcription.Language, TenantId = tenantId }, ct);
             clock.Stop();
 
             var worthATurn = IsWorthATurn(result);
-            metrics.RecordTranscribed(
+            householdMetrics.RecordTranscribed(
                 Channel, worthATurn ? "dispatched" : "rejected", result, clock.ElapsedMilliseconds);
 
             return worthATurn
@@ -77,7 +81,7 @@ public sealed class VoiceNoteDictation(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Could not transcribe a Telegram voice note: {Message}", ex.Message);
-            metrics.RecordFailure(Channel, ex);
+            householdMetrics.RecordFailure(Channel, ex);
             return new Dictation.Refused(CouldNotUnderstand);
         }
     }

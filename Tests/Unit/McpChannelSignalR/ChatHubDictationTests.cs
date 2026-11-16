@@ -6,7 +6,6 @@ using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -38,6 +37,7 @@ public sealed class ChatHubDictationTests : IDisposable
         var sessionService = new SessionService();
         _streamService = new StreamService(
             sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -47,7 +47,7 @@ public sealed class ChatHubDictationTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             new AttachmentService(
                 _attachmentSettings,
@@ -57,9 +57,11 @@ public sealed class ChatHubDictationTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             _dictation,
+            new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
     }
 
@@ -73,16 +75,18 @@ public sealed class ChatHubDictationTests : IDisposable
         var ticket = _hub.CreateDictationTicket();
 
         ticket.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_attachmentSettings.TicketTtlSeconds));
-        _tickets.ResolvesDictation(ticket.Token, "default").ShouldBeTrue();
-        _tickets.ResolvesDictation(ticket.Token, "private").ShouldBeFalse();
+        _tickets.ResolveDictation(ticket.Token, "default").ShouldNotBeNull();
+        _tickets.ResolveDictation(ticket.Token, "private").ShouldBeNull();
     }
 
+    // The upload carries only the ticket, so the household its recording is heard for is the one
+    // the hub verified when the ticket was asked for.
     [Fact]
-    public void CreateDictationTicket_BeforeRegistering_IsRefused()
+    public void CreateDictationTicket_IsForTheCallersHousehold()
     {
-        _hub.Context.Items.Remove("UserId");
+        var ticket = _hub.CreateDictationTicket();
 
-        Should.Throw<HubException>(() => _hub.CreateDictationTicket());
+        _tickets.ResolveDictation(ticket.Token, "default")!.TenantId.ShouldBe("home");
     }
 
     // Changing the cap or the floor must not need new JavaScript shipped, so the browser learns

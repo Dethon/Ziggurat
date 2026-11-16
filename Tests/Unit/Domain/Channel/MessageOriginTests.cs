@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
@@ -54,5 +55,21 @@ public class MessageOriginTests
         };
 
         ScheduleExecutionEvent.FromMessage(message, durationMs: 1, success: true, error: null).ShouldBeNull();
+    }
+
+    // A schedule's fire reaches its turn framed with the scheduler's report, and the dashboard's run
+    // list showed that frame ("<fire-report note=...") where the schedule's own prompt belongs.
+    [Fact]
+    public void AScheduleExecution_RecordsTheSchedulesPrompt_NotTheReportFramedBesideIt()
+    {
+        var message = new ChannelMessage
+        {
+            ConversationId = "c", Sender = "scheduler", ChannelId = "signalr", AgentId = "jonas",
+            Content = FireReports.Frame("Tell Tomás to water the plants.", "This turn is the scheduled task \"plants\"."),
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "plants")
+        };
+
+        ScheduleExecutionEvent.FromMessage(message, durationMs: 1, success: true, error: null)
+            .ShouldNotBeNull().Prompt.ShouldBe("Tell Tomás to water the plants.");
     }
 }

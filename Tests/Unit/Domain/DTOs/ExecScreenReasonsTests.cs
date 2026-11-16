@@ -12,7 +12,9 @@ public class ExecScreenReasonsTests
     [InlineData(ExecScreenCodes.Destructive, "It would delete or change something that's already there.")]
     [InlineData(ExecScreenCodes.SendsOut, "It would send data to a remote server.")]
     [InlineData(ExecScreenCodes.RunsDownloaded, "It would download a program and run it.")]
+    [InlineData(ExecScreenCodes.ReachesLan, "It would reach devices on your home network.")]
     [InlineData(ExecScreenCodes.Unjudged, "It runs on your computer and couldn't be checked first.")]
+    [InlineData(ExecScreenCodes.AsPerson, "It would browse this site logged in as you.")]
     public void EachCode_SaysItsReason(string code, string line)
     {
         ExecScreenReasons.English([code]).ShouldBe(line);
@@ -38,5 +40,20 @@ public class ExecScreenReasonsTests
     {
         ExecScreenReasons.English(["orbit"]).ShouldBeNull();
         ExecScreenReasons.English(["orbit", ExecScreenCodes.Unjudged]).ShouldBe("It runs on your computer and couldn't be checked first.");
+    }
+
+    // A card in a shared topic is shown to everyone who sees it, and "logged in as you" told a member
+    // reading another person's question that the agent would act as them.
+    [Theory]
+    [InlineData(ExecScreenCodes.NotRequested, "This doesn't look like part of what was asked for.")]
+    [InlineData(ExecScreenCodes.Destructive, "It would delete or change something that's already there.")]
+    [InlineData(ExecScreenCodes.SendsOut, "It would send data to a remote server.")]
+    [InlineData(ExecScreenCodes.RunsDownloaded, "It would download a program and run it.")]
+    [InlineData(ExecScreenCodes.ReachesLan, "It would reach devices on the household's network.")]
+    [InlineData(ExecScreenCodes.Unjudged, "It runs on the asker's computer and couldn't be checked first.")]
+    [InlineData(ExecScreenCodes.AsPerson, "It would browse this site logged in as the person who asked.")]
+    public void EachCode_ToSomeoneOtherThanTheAsker_SpeaksOfTheAsker(string code, string line)
+    {
+        ExecScreenReasons.EnglishForOthers([code]).ShouldBe(line);
     }
 }

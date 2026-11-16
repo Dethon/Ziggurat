@@ -113,4 +113,65 @@ public sealed class ApprovalStoreTests : IDisposable
         _dispatcher.Dispatch(new ApprovalResolved("approval-1"));
         _store.State.CurrentRequest?.ApprovalId.ShouldBe("approval-2");
     }
+
+    // Answered on another of its asker's channels, the card stays to say so rather than vanishing
+    // under the person's finger, and is theirs to close.
+    [Fact]
+    public void ApprovalResolved_AnsweredElsewhere_KeepsTheCardToSaySo_UntilItIsClosed()
+    {
+        _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
+
+        _dispatcher.Dispatch(new ApprovalResolved("approval-1", AnsweredElsewhere: true));
+
+        ApprovalCard.Of(_store.State, "fran")
+            .ShouldBe(new ApprovalCard(Approval("approval-1"), ApprovalCardStatus.AnsweredElsewhere));
+        _dispatcher.Dispatch(new ClearApproval("approval-1"));
+        _store.State.CurrentRequest.ShouldBeNull();
+    }
+
+    // A question is its asker's: whoever sees someone else's sees it without the buttons to answer.
+    [Fact]
+    public void ApprovalCard_AnotherPersonsQuestion_IsShownButNotAnswerable()
+    {
+        _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1") with { AskedBy = "laura" }));
+
+        ApprovalCard.Of(_store.State, "fran")!.Status.ShouldBe(ApprovalCardStatus.NotYours);
+        ApprovalCard.Of(_store.State, "laura")!.Status.ShouldBe(ApprovalCardStatus.Answerable);
+    }
+
+    // A question acting for nobody is answered by the topic's own rule, which the hub keeps.
+    [Fact]
+    public void ApprovalCard_AQuestionActingForNobody_IsAnswerable()
+    {
+        _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
+
+        ApprovalCard.Of(_store.State, "fran")!.Status.ShouldBe(ApprovalCardStatus.Answerable);
+    }
+
+    // What the server still offers this person is the whole truth about offers: one it no longer
+    // lists was answered or called off while the client was away, and one it lists is shown.
+    [Fact]
+    public void OfferedApprovalsReconciled_ReplacesTheOffersAndLeavesTopicsPromptsAlone()
+    {
+        _dispatcher.Dispatch(new ShowApproval("topic-1", Approval("approval-1")));
+        _dispatcher.Dispatch(new ShowApproval(null, Approval("offer-1")));
+
+        _dispatcher.Dispatch(new OfferedApprovalsReconciled([Approval("offer-2")]));
+
+        _store.State.Pending.Select(p => p.Request.ApprovalId).ShouldBe(["approval-1", "offer-2"]);
+        _dispatcher.Dispatch(new TopicApprovalsReconciled("topic-1", null));
+        _store.State.CurrentRequest?.ApprovalId.ShouldBe("offer-2");
+    }
+
+    // A card that says it was answered elsewhere is the person's to close, so catching up keeps it.
+    [Fact]
+    public void OfferedApprovalsReconciled_KeepsACardSayingItWasAnsweredElsewhere()
+    {
+        _dispatcher.Dispatch(new ShowApproval(null, Approval("offer-1")));
+        _dispatcher.Dispatch(new ApprovalResolved("offer-1", AnsweredElsewhere: true));
+
+        _dispatcher.Dispatch(new OfferedApprovalsReconciled([]));
+
+        _store.State.CurrentRequest?.ApprovalId.ShouldBe("offer-1");
+    }
 }

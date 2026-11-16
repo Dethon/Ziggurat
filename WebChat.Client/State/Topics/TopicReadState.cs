@@ -11,13 +11,13 @@ public static class TopicReadState
     public static async Task MarkReadAsync(
         StoredTopic topic, IDispatcher dispatcher, ITopicService topicService)
     {
-        if (topic.UnreadCount == 0)
+        if (topic.UnreadCount > 0)
         {
-            return;
+            dispatcher.Dispatch(new UpdateTopic(topic.WithReadPosition(topic.MessageCount)));
         }
 
-        dispatcher.Dispatch(new UpdateTopic(topic.WithReadPosition(topic.MessageCount)));
-
+        // Asked even when this client counts nothing unread: its count can be one the store has
+        // outgrown (a topic an agent opened arrives holding nothing).
         await topicService.MarkTopicReadAsync(topic.AgentId, topic.ChatId, topic.TopicId);
     }
 }

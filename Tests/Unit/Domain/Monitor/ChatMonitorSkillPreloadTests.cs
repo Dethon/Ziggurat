@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Monitor;
@@ -171,6 +172,25 @@ public class ChatMonitorSkillPreloadTests
         caller.ConversationId.ShouldBe("conv-1");
     }
 
+    // A household's preload is its call: asked on the key its agent pays with, and counted under it.
+    [Fact]
+    public async Task ThePreload_IsPaidByTheHouseholdTheAgentWasBuiltFor()
+    {
+        var payer = new ModelPayer("0123456789abcdef0123456789abcdef", new ModelKey("household-key"));
+        var agent = MonitorTestMocks.CreateAgent();
+        agent.Skills = [_home];
+        agent.PaidBy = payer;
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var metrics = new RecordingMetricsPublisher();
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage(content: "enciende la luz"));
+        var monitor = Monitor(agent, channel, recall: null, new SkillPreloader(judge, _settings, TimeProvider.System, metrics));
+
+        await monitor.Monitor(CancellationToken.None);
+
+        judge.Asked.ShouldHaveSingleItem().Caller.Payer.ShouldBe(payer);
+        metrics.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem().TenantId.ShouldBe(payer.TenantId);
+    }
+
     private sealed class CallerRecordingJudge : IJudge
     {
         public List<JudgmentCaller> Callers { get; } = [];
@@ -226,6 +246,7 @@ public class ChatMonitorSkillPreloadTests
             new Mock<IMetricsPublisher>().Object,
             recall,
             Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier(),
             skillPreloader: preloader);
 
     private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
@@ -255,18 +276,18 @@ public class ChatMonitorSkillPreloadTests
 
     private sealed class ReleasingRecallHook(TaskCompletionSource release) : IMemoryRecallHook
     {
-        public Task EnrichAsync(
-            ChatMessage message, string userId, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+        public Task<MemoryExtraction?> EnrichAsync(
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             release.TrySetResult();
-            return Task.CompletedTask;
+            return Task.FromResult<MemoryExtraction?>(null);
         }
     }
 
     private sealed class DelayingRecallHook(TimeProvider clock, TimeSpan delay) : IMemoryRecallHook
     {
-        public async Task EnrichAsync(
-            ChatMessage message, string userId, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+        public async Task<MemoryExtraction?> EnrichAsync(
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             if (delay > TimeSpan.Zero)
             {
@@ -274,6 +295,7 @@ public class ChatMonitorSkillPreloadTests
             }
 
             message.SetMemoryContext(new MemoryContext([], null));
+            return null;
         }
     }
 }

@@ -1,7 +1,9 @@
+using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -31,6 +33,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly AttachmentStore _store;
+    private readonly RedisThreadStateStore _threads;
     private readonly ChatHub _hub;
 
     public ChatHubDeleteTopicTests(RedisFixture redis)
@@ -45,30 +48,37 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
         var approvals = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
+            new Mock<IPushNotificationService>().Object,
+            new AccountConnections(),
             NullLogger<ApprovalService>.Instance);
 
+        _threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), _time);
         _hub = new ChatHub(
             _sessionService,
             _streamService,
             approvals,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            new RedisThreadStateStore(redis.Connection, new RetentionSettings(), _time),
+            _threads,
             new Mock<IPushSubscriptionStore>().Object,
             attachments,
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 771, 42, "default", "Chat");
@@ -86,6 +96,8 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     [Fact]
     public async Task DeleteTopic_RemovesThatConversationsFilesAndLeavesOthersAlone()
     {
+        await _threads.SaveTopicAsync(new TopicMetadata(
+            TopicId, 771, 42, "jack", "Chat", _time.GetUtcNow(), null, OwnerId: "fran", TenantId: "home"));
         var mine = await StoreAsync("771:42", "photo.png");
         var elsewhere = await StoreAsync("772:42", "other.png");
 
@@ -99,6 +111,6 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     {
         using var content = new MemoryStream("bytes"u8.ToArray());
         return await _store.SaveAsync(
-            conversationId, "default", fileName, "image/png", content, CancellationToken.None);
+            new AgentKey(conversationId), "default", fileName, "image/png", content, CancellationToken.None);
     }
 }

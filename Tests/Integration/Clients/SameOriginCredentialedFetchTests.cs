@@ -9,7 +9,7 @@ namespace Tests.Integration.Clients;
 // exactly as served. The route answers the bytes only to a request presenting the cookie -- a
 // regression to an anonymous same-origin fetch gets a 403, falls to the canvas, and leaves as a
 // re-encoded PNG this test refuses.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsA)]
 public class SameOriginCredentialedFetchTests(IsolatedSessionBrowserFixture fixture)
 {
     [SkippableFact]

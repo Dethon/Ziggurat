@@ -7,6 +7,7 @@ import { UnitsControl } from "../components/UnitsControl";
 import { doseStart, linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
+import { openedDose, overRecord, useShown } from "../stale";
 import { formatGrams, shownTotal } from "../carbs";
 import { localDay } from "../cycle";
 import { formatShortDay, formatTime, formatUnits, toLocalInput } from "../format";
@@ -65,6 +66,7 @@ export function DoseSheet({
   };
   // A recorded dose is saved again only once something about it changed.
   const edited = useEdited(values);
+  const shown = useShown(values);
   const ready = typeof read === "number" && !!when && (!dose || edited);
 
   async function save() {
@@ -75,7 +77,11 @@ export function DoseSheet({
     setError(null);
     const saving = { ...values, units: read, takenAt: new Date(when).toISOString() };
     try {
-      onSaved(await (dose ? api.updateDose(dose.id, saving) : api.createDose(saving)));
+      onSaved(
+        await (dose
+          ? api.updateDose(dose.id, overRecord(openedDose(dose), shown as typeof saving, saving), openedDose(dose))
+          : api.createDose(saving)),
+      );
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
       setBusy(false);

@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
@@ -15,12 +17,21 @@ public class PlaywrightWebBrowser(
     int tabCap = BrowserSessionManager.DefaultTabCap,
     TimeSpan? idleTimeout = null,
     ModalDismisser? modalDismisser = null,
-    IMetricsPublisher? metricsPublisher = null)
-    : IWebBrowser, IAsyncDisposable
+    IMetricsPublisher? metricsPublisher = null,
+    IPersonStateStore? personStates = null)
+    : IWebBrowser, IHandoffBrowser, IPersonContexts, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    private IBrowserContext? _context;
+    // The anonymous context, shared by every browse that is not made as a person; it carries no
+    // person's cookies. Further contexts join _contexts as they are made, and every one of them
+    // dies with the connection that made it.
+    private IBrowserContext? _anonymous;
+    private readonly List<IBrowserContext> _contexts = [];
+
+    // One context per person, made on that person's first browse over this connection. A task, so
+    // two parallel first browses share one context rather than racing to make two.
+    private readonly Dictionary<string, Task<IBrowserContext>> _personContexts = [];
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new(
         idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
@@ -49,6 +60,27 @@ public class PlaywrightWebBrowser(
     // past a second on a cold one.
     private static readonly TimeSpan _popupGrace = TimeSpan.FromMilliseconds(1500);
 
+    private PlaywrightHandoffTabs? _handoffTabs;
+
+    private PlaywrightHandoffTabs HandoffTabs => _handoffTabs ??= new PlaywrightHandoffTabs(ContextForAsync);
+
+    public Task<string> OpenHandoffAsync(string person, string url, CancellationToken ct = default) =>
+        ExecuteWithReconnectAsync(() => HandoffTabs.OpenAsync(person, url, ct));
+
+    public bool IsHandoffOpen(string handoffId) => HandoffTabs.IsOpen(handoffId);
+
+    public Task CloseHandoffAsync(string handoffId) => HandoffTabs.CloseAsync(handoffId);
+
+    public Task<IAsyncDisposable> StreamHandoffAsync(
+        string handoffId, Func<HandoffFrame, Task> onFrame, Func<IReadOnlyList<HandoffField>, Task>? onFields = null,
+        CancellationToken ct = default) =>
+        HandoffTabs.StreamAsync(handoffId, onFrame, onFields, ct);
+
+    public Task SendHandoffInputAsync(string handoffId, HandoffInput input, CancellationToken ct = default) =>
+        HandoffTabs.SendInputAsync(handoffId, input, ct);
+
+    public IReadOnlyList<string> HandoffVisitedHosts(string handoffId) => HandoffTabs.VisitedHosts(handoffId);
+
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {
         if (!ValidateUrl(request.Url))
@@ -64,6 +96,13 @@ public class PlaywrightWebBrowser(
             // "Target page, context or browser has been closed" to the caller. Serialization is
             // per tab, inside NavigateOnceAsync — browses of different URLs run in parallel.
             return await ExecuteWithReconnectAsync(() => NavigateOnceAsync(request, ct));
+        }
+        catch (PersonStateUnreadableException ex)
+        {
+            return CreateErrorResult(request.SessionId, request.Url, ex.Message) with
+            {
+                Status = BrowseStatus.LoginsUnreadable
+            };
         }
         catch (PlaywrightException ex) when (IsConnectionClosed(ex))
         {
@@ -99,7 +138,8 @@ public class PlaywrightWebBrowser(
         // GotoAsync — it just no longer costs anything on top of work already happening.
         var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
 
-        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, _context!,
+        var context = await ContextForAsync(request.Person);
+        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, context,
             async ctx =>
             {
                 await jitter;
@@ -263,7 +303,10 @@ public class PlaywrightWebBrowser(
 
         // A page that looks settled may already have sent itself on, its next document not yet
         // answered — a bot check whose server is slow. Read now, the browse would extract the check.
-        for (var followed = 0; !navigationTimedOut && followed < MaxFollowedNavigations && selfNavigation.InFlight; followed++)
+        // Firefox stops parsing a page whose script navigates and asks for the next document only
+        // later, so the page can be complete with no request yet in flight; it says it is leaving
+        // (LeavingMark), and that is waited out as a request would be.
+        for (var followed = 0; !navigationTimedOut && followed < MaxFollowedNavigations && await IsLeavingAsync(page, selfNavigation); followed++)
         {
             await selfNavigation.WaitAsync(_selfNavigationDeadline, ct);
             await WaitForReadyStateAsync(page);
@@ -400,7 +443,8 @@ public class PlaywrightWebBrowser(
             Task<SnapshotResult> capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
             var outcome = request.ForUrl is { } url
                 ? await _sessions.OnUrlAsync(
-                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
+                    request.SessionId, url, await ContextForAsync(request.Person),
+                    StampPolicy.Restamp(RefNamespace.Element), capture, ct)
                 : await _sessions.OnCurrentTabAsync(
                     request.SessionId, StampPolicy.Restamp(RefNamespace.Element), capture, ct);
 
@@ -562,6 +606,16 @@ public class PlaywrightWebBrowser(
                 ? await GetNearbyHtmlAsync(page, targetSelector)
                 : null;
 
+            // Listening before the gesture, and for the commit alone. A wait begun after the click
+            // races the navigation it is waiting for, and waiting for the load event holds the answer
+            // until the new page's last picture arrives: a form that posted and redirected cost the
+            // whole thirty seconds whenever that event came late or not at all.
+            var navigated = request.WaitForNavigation
+                ? page.WaitForURLAsync(url => url != ctx.UrlBefore,
+                    new() { Timeout = 30000, WaitUntil = WaitUntilState.Commit })
+                : null;
+            _ = navigated?.ContinueWith(static t => t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+
             switch (request.Action)
             {
                 case WebActionType.Click:
@@ -605,18 +659,30 @@ public class PlaywrightWebBrowser(
                         page.Url, false, null, null, $"Unhandled element action: {request.Action}"), null);
             }
 
-            if (request.WaitForNavigation)
+            if (navigated is not null)
             {
                 try
                 {
-                    await page.WaitForURLAsync(url => url != ctx.UrlBefore,
-                        new() { Timeout = 30000 });
+                    await navigated;
                 }
                 catch (TimeoutException)
                 {
                     await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
                         new() { Timeout = 15000 });
                 }
+
+                try
+                {
+                    await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 15000 });
+                }
+                catch (TimeoutException)
+                {
+                    // A document still parsing after that is read as it stands.
+                }
+
+                // What a browse waits for once its document is there: a confirmation its own script
+                // draws is read when it has stopped changing, not at the first parse.
+                await WaitForDomStabilityAsync(page, ct);
             }
             else
             {
@@ -879,13 +945,22 @@ public class PlaywrightWebBrowser(
             : throw new InvalidOperationException($"Session '{sessionId}' not found");
     }
 
+    // What a session's pool holds, for a test that waited on a tab change and has to say why it never
+    // came: each tab's address, whether it is current, whether it closed. Reads; changes nothing.
+    internal string DescribeTabs(string sessionId) =>
+        _sessions.Get(sessionId) is not { } session
+            ? "no such session"
+            : string.Join("; ", session.Tabs.Select(tab =>
+                $"{(tab.Page.IsClosed ? "closed" : BrowserSessionManager.SafeUrl(tab.Page))}{(ReferenceEquals(tab, session.CurrentTab) ? " (current)" : "")}"));
+
     // The context-level arranging half: answers an address before any page asks for it, so a
     // hermetic test can navigate to a route-fulfilled page instead of borrowing a live third
     // party as its anchor. Routes die with the context on reconnect; register before navigating.
-    internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler)
+    // A person's context is its own, so a page served to a person is routed on theirs.
+    internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler, string? person = null)
     {
         await EnsureInitializedAsync();
-        await _context!.RouteAsync(url, handler);
+        await (await ContextForAsync(person)).RouteAsync(url, handler);
     }
 
     // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
@@ -979,19 +1054,207 @@ public class PlaywrightWebBrowser(
 
     public async Task ClearCookiesAsync()
     {
-        if (_context == null)
+        foreach (var context in LiveContexts())
         {
-            return;
+            try
+            {
+                await context.ClearCookiesAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Context may be closed, ignore
+            }
+        }
+    }
+
+    // The context a browse opens its tab in: the person's own, or the anonymous one. Asked inside
+    // the reconnect-retried operation, so a retry after a dropped connection gets the new
+    // connection's context rather than the dead one's.
+    internal async Task<IBrowserContext> ContextForAsync(string? person)
+    {
+        if (person is null)
+        {
+            return _anonymous!;
+        }
+
+        Task<IBrowserContext> made;
+        lock (_contexts)
+        {
+            // A faulted one is asked again: a record that would not open refuses every browse as
+            // the person rather than leaving them a context logged out of everything.
+            if (!_personContexts.TryGetValue(person, out made!) || made.IsFaulted || made.IsCanceled)
+            {
+                made = NewPersonContextAsync(person, storageState: null);
+                _personContexts[person] = made;
+            }
+        }
+
+        return await made;
+    }
+
+    public event Action<string, string>? PersonActivity;
+
+    public event Action? ContextsClosed;
+
+    // Restored from what the person has remembered, when no state is handed in.
+    private async Task<IBrowserContext> NewPersonContextAsync(string person, string? storageState)
+    {
+        storageState ??= personStates is null ? null : (await personStates.LoadAsync(person))?.StorageState;
+        var context = await NewContextAsync(_browser!, storageState);
+        context.RequestFinished += (_, request) =>
+        {
+            try
+            {
+                PersonActivity?.Invoke(person, request.Url);
+            }
+            catch
+            {
+                // A listener's failure must not reach the browser's event loop.
+            }
+        };
+        return context;
+    }
+
+    public async Task<string?> ExportStateAsync(string person, CancellationToken ct = default)
+    {
+        Task<IBrowserContext>? made;
+        lock (_contexts)
+        {
+            made = _personContexts.GetValueOrDefault(person);
+        }
+
+        if (made is not { IsCompletedSuccessfully: true })
+        {
+            return null;
         }
 
         try
         {
-            await _context.ClearCookiesAsync();
+            return await made.Result.StorageStateAsync(new BrowserContextStorageStateOptions { IndexedDB = true });
         }
         catch (PlaywrightException)
         {
-            // Context may be closed, ignore
+            // The context died with its connection; nothing it held is left to save.
+            return null;
         }
+    }
+
+    // The cookie list alone, written in the storage state's own cookie shape so that one filter
+    // and one restore serve both exports.
+    public async Task<string?> ExportCookiesAsync(string person, CancellationToken ct = default)
+    {
+        Task<IBrowserContext>? made;
+        lock (_contexts)
+        {
+            made = _personContexts.GetValueOrDefault(person);
+        }
+
+        if (made is not { IsCompletedSuccessfully: true })
+        {
+            return null;
+        }
+
+        try
+        {
+            var cookies = await made.Result.CookiesAsync();
+            return new JsonObject
+            {
+                ["cookies"] = new JsonArray([.. cookies.Select(StoredCookie)]),
+                ["origins"] = new JsonArray()
+            }.ToJsonString();
+        }
+        catch (PlaywrightException)
+        {
+            // The context died with its connection; nothing it held is left to save.
+            return null;
+        }
+    }
+
+    private static JsonNode StoredCookie(BrowserContextCookiesResult cookie)
+    {
+        var stored = new JsonObject
+        {
+            ["name"] = cookie.Name,
+            ["value"] = cookie.Value,
+            ["domain"] = cookie.Domain,
+            ["path"] = cookie.Path,
+            ["expires"] = cookie.Expires,
+            ["httpOnly"] = cookie.HttpOnly,
+            ["secure"] = cookie.Secure,
+            ["sameSite"] = cookie.SameSite.ToString()
+        };
+        if (cookie.PartitionKey is { } partitionKey)
+        {
+            stored["partitionKey"] = partitionKey;
+        }
+
+        return stored;
+    }
+
+    public async Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync();
+        // Made before the swap: a context that fails to come up leaves the old one in place
+        // rather than a faulted entry and an untracked context still open.
+        var made = await NewPersonContextAsync(person, storageState);
+        Task<IBrowserContext>? old;
+        lock (_contexts)
+        {
+            old = _personContexts.GetValueOrDefault(person);
+            _personContexts[person] = Task.FromResult(made);
+        }
+
+        if (old is { IsCompletedSuccessfully: true })
+        {
+            lock (_contexts)
+            {
+                _contexts.Remove(old.Result);
+            }
+
+            try
+            {
+                await old.Result.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone.
+            }
+        }
+    }
+
+    private IReadOnlyList<IBrowserContext> LiveContexts()
+    {
+        lock (_contexts)
+        {
+            return [.. _contexts];
+        }
+    }
+
+    private async Task<IBrowserContext> NewContextAsync(IBrowser browser, string? storageState = null)
+    {
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            StorageState = storageState,
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            Locale = "en-US",
+            TimezoneId = "America/New_York",
+            HasTouch = false,
+            IsMobile = false,
+            JavaScriptEnabled = true,
+            ExtraHTTPHeaders = new Dictionary<string, string>
+            {
+                ["Accept-Language"] = "en-US,en;q=0.9"
+            }
+        });
+
+        await context.AddInitScriptAsync(LeavingMark);
+        context.SetDefaultTimeout(DefaultOperationTimeoutMs);
+        lock (_contexts)
+        {
+            _contexts.Add(context);
+        }
+
+        return context;
     }
 
     // Runs a browser operation, and if the connection turns out to be dead (the Camoufox
@@ -1058,21 +1321,7 @@ public class PlaywrightWebBrowser(
 
             _browser = await ConnectBrowserAsync();
 
-            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
-            {
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                Locale = "en-US",
-                TimezoneId = "America/New_York",
-                HasTouch = false,
-                IsMobile = false,
-                JavaScriptEnabled = true,
-                ExtraHTTPHeaders = new Dictionary<string, string>
-                {
-                    ["Accept-Language"] = "en-US,en;q=0.9"
-                }
-            });
-
-            _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
+            _anonymous = await NewContextAsync(_browser);
 
             _initialized = true;
             return ++_connectionGeneration;
@@ -1092,10 +1341,7 @@ public class PlaywrightWebBrowser(
 
         try
         {
-            if (_context is not null)
-            {
-                await _context.CloseAsync();
-            }
+            await CloseContextsAsync();
 
             if (_browser is not null)
             {
@@ -1108,7 +1354,7 @@ public class PlaywrightWebBrowser(
         }
         finally
         {
-            _context = null;
+            _anonymous = null;
             _browser = null;
         }
     }
@@ -1355,6 +1601,46 @@ public class PlaywrightWebBrowser(
     }
 
     // The same readiness the first document is waited for with, for one the page navigated to.
+    // Marks a document once its own script starts a navigation to another document: the Navigation
+    // API's navigate event, else beforeunload. Read by IsLeavingAsync; the next document starts
+    // unmarked.
+    internal const string LeavingMark = """
+        (() => {
+          const mark = () => { document.__zigguratLeaving = true; };
+          if (window.navigation) {
+            window.navigation.addEventListener('navigate', e => { if (!e.destination.sameDocument) mark(); });
+          } else {
+            window.addEventListener('beforeunload', mark);
+          }
+        })();
+        """;
+
+    // In flight: a request the watch saw, or a page that says it is leaving before its request was
+    // seen, which the watch is then told to wait out to the next commit. A page that cannot be asked
+    // (its document is being replaced) is left to the watch.
+    private static async Task<bool> IsLeavingAsync(IPage page, MainFrameNavigationWatch watch)
+    {
+        if (watch.InFlight)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (!await page.EvaluateAsync<bool>("() => !!document.__zigguratLeaving"))
+            {
+                return false;
+            }
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
+
+        watch.ExpectNextCommit();
+        return true;
+    }
+
     private static async Task WaitForReadyStateAsync(IPage page)
     {
         try
@@ -1540,7 +1826,7 @@ public class PlaywrightWebBrowser(
             return (false, solution.ErrorMessage ?? "CAPTCHA solving failed");
         }
 
-        await SetDataDomeCookieAsync(websiteUrl, solution.Cookie);
+        await SetDataDomeCookieAsync(page.Context, websiteUrl, solution.Cookie);
         return (true, "CAPTCHA solved successfully");
     }
 
@@ -1560,7 +1846,9 @@ public class PlaywrightWebBrowser(
             .FirstOrDefault();
     }
 
-    private async Task SetDataDomeCookieAsync(string websiteUrl, string cookieValue)
+    // Into the solving page's own context: a cookie solved for a person's tab belongs to that
+    // person, and one solved anonymously to nobody.
+    private static async Task SetDataDomeCookieAsync(IBrowserContext context, string websiteUrl, string cookieValue)
     {
         var uri = new Uri(websiteUrl);
 
@@ -1569,7 +1857,7 @@ public class PlaywrightWebBrowser(
         var cookieName = cookieParts.Length > 0 ? cookieParts[0] : "datadome";
         var cookieVal = cookieParts.Length > 1 ? cookieParts[1] : cookieValue;
 
-        await _context!.AddCookiesAsync(
+        await context.AddCookiesAsync(
         [
             new Cookie
             {
@@ -1583,16 +1871,47 @@ public class PlaywrightWebBrowser(
         ]);
     }
 
+    // Every context the connection made, each closed on its own so one already dead does not keep
+    // the rest open.
+    private async Task CloseContextsAsync()
+    {
+        IReadOnlyList<IBrowserContext> contexts;
+        lock (_contexts)
+        {
+            contexts = [.. _contexts];
+            _contexts.Clear();
+            _personContexts.Clear();
+        }
+
+        foreach (var context in contexts)
+        {
+            try
+            {
+                await context.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone with its connection.
+            }
+        }
+
+        try
+        {
+            ContextsClosed?.Invoke();
+        }
+        catch
+        {
+            // A listener's failure must not keep the connection from being replaced.
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _sessions.DisposeAsync();
 
         try
         {
-            if (_context != null)
-            {
-                await _context.CloseAsync();
-            }
+            await CloseContextsAsync();
 
             if (_browser != null)
             {

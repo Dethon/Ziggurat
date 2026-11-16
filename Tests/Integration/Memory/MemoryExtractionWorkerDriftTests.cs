@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
@@ -40,13 +41,17 @@ public class MemoryExtractionWorkerDriftTests(MemorySearchFixture redisFixture)
         extractor.Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<string?>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ChatMessage>, string, CancellationToken>((w, _, _) => capturedWindow = w)
+            .Callback<IReadOnlyList<ChatMessage>, string, string?, ModelPayer, CancellationToken>((w, _, _, _, _) => capturedWindow = w)
             .ReturnsAsync([]);
 
         var embedding = new Mock<IEmbeddingService>();
         var metrics = new Mock<IMetricsPublisher>();
         var agentDefs = new Mock<IAgentDefinitionProvider>();
+        agentDefs.Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(HouseholdAgents.Fixed([]));
 
         var worker = new MemoryExtractionWorker(
             new MemoryExtractionQueue(),

@@ -6,6 +6,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Households;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
@@ -37,8 +38,13 @@ builder.Services.AddSingleton<LatencyStore>();
 builder.Services.AddSingleton<VoiceStore>();
 builder.Services.AddSingleton<SkillsStore>();
 builder.Services.AddSingleton<WebStore>();
+builder.Services.AddSingleton<HouseholdsStore>();
 
+builder.Services.AddScoped<HouseholdFilter>();
 builder.Services.AddScoped<MetricsApiService>();
+builder.Services.AddScoped<HouseholdsAdminService>();
+builder.Services.AddScoped<HouseholdDirectory>();
+builder.Services.AddScoped<HouseholdsEffect>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IMetricsHubConnection>(sp =>
@@ -54,6 +60,7 @@ builder.Services.AddScoped<OverviewFigures>();
 builder.Services.AddScoped<DataLoadEffect>();
 builder.Services.AddScoped<MetricsHubBinder>();
 builder.Services.AddScoped<IMetricsCatchUp, MetricsCatchUp>();
+builder.Services.AddScoped<ISignIn, NavigationSignIn>();
 builder.Services.AddScoped<MetricsLiveConnection>();
 
 await builder.Build().RunAsync();

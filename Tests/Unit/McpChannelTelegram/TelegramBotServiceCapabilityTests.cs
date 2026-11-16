@@ -14,6 +14,28 @@ public class TelegramBotServiceCapabilityTests : IDisposable
 {
     private readonly TelegramPollingHarness _harness = new();
 
+    // The agent is the household's as it runs it: the registered catalogue is the home's, and a
+    // household whose jack runs another model is checked against that model, not the home's.
+    [Fact]
+    public async Task ADocumentForTheModelTheHouseholdsAgentRuns_IsRefusedThoughTheHomesAgentOfThatIdReadsIt()
+    {
+        Register(
+            [new AgentCatalogEntry(
+                "jack", "Jack", null, DefaultModel: "sees/everything",
+                PatchableModels: [new PatchableModel("pictures-only/model", "Pictures", [AttachmentKind.Image])],
+                DefaultModelAttachmentKinds: [AttachmentKind.Image, AttachmentKind.Document])],
+            householdModel: "pictures-only/model");
+        var message = TelegramPollingHarness.MediaMessage(caption: "/ask summarise this");
+        message.Document = TelegramPollingHarness.Document();
+
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update { Id = 1, Message = message });
+        await _harness.RunAsync();
+
+        (await _harness.ReceiveAsync()).ShouldBeEmpty();
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("pictures-only/model");
+    }
+
     [Fact]
     public async Task AnImageForAModelThatCannotReadImages_IsRefusedAndNoTurnIsEmitted()
     {
@@ -52,12 +74,14 @@ public class TelegramBotServiceCapabilityTests : IDisposable
     // Permissive wherever the catalogue is silent: a blip at the provider, or a cold start before
     // any agent has connected, must not remove the feature.
     [Fact]
-    public async Task WithTheAgentAbsentFromTheCatalogue_AttachmentsGoThrough()
+    public async Task WithTheCatalogueSilentAboutTheAgentsModel_AttachmentsGoThrough()
     {
-        Register(new AgentCatalogEntry(
-            "someone-else", "Other", null,
-            DefaultModel: "text-only/model",
-            DefaultModelAttachmentKinds: []));
+        Register(
+            [new AgentCatalogEntry(
+                "someone-else", "Other", null,
+                DefaultModel: "text-only/model",
+                DefaultModelAttachmentKinds: [])],
+            householdModel: "unknown/model");
 
         await DriveAPhotoAsync();
 
@@ -96,8 +120,16 @@ public class TelegramBotServiceCapabilityTests : IDisposable
 
     public void Dispose() => _harness.Dispose();
 
-    private void Register(params AgentCatalogEntry[] agents) =>
+    // The catalogue the agent registers, and the household's jack: on the model the registered jack
+    // runs unless the test says another.
+    private void Register(params AgentCatalogEntry[] agents) => Register(agents, householdModel: null);
+
+    private void Register(AgentCatalogEntry[] agents, string? householdModel)
+    {
         new RegisterAgentsTool(_harness.Catalog).McpRun(agents);
+        _harness.HouseholdRunsJackOn(
+            householdModel ?? agents.First(a => a.Id == TelegramPollingHarness.AgentId).DefaultModel!);
+    }
 
     private async Task DriveAPhotoAsync()
     {

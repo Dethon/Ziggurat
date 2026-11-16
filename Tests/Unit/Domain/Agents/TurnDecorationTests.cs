@@ -105,6 +105,41 @@ public class TurnDecorationTests
     }
 
     [Fact]
+    public void Apply_WithOfflineServers_NamesThemOnOneLineBeforeTheSender()
+    {
+        var msg = new ChatMessage(ChatRole.User, "print my list");
+        msg.SetSenderId("household");
+        msg.SetOfflineServers(["printer", "vault"]);
+
+        FirstText(msg).ShouldStartWith(
+            "[Offline household servers: printer, vault. Their tools are missing this turn; tell the user if the "
+            + "request needs them]\nMessage from household:");
+    }
+
+    // A message read back from the store carries the names as JSON, and a later turn's request
+    // decorates it exactly as its own turn did, so the cached history is the same bytes every time.
+    [Fact]
+    public void Apply_WithOfflineServersReadBackFromTheStore_NamesThemTheSame()
+    {
+        var msg = new ChatMessage(ChatRole.User, "print my list");
+        msg.SetOfflineServers(["printer"]);
+        var stored = System.Text.Json.JsonSerializer.Deserialize<ChatMessage>(
+            System.Text.Json.JsonSerializer.Serialize(msg))!;
+
+        FirstText(stored).ShouldBe(FirstText(msg));
+    }
+
+    [Fact]
+    public void Apply_WithNoOfflineServers_SaysNothingAboutThem()
+    {
+        var msg = new ChatMessage(ChatRole.User, "print my list");
+        msg.SetOfflineServers(["printer"]);
+        msg.SetOfflineServers([]);
+
+        TurnDecoration.Apply(msg, TimeZoneInfo.Utc).Text.ShouldBe("print my list");
+    }
+
+    [Fact]
     public void Apply_WithMemoryContextAndSenderPrefix_PutsTheRecallBlockFirst()
     {
         var msg = new ChatMessage(ChatRole.User, "lights on");

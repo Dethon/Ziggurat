@@ -33,8 +33,8 @@ internal sealed class ThreadSession : IAsyncDisposable
     public IReadOnlyList<PromptSkill> Skills => _data.Skills;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
-    // What this build made of the filesystems it found. Read once, by the step that writes each
-    // outpost's verdict back onto its registration — the collision is only knowable here.
+    // What this build made of the filesystems it found: the ones mounted, and the ones shadowed by a
+    // mount already holding their mount point — a collision only knowable here.
     public IReadOnlyList<string> MountedNames => _data.MountedNames;
     public IReadOnlyList<string> ShadowedNames => _data.ShadowedNames;
 
@@ -55,10 +55,14 @@ internal sealed class ThreadSession : IAsyncDisposable
         McpPromptCache? promptCache = null,
         ReadImageSupport? readImages = null,
         IVfsBridge? bridge = null,
-        bool noTools = false)
+        bool noTools = false,
+        IReadOnlySet<string>? withheldTools = null,
+        CallTokens? callTokens = null,
+        TimeZoneInfo? localZone = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools,
+            withheldTools, callTokens, localZone);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -85,7 +89,10 @@ internal sealed class ThreadSessionBuilder(
     McpPromptCache? promptCache = null,
     ReadImageSupport? readImages = null,
     IVfsBridge? bridge = null,
-    bool noTools = false)
+    bool noTools = false,
+    IReadOnlySet<string>? withheldTools = null,
+    CallTokens? callTokens = null,
+    TimeZoneInfo? localZone = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -96,11 +103,18 @@ internal sealed class ThreadSessionBuilder(
     [
         ChannelProtocol.SendReplyTool,
         ChannelProtocol.RequestApprovalTool,
+        ChannelProtocol.OfferApprovalTool,
+        ChannelProtocol.SettleApprovalTool,
+        ChannelProtocol.OfferAlertTool,
+        ChannelProtocol.SettleAlertTool,
         ChannelProtocol.CreateConversationTool,
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,
         ChannelProtocol.FetchAttachmentTool,
-        ChannelProtocol.StoreAttachmentTool
+        ChannelProtocol.StoreAttachmentTool,
+        // Not the channel's, but the operator commands' on the same /mcp, and as far from a model.
+        ChannelProtocol.ListDelegationsTool,
+        ChannelProtocol.ReplaceDelegationTool
     ];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
@@ -110,7 +124,7 @@ internal sealed class ThreadSessionBuilder(
         // hydration through the bridge without knowing either exists.
         var clientManager = await McpClientManager.CreateAsync(
             name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger,
-            readImages?.Store, ct);
+            readImages?.Store, callTokens, ct);
 
         // Dialled for its prompts alone: the servers still say how this agent works, but nothing
         // they offer to call or to load reaches it, and no mount is made that no tool could read.
@@ -127,7 +141,7 @@ internal sealed class ThreadSessionBuilder(
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
         var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct);
+            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct, localZone);
 
         if (fsRegistry.GetMounts().Count > 0)
         {
@@ -153,7 +167,7 @@ internal sealed class ThreadSessionBuilder(
 
         // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
         // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
-        var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
+        var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0, withheldTools);
         var tools = Offered(mcpTools, domainTools, fileSystemTools);
 
         return new ThreadSessionData(
@@ -172,10 +186,13 @@ internal sealed class ThreadSessionBuilder(
         IReadOnlyList<AITool> fileSystemTools) =>
         [.. fileSystemTools, .. mcpTools, .. domainTools];
 
-    internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)
+    internal static IReadOnlyList<AITool> FilterMcpTools(
+        IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive, IReadOnlySet<string>? withheld = null)
     {
+        HashSet<string> withheldNames = [.. withheld ?? new HashSet<string>()];
         return mcpTools
             .Where(t => !HasReservedSuffix(t.Name, _channelProtocolToolNames))
+            .Where(t => !HasReservedSuffix(t.Name, withheldNames))
             .Where(t => !filesystemToolsActive || !HasReservedSuffix(t.Name, _fileSystemMcpToolNames))
             .ToList();
     }

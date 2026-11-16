@@ -1,0 +1,436 @@
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.Monitor;
+using Microsoft.Extensions.Logging.Abstractions;
+using Shouldly;
+
+namespace Tests.Unit.Domain.Monitor;
+
+// An approval is the asker's: put where the turn asked it, offered on the person's other channels,
+// settled by the first answer, and every channel that did not answer told who did.
+public class ApprovalRelayTests
+{
+    private static readonly Account _fran = new("home", "fran");
+
+    private static readonly IReadOnlyList<ToolApprovalRequest> _buy =
+        [new ToolApprovalRequest("msg-1", "mcp__shop__buy", new Dictionary<string, object?>())];
+
+    private readonly ArmedClock _clock = new();
+
+    private ApprovalRelay Relay(ApprovalChannel anchor, params ApprovalChannel[] others) =>
+        new(anchor, [anchor, .. others], NullLogger.Instance, _clock);
+
+    private static ConversationContext PersonsTurn(string channel, Account? account) =>
+        new("jonas", "1:2", account?.UserId ?? "household", new ReplyTarget(channel, "1:2"),
+            Principal: new Principal(channel, account?.UserId ?? "household", account));
+
+    private static ApprovalAsk Ask(ConversationContext? turn) => ApprovalAsk.For("1:2", _buy, turn);
+
+    [Fact]
+    public async Task TheAskersTelegramAnswer_SettlesAVoiceAskedApproval_AndTheOthersAreToldAnsweredElsewhere()
+    {
+        var voice = new ApprovalChannel("voice");
+        var telegram = new ApprovalChannel("telegram");
+        var webchat = new ApprovalChannel("signalr");
+        var ask = Ask(PersonsTurn("voice", _fran));
+
+        var answered = Relay(voice, telegram, webchat).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1 && webchat.Offered.Count == 1, "the offers to go out");
+        telegram.Answer(ToolApprovalResult.Approved);
+
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+        await Eventually.Until(() => voice.Settled.Count == 1 && webchat.Settled.Count == 1, "the others to be settled");
+        voice.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Approved));
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Approved));
+        telegram.Settled.ShouldBeEmpty();
+        // The prompt still being spoken stops asking: its call is called off.
+        await Eventually.Until(() => voice.CalledOff, "the voice prompt to stop asking");
+    }
+
+    [Fact]
+    public async Task TheOffers_NameTheAskerAndTheQuestion_AndTheAnchorIsAskedIt()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        _ = Relay(webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        webchat.Asked.ShouldHaveSingleItem().ShouldBe(ask);
+        webchat.Offered.ShouldBeEmpty();
+        var offered = telegram.Offered.ShouldHaveSingleItem();
+        offered.ShouldBe(ask);
+        offered.Asker.ShouldBe(_fran);
+    }
+
+    // A schedule's fire acts for whoever wrote the schedule, so the question is theirs: offered to
+    // its creator's account and nobody else's.
+    [Fact]
+    public async Task AFiresApproval_IsOfferedToTheSchedulesCreatorOnly()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var fire = new ConversationContext(
+            "jonas", "1:2", "fran", new ReplyTarget("signalr", "1:2"),
+            OriginKind: MessageOriginKind.Schedule,
+            Principal: new Principal("signalr", "fran", _fran));
+
+        _ = Relay(webchat, telegram).RequestApprovalAsync(Ask(fire), CancellationToken.None);
+
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        telegram.Offered.ShouldHaveSingleItem().Asker.ShouldBe(_fran);
+    }
+
+    // The voice guest is nobody, and a fire nobody stamped acts for nobody: there is no person to
+    // find elsewhere, so the question stays where the turn asked it, under that channel's own rule.
+    [Fact]
+    public async Task AnApprovalActingForNobody_IsAskedWhereTheTurnAskedItAlone()
+    {
+        var voice = new ApprovalChannel("voice");
+        var telegram = new ApprovalChannel("telegram");
+
+        var answered = Relay(voice, telegram).RequestApprovalAsync(Ask(PersonsTurn("voice", null)), CancellationToken.None);
+        await Eventually.Until(() => voice.Asked.Count == 1, "the anchor to be asked");
+        voice.Answer(ToolApprovalResult.Rejected);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Settle();
+        telegram.Offered.ShouldBeEmpty();
+        telegram.Settled.ShouldBeEmpty();
+    }
+
+    // Where the turn asked is authoritative about ending the question: its answer, its refusal and
+    // its time-out all settle every offer.
+    [Fact]
+    public async Task TheAnchorsAnswer_SettlesEveryOffer()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        var answered = Relay(webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        webchat.Answer(ToolApprovalResult.Rejected);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => telegram.Settled.Count == 1, "the offer to be settled");
+        telegram.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+        await Eventually.Until(() => telegram.CalledOff, "the offer to be called off");
+    }
+
+    // An offer that is not answered — a channel that cannot reach the person, or one that failed —
+    // never ends the question: the person may still answer where they were asked.
+    [Fact]
+    public async Task AnOfferThatCannotReachThePerson_LeavesTheQuestionOpen()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var failing = new ApprovalChannel("broken") { OfferFailure = new InvalidOperationException("down") };
+
+        var answered = Relay(webchat, telegram, failing)
+            .RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        telegram.Answer(null);
+
+        await Eventually.Settle();
+        answered.IsCompleted.ShouldBeFalse();
+        webchat.Answer(ToolApprovalResult.Approved);
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+    }
+
+    // Channels that cannot show the question — not connected, or offering no approval tool — answer
+    // at once, and an async method answering null at once hands back the runtime's one cached task:
+    // the relay must tell them apart by channel, not by task, or the question fails instead of
+    // waiting for the person where they were asked.
+    [Fact]
+    public async Task TwoOffersAnsweredAtOnce_LeaveTheQuestionToTheAnchor()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram") { NotConnected = true };
+        var voice = new ApprovalChannel("voice") { NotConnected = true };
+
+        var answered = Relay(webchat, telegram, voice)
+            .RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        await Eventually.Settle();
+        answered.IsCompleted.ShouldBeFalse();
+        webchat.Answer(ToolApprovalResult.Approved);
+
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+    }
+
+    // A question the anchor could not show anyone — no live session, no satellite — is not a
+    // refusal while the person can be reached elsewhere; they are given a while to answer there.
+    [Fact]
+    public async Task AQuestionTheAnchorCouldNotShow_IsLeftToTheOffers()
+    {
+        var voice = new ApprovalChannel("voice");
+        var telegram = new ApprovalChannel("telegram");
+        var ask = Ask(PersonsTurn("voice", _fran));
+
+        var answered = Relay(voice, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        voice.Answer(null);
+        await _clock.WaitUntilArmedAsync(ApprovalRelay.UnshownWindow);
+        telegram.Answer(ToolApprovalResult.ApprovedAndRemember);
+
+        (await answered).ShouldBe(ToolApprovalResult.ApprovedAndRemember);
+    }
+
+    [Fact]
+    public async Task AQuestionNobodyAnswersAnywhere_IsRefusedOnceItsWindowIsOver()
+    {
+        var voice = new ApprovalChannel("voice");
+        var telegram = new ApprovalChannel("telegram");
+
+        var answered = Relay(voice, telegram).RequestApprovalAsync(Ask(PersonsTurn("voice", _fran)), CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        voice.Answer(null);
+        await _clock.AdvancePastAsync(ApprovalRelay.UnshownWindow);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => telegram.CalledOff, "the offer to be called off");
+        telegram.Settled.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AQuestionNobodyCouldBeShown_IsRefused()
+    {
+        var voice = new ApprovalChannel("voice");
+        var telegram = new ApprovalChannel("telegram");
+
+        var answered = Relay(voice, telegram).RequestApprovalAsync(Ask(PersonsTurn("voice", _fran)), CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        voice.Answer(null);
+        telegram.Answer(null);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+    }
+
+    // Stopping the turn stops the question everywhere, the way it always stopped it where it was asked.
+    [Fact]
+    public async Task StoppingTheTurn_CallsTheQuestionOffEverywhere()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        using var turn = new CancellationTokenSource();
+
+        var answered = Relay(webchat, telegram).RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), turn.Token);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        await turn.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(answered);
+        webchat.CalledOff.ShouldBeTrue();
+        telegram.CalledOff.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AutoApprovals_AreToldWhereTheTurnAskedAlone()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+
+        await Relay(webchat, telegram).NotifyAutoApprovedAsync("1:2", _buy, CancellationToken.None);
+
+        webchat.Notified.ShouldHaveSingleItem().ShouldBe("1:2");
+        telegram.Notified.ShouldBeEmpty();
+    }
+
+    // A member disabled while their question waits: nobody can answer it any more — their sessions
+    // ended and their phones stopped hearing — and the agent acts for them no longer, so it is
+    // refused everywhere it is showing rather than holding the turn until they are re-enabled.
+    [Fact]
+    public async Task AnAskerDisabledWhileTheQuestionWaits_IsRefusedEverywhere()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var standing = new Standing();
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        var answered = Watched(standing, webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck);
+        answered.IsCompleted.ShouldBeFalse("an asker in good standing keeps their question");
+        standing.Now = AccountStanding.Disabled;
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck, previously: 1);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => webchat.Settled.Count == 1 && telegram.Settled.Count == 1, "every channel to be settled");
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+        telegram.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+    }
+
+    // A standing that cannot be read while the question waits refuses nothing: an outage is not a
+    // disabling, and the person may still answer.
+    [Fact]
+    public async Task AnUnreadableStandingWhileTheQuestionWaits_LeavesItOpen()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var standing = new Standing { Unreadable = true };
+
+        var answered = Watched(standing, webchat).RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck);
+        await Eventually.Settle();
+
+        answered.IsCompleted.ShouldBeFalse();
+        standing.Unreadable = false;
+        webchat.Answer(ToolApprovalResult.Approved);
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+    }
+
+    // An answer that approves is the asker's word only while they are still somebody the agent acts
+    // for: a channel can hold who a sender is for minutes (Telegram's link cache), so a member disabled
+    // since could still tap approve there. That, and an answer whose asker cannot be checked, refuses.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnApprovalFromAnAskerNoLongerInGoodStanding_IsRefused(bool unreadable)
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var standing = new Standing();
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        var answered = Watched(standing, webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        (standing.Now, standing.Unreadable) = (AccountStanding.Disabled, unreadable);
+        telegram.Answer(ToolApprovalResult.Approved);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => webchat.Settled.Count == 1, "the anchor to be settled");
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+    }
+
+    // A refusal needs nobody's standing: it is let through as it was given.
+    [Fact]
+    public async Task ARefusalFromAnAskerDisabledSince_IsARefusal()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var standing = new Standing { Now = AccountStanding.Disabled };
+
+        var answered = Watched(standing, webchat).RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        webchat.Answer(ToolApprovalResult.Rejected);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+    }
+
+    private ApprovalRelay Watched(Standing standing, ApprovalChannel anchor, params ApprovalChannel[] others) =>
+        new(anchor, [anchor, .. others], NullLogger.Instance, _clock, standing);
+
+    private sealed class Standing : IAccountStanding
+    {
+        public AccountStanding Now { get; set; } = AccountStanding.Active;
+
+        public bool Unreadable { get; set; }
+
+        public Task<AccountStanding> StandingAsync(Account account, CancellationToken ct) =>
+            Unreadable ? Task.FromException<AccountStanding>(new HttpRequestException("accounts down")) : Task.FromResult(Now);
+    }
+}
+
+// A channel whose answer the test gives, recording what it was asked, offered and told.
+internal sealed class ApprovalChannel(string channelId) : IChannelConnection
+{
+    private readonly TaskCompletionSource<ToolApprovalResult?> _answer =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private readonly Lock _gate = new();
+    private readonly List<ApprovalAsk> _asked = [];
+    private readonly List<ApprovalAsk> _offered = [];
+    private readonly List<(string, ToolApprovalResult)> _settled = [];
+    private readonly List<string> _notified = [];
+    private readonly List<CancellationToken> _waits = [];
+
+    public Exception? OfferFailure { get; init; }
+
+    // Answers an offer as McpChannelConnection does with no client: null, before anything is awaited.
+    public bool NotConnected { get; init; }
+
+    public string ChannelId => channelId;
+    public bool AttachOnly => false;
+    public bool HostsReviewCopies => false;
+
+    public bool IsConnected => true;
+    public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
+
+    public IReadOnlyList<ApprovalAsk> Asked => Snapshot(_asked);
+    public IReadOnlyList<ApprovalAsk> Offered => Snapshot(_offered);
+    public IReadOnlyList<(string ApprovalId, ToolApprovalResult Result)> Settled => Snapshot(_settled);
+    public IReadOnlyList<string> Notified => Snapshot(_notified);
+    // Called off is the token a wait was handed being cancelled, read off the token itself. A flag set
+    // by a callback registered on it raced the wait's own: cancellation runs the later registration
+    // first, the wait it ends disposed the flag's registration on the way out, and under load the
+    // flag's callback was unregistered before it ran.
+    public bool CalledOff => Snapshot(_waits).Any(ct => ct.IsCancellationRequested);
+
+    public void Answer(ToolApprovalResult? result) => _answer.TrySetResult(result);
+
+    public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+        WaitAsync(_asked, ask, ct);
+
+    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+        NotConnected ? NotOfferedAsync()
+        : OfferFailure is null ? WaitAsync(_offered, ask, ct) : Task.FromException<ToolApprovalResult?>(OfferFailure);
+
+#pragma warning disable CS1998 // answers before awaiting anything, as the real connection does
+    private static async Task<ToolApprovalResult?> NotOfferedAsync() => null;
+#pragma warning restore CS1998
+
+    public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            _settled.Add((approvalId, result));
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task NotifyAutoApprovedAsync(
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            _notified.Add(conversationId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task<ToolApprovalResult?> WaitAsync(List<ApprovalAsk> into, ApprovalAsk ask, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            into.Add(ask);
+            _waits.Add(ct);
+        }
+
+        return await _answer.Task.WaitAsync(ct);
+    }
+
+    private IReadOnlyList<T> Snapshot<T>(List<T> list)
+    {
+        lock (_gate)
+        {
+            return [.. list];
+        }
+    }
+
+    public Task SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.CompletedTask;
+
+    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct) =>
+        Task.FromResult<byte[]?>(null);
+
+    public Task<bool> StoreAttachmentAsync(
+        string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>
+        Task.FromResult(false);
+
+    public Task<string?> CreateConversationAsync(
+        string agentId, string topicName, string sender, string? initialPrompt, string? address,
+        string? existingConversationId, Principal? principal, bool group, CancellationToken ct) =>
+        Task.FromResult<string?>(null);
+}

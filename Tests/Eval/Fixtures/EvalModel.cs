@@ -15,13 +15,13 @@ public static class EvalModel
     public const string Variable = "ZIGGURAT_EVAL_MODEL";
     public const string ProviderVariable = "ZIGGURAT_EVAL_PROVIDER";
 
-    public static AgentSettings FromEnvironment(AgentSettings shipped) =>
+    public static TestAgentSettings FromEnvironment(TestAgentSettings shipped) =>
         Apply(
             shipped,
             Environment.GetEnvironmentVariable(Variable),
             Environment.GetEnvironmentVariable(ProviderVariable));
 
-    public static AgentSettings Apply(AgentSettings shipped, string? model, string? provider)
+    public static TestAgentSettings Apply(TestAgentSettings shipped, string? model, string? provider)
     {
         var chosen = Trimmed(model);
         var pinned = Trimmed(provider);

@@ -28,7 +28,7 @@ public class SugaryPushApiTests
     {
         await using var db = await server.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>()
             .CreateDbContextAsync();
-        return await db.PushSubscriptions.AsNoTracking().ToListAsync();
+        return await db.PushSubscriptions.IgnoreQueryFilters().AsNoTracking().ToListAsync();
     }
 
     [Fact]
@@ -71,6 +71,25 @@ public class SugaryPushApiTests
 
         (await StoredAsync(server)).Select(s => (s.Endpoint, s.Language)).OrderBy(s => s.Endpoint)
             .ShouldBe([("https://push.example.com/a", "en"), ("https://push.example.com/b", "es")]);
+    }
+
+    // A phone is whoever last signed in on it: the same browser subscribing as him is his phone now,
+    // so her reminders stop reaching it, and she cannot turn his reminders off on it.
+    [Fact]
+    public async Task APhoneSubscribingAsAnotherPerson_BecomesTheirs()
+    {
+        await using var server = await SugaryServer.StartAsync(configure: s => s with { WebPush = Keys });
+        var her = server.As(SugaryServer.Her);
+        var him = server.As(SugaryServer.Him);
+        await her.PutAsJsonAsync("/api/push/subscription", Subscription());
+
+        (await him.PutAsJsonAsync("/api/push/subscription", Subscription(language: "en"))).StatusCode
+            .ShouldBe(HttpStatusCode.NoContent);
+        await her.DeleteAsync("/api/push/subscription?endpoint=https%3A%2F%2Fpush.example.com%2Fa");
+
+        var phone = (await StoredAsync(server)).ShouldHaveSingleItem();
+        (phone.UserId, phone.TenantId, phone.Language)
+            .ShouldBe((SugaryServer.Him.UserId, SugaryServer.Him.TenantId, "en"));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Shouldly;
 using WebChat.Client.Components;
+using WebChat.Client.Models;
 
 namespace Tests.Unit.WebChat.Client.Components;
 
@@ -15,5 +16,23 @@ public class ChatInputLogicTests
     public void CanSend_ReturnsExpected(bool disabled, string? inputText, bool isStreaming, bool expected)
     {
         ChatInputLogic.CanSend(disabled, inputText, isStreaming).ShouldBe(expected);
+    }
+
+    // Read-only is said, not left to a refusal: the message would show as sent and then fail.
+    [Fact]
+    public void ReadOnlyNote_AnotherPersonsPrivateTopic_NamesWhoseItIs()
+    {
+        var note = ChatInputLogic.ReadOnlyNote(
+            new StoredTopic { OwnerId = "leo", OwnerName = "Leo Ortega", Shared = false }, "marta");
+
+        note.ShouldNotBeNull();
+        note.ShouldContain("Leo Ortega");
+    }
+
+    [Fact]
+    public void ReadOnlyNote_ATopicIMayWriteIn_IsNone()
+    {
+        ChatInputLogic.ReadOnlyNote(new StoredTopic { OwnerId = "leo", Shared = true }, "marta").ShouldBeNull();
+        ChatInputLogic.ReadOnlyNote(null, "marta").ShouldBeNull();
     }
 }

@@ -47,7 +47,7 @@
                     @foreach (var evt in GetSortedEvents(state))
                     {
                         <div class="table-row">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span>@evt.SatelliteId</span>
                             <span>@evt.Room</span>
                             <span>@evt.Identity</span>

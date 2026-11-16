@@ -91,6 +91,21 @@ public class LemonadeTranscriptionClientTests
         result.CompressionRatio.ShouldBeNull();
     }
 
+    // How long whisper heard is what a recording posted as it arrived is counted by: the body's
+    // duration, else where its last segment ended, else nothing.
+    [Theory]
+    [InlineData("""{ "text": "hola", "duration": 4.5, "segments": [ { "start": 0.0, "end": 3.0 } ] }""", 4.5)]
+    [InlineData("""{ "text": "hola", "segments": [ { "start": 0.0, "end": 1.0 }, { "start": 1.0, "end": 2.75 } ] }""", 2.75)]
+    [InlineData("""{ "text": "hola" }""", null)]
+    public async Task TranscribeAsync_ReadsHowLongTheRecordingWas(string body, double? seconds)
+    {
+        var sut = Sut(new StubHandler(_ => Json(body)));
+
+        var result = await sut.TranscribeAsync(Wav(new byte[32]), CancellationToken.None);
+
+        result.AudioSeconds.ShouldBe(seconds);
+    }
+
     [Fact]
     public async Task TranscribeAsync_PlainJsonBody_FailsOpenWithNullSignals()
     {

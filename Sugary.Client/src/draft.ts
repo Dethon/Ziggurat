@@ -133,8 +133,29 @@ export const countedLines = (items: readonly DraftItem[]) =>
 
 const STORAGE_KEY = "sugary.draft";
 
-export function useDraft() {
-  const [draft, dispatch] = useReducer(reduce, emptyDraft, (empty) => load(STORAGE_KEY, empty));
-  useEffect(() => store(STORAGE_KEY, draft), [draft]);
+export const keptDraft = (person: string, draft: Draft) => ({ person, draft });
+
+// A meal she has not saved yet — her words, a photo's thumbnail, the insulin she typed — is hers:
+// a phone signed in as somebody else after her finds none, and one from before drafts named their
+// person is nobody's. Nobody known (offline at launch) is shown nothing.
+export function draftFor(kept: unknown, person: string | null): Draft {
+  const own = kept as { person?: unknown; draft?: Partial<Draft> } | null;
+  return person !== null && own?.person === person && own.draft ? { ...emptyDraft, ...own.draft } : emptyDraft;
+}
+
+export function useDraft(person: string | null) {
+  const [draft, dispatch] = useReducer(reduce, person, (who) => {
+    const kept = load<Record<string, unknown>>(STORAGE_KEY, {});
+    // Somebody else's is taken off the phone rather than left beside hers.
+    if (who !== null && kept.person !== who) {
+      store(STORAGE_KEY, {});
+    }
+    return draftFor(kept, who);
+  });
+  useEffect(() => {
+    if (person !== null) {
+      store(STORAGE_KEY, keptDraft(person, draft));
+    }
+  }, [draft, person]);
   return [draft, dispatch] as const;
 }

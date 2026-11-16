@@ -138,10 +138,21 @@ if [ -n "$EMBEDDING_CTX_SIZE" ]; then
   CTX_CONFIG="  \"ctx_size\": $EMBEDDING_CTX_SIZE,"
 fi
 
+# The llama.cpp backend the embeddings run on (cpu|vulkan|rocm|cuda); unset leaves it to Lemonade's
+# auto. A host whose GPU no Vulkan driver here can see — an NVIDIA card under WSL, given to the
+# container by docker-compose.override.nvidia.yml — names cuda, or auto falls back to the CPU, where
+# memory's embeddings timed out under a few turns at once. Whisper has no CUDA build in Lemonade, so
+# STT_BACKEND is unaffected.
+LLAMACPP_CONFIG=""
+if [ -n "${LLAMACPP_BACKEND:-}" ]; then
+  LLAMACPP_CONFIG="  \"llamacpp\": { \"backend\": \"$LLAMACPP_BACKEND\" },"
+fi
+
 cat > "$CONFIG_DIR/config.json" <<EOF
 {
   "config_version": 2,
 $CTX_CONFIG
+$LLAMACPP_CONFIG
   "whispercpp": { "backend": "$WHISPER_BACKEND", "args": "$WHISPER_ARGS" }
 }
 EOF
@@ -163,7 +174,7 @@ case "$MODEL" in
     ;;
 esac
 
-echo "lemonade: whispercpp.backend=$WHISPER_BACKEND model=$MODEL embedding=$EMBEDDING_MODEL ctx_size=$EMBEDDING_CTX_SIZE tts=$TTS_MODEL args=$WHISPER_ARGS"
+echo "lemonade: whispercpp.backend=$WHISPER_BACKEND llamacpp.backend=${LLAMACPP_BACKEND:-auto} model=$MODEL embedding=$EMBEDDING_MODEL ctx_size=$EMBEDDING_CTX_SIZE tts=$TTS_MODEL args=$WHISPER_ARGS"
 # Echoed before the STT_CONFIG_ONLY seam so the payloads are assertable without a server or
 # registry. Every model this container serves is pinned, not merely pre-pulled — see the warmup
 # block below for why.

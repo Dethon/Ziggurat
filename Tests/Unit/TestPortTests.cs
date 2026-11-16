@@ -42,4 +42,18 @@ public class TestPortTests
 
         ports.ShouldAllBe(port => port < ephemeralLow);
     }
+
+    // Docker allocates a container's random host port from its own daemon's range, which is not this
+    // machine's: under Docker Desktop the daemon runs in a VM on the kernel default 32768-60999, which
+    // swallows WSL's 44620-48715 and the band beneath it. In pass 20's full suite a random-port
+    // container took 41980 between the dashboard fixture's probe and its Caddy's start, and five
+    // dashboard E2Es died on "failed to bind host port 0.0.0.0:41980: address already in use". The
+    // band sits below Docker's default range as well.
+    [Fact]
+    public void GetAvailable_NeverReturnsAPortDockerHandsOutForARandomBinding()
+    {
+        var ports = Enumerable.Range(0, 50).Select(_ => TestPort.GetAvailable()).ToList();
+
+        ports.ShouldAllBe(port => port < TestPort.DockerEphemeralRangeStart);
+    }
 }

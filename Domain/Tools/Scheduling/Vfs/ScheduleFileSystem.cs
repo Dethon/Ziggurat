@@ -1,6 +1,8 @@
+using System.Globalization;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
@@ -9,18 +11,56 @@ namespace Domain.Tools.Scheduling.Vfs;
 
 public sealed class ScheduleFileSystem(
     IScheduleStore store,
-    IAgentCatalog agents,
+    IAgentCatalog unprovenAgents,
     ICronValidator cronValidator,
     TimeProvider timeProvider,
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
     public const string Name = "schedules";
 
+    // Who is writing: every write records that turn's principal, and keeps the delegation the agent
+    // signed for it — or none, when the write carried none — which is what the schedule's fire acts
+    // as. The server's one instance has no caller, and the registrar asks for a view per call.
+    private ConversationContext? _caller;
+    private string? _delegation;
+
+    // The household the call's verified identity names (the call token's, CallTurn): the only
+    // household whose schedules this view lists, reads and writes. A call acting for nobody names
+    // none, and sees no schedule and may write none.
+    private string? _household;
+
+    // That household as the call proved it, whose settings say the zone its schedules are read in: a
+    // bare runAt, a cron and every time the files show. A call for nobody reads them in the server's.
+    private ICallHousehold? _householdOfCall;
+
+    // The agents whose directories the call sees: its household's own, as the call proved it (the
+    // accounts service's agent-names view), so one household is never shown another's agents nor
+    // refused a schedule for an agent of its own. The catalogue the server was registered keeps only a
+    // stack with no accounts service to ask (a call whose household cannot be asked: the eval's, a
+    // unit's); a call for nobody sees no schedule whichever it reads.
+    private async Task<IAgentCatalog> AgentsAsync(CancellationToken ct) =>
+        _householdOfCall is { } household
+            ? new HouseholdAgentCatalog(await household.AgentNamesAsync(ct))
+            : unprovenAgents;
+
+    // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
+    // dependency this mount was built with, and the store is shared by reference.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
+    {
+        var view = (ScheduleFileSystem)MemberwiseClone();
+        view._caller = caller.Conversation;
+        view._delegation = caller.Delegation;
+        view._household = caller.Conversation?.Identity?.TenantId is { Length: > 0 } household ? household : null;
+        view._householdOfCall = caller.Household;
+        return view;
+    }
+
     public override string FilesystemName => Name;
 
     protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
 
-    public override string DescribeMount => BuildMountDescription(timeProvider.LocalTimeZone.Id);
+    // Served per session, before any call names a household, so it names no zone: local time.
+    public override string DescribeMount => MountDescription;
 
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the schedules surface usable without a probe.
@@ -77,8 +117,9 @@ public sealed class ScheduleFileSystem(
         }
 
         var (dirsOnly, matches) = scope;
-        var all = await store.ListAsync(ct);
+        var all = await HouseholdSchedulesAsync(ct);
 
+        var agents = await AgentsAsync(ct);
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)
         {
@@ -110,6 +151,7 @@ public sealed class ScheduleFileSystem(
     {
         var node = SchedulePath.Parse(path);
         // offset/limit are unused: schedule files are small JSON blobs, always returned whole (Truncated = false).
+        var agents = await AgentsAsync(ct);
         string content;
         switch (node.Kind)
         {
@@ -117,10 +159,10 @@ public sealed class ScheduleFileSystem(
                 content = JsonSerializer.Serialize(info, _json);
                 break;
             case ScheduleNodeKind.ScheduleFile when await GetScheduleAsync(node, ct) is { } s:
-                content = RenderSpec(s);
+                content = RenderSpec(s, await ZoneAsync(ct));
                 break;
             case ScheduleNodeKind.StatusFile when await GetScheduleAsync(node, ct) is { } s:
-                content = RenderStatus(s);
+                content = RenderStatus(s, await ZoneAsync(ct));
                 break;
             case ScheduleNodeKind.RunNowFile when await GetScheduleAsync(node, ct) is not null:
                 return ExecutableOnly<FsReadResult>(path, SchedulePath.RunNowFileName);
@@ -156,11 +198,12 @@ public sealed class ScheduleFileSystem(
         var scoped = admits(SchedulePath.ScheduleFileName)
             ? await ScopeSchedulesAsync(scope, ct)
             : [];
+        var zone = scoped.Count > 0 ? await ZoneAsync(ct) : timeProvider.LocalTimeZone;
 
         return await SearchNodesAsync(
             scoped,
             (schedule, _) => ValueTask.FromResult<(string, string?)>(
-                ($"/{schedule.AgentId}/{schedule.Id}/{SchedulePath.ScheduleFileName}", RenderSpec(schedule))),
+                ($"/{schedule.AgentId}/{schedule.Id}/{SchedulePath.ScheduleFileName}", RenderSpec(schedule, zone))),
             new FsSearchScan
             {
                 Query = query,
@@ -177,13 +220,14 @@ public sealed class ScheduleFileSystem(
     // agent's schedules (agent dir), or everything (root / null). An unknown path scopes to nothing.
     private async Task<IReadOnlyList<Schedule>> ScopeSchedulesAsync(string? scope, CancellationToken ct)
     {
-        var all = await store.ListAsync(ct);
+        var all = await HouseholdSchedulesAsync(ct);
         if (string.IsNullOrWhiteSpace(scope))
         {
             return all;
         }
 
         var node = SchedulePath.Parse(scope);
+        var agents = await AgentsAsync(ct);
         return node.Kind switch
         {
             ScheduleNodeKind.Root => all,
@@ -196,37 +240,47 @@ public sealed class ScheduleFileSystem(
         };
     }
 
-    private string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
+    private static string RenderSpec(Schedule s, TimeZoneInfo zone) => JsonSerializer.Serialize(new
     {
         prompt = s.Prompt,
         cron = s.CronExpression,
-        runAt = ToZone(s.RunAt),
+        runAt = ToZone(s.RunAt, zone),
         userId = s.UserId,
         deliverTo = s.DeliverTo
     }, _json);
 
-    private string RenderStatus(Schedule s) => JsonSerializer.Serialize(new
+    private static string RenderStatus(Schedule s, TimeZoneInfo zone) => JsonSerializer.Serialize(new
     {
-        createdAt = ToZone(s.CreatedAt),
-        lastRunAt = ToZone(s.LastRunAt),
-        nextRunAt = ToZone(s.NextRunAt)
+        createdAt = ToZone(s.CreatedAt, zone),
+        lastRunAt = ToZone(s.LastRunAt, zone),
+        nextRunAt = ToZone(s.NextRunAt, zone)
     }, _json);
+
+    // Asked only by what reads or writes a time, so listing and deleting never wait on the accounts
+    // service; the reader keeps the answer, so one call asks it once at most.
+    private Task<TimeZoneInfo> ZoneAsync(CancellationToken ct) => _householdOfCall.ZoneAsync(timeProvider.LocalTimeZone, ct);
 
     private async Task<Schedule?> GetScheduleAsync(ScheduleNode node, CancellationToken ct)
     {
-        if (node.AgentId is null || node.ScheduleId is null || !agents.Exists(node.AgentId))
+        if (node.AgentId is null || node.ScheduleId is null || !(await AgentsAsync(ct)).Exists(node.AgentId))
         {
             return null;
         }
 
-        var s = await store.GetAsync(node.ScheduleId, ct);
+        var s = await FindAsync(node.ScheduleId, ct);
         return s is not null && s.AgentId == node.AgentId ? s : null;
     }
+
+    private Task<IReadOnlyList<Schedule>> HouseholdSchedulesAsync(CancellationToken ct) =>
+        _household is { } household ? store.ListAsync(household, ct) : Task.FromResult<IReadOnlyList<Schedule>>([]);
+
+    private Task<Schedule?> FindAsync(string id, CancellationToken ct) =>
+        _household is { } household ? store.GetAsync(household, id, ct) : Task.FromResult<Schedule?>(null);
 
     private async Task<bool> NodeExistsAsync(ScheduleNode node, CancellationToken ct) => node.Kind switch
     {
         ScheduleNodeKind.Root => true,
-        ScheduleNodeKind.AgentDir or ScheduleNodeKind.AgentInfoFile => agents.Exists(node.AgentId!),
+        ScheduleNodeKind.AgentDir or ScheduleNodeKind.AgentInfoFile => (await AgentsAsync(ct)).Exists(node.AgentId!),
         ScheduleNodeKind.ScheduleDir or ScheduleNodeKind.ScheduleFile
             or ScheduleNodeKind.StatusFile or ScheduleNodeKind.RunNowFile => await GetScheduleAsync(node, ct) is not null,
         _ => false
@@ -254,13 +308,19 @@ public sealed class ScheduleFileSystem(
             return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
         }
 
-        if (!agents.Exists(node.AgentId))
+        if (!(await AgentsAsync(ct)).Exists(node.AgentId))
         {
             return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{node.AgentId}'"));
         }
 
+        if (_household is not { } household)
+        {
+            return new FsResult<FsCreateResult>.Err(Error(
+                ToolError.Codes.PermissionDenied, "A schedule is kept for a household, and this call acts for none"));
+        }
+
         // Schedules use a unique-id model: create always rejects an existing id regardless of `overwrite`. Use fs_edit to modify an existing schedule.
-        if (await store.GetAsync(node.ScheduleId, ct) is not null)
+        if (await store.GetAsync(household, node.ScheduleId, ct) is not null)
         {
             return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{node.ScheduleId}' already exists"));
         }
@@ -271,31 +331,36 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsCreateResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        var zone = await ZoneAsync(ct);
+        var validation = ValidateSpec(spec!, zone);
         if (validation is not null)
         {
             return new FsResult<FsCreateResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r, zone) : null };
 
         var schedule = new Schedule
         {
             Id = node.ScheduleId,
+            TenantId = household,
             AgentId = node.AgentId,
             Prompt = spec!.Prompt!,
             CronExpression = spec.Cron,
             RunAt = spec.RunAt,
             UserId = spec.UserId,
+            CreatedBy = Principal.Of(_caller),
+            Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
-            NextRunAt = ComputeNextRunAt(spec)
+            NextRunAt = ComputeNextRunAt(spec, zone)
         };
 
         await store.CreateAsync(schedule, ct);
         return new FsResult<FsCreateResult>.Ok(new FsCreateResult
         {
-            Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length
+            Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length,
+            Note = NextRun(schedule.NextRunAt, zone)
         });
     }
 
@@ -312,7 +377,8 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsEditResult>(path);
         }
 
-        var current = RenderSpec(existing);
+        var zone = await ZoneAsync(ct);
+        var current = RenderSpec(existing, zone);
         var updatedText = edits.Aggregate(current, (acc, e) =>
             TextEdits.ReplaceFirstOrAll(acc, e.OldString, e.NewString, e.ReplaceAll));
 
@@ -322,13 +388,13 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsEditResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        var validation = ValidateSpec(spec!, zone);
         if (validation is not null)
         {
             return new FsResult<FsEditResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r, zone) : null };
 
         // Only recompute the next fire when the timing actually changes; a prompt-only edit must
         // not push out (or skip) an already-scheduled run by recomputing NextRunAt from "now".
@@ -340,14 +406,16 @@ public sealed class ScheduleFileSystem(
             CronExpression = spec.Cron,
             RunAt = spec.RunAt,
             UserId = spec.UserId,
+            CreatedBy = Principal.Of(_caller),
+            Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
-            NextRunAt = timingChanged ? ComputeNextRunAt(spec) : existing.NextRunAt
+            NextRunAt = timingChanged ? ComputeNextRunAt(spec, zone) : existing.NextRunAt
         };
 
         await store.CreateAsync(updated, ct);
         return new FsResult<FsEditResult>.Ok(new FsEditResult
         {
-            Status = "edited", FilePath = path, TotalOccurrencesReplaced = edits.Count,
+            Status = "edited", FilePath = path, TotalOccurrencesReplaced = edits.Count, Note = NextRun(updated.NextRunAt, zone),
             Edits = edits.Select(_ => new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }).ToList()
         });
     }
@@ -368,22 +436,29 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsMoveResult>(sourcePath);
         }
 
-        if (!agents.Exists(dst.AgentId!))
+        if (!(await AgentsAsync(ct)).Exists(dst.AgentId!))
         {
             return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{dst.AgentId}'"));
         }
 
-        if (dst.ScheduleId != src.ScheduleId && await store.GetAsync(dst.ScheduleId!, ct) is not null)
+        if (dst.ScheduleId != src.ScheduleId && await store.GetAsync(existing.TenantId, dst.ScheduleId!, ct) is not null)
         {
             return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{dst.ScheduleId}' already exists"));
         }
 
         if (dst.ScheduleId != src.ScheduleId)
         {
-            await store.DeleteAsync(src.ScheduleId!, ct);
+            await store.DeleteAsync(existing.TenantId, src.ScheduleId!, ct);
         }
 
-        await store.CreateAsync(existing with { Id = dst.ScheduleId!, AgentId = dst.AgentId! }, ct);
+        await store.CreateAsync(
+            existing with
+            {
+                Id = dst.ScheduleId!,
+                AgentId = dst.AgentId!,
+                CreatedBy = Principal.Of(_caller),
+                Delegation = _delegation
+            }, ct);
         return new FsResult<FsMoveResult>.Ok(new FsMoveResult
         {
             Status = "moved", Message = "reassigned", Source = sourcePath, Destination = destinationPath
@@ -398,12 +473,12 @@ public sealed class ScheduleFileSystem(
             return await RejectWriteAsync<FsRemoveResult>(node, path, ct);
         }
 
-        if (await GetScheduleAsync(node, ct) is null)
+        if (await GetScheduleAsync(node, ct) is not { } existing)
         {
             return NotFound<FsRemoveResult>(path);
         }
 
-        await store.DeleteAsync(node.ScheduleId!, ct);
+        await store.DeleteAsync(existing.TenantId, existing.Id, ct);
         return new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
         {
             Status = "deleted", Message = "removed", OriginalPath = path, TrashPath = ""
@@ -439,7 +514,7 @@ public sealed class ScheduleFileSystem(
 
         // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left
         // untouched (null = don't change it); the dispatcher stamps the real fire-time when it actually runs.
-        await store.UpdateLastRunAsync(schedule.Id, null, timeProvider.GetUtcNow().UtcDateTime, ct);
+        await store.UpdateLastRunAsync(schedule.TenantId, schedule.Id, null, timeProvider.GetUtcNow().UtcDateTime, ct);
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 
@@ -450,7 +525,7 @@ public sealed class ScheduleFileSystem(
             Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
         });
 
-    private sealed record SpecDto
+    internal sealed record SpecDto
     {
         public string? Prompt { get; init; }
         public string? Cron { get; init; }
@@ -459,7 +534,7 @@ public sealed class ScheduleFileSystem(
         public IReadOnlyList<string>? DeliverTo { get; init; }
     }
 
-    private static SpecDto? ParseSpec(string content, out ToolErrorResult? error)
+    internal static SpecDto? ParseSpec(string content, out ToolErrorResult? error)
     {
         error = null;
         try
@@ -479,7 +554,7 @@ public sealed class ScheduleFileSystem(
         }
     }
 
-    private ToolErrorResult? ValidateSpec(SpecDto spec)
+    private ToolErrorResult? ValidateSpec(SpecDto spec, TimeZoneInfo zone)
     {
         if (string.IsNullOrWhiteSpace(spec.Prompt))
         {
@@ -503,13 +578,13 @@ public sealed class ScheduleFileSystem(
 
         if (spec.RunAt is { } runAt)
         {
-            if (runAt.Kind == DateTimeKind.Unspecified && timeProvider.LocalTimeZone.IsInvalidTime(runAt))
+            if (runAt.Kind == DateTimeKind.Unspecified && zone.IsInvalidTime(runAt))
             {
                 return Error(ToolError.Codes.InvalidArgument,
                     "runAt falls in a daylight-saving gap (that local time does not exist); pick another time or add an explicit offset");
             }
 
-            if (ToUtc(runAt) <= timeProvider.GetUtcNow().UtcDateTime)
+            if (ToUtc(runAt, zone) <= timeProvider.GetUtcNow().UtcDateTime)
             {
                 return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
             }
@@ -518,21 +593,31 @@ public sealed class ScheduleFileSystem(
         return null;
     }
 
-    // A bare (zoneless) runAt is wall-clock time in the operating zone; an offset/Z runAt is honored.
-    private DateTime ToUtc(DateTime runAt) =>
+    // A bare (zoneless) runAt is wall-clock time in the household's zone; an offset/Z runAt is honored.
+    internal static DateTime ToUtc(DateTime runAt, TimeZoneInfo zone) =>
         runAt.Kind == DateTimeKind.Unspecified
-            ? TimeZoneInfo.ConvertTimeToUtc(runAt, timeProvider.LocalTimeZone)
+            ? TimeZoneInfo.ConvertTimeToUtc(runAt, zone)
             : runAt.ToUniversalTime();
 
-    // Stored times are UTC; render them in the operating zone so the LLM reads local wall-clock.
-    private DateTimeOffset? ToZone(DateTime? utc) =>
+    // Stored times are UTC; render them in the household's zone so the LLM reads local wall-clock.
+    private static DateTimeOffset? ToZone(DateTime? utc, TimeZoneInfo zone) =>
         utc is { } u
-            ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), timeProvider.LocalTimeZone)
+            ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), zone)
             : null;
 
-    private DateTime? ComputeNextRunAt(SpecDto spec) =>
+    // When a written schedule next runs, said by the mount so a reply that states it reads it rather
+    // than working out a cron against the turn's timestamp: at 01:09 on a Tuesday, a model told only
+    // that a weekday 08:15 schedule was created said its first run was tomorrow. The day is named
+    // beside the date, and the wall time carries the zone's name with no offset to apply.
+    private static string? NextRun(DateTime? nextRunAt, TimeZoneInfo zone) =>
+        ToZone(nextRunAt, zone) is { } next
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"It next runs on {next:dddd yyyy-MM-dd} at {next:HH:mm}, the household's time ({zone.Id}).")
+            : null;
+
+    private DateTime? ComputeNextRunAt(SpecDto spec, TimeZoneInfo zone) =>
         spec.RunAt ?? (spec.Cron is not null
-            ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), timeProvider.LocalTimeZone)
+            ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), zone)
             : null);
 
     // The files the mount renders rather than stores: the two read-only ones refuse as read-only,
@@ -552,9 +637,13 @@ public sealed class ScheduleFileSystem(
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message };
 
-    // The zone the engine actually computes in, read off the injected TimeProvider rather than a
-    // static call, so what the model is told and what a cron expression means cannot drift apart.
-    private static string BuildMountDescription(string zone) =>
-        $$"""Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what another agent does. Schedule against yourself — the agent directory whose agent_info.json name is your own — unless the user names another agent: the directory you write to decides who runs the prompt and where the result is delivered, so another agent's directory means someone else does the work and answers on their own channel. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring, standard 5-field cron read in the {{zone}} time zone and adjusted automatically across daylight-saving changes, e.g. "0 9 * * *" = daily 09:00, "30 14 * * 1-5" = weekdays 14:30) or runAt (one-shot ISO-8601 datetime; give it a time zone — 'Z' for UTC or an offset like +02:00 — or omit one and it is read as {{zone}} local time; stored as UTC, auto-deleted after it fires). deliverTo is an optional list of channel ids (e.g. ["signalr","telegram"]) to receive the result; omit for the default. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt, shown in the {{zone}} time zone. Fire a schedule immediately with fs_exec on its directory using command ./run_now. Use descriptive, unique schedule ids.""";
+    // What the mount is and where its rules are, read every turn; the rules themselves — which agent's
+    // directory, the file's fields, cron and runAt in local time, delivery — are the `scheduling`
+    // skill's, loaded on the turn that writes one, as the timers mount leaves its own to its skill.
+    public const string MountDescription =
+        "Scheduled agent tasks, grouped by agent: /schedules/<agentId>/<scheduleId>/schedule.json is one, "
+        + "with a read-only status.json beside it and the action ./run_now that fires it at once; "
+        + "/schedules/<agentId>/agent_info.json says what that agent does. Which agent's directory to write "
+        + "to, the file's fields, timing (always in local time) and delivery are in the `scheduling` skill, not here.";
 
 }

@@ -1,4 +1,5 @@
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -11,8 +12,9 @@ public record PenDto(
     Guid Id, DoseKind Kind, string Insulin, DateOnly OpenedOn, int Days, DateOnly ReplaceOn, DateOnly? ReplacedOn);
 
 // Kind is text and the rest nullable so a missing or unknown value is refused with a sentence rather
-// than a bare 400 from a failed bind.
-public record SavePenRequest(string? Kind, string? Insulin, DateOnly? OpenedOn, int? Days);
+// than a bare 400 from a failed bind. Loaded is what the sheet opened with, on a change (StaleEdits).
+public record SavePenRequest(
+    string? Kind, string? Insulin, DateOnly? OpenedOn, int? Days, SavePenRequest? Loaded = null);
 
 // Her insulin pens: one open pen of each kind, and the ones she replaced. When each is due is the
 // pen's own arithmetic; the reminders are PenReminders'.
@@ -74,11 +76,24 @@ public static class PenEndpoints
     // A correction of the insulin, the day or the days. The kind stays: a pen of the other kind is a
     // new pen.
     private static async Task<IResult> ReplaceAsync(
-        Guid id, SavePenRequest request, SugaryDbContext db, HomeCalendar calendar, CancellationToken ct)
+        Guid id, SavePenRequest request, SugaryDbContext db, HomeCalendar calendar, HttpContext http,
+        CancellationToken ct)
     {
         if (await db.Pens.FindAsync([id], ct) is not { } pen)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, Compared(loaded), Compared(request),
+                new SavePenRequest(SugaryTables.Word(pen.Kind), pen.Insulin, pen.OpenedOn, pen.Days));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
         }
 
         if (PenRules.Problem(request.Insulin, request.OpenedOn, request.Days, calendar.Today) is { } problem)
@@ -100,6 +115,9 @@ public static class PenEndpoints
 
     private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
         await db.Pens.Where(p => p.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
+
+    private static SavePenRequest Compared(SavePenRequest request) =>
+        request with { Insulin = request.Insulin?.Trim(), Loaded = null };
 
     private static IResult Refuse(string problem) =>
         Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);

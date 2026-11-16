@@ -4,6 +4,8 @@ using Domain.Tools.Config;
 using Domain.Tools.Files;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Bash;
+using Infrastructure.Metrics;
+using Infrastructure.Tunnels;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSandbox.McpPrompts;
@@ -57,6 +59,11 @@ public static class ConfigModule
                 return SandboxSkill.Body(sandbox.MountPoint, sandbox.Workspace, settings.ServesMounts);
             })
             .WithPrompts<McpSystemPrompt>();
+
+        if (settings.Metrics.Url.Length > 0)
+        {
+            services.AddMetricsPublishing(BackCallTargets.SandboxHeartbeat, settings.Metrics);
+        }
 
         return services;
     }

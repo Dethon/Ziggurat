@@ -13,7 +13,7 @@ namespace Tests.Unit.Domain.Memory;
 // clears its bar. An instruction is a request, so it is judged on `supported` alone.
 public class MemoryJudgeVerifyTests
 {
-    private static readonly MemoryJudgmentContext _context = new("user1");
+    private static readonly MemoryJudgmentContext _context = new("user1") { ShowsContent = true };
 
     private static readonly IReadOnlyList<ChatMessage> _window = [new(ChatRole.User, "¿qué tiempo hace el martes?")];
 
@@ -41,6 +41,24 @@ public class MemoryJudgeVerifyTests
         {
             ["supported"] = 0.9, ["about_user"] = 0.9, ["durable"] = 0.4, ["not_a_question"] = 0.9
         });
+    }
+
+    // The operator's dashboard lists every judgment; a candidate is what a person said about themselves,
+    // so its words are kept only where the context says they may be shown (the home's), and a context
+    // that says nothing shows nothing.
+    [Fact]
+    public async Task ACandidateWhoseContextShowsNoContent_IsPublishedWithoutItsWords()
+    {
+        var published = new RecordingMetricsPublisher();
+        var judge = StubJudge.Nouls(("supported", 0.9), ("about_user", 0.9), ("durable", 0.9), ("not_a_question", 0.9));
+
+        await Judge(judge, published).VerifyAsync(
+            _window, Candidate("Tiene diabetes tipo 2"), new MemoryJudgmentContext("user1"), CancellationToken.None);
+
+        var evt = published.Published.OfType<MemoryJudgmentEvent>().ShouldHaveSingleItem();
+        evt.Candidate.ShouldBeNull();
+        evt.Category.ShouldBe("Fact");
+        evt.Dropped.ShouldBe(false);
     }
 
     [Fact]

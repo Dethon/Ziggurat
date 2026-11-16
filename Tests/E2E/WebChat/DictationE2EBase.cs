@@ -32,15 +32,47 @@ public abstract class DictationE2EBase
     // Long enough that the recording holds the 8192 samples the spectrum below is measured over.
     protected const int SpectrumHoldMs = 1_400;
 
+    // Holds the button until the recorder itself holds `samples` (at the 16 kHz it encodes), at least
+    // `atLeastMs`: the strip shows once the microphone opened, but under a loaded machine the audio
+    // starts flowing later, and a hold timed from the strip let go with 0.2 s recorded.
+    protected static async Task HoldUntilRecordedAsync(IPage page, int samples, int atLeastMs)
+    {
+        var held = Task.Delay(atLeastMs);
+        await WithTraceAsync(page, () => page.WaitForFunctionAsync(
+            "n => (window.dictation && window.dictation._run ? window.dictation._run.samples : 0) >= n",
+            samples, new PageWaitForFunctionOptions { Timeout = 30_000, PollingInterval = 50 }));
+        await held;
+    }
+
+    // A wait on the recorder that gives up says what the recorder did: under a full suite every
+    // dictation case of one run failed at once (pass 20, ten of nineteen, the silence case hearing
+    // "no sound at all") while beside a second suite they passed, and the page's own trace is the only
+    // record of where the microphone got to.
+    protected static async Task WithTraceAsync(IPage page, Func<Task> wait)
+    {
+        try
+        {
+            await wait();
+        }
+        catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+        {
+            var trace = await page.EvaluateAsync<string>(
+                "() => JSON.stringify({ trace: window.dictation ? window.dictation._trace : null, " +
+                "samples: window.dictation && window.dictation._run ? window.dictation._run.samples : null, " +
+                "ctx: window.dictation && window.dictation._run && window.dictation._run.ctx ? window.dictation._run.ctx.state : null })");
+            throw new TimeoutException($"{ex.Message}\nDictation trace: {trace}", ex);
+        }
+    }
+
     protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
-        var page = await Fixture.CreatePageAsync(hasTouch: true);
+        var page = await Fixture.CreateSignedInPageAsync(Fixture.NextUserIndex(), hasTouch: true);
         if (width is not null && height is not null)
         {
             await page.SetViewportSizeAsync(width.Value, height.Value);
         }
         await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, Fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // SLOW_MIC_MS=2500 makes every case here open the microphone as slowly as a loaded machine
         // does, which is the one condition this suite goes flaky under: a case that waits out a
@@ -80,14 +112,16 @@ public abstract class DictationE2EBase
         return page;
     }
 
-    // One held dictation, start to release, for cases that care only about how it ended.
+    // One held dictation, start to release, for cases that care only about how it ended. Held until
+    // the recorder holds that long of audio: timed from the strip, a loaded machine let go before
+    // the sound arrived and the case read an empty composer as whatever it was asserting.
     protected static async Task DictateAsync(ICDPSession cdp, IPage page, int holdMs)
     {
         var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-        await Task.Delay(holdMs);
+        await WithTraceAsync(page, () => Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 }));
+        await HoldUntilRecordedAsync(page, holdMs * FakeMicrophoneAudio.TranscriptionRate / 1_000, holdMs);
         await TouchAsync(cdp, "touchEnd");
     }
 

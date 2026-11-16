@@ -16,6 +16,7 @@ import {
 } from "../recipes";
 import { useSaving } from "../saving";
 import { useSettings } from "../settings";
+import { openedRecipe } from "../stale";
 import type { Food, Recipe } from "../types";
 import { FoodList, FoodSheet } from "./FoodsSheet";
 
@@ -121,7 +122,7 @@ export function RecipeSheet({
         onSubmit={(event) => {
           event.preventDefault();
           if (draft.valid) {
-            void run(() => (recipe ? api.updateRecipe(recipe.id, draft.recipe) : api.createRecipe(draft.recipe)), onDone);
+            void run(() => (recipe ? api.updateRecipe(recipe.id, draft.recipe, openedRecipe(recipe)) : api.createRecipe(draft.recipe)), onDone);
           }
         }}
       >

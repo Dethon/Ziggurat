@@ -1,10 +1,10 @@
-# home-assistant — description 150 / 150 tokens, body 3588 / 3600 tokens, served by mcp-homeassistant
+# home-assistant — description 150 / 150 tokens, body 3590 / 3600 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
 ---
 name: home-assistant
-description: Doing anything in the home through `/ha`: switching, setting or reading a device ("turn on the AC", "what is the thermostat at"), its past ("how was her glucose overnight"), a future alarm or reminder on the alarms calendar ("wake me at seven", "cancel the dentist alarm"), music, radio or a podcast on a room's player. Never for stopping a ringing alarm or timer ("stop the alarm" is `/timers`), a countdown, a scheduled task, or a watch ("tell me when the washer finishes"). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.
+description: Doing anything in the home through `/ha`: switching, setting or reading a device ("turn on the AC", "what is the thermostat at"), its past ("how was the glucose overnight"), a future alarm or reminder on the alarms calendar ("wake me at seven", "cancel the dentist alarm"), music, radio or a podcast on a room's player. Never for stopping a ringing alarm or timer ("stop the alarm" is `/timers`), a countdown, a scheduled task, or a watch ("tell me when the washer finishes"). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.
 ---
 
 The setup index (`/ha/setup-index.md`) is read in the same turn as this skill: it names every
@@ -74,7 +74,7 @@ short clause and never voice exit codes or `stderr` text.
 ### History
 
 Every entity directory, read-only classes included, also has `./history`: the recorded
-state changes over a window. Any question about the past or a trend — "how was her
+state changes over a window. Any question about the past or a trend — "how was the
 glucose overnight", "when did the door last open", "has the temperature been climbing"
 — is answered from it, never from `state.json` (one value) and never by reading it
 again and again. No arguments = the last 24 hours ending now, every change listed;
@@ -92,7 +92,7 @@ same clock as the current time you are given: read it as local and never convert
 Sensors whose `state.json` carries a `state_class` (the setup index's `every entity with
 state_class` line) also have `./statistics`: Home Assistant's own hourly mean/min/max
 (sum and change for a total such as energy), kept for good, so it is the file for
-anything older than the recorder holds or coarser than a reading — "her average this
+anything older than the recorder holds or coarser than a reading — "the average glucose this
 month", "how much energy last week". No arguments = the last 7 days by the hour;
 `--days N` widens it and `--period day|week|month` coarsens it. Raw changes and the
 last few days: `./history`; averages, extremes and the long run: `./statistics`.

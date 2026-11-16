@@ -5,8 +5,11 @@ namespace McpServerSugary.Store;
 // An insulin pen she opened: which insulin, the day she first used it and how many days it lasts
 // once open. One pen of each kind is open at a time; a replaced one is kept with the day it was
 // replaced, as her history of pens.
-public class Pen
+public class Pen : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public DoseKind Kind { get; set; }
     public string Insulin { get; set; } = "";

@@ -26,7 +26,8 @@ public class ChatMonitorConversationContextTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -105,5 +106,78 @@ public class ChatMonitorConversationContextTests
         var context = DeliveryTargetResolver.BuildConversationContext(message, []);
 
         context.UserId.ShouldBe("test");
+    }
+
+    // A person's own message is vouched for by the channel it arrived on, whatever reply target the
+    // turn resolves to.
+    [Fact]
+    public void BuildConversationContext_APersonsOwnMessage_IsVouchedForByTheChannelItArrivedOn()
+    {
+        var channel = new FakeChannelConnection { ChannelId = "signalr" };
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "c-1", channelId: "telegram", agentId: "jonas") with
+        { Sender = "FranTG", UserId = null };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, [new DeliveryTarget(channel, "w-1")]);
+
+        context.Principal.ShouldBe(new Principal("telegram", "FranTG"));
+    }
+
+    // A channel that knows the person's account stamps it on their own message, and the turn acts
+    // for that account rather than for the sender label the channel shows.
+    [Fact]
+    public void BuildConversationContext_APersonsStampedPrincipal_KeepsItsAccount()
+    {
+        var stamped = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "signalr", agentId: "jonas") with
+        { Sender = "Fran", UserId = null, Principal = stamped };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, []);
+
+        context.Principal.ShouldBe(stamped);
+    }
+
+    // A fire's principal is the one its server stamped from the turn that set it going; its
+    // userId and its delivery channel are no evidence of who that was.
+    [Fact]
+    public void BuildConversationContext_AFire_CarriesOnlyTheStampedPrincipal()
+    {
+        var stamped = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
+        {
+            Sender = "scheduler",
+            UserId = "fran",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "s-1"),
+            Principal = new Principal("telegram", "FranTG")
+        };
+        var unstamped = stamped with { Principal = null };
+
+        DeliveryTargetResolver.BuildConversationContext(stamped, []).Principal
+            .ShouldBe(new Principal("telegram", "FranTG"));
+        DeliveryTargetResolver.BuildConversationContext(unstamped, []).Principal.ShouldBeNull();
+    }
+
+    // A server answering one of the turn's calls can tell a fire from a person: the handoff tool
+    // refuses to mint a login link on a turn nobody is present for.
+    [Theory]
+    [InlineData(MessageOriginKind.Schedule)]
+    [InlineData(MessageOriginKind.Watch)]
+    public void BuildConversationContext_AFire_CarriesItsOriginKind(MessageOriginKind kind)
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
+        { Origin = new MessageOrigin(kind, "s-1") };
+
+        DeliveryTargetResolver.BuildConversationContext(message, []).OriginKind.ShouldBe(kind);
+    }
+
+    [Fact]
+    public void BuildConversationContext_APersonsMessage_CarriesNoOriginKind()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "conv-1", channelId: "signalr", agentId: "jonas");
+
+        DeliveryTargetResolver.BuildConversationContext(message, []).OriginKind.ShouldBeNull();
     }
 }

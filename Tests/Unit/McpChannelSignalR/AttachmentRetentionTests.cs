@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Attachments;
@@ -80,6 +81,19 @@ public sealed class AttachmentRetentionTests : IDisposable
         _store.Find(old.Id).ShouldNotBeNull();
     }
 
+    // A file names the agent whose conversation it was sent in, so the sweep asks about that one
+    // history and not about whichever agents happen to be registered with the channel.
+    [Fact]
+    public async Task TheSweep_AsksAboutTheConversationUnderTheAgentItsFilesWereKeptFor()
+    {
+        await StoreAsync("7:42", "photo.png", agentId: "chef");
+        _time.Advance(_retention.AttachmentRetention + TimeSpan.FromDays(1));
+
+        await _store.SweepAsync(CancellationToken.None);
+
+        _liveness.Asked.ShouldBe([new AgentKey("7:42", "chef")]);
+    }
+
     [Fact]
     public async Task AgedFilesOfAConversationThatDied_GoOnTheNextSweep()
     {
@@ -115,10 +129,10 @@ public sealed class AttachmentRetentionTests : IDisposable
         _store.Find(second.Id).ShouldNotBeNull();
     }
 
-    private async Task<AttachmentReference> StoreAsync(string conversationId, string fileName)
+    private async Task<AttachmentReference> StoreAsync(string conversationId, string fileName, string? agentId = null)
     {
         using var content = new MemoryStream("bytes"u8.ToArray());
         return await _store.SaveAsync(
-            conversationId, "default", fileName, "image/png", content, CancellationToken.None);
+            new AgentKey(conversationId, agentId), "default", fileName, "image/png", content, CancellationToken.None);
     }
 }

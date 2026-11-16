@@ -42,8 +42,13 @@ public static class FakeMicrophoneAudio
             return (short)(value * short.MaxValue);
         }).ToArray();
 
+        // Every test process writes this one path, so a second suite started beside the first
+        // rewrites it under the first's Chromium. The bytes are the same each time, and a whole file
+        // renamed into place means no browser can ever open a half-written one.
         var path = Path.Combine(Path.GetTempPath(), "ziggurat-fake-microphone.wav");
-        File.WriteAllBytes(path, Wav(samples, CaptureRate));
+        var staging = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllBytes(staging, Wav(samples, CaptureRate));
+        File.Move(staging, path, overwrite: true);
         return path;
     }
 

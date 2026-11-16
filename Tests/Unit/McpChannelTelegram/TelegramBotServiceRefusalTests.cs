@@ -3,6 +3,7 @@ using Shouldly;
 using Telegram.Bot;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -55,7 +56,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
 
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask summarise these");
-        notification.Attachments.ShouldNotBeNull().Select(a => a.Id).ShouldBe(["jack/good-1", "jack/good-2"]);
+        notification.Attachments.ShouldNotBeNull().Select(a => a.Id).ShouldBe(["100-100/household-home.jack.good-1", "100-100/household-home.jack.good-2"]);
         _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("huge.pdf");
     }
 
@@ -118,7 +119,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
     [Fact]
     public async Task AnUnaddressedMessageWithARefusableFile_SaysNothing()
     {
-        var message = TelegramPollingHarness.MediaMessage(caption: "just sharing");
+        var message = TelegramPollingHarness.MediaMessage(caption: "just sharing", chatId: TelegramPollingHarness.FamilyGroup, chatType: ChatType.Supergroup);
         message.Document = TelegramPollingHarness.Document(
             fileName: "sheet.xlsx", mimeType: "application/vnd.ms-excel");
 

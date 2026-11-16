@@ -2,11 +2,13 @@ using System.Net;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Integration.Fixtures;
@@ -17,6 +19,10 @@ public class McpSchedulingServerFixture : IAsyncLifetime
     private IHost _host = null!;
 
     public string McpEndpoint { get; private set; } = null!;
+
+    // The server's own services, for a test that reads what a write left in its store or composes
+    // the fire its dispatcher would send.
+    public IServiceProvider Services => _host.Services;
 
     public async Task InitializeAsync()
     {
@@ -36,6 +42,9 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services.ConfigureScheduling(settings);
+        // No accounts service here: every household's schedules are read in this machine's zone, as
+        // the server read them before households had one. A household's own is CallHouseholdTests'.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(TimeZoneInfo.Local, [new HouseholdAgentName("jonas", "Jonas", "test agent")])));
 
         var app = builder.Build();
         app.MapMcp("/mcp");

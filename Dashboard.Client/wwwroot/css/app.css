@@ -37,3 +37,25 @@ a { color: var(--accent-blue); text-decoration: none; }
     vertical-align: -0.15em;
     color: var(--accent-green);
 }
+
+/* Which household every metric page shows, above the page's own header. */
+.household-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    max-width: 100%;
+}
+
+.household-picker select {
+    font: inherit;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    border: 1px solid #2a3a5e;
+    border-radius: 6px;
+    padding: 0.3rem 0.5rem;
+    min-width: 0;
+    max-width: 100%;
+}

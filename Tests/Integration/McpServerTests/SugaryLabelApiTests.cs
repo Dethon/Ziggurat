@@ -81,6 +81,22 @@ public class SugaryLabelApiTests
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // A label is a turn of the person whose phone read it, as a meal's estimate is.
+    [Fact]
+    public async Task ALabelTurn_ActsForThePersonSignedIn()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+
+        var answer = server.As(SugaryServer.Him).PostAsync("/api/labels", Form(Photo(1, 10)));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Principal.ShouldBe(new Principal("sugary", SugaryServer.Him.UserId, SugaryServer.Him));
+        turn.Sender.ShouldBe(SugaryServer.Him.UserId);
+        await ReplyAsync(agent, turn, Galletas);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task TheAppsLanguage_ReachesTheLabelTurn()
     {
@@ -241,9 +257,9 @@ public class SugaryLabelApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
-        await agent.RegisterAgentsAsync(
-            [Sugary(sees: [AttachmentKind.Image], labelModelSees: [], labelModel: server.Settings.LabelModel)],
-            CancellationToken.None);
+        AgentCatalogEntry[] registered = [Sugary(sees: [AttachmentKind.Image], labelModelSees: [], labelModel: server.Settings.LabelModel)];
+        await agent.RegisterAgentsAsync(registered, CancellationToken.None);
+        server.HouseholdRuns(registered);
         var app = await server.SignedInAsync();
 
         var refused = await app.PostAsync("/api/labels", Form(Photo(1, 10)));
@@ -266,9 +282,9 @@ public class SugaryLabelApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
-        await agent.RegisterAgentsAsync(
-            [Sugary(sees: [], labelModelSees: [AttachmentKind.Image], labelModel: server.Settings.LabelModel)],
-            CancellationToken.None);
+        AgentCatalogEntry[] registered = [Sugary(sees: [], labelModelSees: [AttachmentKind.Image], labelModel: server.Settings.LabelModel)];
+        await agent.RegisterAgentsAsync(registered, CancellationToken.None);
+        server.HouseholdRuns(registered);
         var app = await server.SignedInAsync();
 
         var answer = app.PostAsync("/api/labels", Form(Photo(1, 10)));
@@ -289,9 +305,9 @@ public class SugaryLabelApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
-        await agent.RegisterAgentsAsync(
-            [Sugary(sees: [AttachmentKind.Image], labelModelSees: [AttachmentKind.Image], labelModel: "other/model")],
-            CancellationToken.None);
+        AgentCatalogEntry[] registered = [Sugary(sees: [AttachmentKind.Image], labelModelSees: [AttachmentKind.Image], labelModel: "other/model")];
+        await agent.RegisterAgentsAsync(registered, CancellationToken.None);
+        server.HouseholdRuns(registered);
         var app = await server.SignedInAsync();
 
         // A turn sent would hold this request until the agent answered; none will.
@@ -310,9 +326,9 @@ public class SugaryLabelApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
-        await agent.RegisterAgentsAsync(
-            [new AgentCatalogEntry("sugary", "Sugary", null, server.Settings.LabelModel, PatchableModels: [])],
-            CancellationToken.None);
+        AgentCatalogEntry[] registered = [new AgentCatalogEntry("sugary", "Sugary", null, server.Settings.LabelModel, PatchableModels: [])];
+        await agent.RegisterAgentsAsync(registered, CancellationToken.None);
+        server.HouseholdRuns(registered);
         var app = await server.SignedInAsync();
 
         var answer = app.PostAsync("/api/labels", Form(Photo(1, 10)));

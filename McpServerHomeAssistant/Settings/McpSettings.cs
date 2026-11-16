@@ -1,12 +1,17 @@
 using Domain.DTOs;
 using Domain.Security;
+using Infrastructure.Metrics;
 using Mcp.Hosting;
 
 namespace McpServerHomeAssistant.Settings;
 
 public record McpSettings : IMcpHostSettings
 {
-    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    // Its heartbeat, and its helpers', posted on its tunnel's metrics back-call (METRICS__URL): the
+    // deployment's dashboard has no other way to see it. Unset outside a kit, which posts nothing.
+    public MetricsFeedConfig Metrics { get; init; } = new();
+
+    // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     public required HomeAssistantConfiguration HomeAssistant { get; init; }

@@ -4,10 +4,14 @@ namespace Observability.Services;
 
 // The roster of services the dashboard draws a health tile for. Scores are the last time we had
 // reason to believe a service still exists, NOT the last time it was healthy — reachability lives
-// in the TTL'd metrics:health:<service> key. Scoring registration rather than health is what lets a
+// in the TTL'd metrics:health:<member> key. Scoring registration rather than health is what lets a
 // configured probe target sit on the dashboard as a red tile for as long as it is down, while a
 // service that was retired outright (the Wyoming STT/TTS pair) falls off on its own. The predecessor
 // was a plain set that nothing ever removed from, so retired services stayed red forever.
+//
+// A member is the service's name for the deployment's own, and {household}:{service} for a
+// household's server, so two households' voice servers are two tiles. The deployment's keep the
+// shape they had: both keys expire on their own, so nothing needs moving.
 public static class ServiceHealthRegistry
 {
     public const string SeenKey = "metrics:health:seen";
@@ -17,8 +21,16 @@ public static class ServiceHealthRegistry
 
     public static readonly TimeSpan Retention = TimeSpan.FromDays(7);
 
-    public static Task MarkSeenAsync(IDatabase db, string service, DateTimeOffset now) =>
-        db.SortedSetAddAsync(SeenKey, service, now.ToUnixTimeSeconds());
+    public static string Member(string service, string? tenantId) =>
+        string.IsNullOrEmpty(tenantId) ? service : $"{tenantId}:{service}";
+
+    public static (string Service, string? TenantId) Parse(string member) =>
+        member.Split(':', 2) is [var tenantId, var service] ? (service, tenantId) : (member, null);
+
+    public static string HealthKey(string member) => $"metrics:health:{member}";
+
+    public static Task MarkSeenAsync(IDatabase db, string member, DateTimeOffset now) =>
+        db.SortedSetAddAsync(SeenKey, member, now.ToUnixTimeSeconds());
 
     public static async Task<IReadOnlyList<string>> ListAsync(IDatabase db, DateTimeOffset now)
     {

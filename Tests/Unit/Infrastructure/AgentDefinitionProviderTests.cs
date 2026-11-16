@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -17,20 +18,19 @@ public class AgentDefinitionProviderTests
         EnabledFeatures = ["memory"]
     };
 
+    private static readonly Account User1 = new("home", "user1");
+    private static readonly Account User2 = new("home", "user2");
+
     private readonly CustomAgentRegistry _customAgentRegistry = new();
     private readonly AgentDefinitionProvider _sut;
 
     public AgentDefinitionProviderTests()
     {
-        var registryOptions = new AgentRegistryOptions { Agents = [_builtInAgent] };
-        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        optionsMonitor.Setup(o => o.CurrentValue).Returns(registryOptions);
-
-        _sut = new AgentDefinitionProvider(optionsMonitor.Object, _customAgentRegistry);
+        _sut = FixedHouseholdAgents.Provider(_customAgentRegistry, _builtInAgent);
     }
 
     [Fact]
-    public void GetById_CustomAgent_ReturnsDefinition()
+    public async Task GetById_CustomAgent_ReturnsDefinition()
     {
         var customDef = new AgentDefinition
         {
@@ -40,25 +40,43 @@ public class AgentDefinitionProviderTests
             McpServerEndpoints = [],
             EnabledFeatures = []
         };
-        _customAgentRegistry.Add("user1", customDef);
+        await _customAgentRegistry.AddAsync(User1, customDef);
 
-        var result = _sut.GetById("custom-123");
+        var result = await _sut.GetByIdAsync("custom-123", null, User1);
 
         result.ShouldNotBeNull();
         result.Name.ShouldBe("Custom");
         result.EnabledFeatures.ShouldBeEmpty();
     }
 
+    // The same person id in another household is somebody else, and so is another person of the
+    // same household: a custom agent's id resolves for neither, nor for a caller naming nobody.
     [Fact]
-    public void GetById_UnknownAgent_ReturnsNull()
+    public async Task GetById_CustomAgentOfAnotherOwner_ReturnsNull()
     {
-        var result = _sut.GetById("nonexistent");
+        await _customAgentRegistry.AddAsync(User1, new AgentDefinition
+        {
+            Id = "custom-123",
+            Name = "Custom",
+            Model = "test-model",
+            McpServerEndpoints = []
+        });
+
+        (await _sut.GetByIdAsync("custom-123", null, User2)).ShouldBeNull();
+        (await _sut.GetByIdAsync("custom-123", null, User1 with { TenantId = "elsewhere" })).ShouldBeNull();
+        (await _sut.GetByIdAsync("custom-123", null)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetById_UnknownAgent_ReturnsNull()
+    {
+        var result = await _sut.GetByIdAsync("nonexistent", null);
 
         result.ShouldBeNull();
     }
 
     [Fact]
-    public void GetById_BuiltInTakesPrecedenceOverCustomWithSameId()
+    public async Task GetById_BuiltInTakesPrecedenceOverCustomWithSameId()
     {
         var customDef = new AgentDefinition
         {
@@ -67,16 +85,16 @@ public class AgentDefinitionProviderTests
             Model = "test-model",
             McpServerEndpoints = []
         };
-        _customAgentRegistry.Add("user1", customDef);
+        await _customAgentRegistry.AddAsync(User1, customDef);
 
-        var result = _sut.GetById("built-in");
+        var result = await _sut.GetByIdAsync("built-in", null, User1);
 
         result.ShouldNotBeNull();
         result.Name.ShouldBe("Built-In");
     }
 
     [Fact]
-    public void GetById_RemovedCustomAgent_ReturnsNull()
+    public async Task GetById_RemovedCustomAgent_ReturnsNull()
     {
         var customDef = new AgentDefinition
         {
@@ -85,18 +103,18 @@ public class AgentDefinitionProviderTests
             Model = "test-model",
             McpServerEndpoints = []
         };
-        _customAgentRegistry.Add("user1", customDef);
-        _customAgentRegistry.Remove("user1", "custom-456");
+        await _customAgentRegistry.AddAsync(User1, customDef);
+        await _customAgentRegistry.RemoveAsync(User1, "custom-456");
 
-        var result = _sut.GetById("custom-456");
+        var result = await _sut.GetByIdAsync("custom-456", null, User1);
 
         result.ShouldBeNull();
     }
 
     [Fact]
-    public void GetAll_NoUserId_ReturnsOnlyBuiltInAgents()
+    public async Task GetAll_NoUserId_ReturnsOnlyBuiltInAgents()
     {
-        _customAgentRegistry.Add("user1", new AgentDefinition
+        await _customAgentRegistry.AddAsync(User1, new AgentDefinition
         {
             Id = "custom-789",
             Name = "Custom",
@@ -104,14 +122,14 @@ public class AgentDefinitionProviderTests
             McpServerEndpoints = []
         });
 
-        var result = _sut.GetAll();
+        var result = await _sut.GetAllAsync(null);
 
         result.Count.ShouldBe(1);
         result[0].Id.ShouldBe("built-in");
     }
 
     [Fact]
-    public void RegisterCustomAgent_ReturnsDefinitionWithCustomPrefixedId()
+    public async Task RegisterCustomAgent_ReturnsDefinitionWithCustomPrefixedId()
     {
         var registration = new CustomAgentRegistration
         {
@@ -121,7 +139,7 @@ public class AgentDefinitionProviderTests
             McpServerEndpoints = []
         };
 
-        var result = _sut.RegisterCustomAgent("user1", registration);
+        var result = await _sut.RegisterCustomAgentAsync(User1, registration);
 
         result.ShouldNotBeNull();
         result.Id.ShouldStartWith("custom-");
@@ -131,29 +149,29 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void RegisterCustomAgent_TwoAgentsSameUser_BothStoredWithDifferentIds()
+    public async Task RegisterCustomAgent_TwoAgentsSameUser_BothStoredWithDifferentIds()
     {
         var reg1 = new CustomAgentRegistration { Name = "Bot1", Model = "m1", McpServerEndpoints = [] };
         var reg2 = new CustomAgentRegistration { Name = "Bot2", Model = "m2", McpServerEndpoints = [] };
 
-        var def1 = _sut.RegisterCustomAgent("user1", reg1);
-        var def2 = _sut.RegisterCustomAgent("user1", reg2);
+        var def1 = await _sut.RegisterCustomAgentAsync(User1, reg1);
+        var def2 = await _sut.RegisterCustomAgentAsync(User1, reg2);
 
         def1.Id.ShouldNotBe(def2.Id);
-        var all = _sut.GetAll("user1");
+        var all = await _sut.GetAllAsync(null, User1);
         all.Count.ShouldBe(3); // 1 built-in + 2 custom
         all.Select(a => a.Name).ShouldContain("Bot1");
         all.Select(a => a.Name).ShouldContain("Bot2");
     }
 
     [Fact]
-    public void RegisterCustomAgent_DifferentUsers_AgentsIsolated()
+    public async Task RegisterCustomAgent_DifferentUsers_AgentsIsolated()
     {
-        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "UserOneBot", Model = "m1", McpServerEndpoints = [] });
-        _sut.RegisterCustomAgent("user2", new CustomAgentRegistration { Name = "UserTwoBot", Model = "m1", McpServerEndpoints = [] });
+        await _sut.RegisterCustomAgentAsync(User1, new CustomAgentRegistration { Name = "UserOneBot", Model = "m1", McpServerEndpoints = [] });
+        await _sut.RegisterCustomAgentAsync(User2, new CustomAgentRegistration { Name = "UserTwoBot", Model = "m1", McpServerEndpoints = [] });
 
-        var user1All = _sut.GetAll("user1");
-        var user2All = _sut.GetAll("user2");
+        var user1All = await _sut.GetAllAsync(null, User1);
+        var user2All = await _sut.GetAllAsync(null, User2);
 
         user1All.Select(a => a.Name).ShouldContain("UserOneBot");
         user1All.Select(a => a.Name).ShouldNotContain("UserTwoBot");
@@ -162,7 +180,7 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void RegisterCustomAgent_AllFieldsMapped()
+    public async Task RegisterCustomAgent_AllFieldsMapped()
     {
         var registration = new CustomAgentRegistration
         {
@@ -176,7 +194,7 @@ public class AgentDefinitionProviderTests
             ProviderRouting = new ProviderRouting { Sort = ProviderSort.Throughput }
         };
 
-        var result = _sut.RegisterCustomAgent("user1", registration);
+        var result = await _sut.RegisterCustomAgentAsync(User1, registration);
 
         result.WhitelistPatterns.ShouldBe(["pattern1"]);
         result.CustomInstructions.ShouldBe("Be helpful");
@@ -185,51 +203,51 @@ public class AgentDefinitionProviderTests
     }
 
     [Fact]
-    public void UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
+    public async Task UnregisterCustomAgent_ExistingAgent_ReturnsTrue()
     {
-        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+        var def = await _sut.RegisterCustomAgentAsync(User1, new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
 
-        var result = _sut.UnregisterCustomAgent("user1", def.Id);
+        var result = await _sut.UnregisterCustomAgentAsync(User1, def.Id);
 
         result.ShouldBeTrue();
     }
 
     [Fact]
-    public void UnregisterCustomAgent_NonExistentAgent_ReturnsFalse()
+    public async Task UnregisterCustomAgent_NonExistentAgent_ReturnsFalse()
     {
-        var result = _sut.UnregisterCustomAgent("user1", "custom-nonexistent");
+        var result = await _sut.UnregisterCustomAgentAsync(User1, "custom-nonexistent");
 
         result.ShouldBeFalse();
     }
 
     [Fact]
-    public void UnregisterCustomAgent_WrongUser_ReturnsFalse()
+    public async Task UnregisterCustomAgent_WrongUser_ReturnsFalse()
     {
-        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+        var def = await _sut.RegisterCustomAgentAsync(User1, new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
 
-        var result = _sut.UnregisterCustomAgent("user2", def.Id);
+        var result = await _sut.UnregisterCustomAgentAsync(User2, def.Id);
 
         result.ShouldBeFalse();
     }
 
     [Fact]
-    public void UnregisterCustomAgent_AgentRemovedFromList()
+    public async Task UnregisterCustomAgent_AgentRemovedFromList()
     {
-        var def = _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
-        _sut.UnregisterCustomAgent("user1", def.Id);
+        var def = await _sut.RegisterCustomAgentAsync(User1, new CustomAgentRegistration { Name = "Bot", Model = "m1", McpServerEndpoints = [] });
+        await _sut.UnregisterCustomAgentAsync(User1, def.Id);
 
-        var all = _sut.GetAll("user1");
+        var all = await _sut.GetAllAsync(null, User1);
 
         all.Count.ShouldBe(1); // only built-in
         all.Select(a => a.Id).ShouldNotContain(def.Id);
     }
 
     [Fact]
-    public void GetAll_BuiltInAgentsAlwaysFirst()
+    public async Task GetAll_BuiltInAgentsAlwaysFirst()
     {
-        _sut.RegisterCustomAgent("user1", new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
+        await _sut.RegisterCustomAgentAsync(User1, new CustomAgentRegistration { Name = "Custom1", Model = "m1", McpServerEndpoints = [] });
 
-        var result = _sut.GetAll("user1");
+        var result = await _sut.GetAllAsync(null, User1);
 
         result.First().Id.ShouldBe("built-in");
     }

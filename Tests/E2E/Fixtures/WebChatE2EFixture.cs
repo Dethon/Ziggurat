@@ -1,3 +1,6 @@
+using Domain.DTOs.Channel;
+using Microsoft.Playwright;
+
 namespace Tests.E2E.Fixtures;
 
 // One collection's view of the shared WebChat stack. The containers live in WebChatStack and are
@@ -24,6 +27,10 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public string SugaryMcpEndpoint => _stack?.SugaryMcpEndpoint ?? "";
 
+    // The account a user index signs in as, which a test reaching the Sugary server past the proxy
+    // names in the session check's headers.
+    public Task<Account> AccountForAsync(int userIndex) => Stack.AccountForAsync(userIndex);
+
     // Scoped to this collection's space, so a test says what the transcriber answers without
     // knowing that another collection is dictating beside it.
     public string Transcript
@@ -49,8 +56,59 @@ public class WebChatE2EFixture : E2EFixtureBase
     private int _userBlock;
     private string _space = "";
 
-    public int NextUserIndex() =>
-        _userBlock + (int)((uint)Interlocked.Increment(ref _userIndex) % WebChatStack.UsersPerCollection);
+    // Asking for one makes the next one in the background, so a collection's tests find their user
+    // already made.
+    public int NextUserIndex()
+    {
+        var next = Interlocked.Increment(ref _userIndex);
+        Stack.Prefetch(IndexAt(next + 1));
+        return IndexAt(next);
+    }
+
+    private int IndexAt(int position) => _userBlock + (int)((uint)position % WebChatStack.UsersPerCollection);
+
+    // Every page of the chat client is behind the session check, so a test's page carries its
+    // user's session before it opens anything: the account for that index, made on first asking,
+    // signed in by a minted session rather than a passkey ceremony.
+    public async Task<IPage> CreateSignedInPageAsync(int userIndex, bool hasTouch = false, bool isMobile = false) =>
+        await CreatePageSignedInAsync(await Stack.SessionForAsync(userIndex), hasTouch, isMobile);
+
+    // A page signed in by a session the test minted itself, for a person the stack's users are not —
+    // an owner, say, since every one of them is a member.
+    public async Task<IPage> CreatePageSignedInAsync(
+        string session, bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false)
+    {
+        var page = await CreatePageAsync(hasTouch, isMobile, withoutServiceWorker);
+        await page.Context.AddCookiesAsync(
+        [
+            new Cookie
+            {
+                Name = SessionCookieName,
+                Value = session,
+                Url = Stack.WebChatUrl,
+                HttpOnly = true,
+                SameSite = SameSiteAttribute.Lax
+            }
+        ]);
+        return page;
+    }
+
+    public const string SessionCookieName = "ziggurat_session";
+
+    public static string NameOf(int userIndex) => WebChatStack.NameOf(userIndex);
+
+    // A person of the home household a test makes for itself, by name and role (owner or member):
+    // their id and a signed-in session.
+    public Task<(string UserId, string Session)> PersonAsync(string name, string role) => Stack.PersonAsync(name, role);
+
+    // A person of the stack's second household, for a test that changes who that household's people
+    // are: the hub has every open page of a household renew its connection on such a change, so it is
+    // made where no other collection has a page open.
+    public Task<(string UserId, string Session)> PersonElsewhereAsync(string name, string role) =>
+        Stack.PersonAsync(name, role, elsewhere: true);
+
+    // The accounts service's commands, for a test that needs a link or a command as the operator runs it.
+    public Task<(int Exit, string Output)> AccountsAsync(params string[] args) => Stack.AccountsAsync(args);
 
     protected override Task BuildImagesAsync(CancellationToken ct) => WebChatStack.EnsureImagesAsync(ct);
 
@@ -58,6 +116,7 @@ public class WebChatE2EFixture : E2EFixtureBase
     {
         _stack = await WebChatStack.AcquireAsync(ct);
         (_userBlock, _space) = _stack.ReserveSlice();
+        _stack.Prefetch(IndexAt(0));
     }
 
     protected override Task StopContainersAsync() => WebChatStack.ReleaseAsync();
@@ -101,10 +160,55 @@ public class WebChatE2ETopicsCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.Attachments)]
 public class WebChatE2EAttachmentsCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// The tenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Sugary)]
 public class WebChatE2ESugaryCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The household's admin pages but its settings: each class makes its own owner and changes only what
+// it made, so they never needed the chat classes' line — only the settings page, which renames the
+// household a chat case reads, stays in Chat.
+[CollectionDefinition(WebChatE2ECollections.Admin)]
+public class WebChatE2EAdminCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// Two or more people of their own each, in a topic of their own: shared topics, a sees-all grant
+// withdrawn, a session ended elsewhere.
+[CollectionDefinition(WebChatE2ECollections.People)]
+public class WebChatE2EPeopleCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The chat's turns on the real model, out of the Chat collection, which keeps only the cases reading
+// the household's name and agents beside the settings page that changes them.
+[CollectionDefinition(WebChatE2ECollections.Conversation)]
+public class WebChatE2EConversationCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.SignIn)]
+public class WebChatE2ESignInCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The admin pages and the people classes, each split once more by length: their classes make their
+// own owners and people and change only what they made, so neither half waits on the other.
+[CollectionDefinition(WebChatE2ECollections.AdminPages)]
+public class WebChatE2EAdminPagesCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.Sharing)]
+public class WebChatE2ESharingCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.Members)]
+public class WebChatE2EMembersCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.DictationStrip)]
+public class WebChatE2EDictationStripCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.Page)]
+public class WebChatE2EPageCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.Approvals)]
+public class WebChatE2EApprovalsCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.ListScroll)]
+public class WebChatE2EListScrollCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The twenty-second, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.DictationLong)]
+public class WebChatE2EDictationLongCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -118,4 +222,16 @@ public static class WebChatE2ECollections
     public const string Attachments = "WebChatE2E.Attachments";
     public const string DictationMicrophone = "WebChatE2E.DictationMicrophone";
     public const string Sugary = "WebChatE2E.Sugary";
+    public const string Admin = "WebChatE2E.Admin";
+    public const string People = "WebChatE2E.People";
+    public const string Conversation = "WebChatE2E.Conversation";
+    public const string SignIn = "WebChatE2E.SignIn";
+    public const string AdminPages = "WebChatE2E.AdminPages";
+    public const string Sharing = "WebChatE2E.Sharing";
+    public const string Members = "WebChatE2E.Members";
+    public const string DictationStrip = "WebChatE2E.DictationStrip";
+    public const string Page = "WebChatE2E.Page";
+    public const string Approvals = "WebChatE2E.Approvals";
+    public const string ListScroll = "WebChatE2E.ListScroll";
+    public const string DictationLong = "WebChatE2E.DictationLong";
 }

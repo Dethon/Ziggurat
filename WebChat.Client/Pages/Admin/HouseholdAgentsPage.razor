@@ -1,0 +1,252 @@
+@page "/admin/agents"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdAgentsStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household agents</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-agents-heading">
+    <h1 id="admin-agents-heading">Agents</h1>
+    <p class="admin-lede">
+        Each agent's name and the instructions it follows on top of its own. Everything else about an agent
+        — its model, its tools, its prompt sections — is the template's it was made from, or what was set up
+        for this household, and is shown read only under its full definition.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.Agents is { } agents)
+    {
+        @foreach (var agent in agents.Agents)
+        {
+            var draft = Draft(agent);
+            <article class="admin-agent" aria-label="@agent.Name">
+                <header class="admin-agent-header">
+                    <h2>@agent.Name</h2>
+                    <span class="admin-agent-meta">
+                        @(agent.Template is { } template ? $"From the {template} template" : "Set up for this household")
+                        @if (agent.Id == agents.DefaultAgent)
+                        {
+                            <span class="admin-agent-default"> · answers by default</span>
+                        }
+                    </span>
+                </header>
+                <form class="admin-form" @onsubmit="() => Save(agent.Id)">
+                    <label class="admin-field">
+                        <span class="admin-field-label">Name</span>
+                        <input name="agentName" @bind="draft.Name" @bind:event="oninput" maxlength="@AdminAgent.NameLength"
+                               autocomplete="off" />
+                    </label>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Custom instructions</span>
+                        <textarea name="customInstructions" rows="4" @bind="draft.Instructions" @bind:event="oninput"
+                                  maxlength="@agents.InstructionsLength"></textarea>
+                        <span class="admin-field-hint">
+                            @draft.Instructions.Length of @agents.InstructionsLength characters.
+                        </span>
+                    </label>
+                    <div class="admin-actions">
+                        <button type="button" class="admin-secondary" @onclick="() => ShowVersions(agent.Id)">Earlier versions</button>
+                        @if (agent.Id != agents.DefaultAgent && agents.Agents.Count > 1)
+                        {
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = agent.Id">Remove</button>
+                        }
+                        <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
+                    </div>
+                </form>
+
+                @if (agent.Definition is { } definition)
+                {
+                    <details class="admin-agent-definition">
+                        <summary>Full definition</summary>
+                        <p class="admin-field-hint">
+                            Read only: @(agent.Template is { } from ? $"the {from} template's" : "set up for this household"),
+                            with the name and instructions above.
+                        </p>
+                        <pre>@AgentDefinitionText.Of(definition)</pre>
+                    </details>
+                }
+
+                @if (_confirming == agent.Id)
+                {
+                    <div class="admin-confirm" role="group" aria-label="Remove @agent.Name">
+                        <p>Remove @agent.Name? Nobody in the household can talk to it after, and everyone's conversations with it are no longer shown.</p>
+                        <div class="admin-actions">
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = null">Keep it</button>
+                            <button type="button" class="admin-save" @onclick="() => Remove(agent.Id)">Remove @agent.Name</button>
+                        </div>
+                    </div>
+                }
+
+                @if (_state.VersionsOf == agent.Id)
+                {
+                    <div class="admin-versions" role="region" aria-label="Earlier versions of @agent.Name">
+                        @if (_state.Versions is null)
+                        {
+                            <p class="admin-status">Loading the earlier versions</p>
+                        }
+                        else if (_state.Versions.Count == 0)
+                        {
+                            <p class="admin-status">No earlier versions yet: each save keeps the one it replaces.</p>
+                        }
+                        else
+                        {
+                            <ol>
+                                @foreach (var version in _state.Versions)
+                                {
+                                    <li class="admin-version">
+                                        <div>
+                                            <strong>@version.Name</strong>
+                                            <span class="admin-field-hint">
+                                                @* The name and instructions it went by until a change, and who made it:
+                                                   "replaced ... by Marta" read as the agent replaced by a person. *@
+                                                Until @AdminTime.Of(version.ReplacedAt)@(version.ReplacedBy.Length > 0 ? $", when {version.ReplacedBy} changed it" : "")
+                                            </span>
+                                            <p class="admin-version-instructions">@(version.CustomInstructions ?? "No custom instructions.")</p>
+                                        </div>
+                                        <button type="button" class="admin-secondary" disabled="@_state.Saving"
+                                                @onclick="() => Restore(agent.Id, version.Id)">Restore</button>
+                                    </li>
+                                }
+                            </ol>
+                        }
+                    </div>
+                }
+            </article>
+        }
+
+        <form class="admin-form admin-agent-voice" @onsubmit="SetVoiceAgent" aria-labelledby="admin-agent-voice-heading">
+            <h2 id="admin-agent-voice-heading">Answers aloud</h2>
+            <p class="admin-field-hint" id="admin-agent-voice-now">
+                @(agents.Agents.FirstOrDefault(a => a.Id == agents.AnswersAloud) is { } aloud
+                    ? $"{aloud.Name} answers the household's voice satellites, under the spoken-reply rules whatever template it came from."
+                    : "Nobody answers the household's voice satellites yet: pick one of its agents, or add one from the Nabu template.")
+            </p>
+            <label class="admin-field">
+                <span class="admin-field-label">Voice agent</span>
+                <select name="voiceAgent" @bind="_voiceAgent" aria-describedby="admin-agent-voice-now">
+                    <option value="">The agent made from the Nabu template, if there is one</option>
+                    @* An agent with no tools (the Sugary estimator) holds no conversation, so it is not offered. *@
+                    @foreach (var agent in agents.Agents.Where(a => a.MayAnswerAloud))
+                    {
+                        <option value="@agent.Id">@agent.Name</option>
+                    }
+                </select>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Save voice agent</button>
+            </div>
+        </form>
+
+        <form class="admin-form admin-agent-add" @onsubmit="Add" aria-labelledby="admin-agent-add-heading">
+            <h2 id="admin-agent-add-heading">Add an agent</h2>
+            <label class="admin-field">
+                <span class="admin-field-label">Template</span>
+                <select name="template" @bind="_template" aria-describedby="admin-agent-template-description">
+                    @foreach (var template in agents.Templates)
+                    {
+                        <option value="@template.Name">@template.AgentName (@template.Name)</option>
+                    }
+                </select>
+                @* What the picked template makes, so the one that answers aloud is found by reading. *@
+                <span id="admin-agent-template-description" class="admin-field-hint">
+                    @agents.Templates.FirstOrDefault(t => t.Name == _template)?.Description
+                </span>
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Name</span>
+                <input name="newAgentName" @bind="_newName" @bind:event="oninput" maxlength="@AdminAgent.NameLength" autocomplete="off" />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Add agent</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's agents</p>
+    }
+</section>
+
+@code {
+    private HouseholdAgentsState _state = HouseholdAgentsState.Initial;
+    private Dictionary<string, AgentDraft> _drafts = [];
+    private string? _confirming;
+    private string _template = "";
+    private string _newName = "";
+    private string _voiceAgent = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The fields take what the admin API answered — on opening and after every change — and are the
+        // owner's to edit in between.
+        Subscribe(Store.StateObservable, state => state.Agents, agents =>
+        {
+            if (agents is null)
+            {
+                return;
+            }
+
+            _drafts = agents.Agents.ToDictionary(a => a.Id, DraftOf);
+
+            _confirming = null;
+            _newName = "";
+            _voiceAgent = agents.VoiceAgent ?? "";
+            if (agents.Templates.All(t => t.Name != _template))
+            {
+                _template = agents.Templates.FirstOrDefault()?.Name ?? "";
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdAgents());
+    }
+
+    private AgentDraft Draft(AdminAgent agent) =>
+        _drafts.TryGetValue(agent.Id, out var draft)
+            ? draft
+            : _drafts[agent.Id] = DraftOf(agent);
+
+    private static AgentDraft DraftOf(AdminAgent agent) => new() { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
+
+    private void Save(string agentId)
+    {
+        var draft = _drafts[agentId];
+        var loaded = _state.Agents?.Agents.FirstOrDefault(a => a.Id == agentId);
+        Dispatcher.Dispatch(new SaveHouseholdAgent(agentId, new AgentEdit(
+            draft.Name.Trim(), string.IsNullOrWhiteSpace(draft.Instructions) ? null : draft.Instructions.Trim())
+        {
+            // What the page showed, so another owner's change to the other field since then stands.
+            Loaded = loaded is null ? null : new AgentEdit(loaded.Name, loaded.CustomInstructions)
+        }));
+    }
+
+    private void ShowVersions(string agentId) => Dispatcher.Dispatch(new LoadHouseholdAgentVersions(agentId));
+
+    private void Restore(string agentId, string versionId) => Dispatcher.Dispatch(new RestoreHouseholdAgentVersion(agentId, versionId));
+
+    // The question closes once answered: a refusal (the agent a space opens on) leaves the agents as
+    // they were, so it is not their change that would close it.
+    private void Remove(string agentId)
+    {
+        _confirming = null;
+        Dispatcher.Dispatch(new RemoveHouseholdAgent(agentId));
+    }
+
+    private void SetVoiceAgent() =>
+        Dispatcher.Dispatch(new SetHouseholdVoiceAgent(string.IsNullOrEmpty(_voiceAgent) ? null : _voiceAgent));
+
+    private void Add() => Dispatcher.Dispatch(new AddHouseholdAgent(new AgentAddition(_template, _newName.Trim())));
+
+    private sealed class AgentDraft
+    {
+        public string Name { get; set; } = "";
+        public string Instructions { get; set; } = "";
+    }
+}

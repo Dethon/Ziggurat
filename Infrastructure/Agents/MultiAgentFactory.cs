@@ -2,7 +2,8 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.Security;
+using Domain.Extensions;
+using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
@@ -30,92 +31,116 @@ public sealed class MultiAgentFactory(
 
     private readonly ILogger? _logger = loggerFactory?.CreateLogger<MultiAgentFactory>();
 
-    // Absent in a host with no Lemonade chat host configured, and in every factory built without a
-    // container: then the whitelist is the configured list and every turn goes to OpenRouter.
-    private readonly ILemonadeModelSource _lemonadeModels = LemonadeModelsOf(serviceProvider);
+    // Which Lemonade box each household's turns run on: its own, the deployment's for the home, or none.
+    // A host that reads no household's boxes (a test, the eval) has the deployment's for the home alone.
+    private readonly ILemonadeHosts _lemonadeHosts =
+        serviceProvider?.GetService<ILemonadeHosts>()
+        ?? new DeploymentLemonadeHost(serviceProvider?.GetService<LemonadeChatHostOptions>(), LemonadeModelsOf(serviceProvider));
 
-    private readonly LemonadeChatHostOptions? _lemonadeHost =
-        serviceProvider?.GetService<LemonadeChatHostOptions>();
+    // The credential each configured endpoint presents, by its host, read once for every agent and
+    // worker this factory builds. Absent in a host that registered none, which presents nothing and
+    // whose gates refuse, so the gate rather than this decides what an unset credential means.
+    private readonly McpCredentials _credentials =
+        serviceProvider?.GetService<McpCredentials>() ?? McpCredentials.From(null);
 
-    // The secret every configured endpoint presents, read once for every agent and worker this
-    // factory builds. Absent in a host that registered none, and empty in a deployment that never
-    // set it; both present nothing and a gated server refuses, so the gate rather than this decides
-    // what an unset secret means.
-    private readonly string? _mcpSecret =
-        serviceProvider?.GetService<McpGateSettings>() is { SharedSecret.Length: > 0 } gate
-            ? gate.SharedSecret
-            : null;
-
-    // One source for every agent this factory builds, read on each turn that carries a patch.
-    private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
-        openRouterConfig.PatchableModelIds ?? [], LemonadeModelsOf(serviceProvider));
-
-    private string? LemonadeHostAddress => _lemonadeHost is { IsConfigured: true } host ? host.Address : null;
+    // The models a patch may name for a household: the configured ones, then whatever its box has at
+    // the moment of asking. A household with no box patches to the configured models alone.
+    private PatchableModelWhitelist Whitelist(LemonadeHost? lemonade) =>
+        new(openRouterConfig.PatchableModelIds ?? [], lemonade?.Models ?? FixedLemonadeModelSource.None);
 
     private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
         serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
+    public async Task<DisposableAgent> CreateAsync(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null)
     {
-        var agents = definitionProvider.GetAll(userId);
+        // The household the turn is for runs its own agents (a turn acting for nobody runs the home's).
+        // A person's custom agents are registered under their account — household and person — so a
+        // turn finds them by the account it acts for, never by its sender, which may be the account's
+        // display name or anything a channel reports. A turn acting for no account sees the
+        // household's agents alone.
+        var householdId = tenantId ?? account?.TenantId;
+        var household = await definitionProvider.ForHouseholdAsync(householdId, ct);
+        // Before anything is built, so a household that cannot pay is asked nothing: not its agents'
+        // servers, and no model.
+        // A household paid with the deployment's key (the home) cannot pay either when the deployment's
+        // .env left that key empty: refused the same way, which the person is told, rather than thrown
+        // out of the turn's setup, which answers them nothing.
+        _ = household.Payer is { } payer && (payer.Key is not null || !string.IsNullOrWhiteSpace(openRouterConfig.ApiKey))
+            ? payer
+            : throw new HouseholdWithoutKeyException(household.HouseholdId ?? householdId ?? "");
+        var agents = await definitionProvider.GetAllAsync(householdId, account, ct);
 
         // By id or not at all. Falling back to the first configured agent read routing off the
         // order of a display catalogue, so a request that named nobody was answered by whichever
         // assistant happened to be listed first. Who answers a message that names no agent is
-        // decided from configuration before the message is grouped (AgentDefaults).
+        // decided before the message is grouped (AgentDefaults, then the household's default).
         var definition = string.IsNullOrEmpty(agentId)
             ? null
             : agents.FirstOrDefault(a => a.Id == agentId);
 
-        _ = definition ?? throw new InvalidOperationException(
-            string.IsNullOrEmpty(agentId)
-                ? "No agent id was supplied and no default agent is configured for the channel."
-                : $"No agent found for identifier '{agentId}'.");
+        _ = definition ?? throw new AgentNotFoundException(agentId, household.HouseholdId ?? householdId);
+        // The channel's own sections beside the ones it selects: whoever serves a satellite answers aloud.
+        definition = definition with
+        {
+            PromptSections = [.. definition.PromptSections.Union(PromptManifest.ForChannel(channelId), StringComparer.OrdinalIgnoreCase)]
+        };
 
-        return CreateFromDefinition(agentKey, userId, definition, approvalHandler);
+        // Only the household's own agents' endpoints present a deployment credential: they are its
+        // configuration's, which its owner cannot point anywhere, where a person's registered agent
+        // names whatever its registration said.
+        var deployment = new DeploymentEndpoints(household.Agents.SelectMany(a => a.McpServerEndpoints));
+        var lemonade = _lemonadeHosts.For(household.HouseholdId ?? householdId, home: household.Configuration is null or { IsHome: true });
+        var spec = AgentSpecProjection.ForAgent(
+            definition, agentKey, userId, openRouterConfig, Whitelist(lemonade), lemonade?.Options.Address,
+            _credentials, deployment, _logger, householdId, household) with
+        { Lemonade = lemonade };
+
+        return Build(spec, approvalHandler, household.AsBuilt(definition.Id));
     }
 
     public DisposableAgent CreateSubAgent(
         SubAgentDefinition definition,
         IToolApprovalHandler approvalHandler,
-        SpawnContext spawn)
+        SpawnContext spawn) =>
+        CreateSubAgent(definition, approvalHandler, spawn, _lemonadeHosts.For(spawn.TenantId, home: spawn.TenantId is null));
+
+    // A worker runs on its parent's household's box, as on its parent's key.
+    private DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn, LemonadeHost? lemonade)
     {
         var spec = AgentSpecProjection.ForSubAgent(
-            definition, spawn, openRouterConfig, _patchableModels, LemonadeHostAddress, _mcpSecret, _logger);
-
-        return Build(spec, approvalHandler);
-    }
-
-    private DisposableAgent CreateFromDefinition(
-        AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
-    {
-        // Asked without a user, the provider lists the built-in agents alone: the deployment's own.
-        var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
-        var spec = AgentSpecProjection.ForAgent(
-            definition, agentKey, userId, openRouterConfig, _patchableModels,
-            LemonadeHostAddress, _mcpSecret, deployment, _logger);
+            definition, spawn, openRouterConfig, Whitelist(lemonade), lemonade?.Options.Address, _credentials, _logger)
+            with
+        { Lemonade = lemonade };
 
         return Build(spec, approvalHandler);
     }
 
     // Everything that differs between an agent and a subagent was resolved by the projection,
     // so nothing here asks which one it is building.
-    private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
+    private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler, AgentAsBuilt? builtFrom = null)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.AgentId, spec.MetricsAgentName, spec.TenantId)
             : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(
             spec.Model, agentPublisher, spec.MaxContextTokens,
             sessionId: spec.RoutingSessionId,
-            providerRouting: spec.ProviderRouting);
+            providerRouting: spec.ProviderRouting,
+            key: spec.Key,
+            keyHousehold: spec.TenantId,
+            turnZone: TimeZones.Named(spec.TimeZone),
+            lemonade: spec.Lemonade);
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
-            spec.Model, spec.ProviderRouting);
+            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key,
+            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)]);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -124,7 +149,7 @@ public sealed class MultiAgentFactory(
 
         var featureConfig = new FeatureConfig(
             SubAgentFactory: def => spawner is null
-                ? CreateSubAgent(def, approvalHandler, spawn)
+                ? CreateSubAgent(def, approvalHandler, spawn, spec.Lemonade)
                 : spawner.Spawn(def),
             UserId: spec.UserId,
             ConversationContextProvider: () => ConversationContextMeta.Current);
@@ -152,7 +177,8 @@ public sealed class MultiAgentFactory(
             // before the screen existed. A worker gets it by this same line, screened on its
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
-            spec.MetricsAgentId);
+            spec.AgentId,
+            spec.Payer);
 
         return new McpAgent(
             spec,
@@ -166,10 +192,9 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             loggerFactory,
             _promptCache,
-            // Optional: a host with no outpost access — every test host, and any deployment that
-            // never turned them on — simply has no outposts to offer, which is the same answer as
-            // an agent that did not opt in.
-            serviceProvider?.GetService<OutpostAccess>(),
+            // Optional: a host with no outposts — every test host but the outposts' own — simply
+            // has none to offer, which is the same answer as an agent that did not opt in.
+            serviceProvider?.GetService<IOutposts>(),
             BuildReadImageSupport(spec),
             // Optional for the same reason: a host with no judge preloads nothing and the model
             // loads for itself. A worker gets it by this same line, judged on its delegation
@@ -177,7 +202,24 @@ public sealed class MultiAgentFactory(
             serviceProvider?.GetService<ISkillPreloader>(),
             // Optional as well: a host with no bridge endpoint runs sandbox commands with only the
             // sandbox's own disk, as before the bridge existed.
-            serviceProvider?.GetService<IVfsBridge>());
+            serviceProvider?.GetService<IVfsBridge>(),
+            // The agent's call tokens, which every server's gate asks a tool call for. The
+            // deployment registers them; a host that does not sends calls every gated server
+            // refuses, which is the loud failure an unsigned deployment should be. A worker gets
+            // them by this same line, and signs for its parent's person because it carries its
+            // parent's context.
+            serviceProvider?.GetService<CallTokens>(),
+            // Where a household's own server is reached: its tunnel in the deployment, the server a
+            // stack hosts in process in a test. A host with neither reaches none, and a session that
+            // needs one fails as a configured endpoint that will not answer does.
+            serviceProvider?.GetService<IOwnServers>(),
+            // Which own servers the turn's household set up is asked at each turn's start, of the
+            // same view the agent was built from: a worker asks its parent's household by this same
+            // line, so it reaches no server its parent's household never set up.
+            ct => definitionProvider.ForHouseholdAsync(spec.TenantId, ct),
+            // A conversation asks before each later turn whether its household still defines the
+            // agent so, and builds it again if not; a worker is never asked.
+            builtFrom);
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the
@@ -196,23 +238,19 @@ public sealed class MultiAgentFactory(
             // that carries no context (a harness, a benchmark) then refuses instead of storing
             // bytes under a key no send will ever ask for.
             CurrentConversationId = () => ConversationContextMeta.Current?.ConversationId,
-            ModelAcceptsImages = () => AcceptsImages(
-                FunctionInvokingChatClient.CurrentContext?.Options?.ModelId ?? spec.Model),
+            ModelAcceptsImages = () => Accepts(
+                FunctionInvokingChatClient.CurrentContext?.Options?.ModelId ?? spec.Model, AttachmentKind.Image, spec.Lemonade),
             MaxBytes = openRouterConfig.MaxInlineImageBytes
         };
 
-    private bool AcceptsImages(string model) => Accepts(model, AttachmentKind.Image);
-
-    private bool AcceptsVideo(string model) => Accepts(model, AttachmentKind.Video);
-
     // Permissive wherever the catalogue is silent, the same rule AttachmentCapability states: model
     // capability is discovered from the provider, and a lookup that has not answered yet must not
-    // remove the feature from everyone. A Lemonade model is answered by the host that has it.
-    private bool Accepts(string model, AttachmentKind kind)
+    // remove the feature from everyone. A Lemonade model is answered by the box that has it.
+    private bool Accepts(string model, AttachmentKind kind, LemonadeHost? lemonade)
     {
         if (LemonadeModelId.IsLemonade(model))
         {
-            return LemonadeModelOf(model)?.AcceptedAttachmentKinds.Contains(kind) ?? true;
+            return LemonadeModelOf(model, lemonade)?.AcceptedAttachmentKinds.Contains(kind) ?? true;
         }
 
         return serviceProvider?.GetService<IModelCapabilityCatalog>() is not { } catalog
@@ -221,25 +259,29 @@ public sealed class MultiAgentFactory(
 
     // The smaller of the agent's window and the one the box loaded the model with; a model whose
     // window the box did not report fits the agent's, as an OpenRouter turn does.
-    private int? LemonadeWindow(string model, int? agentWindow) =>
-        (agentWindow, LemonadeModelOf(model)?.ContextWindow) switch
+    private static int? LemonadeWindow(string model, int? agentWindow, LemonadeHost? lemonade) =>
+        (agentWindow, LemonadeModelOf(model, lemonade)?.ContextWindow) switch
         {
             ({ } agent, { } discovered) => Math.Min(agent, discovered),
             (var agent, null) => agent,
             (null, var discovered) => discovered
         };
 
-    private LemonadeModel? LemonadeModelOf(string model) =>
-        _lemonadeModels.Current.FirstOrDefault(m =>
+    private static LemonadeModel? LemonadeModelOf(string model, LemonadeHost? lemonade) =>
+        (lemonade?.Models.Current ?? []).FirstOrDefault(m =>
             string.Equals(LemonadeModelId.Namespaced(m.Id), model, StringComparison.OrdinalIgnoreCase));
 
-    // The OpenRouter client is built exactly as before. With a Lemonade chat host configured it is
-    // one side of a routing client, the other being a client for the box; without one it is the
+    // The OpenRouter client is built exactly as before. With a Lemonade box for the turn's household it
+    // is one side of a routing client, the other being a client for that box; without one it is the
     // whole client, and no turn can reach a Lemonade model because none is ever whitelisted.
+    // It is sent with the household's own key, or the deployment's where none is given (the home's
+    // agents and anything built for nobody); the box is the household's own, or the deployment's for
+    // the home, on its own key.
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null)
+        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null,
+        ModelKey? key = null, string? keyHousehold = null, TimeZoneInfo? turnZone = null, LemonadeHost? lemonade = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -253,9 +295,9 @@ public sealed class MultiAgentFactory(
         // in front of a patched model that cannot take it — the wire rejects the whole request.
         var readImageStore = serviceProvider?.GetService<IReadImageStore>();
 
-        var openRouter = new OpenRouterChatClient(
+        IChatClient openRouter = new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
-            openRouterConfig.ApiKey,
+            key?.Reveal() ?? openRouterConfig.ApiKey,
             model,
             effectiveContext,
             effectivePublisher,
@@ -265,27 +307,37 @@ public sealed class MultiAgentFactory(
             attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
-            modelAcceptsImages: AcceptsImages,
-            modelAcceptsVideo: AcceptsVideo);
+            modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
+            modelAcceptsVideo: m => Accepts(m, AttachmentKind.Video, lemonade),
+            turnZone: turnZone);
 
-        if (_lemonadeHost is not { IsConfigured: true } host)
+        // A household's own key that OpenRouter refuses is the owner's to fix, so their keys page is
+        // told; the deployment's key is the operator's, and the box has a key of its own.
+        if (key is not null && keyHousehold is not null && serviceProvider?.GetService<IHouseholdKeyReports>() is { } reports)
+        {
+            openRouter = new RefusedKeyReportingChatClient(
+                openRouter, keyHousehold, reports, loggerFactory?.CreateLogger<RefusedKeyReportingChatClient>());
+        }
+
+        if (lemonade?.Options is not { IsConfigured: true } host)
         {
             return openRouter;
         }
 
-        var lemonade = new LemonadeChatClient(
+        var onTheBox = new LemonadeChatClient(
             host,
             effectivePublisher,
             sessionId,
-            transportHandler: lemonadeTransportHandler,
+            transportHandler: lemonade.Transport ?? lemonadeTransportHandler,
             attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
-            modelAcceptsImages: AcceptsImages,
-            contextWindowFor: model => LemonadeWindow(model, effectiveContext),
-            modelAcceptsVideo: AcceptsVideo);
+            modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
+            contextWindowFor: model => LemonadeWindow(model, effectiveContext, lemonade),
+            modelAcceptsVideo: m => Accepts(m, AttachmentKind.Video, lemonade),
+            turnZone: turnZone);
 
-        return new HostRoutingChatClient(openRouter, lemonade);
+        return new HostRoutingChatClient(openRouter, onTheBox);
     }
 }
 
@@ -298,9 +350,4 @@ public record OpenRouterConfig
     public IReadOnlyList<string>? PatchableModelIds { get; init; }
     public int HydrationDepthMessages { get; init; } = AttachmentHydration.DefaultDepthMessages;
     public long MaxInlineImageBytes { get; init; } = ReadImageSupport.DefaultMaxBytes;
-}
-
-public sealed class AgentRegistryOptions
-{
-    public AgentDefinition[] Agents { get; set; } = [];
 }

@@ -1,0 +1,89 @@
+@using Dashboard.Client.Effects
+@using Dashboard.Client.Metrics
+@using Domain.DTOs.Admin
+@using System.Text.Json
+@using Domain.Metrics
+@implements IDisposable
+@inject HouseholdFilter Households
+@inject MetricsApiService Api
+@inject HouseholdDirectory Directory
+@inject DataLoadEffect DataLoad
+@inject NavigationManager Navigation
+@inject ILogger<HouseholdPicker> Logger
+
+@* Which household every metric page shows. The choices are the households something was rolled up
+   for, named as the household list names them (an id where the list could not be asked), and the
+   deployment's own events. Not on the household list itself, which is no metric page. *@
+@if (_shown)
+{
+    <label class="household-picker">
+        <span>Household</span>
+        <select @onchange="PickAsync">
+            <option value="" selected="@(Households.Selected is null)">All households</option>
+            @foreach (var (id, label) in _options)
+            {
+                <option value="@id" selected="@(Households.Selected == id)">@label</option>
+            }
+        </select>
+    </label>
+}
+
+@code {
+    private IReadOnlyList<(string Id, string Label)> _options = [];
+    private bool _shown;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        _shown = IsMetricPage();
+
+        var scopes = Api.GetHouseholdsAsync();
+        var listed = Directory.NamesAsync();
+        // Neither read failing takes the picker away: what one answered is still worth choosing from.
+        var known = await Settle(scopes, "which households have metrics") ?? [];
+        var households = (await listed).Listed;
+        _options = known.Concat(households.Select(h => h.Id))
+            .Where(id => id != MetricKeys.Deployment)
+            .Distinct()
+            .Select(id => households.FirstOrDefault(h => h.Id == id) is { } household
+                ? (Id: id, Label: household.Name, Home: household.IsHome)
+                : (Id: id, Label: id, Home: false))
+            .OrderByDescending(o => o.Home)
+            .ThenBy(o => o.Label, StringComparer.CurrentCultureIgnoreCase)
+            .Select(o => (o.Id, o.Label))
+            .Append((MetricKeys.Deployment, "The deployment's own"))
+            .ToList();
+    }
+
+    private async Task PickAsync(ChangeEventArgs change)
+    {
+        Households.Select(change.Value as string);
+        await DataLoad.ReloadAsync();
+    }
+
+    // A read that could not be made or understood: no connection, a timeout, or a body that is not
+    // what was asked for. Anything else is a fault, and is left to surface as one.
+    private async Task<T?> Settle<T>(Task<T> read, string what)
+    {
+        try
+        {
+            return await read;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException or TaskCanceledException)
+        {
+            Logger.LogWarning(ex, "The household picker could not read {What}; it offers what the other read answered", what);
+            return default;
+        }
+    }
+
+    private bool IsMetricPage() =>
+        !Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("households", StringComparison.OrdinalIgnoreCase);
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _shown = IsMetricPage();
+        StateHasChanged();
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

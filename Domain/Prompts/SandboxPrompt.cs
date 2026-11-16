@@ -2,12 +2,18 @@ using Domain.Contracts;
 
 namespace Domain.Prompts;
 
-// The sandbox's standing prose: that it is the one mount with exec, and that a run loads the
-// sandbox skill, which carries everything else. Built from the mount point the mount declares
-// rather than asserting it, as the skill body is, so a rename cannot leave it quietly wrong.
+// The sandbox's standing prose (Sections/sandbox_prompt.md), served by mcp-sandbox, built from the
+// mount point the mount declares rather than asserting it, so a rename cannot leave it quietly
+// wrong.
 public static class SandboxPrompt
 {
     public const string Name = "sandbox_prompt";
+
+    private static readonly PromptDocument _document = PromptDocuments.Section(Name);
+
+    private static readonly PromptTemplate _prompt = _document.Template("mount_point", "workspace", "serves_mounts");
+
+    private static readonly string _servesMounts = _document.Part("serves-mounts").Fill();
 
     // `workspace` arrives in the backend's own coordinates, as the mount publishes it, and is
     // composed into a virtual path here by the one translation — the model never reads a backend
@@ -16,21 +22,9 @@ public static class SandboxPrompt
     // `servesMounts`: this sandbox serves the session's other mounts to its commands (it has a
     // launcher and an exec bridge to ask), so the prose can say so; otherwise it says nothing about
     // them.
-    public static string Build(string mountPoint, string workspace, bool servesMounts = false)
-    {
-        var home = FileSystemResolution.ToVirtualPath(mountPoint, workspace);
-        var mounts = servesMounts
-            ? " A command sees the session's other mounts as directories at their usual paths."
-            : "";
-
-        return $"""
-            ## Sandbox Filesystem
-
-            You have access to a Linux sandbox container exposed as the virtual filesystem mounted at `{mountPoint}`. Among the filesystems available to you, the sandbox is the **only** one with a shell.{mounts}
-
-            Your **persistent workspace** is `{home}`; it is the only place that is both writable and durable. Before you run anything here — a command, a script, an install — load the `sandbox` skill: the layout, what is preinstalled, how exit codes, output and timeouts come back and how a container path maps to a virtual one are there.
-
-            A path the user names that is under no mount is not somewhere on this box either. One look at it, spelled as given, is the whole search: if it is not there, the answer is that it is not reachable — no `find`, no glob from the root, no look through the workspace or the system directories for a folder of that name.
-            """;
-    }
+    public static string Build(string mountPoint, string workspace, bool servesMounts = false) =>
+        _prompt.Fill(
+            ("mount_point", mountPoint),
+            ("workspace", FileSystemResolution.ToVirtualPath(mountPoint, workspace)),
+            ("serves_mounts", servesMounts ? " " + _servesMounts : ""));
 }

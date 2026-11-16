@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -22,11 +23,17 @@ public sealed class McpChannelConnection(
     // How often the run below asks whether the link is still there. The supervision cadence belongs
     // to the thing being supervised, which is why it moved here with the run.
     TimeSpan? healthCheckInterval = null,
-    // The deployment secret a channel server's /mcp asks for, presented on the first dial and on
-    // every reconnect, since both go through ConnectAsync. Null presents nothing, which a gated
+    // The channel server's own credential, which its /mcp asks for, found by the host its endpoint
+    // is dialled at. Presented on the first dial and on every reconnect, since both go through
+    // ConnectAsync. Null presents nothing, which a gated
     // server refuses — the dial then fails and is retried like any other.
-    string? mcpSecret = null)
-    : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
+    string? mcpSecret = null,
+    // The agent's call tokens. Every call this connection makes is a tool call the channel server's
+    // gate asks one for: an approval is signed for the turn it guards, and the rest — the poll, a
+    // reply, the catalog — for nobody, since the agent makes them for no person. Null signs nothing,
+    // and a gated channel server refuses every call.
+    CallTokens? callTokens = null)
+    : IChannelConnection, IAlertChannel, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
 
@@ -70,6 +77,7 @@ public sealed class McpChannelConnection(
     private const int SplitStreamRewarnEvery = 240;
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly Channel<AlertSignal> _alertChannel = Channel.CreateUnbounded<AlertSignal>();
     private McpClient? _client;
     // What the far end offers, for this connection generation and no other. Every server in this
     // repo registers its tools before its transport starts, so the answer cannot change while one
@@ -95,27 +103,45 @@ public sealed class McpChannelConnection(
 
     public bool AttachOnly { get; } = attachOnly;
 
+    // A household's own server's connection serves that household alone; a dialled one, every one.
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     public bool HostsReviewCopies { get; init; }
+
+    public bool IsConnected => _client is not null;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
+    public IAsyncEnumerable<AlertSignal> Alerts => _alertChannel.Reader.ReadAllAsync();
+
+    // A URL dialled with this connection's own credential.
+    public Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct) =>
+        RunAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), catalog, ct);
+
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
     // token lives. The order is here rather than in a caller because the order is about this.
+    //
+    // When the token goes the connection lets go: a run that ended is a channel not connected (ADR
+    // 0011), whether the agent is stopping or the household server's tunnel this run was bound to has
+    // closed, and the next run starts from nothing.
     public async Task RunAsync(
-        string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
+        McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
         var interval = healthCheckInterval ?? _defaultHealthCheckInterval;
         try
         {
             await WithRetryAsync(endpoint, reconnect: false, ct);
-            var entries = catalog();
+            // The catalog and the households' Lemonade models are read once per tick, and that one
+            // reading is both what is sent and what the next tick is compared with: read again after a
+            // registration, a change landing in between would pass for one already sent.
+            var entries = Registration(catalog());
             var registered = await TryRegisterAgentsAsync(entries, ct);
             var lastRegistered = registered ? Fingerprint(entries) : null;
 
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(interval, ct);
-                entries = catalog();
+                entries = Registration(catalog());
 
                 if (!await IsHealthyAsync(ct))
                 {
@@ -152,11 +178,15 @@ public sealed class McpChannelConnection(
             // Shutting down. A call in flight when the token trips reports the abort it is, and
             // this is where the run ends: it returns rather than faulting its caller.
         }
+        finally
+        {
+            await DisconnectAsync();
+        }
     }
 
     // One loop for both, because a reconnect is a connect that had a predecessor: a fix to the
     // back-off could otherwise land in one and miss the other.
-    private async Task WithRetryAsync(string endpoint, bool reconnect, CancellationToken ct)
+    private async Task WithRetryAsync(McpServerEndpoint endpoint, bool reconnect, CancellationToken ct)
     {
         var verb = reconnect ? "Reconnecting" : "Connecting";
         var attempt = 0;
@@ -168,7 +198,7 @@ public sealed class McpChannelConnection(
             {
                 logger?.LogInformation(
                     "{Verb} channel {ChannelId} to {Endpoint} (attempt {Attempt})",
-                    verb, ChannelId, endpoint, attempt);
+                    verb, ChannelId, endpoint.Address, attempt);
                 if (reconnect)
                 {
                     await ReconnectAsync(endpoint, ct);
@@ -206,15 +236,21 @@ public sealed class McpChannelConnection(
     // Value equality over a catalog whose members are lists, which records compare by reference.
     // The wire shape is the comparison that matters anyway: two catalogs that serialize the same
     // are the same as far as the channel is concerned.
-    private static string Fingerprint(IReadOnlyList<AgentCatalogEntry> agents) =>
-        JsonSerializer.Serialize(agents, ChannelProtocol.SerializerOptions);
+    // Each household's own Lemonade box's models, sent with the catalog to a channel that shows people
+    // a picker; null sends none. Read with the catalog, so a box gaining or losing a model re-registers.
+    public Func<IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>>>? HouseholdLemonadeModels { get; init; }
 
-    private async Task<bool> TryRegisterAgentsAsync(
-        IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    private RegisterAgentsParams Registration(IReadOnlyList<AgentCatalogEntry> agents) =>
+        new() { Agents = agents, HouseholdLemonadeModels = HouseholdLemonadeModels?.Invoke() };
+
+    private static string Fingerprint(RegisterAgentsParams registration) =>
+        JsonSerializer.Serialize(registration, ChannelProtocol.SerializerOptions);
+
+    private async Task<bool> TryRegisterAgentsAsync(RegisterAgentsParams registration, CancellationToken ct)
     {
         try
         {
-            await RegisterAgentsAsync(agents, ct);
+            await RegisterAsync(registration, ct);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -229,20 +265,20 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task ConnectAsync(string endpoint, CancellationToken ct)
+    public Task ConnectAsync(string endpoint, CancellationToken ct) =>
+        ConnectAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), ct);
+
+    // A dialled server presents the endpoint's credential; a household's server is reached through
+    // its tunnel's client, which presents the tunnel's own, and is signed for the synthetic address it
+    // was admitted with.
+    public async Task ConnectAsync(McpServerEndpoint endpoint, CancellationToken ct)
     {
         // Never leave a second pump alive on this connection: two of them share one subscriberId
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(endpoint),
-                AdditionalHeaders = string.IsNullOrEmpty(mcpSecret)
-                    ? null
-                    : new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(mcpSecret) }
-            }),
+            McpClientManager.TransportFor(endpoint, callTokens),
             new McpClientOptions
             {
                 ClientInfo = new Implementation
@@ -361,15 +397,26 @@ public sealed class McpChannelConnection(
 
     private void Dispatch(ChannelInboxItem item)
     {
-        if (item.Kind == ChannelInboxItemKind.Message)
+        switch (item.Kind)
         {
-            HandleChannelMessageNotification(
-                JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
-        }
-        else
-        {
-            HandleChannelCancelNotification(
-                JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+            case ChannelInboxItemKind.Message:
+                HandleChannelMessageNotification(
+                    JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
+                break;
+            case ChannelInboxItemKind.Cancel:
+                HandleChannelCancelNotification(
+                    JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+                break;
+            // An alert is no turn: it goes to the relay that rings it, never to a conversation.
+            case ChannelInboxItemKind.Alert when item.Alert is { } alert:
+                _alertChannel.Writer.TryWrite(new AlertSignal.Ring(alert));
+                break;
+            case ChannelInboxItemKind.AlertStopped when item.AlertStopped is { } stopped:
+                _alertChannel.Writer.TryWrite(new AlertSignal.Stop(stopped.AlertId));
+                break;
+            default:
+                logger?.LogWarning("Discarding a {Kind} inbox item on {ChannelId} with nothing in it", item.Kind, ChannelId);
+                break;
         }
     }
 
@@ -423,6 +470,11 @@ public sealed class McpChannelConnection(
             ChannelId = ChannelId,
             AgentId = notification.AgentId,
             UserId = notification.UserId,
+            Principal = notification.Principal,
+            Assertion = notification.Assertion,
+            Delegation = notification.Delegation,
+            FireReport = notification.FireReport,
+            HouseholdId = notification.HouseholdId,
             ReplyTo = notification.ReplyTo,
             Origin = notification.Origin,
             Location = notification.Location,
@@ -491,33 +543,115 @@ public sealed class McpChannelConnection(
             cancellationToken: ct);
     }
 
-    public async Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId,
-        IReadOnlyList<ToolApprovalRequest> requests,
-        CancellationToken ct)
+    public async Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
     {
         var client = RequireClient();
         // The turn's conversation context rides this hop as `_meta`, as it does on a tool the
         // model calls: an approval is asked from inside the tool invocation it guards, and the
-        // channel that reads the answer has to see what the turn asked for — a turn addressed to
-        // the local box is never put to a hosted judge.
+        // channel that reads the answer has to see what the turn asked for — whose question it is,
+        // and whether it was addressed to the local box, which is never put to a hosted judge.
         var result = await client.CallToolAsync(new CallToolRequestParams
         {
             Name = ChannelProtocol.RequestApprovalTool,
-            Arguments = ChannelProtocol.ToArguments(new RequestApprovalParams
+            Arguments = Arguments(new RequestApprovalParams
             {
-                ConversationId = conversationId,
+                ConversationId = ask.ConversationId,
                 Mode = ApprovalMode.Request,
-                Requests = requests
-            }).ToDictionary(a => a.Key, a => (JsonElement)a.Value!),
-            Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+                Requests = ask.Requests,
+                ApprovalId = ask.ApprovalId
+            }),
+            Meta = ConversationContextMeta.Build(ask.Turn)
         }, ct);
 
-        var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
-        return Enum.TryParse<ToolApprovalResult>(text, ignoreCase: true, out var parsed)
-            ? parsed
-            : ToolApprovalResult.Rejected;
+        return ChannelProtocol.ParseApprovalAnswer(result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
     }
+
+    // Null on every way of not being answered here: not connected, a channel that offers nothing
+    // (a dual-role server, voice), a refusal of the call. None of them is the person saying no.
+    public async Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || ask.Asker is not { } asker
+            || !await OffersToolAsync(client, ChannelProtocol.OfferApprovalTool, ct))
+        {
+            return null;
+        }
+
+        var result = await client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = ChannelProtocol.OfferApprovalTool,
+            Arguments = Arguments(new OfferApprovalParams
+            {
+                ApprovalId = ask.ApprovalId,
+                ConversationId = ask.ConversationId,
+                Asker = asker,
+                AgentId = ask.Turn?.AgentId,
+                Requests = ask.Requests
+            }),
+            Meta = ConversationContextMeta.Build(ask.Turn)
+        }, ct);
+
+        return result.IsError == true
+            ? null
+            : ChannelProtocol.ParseApprovalAnswer(result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+    }
+
+    public async Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.SettleApprovalTool, ct))
+        {
+            return;
+        }
+
+        await client.CallToolAsync(
+            ChannelProtocol.SettleApprovalTool,
+            ChannelProtocol.ToArguments(new SettleApprovalParams { ApprovalId = approvalId, Result = result }),
+            cancellationToken: ct);
+    }
+
+    // Signed for nobody, as the rest of the channel plumbing is: an alert is no turn, and the person
+    // it is for is named in the offer, as an approval's asker is.
+    public async Task<bool> OfferAlertAsync(ChannelAlertNotification alert, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.OfferAlertTool, ct))
+        {
+            return false;
+        }
+
+        var result = await client.CallToolAsync(
+            ChannelProtocol.OfferAlertTool,
+            ChannelProtocol.ToArguments(new OfferAlertParams
+            {
+                AlertId = alert.AlertId,
+                Owner = alert.Owner,
+                Text = alert.Text,
+                Kind = alert.Kind,
+                AgentId = alert.AgentId
+            }),
+            cancellationToken: ct);
+
+        return result.IsError != true
+               && result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text == ChannelProtocol.AlertDismissed;
+    }
+
+    public async Task SettleAlertAsync(string alertId, bool dismissed, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.SettleAlertTool, ct))
+        {
+            return;
+        }
+
+        await client.CallToolAsync(
+            ChannelProtocol.SettleAlertTool,
+            ChannelProtocol.ToArguments(new SettleAlertParams { AlertId = alertId, Dismissed = dismissed }),
+            cancellationToken: ct);
+    }
+
+    private static Dictionary<string, JsonElement> Arguments<T>(T value) =>
+        ChannelProtocol.ToArguments(value).ToDictionary(a => a.Key, a => (JsonElement)a.Value!);
 
     public async Task NotifyAutoApprovedAsync(
         string conversationId,
@@ -644,6 +778,8 @@ public sealed class McpChannelConnection(
         string? initialPrompt,
         string? address,
         string? existingConversationId,
+        Principal? principal,
+        bool group,
         CancellationToken ct)
     {
         var client = _client;
@@ -668,7 +804,11 @@ public sealed class McpChannelConnection(
                     ["sender"] = sender,
                     ["initialPrompt"] = initialPrompt,
                     ["address"] = address,
-                    ["existingConversationId"] = existingConversationId
+                    ["existingConversationId"] = existingConversationId,
+                    ["principal"] = principal is null
+                        ? null
+                        : JsonSerializer.SerializeToElement(principal, ChannelProtocol.SerializerOptions),
+                    ["group"] = group
                 },
                 cancellationToken: ct);
 
@@ -698,7 +838,10 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct) =>
+        RegisterAsync(Registration(agents), ct);
+
+    private async Task RegisterAsync(RegisterAgentsParams registration, CancellationToken ct)
     {
         var client = _client;
         if (client is null)
@@ -713,7 +856,7 @@ public sealed class McpChannelConnection(
 
         var result = await client.CallToolAsync(
             ChannelProtocol.RegisterAgentsTool,
-            ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
+            ChannelProtocol.ToArguments(registration),
             cancellationToken: ct);
 
         // A refused registration reaches the caller as a value, not a throw: the channel-side
@@ -749,7 +892,16 @@ public sealed class McpChannelConnection(
 
         try
         {
-            await client.ListToolsAsync(cancellationToken: ct);
+            // The listing is the probe's answer too: the server behind this client can be replaced
+            // without the client reconnecting (a channel's container recreated with a new image is
+            // answered by the same client, whose pump only retries), and a tool it gained must not
+            // stay unseen until the agent restarts.
+            var tools = await client.ListToolsAsync(cancellationToken: ct);
+            if (ReferenceEquals(_client, client))
+            {
+                _tools = new ToolSet(client, tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal));
+            }
+
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -767,16 +919,23 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task ReconnectAsync(string endpoint, CancellationToken ct)
+    public Task ReconnectAsync(string endpoint, CancellationToken ct) =>
+        ReconnectAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), ct);
+
+    public async Task ReconnectAsync(McpServerEndpoint endpoint, CancellationToken ct)
+    {
+        await DisconnectAsync();
+        await ConnectAsync(endpoint, ct);
+    }
+
+    private async Task DisconnectAsync()
     {
         await StopPumpAsync();
-        if (_client is not null)
+        if (_client is { } client)
         {
-            await _client.DisposeAsync();
             _client = null;
+            await client.DisposeAsync();
         }
-
-        await ConnectAsync(endpoint, ct);
     }
 
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one

@@ -130,8 +130,10 @@
     {
         var items = new List<ActivityItem>();
 
+        // A memory call or a judgment names only the account; shown under the name the person's turns carried.
+        var people = PersonNames.From(Tokens.State.Events);
         items.AddRange(Tokens.State.Events.Select(e =>
-            new ActivityItem("token", "Token", $"{e.Sender} used {e.InputTokens + e.OutputTokens:N0} tokens ({e.Model})", e.Timestamp)));
+            new ActivityItem("token", "Token", $"{people.Of(e.UserId, e.Sender)} used {e.InputTokens + e.OutputTokens:N0} tokens ({e.Model})", e.Timestamp)));
 
         items.AddRange(Tools.State.Events.Select(e =>
             new ActivityItem(e.Success ? "tool" : "error", "Tool", $"{e.ToolName} — {e.DurationMs}ms{(e.Success ? "" : " FAILED")}", e.Timestamp)));
@@ -145,7 +147,7 @@
         _recentActivity = items.OrderByDescending(i => i.Timestamp).Take(500).ToList();
     }
 
-    private static string FormatTime(DateTimeOffset ts) => ts.ToString("dd/MM HH:mm:ss");
+    private static string FormatTime(DateTimeOffset ts) => DashboardTime.Event(ts);
 
     public void Dispose() => _subscriptions.ForEach(s => s.Dispose());
 

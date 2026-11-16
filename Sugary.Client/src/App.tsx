@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, UNAUTHORIZED_EVENT } from "./api";
+import { api, SUSPENDED_EVENT, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
@@ -10,8 +10,8 @@ import { FoodsScreen } from "./screens/FoodsScreen";
 import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
-import { SignIn } from "./screens/SignIn";
 import { useSettings } from "./settings";
+import { goNotice, goSignIn } from "./signin";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
 import { useTypingMark } from "./typing";
@@ -26,43 +26,38 @@ const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
   { id: "settings", label: "tabSettings", icon: "sliders" },
 ];
 
+// Signed in or not is the proxy's to say: a page only opens behind its session check, and a call
+// whose session has gone since is answered 401, which sends the person to sign in and back here.
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
-  // Mounted for the whole app, the sign-in included.
+  // Mounted for the whole app.
   useTypingMark();
 
-  const refreshSession = useCallback(
-    () =>
-      api
-        .session()
-        .then(setSession)
-        // Offline at launch: show the app rather than a dead screen; calls will report it.
-        .catch(() => setSession({ required: false, authenticated: false, estimates: false, labels: false })),
-    [],
-  );
-
   useEffect(() => {
-    void refreshSession();
-    const onUnauthorized = () =>
-      setSession((current) => ({ estimates: false, labels: false, ...current, required: true, authenticated: false }));
-    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
-  }, [refreshSession]);
+    window.addEventListener(UNAUTHORIZED_EVENT, goSignIn);
+    window.addEventListener(SUSPENDED_EVENT, goNotice);
+    api
+      .session()
+      .then(setSession)
+      // Offline at launch: show the app rather than a dead screen; calls will report it.
+      .catch(() => setSession({ estimates: false, labels: false }));
+    return () => {
+      window.removeEventListener(UNAUTHORIZED_EVENT, goSignIn);
+      window.removeEventListener(SUSPENDED_EVENT, goNotice);
+    };
+  }, []);
 
   if (session === null) {
     return null;
   }
-  if (session.required && !session.authenticated) {
-    return <SignIn onSignedIn={refreshSession} />;
-  }
   return (
     <ToastProvider>
-      <Shell session={session} onSignOut={session.required ? () => api.signOut().then(refreshSession) : null} />
+      <Shell session={session} />
     </ToastProvider>
   );
 }
 
-function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() => void) | null }) {
+function Shell({ session }: { session: SessionState }) {
   const { t, language } = useSettings();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
@@ -96,6 +91,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
             adder={adder}
             estimates={session.estimates}
             labels={session.labels}
+            person={session.person ?? null}
             onSaved={() => {
               toast({ text: t("saved") });
               setTab("log");
@@ -114,7 +110,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
             }}
           />
         )}
-        {tab === "settings" && <SettingsScreen onSignOut={onSignOut} />}
+        {tab === "settings" && <SettingsScreen />}
       </main>
 
       <nav className="tabs" aria-label="Sugary">

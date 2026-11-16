@@ -9,7 +9,7 @@
 #     -f DockerCompose/docker-compose.yml \
 #     -f DockerCompose/docker-compose.override.linux.yml \
 #     -f DockerCompose/docker-compose.override.npu.yml \
-#     -p jackbot up -d lemonade mcp-channel-voice mcp-channel-signalr mcp-channel-telegram
+#     -p jackbot up -d lemonade mcp-channel-signalr mcp-channel-telegram
 #
 # ONE-TIME PER HOST — the FLM backend does NOT auto-install, despite what Lemonade's release
 # notes imply. Until it is installed, `flm list --json` returns nothing, Lemonade registers
@@ -32,7 +32,8 @@
 
 # The NPU tier's own default for the base file's one-name rule: every service that names the STT
 # model reads this anchor, so the warmed model and the requested one cannot drift apart here
-# either.
+# either. A household's voice server asks for its model from the tenant kit: set its STT_MODEL to
+# whisper-v3-turbo-FLM too.
 x-stt-model: &stt-model ${STT_MODEL:-whisper-v3-turbo-FLM}
 
 services:
@@ -56,10 +57,6 @@ services:
       - ./volumes/lemonade-flm:/opt/lemonade/.config/flm
     environment:
       STT_MODEL: *stt-model
-
-  mcp-channel-voice:
-    environment:
-      Stt__OpenAi__Model: *stt-model
 
   mcp-channel-signalr:
     environment:

@@ -1,20 +1,25 @@
 using System.ComponentModel;
-using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools;
 using Domain.Tools.RealEstate;
+using Infrastructure.Clients;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerIdealista.McpTools;
 
+// Searched on the calling household's own Idealista account, read through the call's household
+// (call.Household): the deployment has no account of its own, so a household that set no keys
+// searches nothing rather than on somebody else's.
 [McpServerToolType]
-public class McpPropertySearchTool(IIdealistaClient idealistaClient)
-    : PropertySearchTool(idealistaClient)
+public class McpPropertySearchTool(IdealistaClients accounts) : PropertySearchTool
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]
     public async Task<CallToolResult> Run(
+        RequestContext<CallToolRequestParams> call,
         [Description("Country: es (Spain), it (Italy), or pt (Portugal)")]
         IdealistaCountry country,
         [Description("Operation type")]
@@ -77,7 +82,20 @@ public class McpPropertySearchTool(IIdealistaClient idealistaClient)
                 "When using 'center', 'distance' parameter is required."));
         }
 
+        if (call.Household is not { } household)
+        {
+            return ToolResponse.Create(ToolError.Create(ToolError.Codes.PermissionDenied,
+                "This search acts for no household, and Idealista is searched on a household's own account."));
+        }
+
+        if (await household.IdealistaKeysAsync(ct) is not { } keys)
+        {
+            return ToolResponse.Create(ToolError.Create(ToolError.Codes.Authentication,
+                "This household has set no Idealista key, so there is no account to search on. An owner of the household adds one."));
+        }
+
         var result = await RunAsync(
+            accounts.For(keys),
             country,
             operation,
             propertyType,

@@ -1839,72 +1839,6 @@ h1.marked .icon {
   color: var(--color-muted);
 }
 
-/* Sign in */
-
-.sign-in-page {
-  position: relative;
-  min-height: 100dvh;
-}
-
-.drip {
-  position: absolute;
-  inset: 0 0 auto;
-  width: 100%;
-  height: calc(72px + env(safe-area-inset-top));
-  fill: var(--color-primary);
-}
-
-.sign-in {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--space-5);
-  max-width: 380px;
-  min-height: 100dvh;
-  margin: 0 auto;
-  padding: calc(var(--space-10) + 72px + env(safe-area-inset-top)) var(--space-6)
-    calc(var(--space-6) + env(safe-area-inset-bottom) + var(--keyboard, 0px));
-}
-
-.sign-in img {
-  align-self: center;
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-2), var(--edge);
-}
-
-.sign-in-title {
-  text-align: center;
-}
-
-.sign-in h1 {
-  font-size: 2.5rem;
-}
-
-.tagline {
-  margin-top: var(--space-1);
-  font-family: var(--font-display);
-  font-variation-settings: "SOFT" 100;
-  font-size: 1.1875rem;
-  color: var(--color-muted);
-}
-
-.secret {
-  position: relative;
-  display: block;
-}
-
-.secret input {
-  padding-right: 52px;
-}
-
-.secret .icon-button {
-  position: absolute;
-  top: 50%;
-  right: 2px;
-  transform: translateY(-50%);
-}
-
 /* Settings */
 
 .rows {
@@ -1977,8 +1911,8 @@ h1.marked .icon {
   transform: rotate(180deg);
 }
 
-.sign-out {
-  color: var(--color-ink);
+.account {
+  text-decoration: none;
 }
 
 .colophon {

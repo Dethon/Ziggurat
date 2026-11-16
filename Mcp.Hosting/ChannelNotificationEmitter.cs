@@ -60,6 +60,20 @@ public sealed class ChannelNotificationEmitter
         return Task.FromResult(Deliver(ChannelInboxItem.ForCancel(payload)));
     }
 
+    // An insistent alert for the agent to ring on its person's channels, and its stop. Liveness is
+    // the answer here too: an alert nobody took rings nowhere, and its caller says so.
+    public Task<bool> EmitAlertAsync(ChannelAlertNotification payload, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Deliver(ChannelInboxItem.ForAlert(payload)));
+    }
+
+    public Task<bool> EmitAlertStoppedAsync(ChannelAlertStoppedNotification payload, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Deliver(ChannelInboxItem.ForAlertStopped(payload)));
+    }
+
     // One call per policy, and each of them answers liveness about the item it just took: a check
     // this method made first would be about a moment that has passed by the time the item lands, and
     // the callers that settle a durable record on the answer would settle it for an item that

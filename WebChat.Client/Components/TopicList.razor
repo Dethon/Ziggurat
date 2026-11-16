@@ -2,11 +2,14 @@
 @implements IDisposable
 @using WebChat.Client.Helpers
 @using WebChat.Client.State.AgentActivity
+@using WebChat.Client.State.UserIdentity
 @using Microsoft.JSInterop
+@using Domain.DTOs.Household
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject MessagesStore MessagesStore
 @inject AgentActivityStore AgentActivityStore
+@inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
 
@@ -39,6 +42,21 @@
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
                    value="@_search" @oninput="OnSearchInput" @ref="_searchInput"
                    aria-label="Search conversations" />
+            @if (_seesAll)
+            {
+                @* Whose conversations: someone who sees every topic of the household reads their own
+                   unless they ask for more. The server pages by it, so a filter here is a list of its
+                   own rather than rows hidden from the one held, as the archive beside it is. *@
+                <select class="hearth-filter-select" aria-label="Whose conversations"
+                        value="@TopicFilterChoice.Format(_filter)" @onchange="OnFilterChanged">
+                    <option value="mine">Mine</option>
+                    <option value="everyone">Everyone's</option>
+                    @foreach (var person in _people)
+                    {
+                        <option value="@TopicFilterChoice.Of(person.UserId)">@($"{person.DisplayName}'s")</option>
+                    }
+                </select>
+            }
             <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
                     @onclick="ToggleArchived"
                     aria-pressed="@_showingArchived"
@@ -87,7 +105,13 @@
                                     <div class="topic-unread-badge">@(unread > 99 ? "99+" : unread)</div>
                                 }
                             </div>
-                            <div class="topic-meta">@FormatTime(topic.LastWriteAt)</div>
+                            <div class="topic-meta">
+                                @FormatTime(topic.LastWriteAt)
+                                @if (StartedBySomeoneElse(topic) is { } owner)
+                                {
+                                    <span class="topic-owner"> · @owner</span>
+                                }
+                            </div>
                             <div class="topic-preview">@topic.LastMessageSnippet</div>
                         </div>
                         @if (_deleteConfirmTopicId == topic.TopicId)
@@ -101,7 +125,7 @@
                                 </button>
                             </div>
                         }
-                        else
+                        else if (topic.MayRenameOrDelete(_signedInUserId))
                         {
                             <button class="delete-btn" @onclick="() => ShowDeleteConfirm(topic.TopicId)" @onclick:stopPropagation="true" aria-label="Delete conversation">
                                 <Icon Glyph="Icons.Close" Size="14" />
@@ -130,6 +154,10 @@
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
     private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();
     private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
+    private string? _signedInUserId;
+    private bool _seesAll;
+    private TopicFilter _filter = TopicFilter.Everyone;
+    private IReadOnlyList<HouseholdMemberName> _people = [];
 
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
@@ -154,6 +182,10 @@
         Subscribe(TopicsStore.StateObservable, s => s.SearchQuery, q => _search = q);
         Subscribe(TopicsStore.StateObservable, TopicListSelectors.EmptyLabel, label => _emptyLabel = label);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
+        Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.UserId, id => _signedInUserId = id);
+        Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.Viewer?.SeesAll == true, on => _seesAll = on);
+        Subscribe(TopicsStore.StateObservable, s => s.Filter, f => _filter = f);
+        Subscribe(TopicsStore.StateObservable, s => s.People, p => _people = p);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
             s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
@@ -181,6 +213,11 @@
         catch (JSException) { /* gestures attach later when the JS lands */ }
     }
 
+    // Who began a row someone else owns: a shared topic of theirs, or — for whoever sees every
+    // topic — a private one. A person's own rows and a topic nobody owns say nothing.
+    private string? StartedBySomeoneElse(StoredTopic topic) =>
+        topic.OwnerId is not null && topic.OwnerId != _signedInUserId ? topic.OwnerName : null;
+
     [JSInvokable] public void CommitDetent(string detent)
     {
         _detent = Enum.Parse<Detent>(detent, ignoreCase: true);
@@ -207,6 +244,9 @@
             _ => Detent.Peek
         };
     }
+
+    private void OnFilterChanged(ChangeEventArgs e) =>
+        Dispatcher.Dispatch(new ChooseTopicFilter(TopicFilterChoice.Parse(e.Value?.ToString())));
 
     private int GetUnreadCount(string topicId) => _unreadCounts.GetValueOrDefault(topicId);
     private bool IsTopicStreaming(string topicId) => _streamingTopics.Contains(topicId);

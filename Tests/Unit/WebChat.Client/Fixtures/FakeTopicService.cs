@@ -1,4 +1,5 @@
 using System.Globalization;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -11,6 +12,20 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     private readonly List<TopicMetadata> _savedTopics = new();
     private readonly HashSet<string> _deletedTopicIds = new();
     private readonly List<string> _joinedSpaces = new();
+    private readonly List<HouseholdSpace> _spaces = new();
+
+    // A space of the signed-in person's household, as the hub answers them.
+    public FakeTopicService WithSpace(
+        string slug, string name = "Main", string accentColor = "#112233", string? defaultAgent = null)
+    {
+        _spaces.Add(new HouseholdSpace
+        {
+            Slug = slug, Name = name, AccentColor = accentColor, DefaultAgent = defaultAgent, Order = _spaces.Count
+        });
+        return this;
+    }
+
+    public Exception? ThrowOnGetSpaces { get; set; }
 
     public void SetHistory(long chatId, long threadId, params ChatHistoryMessage[] messages)
     {
@@ -68,11 +83,14 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
-        bool archived = false)
+        bool archived = false,
+        TopicFilter? filter = null)
     {
         recorder?.Record(
             (archived ? "archived" : "topics")
-            + (cursor is null ? $":{agentId}" : $":{agentId}:{cursor}"));
+            + (cursor is null ? $":{agentId}" : $":{agentId}:{cursor}")
+            + FilterNote(filter));
+        Filters.Add(filter);
 
         if (PageGate is not null)
         {
@@ -93,6 +111,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         var ordered = _seededTopics.Concat(_savedTopics)
             .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
             .Where(t => ArchivedTopicIds.Contains(t.TopicId) == archived)
+            .Where(t => Admits(filter, t))
             .GroupBy(t => t.TopicId)
             .Select(g => g.Last())
             .OrderByDescending(t => t.LastWriteAt)
@@ -111,6 +130,36 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
             page, next, [.. page.Select(t => t.TopicId).Where(LiveTopicIds.Contains)]));
     }
 
+    // Every filter a page or a search was asked with, in order: none is null.
+    public List<TopicFilter?> Filters { get; } = [];
+
+    // Who "mine" is to this fake's filter, and whose topics the hub names to whoever sees all.
+    public string SignedInUserId { get; set; } = "me";
+
+    public List<HouseholdMemberName> People { get; } = [];
+
+    public Task<HubResult<IReadOnlyList<HouseholdMemberName>>> GetHouseholdPeopleAsync() =>
+        Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<HouseholdMemberName>>.NotLive
+            : HubResult<IReadOnlyList<HouseholdMemberName>>.Answered([.. People]));
+
+    // The rule the server applies, with the fake's person seeing all; a test that cares about who sees
+    // what drives the hub.
+    private bool Admits(TopicFilter? filter, TopicMetadata topic) => filter switch
+    {
+        null or { MineOnly: false, OwnerId: null } => true,
+        { MineOnly: true } => topic.OwnerId is null || topic.OwnerId == SignedInUserId || topic.Shared,
+        { OwnerId: { } owner } => topic.OwnerId == owner
+    };
+
+    // Recorded only when one narrows the list, so a recorder that predates filters reads as it did.
+    private static string FilterNote(TopicFilter? filter) => filter switch
+    {
+        { MineOnly: true } => ":mine",
+        { OwnerId: { } owner } => $":of-{owner}",
+        _ => ""
+    };
+
     // Which of the seeded topics the server would report as having a reply in flight.
     public HashSet<string> LiveTopicIds { get; } = [];
 
@@ -120,9 +169,11 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         string agentId,
         string query,
         string spaceSlug = SpaceConfig.DefaultSlug,
-        string? cursor = null)
+        string? cursor = null,
+        TopicFilter? filter = null)
     {
-        recorder?.Record(cursor is null ? $"search:{query}" : $"search:{query}:{cursor}");
+        recorder?.Record((cursor is null ? $"search:{query}" : $"search:{query}:{cursor}") + FilterNote(filter));
+        Filters.Add(filter);
 
         if (PageGate is not null)
         {
@@ -137,6 +188,7 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         var ordered = _seededTopics.Concat(_savedTopics)
             .Where(t => t.AgentId == agentId && t.SpaceSlug == spaceSlug)
             .Where(t => t.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(t => Admits(filter, t))
             .GroupBy(t => t.TopicId)
             .Select(g => g.Last())
             .OrderByDescending(t => t.LastWriteAt)
@@ -174,6 +226,20 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     private static double Score(TopicMetadata topic) =>
         topic.LastWriteAt.ToUnixTimeMilliseconds();
 
+    public Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync()
+    {
+        recorder?.Record("spaces");
+
+        if (ThrowOnGetSpaces is not null)
+        {
+            return Task.FromException<HubResult<IReadOnlyList<HouseholdSpace>>>(ThrowOnGetSpaces);
+        }
+
+        return Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<HouseholdSpace>>.NotLive
+            : HubResult<IReadOnlyList<HouseholdSpace>>.Answered(_spaces.ToList()));
+    }
+
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {
         recorder?.Record($"join:{spaceSlug}");
@@ -184,6 +250,21 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         }
 
         _joinedSpaces.Add(spaceSlug);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
+    private readonly List<(string AgentId, long ChatId, string TopicId, bool Shared)> _sharedChanges = [];
+
+    public IReadOnlyList<(string AgentId, long ChatId, string TopicId, bool Shared)> SharedChanges => _sharedChanges;
+
+    public Task<HubResult<Nothing>> SetTopicSharedAsync(string agentId, long chatId, string topicId, bool shared)
+    {
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _sharedChanges.Add((agentId, chatId, topicId, shared));
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 

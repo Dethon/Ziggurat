@@ -68,8 +68,13 @@ public static class DownloadFakes
         public Task<DownloadItem?> GetDownloadItem(int id, CancellationToken cancellationToken = default) =>
             Task.FromResult(Items.FirstOrDefault(i => i.Id == id));
 
+        // Set to make listing the downloads fail, as a download client that is not answering does.
+        public Exception? ListFailure { get; set; }
+
         public Task<IReadOnlyList<DownloadItem>> GetDownloadItems(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<DownloadItem>>(Items.ToList());
+            ListFailure is not null
+                ? Task.FromException<IReadOnlyList<DownloadItem>>(ListFailure)
+                : Task.FromResult<IReadOnlyList<DownloadItem>>(Items.ToList());
 
         public Task Download(string link, string savePath, int id, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;

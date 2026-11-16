@@ -1,0 +1,81 @@
+@using Domain.DTOs.Voice
+@using WebChat.Client.State.Alert
+@inherits StoreSubscriberComponent
+@inject AlertStore AlertStore
+@inject AlertDismisser AlertDismisser
+@inject IJSRuntime Js
+
+@* A timer ringing for this person, whatever topic or space is open: it sounds and stays up until
+   they dismiss it here or anywhere else it rings, which stops it everywhere. *@
+@if (_alert is { } alert)
+{
+    <div class="alert-modal-overlay" role="alertdialog" aria-labelledby="alert-modal-title" aria-describedby="alert-modal-text">
+        <div class="alert-modal" data-alert-id="@alert.AlertId">
+            <div class="alert-modal-icon">
+                <Icon Glyph="Icons.Bell" Size="40" />
+            </div>
+            <h3 id="alert-modal-title">@(alert.Kind == AnnounceKind.Alarm ? "Alarm" : "Timer")</h3>
+            <p id="alert-modal-text" class="alert-modal-text">@alert.Text</p>
+            <button class="btn btn-dismiss-alert" @onclick="HandleDismiss" disabled="@_dismissing">
+                Dismiss
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private RingingAlert? _alert;
+    private bool _dismissing;
+    private bool _sounding;
+
+    protected override void OnInitialized() =>
+        Subscribe(AlertStore.StateObservable, state => state.Current, alert => _alert = alert);
+
+    // The tone follows what is on screen: it starts with the first alert and stops with the last.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var ringing = _alert is not null;
+        if (ringing == _sounding)
+        {
+            return;
+        }
+
+        _sounding = ringing;
+        try
+        {
+            await Js.InvokeVoidAsync(ringing ? "alertTone.start" : "alertTone.stop");
+        }
+        catch (JSException)
+        {
+            // A browser that will not play a sound still shows the alert.
+        }
+    }
+
+    private async Task HandleDismiss()
+    {
+        if (_alert is not { } alert || _dismissing)
+        {
+            return;
+        }
+
+        _dismissing = true;
+        try
+        {
+            await AlertDismisser.DismissAsync(alert.AlertId);
+        }
+        finally
+        {
+            _dismissing = false;
+        }
+    }
+
+    public override void Dispose()
+    {
+        if (_sounding)
+        {
+            _ = Js.InvokeVoidAsync("alertTone.stop").AsTask();
+        }
+
+        base.Dispose();
+    }
+}

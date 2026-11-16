@@ -1,0 +1,25 @@
+@code {
+    [Parameter] public IReadOnlyList<OutlineNode> Nodes { get; set; } = [];
+}
+
+@* An answer that is one JSON object (JsonOutline), drawn as its fields: a label and its value, a
+   nested object or a list's entries indented under their label. *@
+<dl class="json-outline">
+    @foreach (var node in Nodes)
+    {
+        @if (node.Label is not null)
+        {
+            <dt>@node.Label</dt>
+        }
+        <dd>
+            @if (node.Value is not null)
+            {
+                @node.Value
+            }
+            else
+            {
+                <JsonOutlineView Nodes="node.Children" />
+            }
+        </dd>
+    }
+</dl>

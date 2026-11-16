@@ -120,6 +120,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
             .WithPortBinding(8080, true)
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithCallTokensFromTheTestProcess()
             .WithEnvironment("AGENTS__0__ID", "jonas")
             .WithEnvironment("AGENTS__0__NAME", "Jonas")
             .WithEnvironment("AGENTS__0__DESCRIPTION", "General assistant")
@@ -165,6 +166,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
             .WithPortBinding(8080, true)
             // Every server's /mcp asks for the deployment secret; a caller presents McpTestSecret.
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithCallTokensFromTheTestProcess()
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080));
 
         builder = (environment ?? new Dictionary<string, string>())

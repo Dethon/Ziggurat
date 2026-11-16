@@ -9,7 +9,10 @@ using JetBrains.Annotations;
 
 namespace Infrastructure.Clients;
 
-public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSecret) : IIdealistaClient
+// One Idealista account's searches: its OAuth token is kept for as long as Idealista says it lasts.
+// Each request takes a client from the factory, so an instance kept per account (IdealistaClients)
+// never pins one handler past its life.
+public class IdealistaClient(Func<HttpClient> http, string apiKey, string apiSecret) : IIdealistaClient
 {
     private readonly SemaphoreSlim _tokenLock = new(1, 1);
 
@@ -27,7 +30,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
         request.Content = content;
 
-        var response = await httpClient.SendAsync(request, ct);
+        var response = await http().SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var idealistaResponse = await response.Content.ReadFromJsonAsync<IdealistaApiResponse>(ct)
@@ -71,7 +74,7 @@ public class IdealistaClient(HttpClient httpClient, string apiKey, string apiSec
             ["scope"] = "read"
         });
 
-        var response = await httpClient.SendAsync(request, ct);
+        var response = await http().SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
 
         var tokenResponse = await response.Content.ReadFromJsonAsync<OAuthTokenResponse>(ct)

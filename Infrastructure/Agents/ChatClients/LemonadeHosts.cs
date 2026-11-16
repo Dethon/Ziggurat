@@ -1,0 +1,151 @@
+using System.Collections.Concurrent;
+using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
+using Infrastructure.Clients;
+using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.Agents.ChatClients;
+
+// A Lemonade chat host and the models it offers now; a box behind a household's router carries the
+// transport onto its kit's tunnel, which its turns go through instead of the shared pool.
+public sealed record HouseholdLemonadeTarget(string Household, LemonadeHost Box);
+
+public sealed record LemonadeHost(LemonadeChatHostOptions Options, ILemonadeModelSource Models, HttpMessageHandler? Transport = null);
+
+// Which Lemonade box a household's turns may run on, and the models each household is offered. A box
+// is a household's own (its keys section, set on its Keys page); the home with none of its own runs on
+// the deployment's configured box; any other household with none runs on none, and is offered none.
+public interface ILemonadeHosts
+{
+    LemonadeHost? For(string? householdId, bool home);
+
+    // Each household's own box's models, by household — the home's under its id once it is known, its
+    // own box's or else the deployment's — for the chat client's picker.
+    IReadOnlyDictionary<string, IReadOnlyList<LemonadeModel>> ModelsByHousehold { get; }
+}
+
+// The deployment's box alone, for the home: a host that reads no household's boxes (a test, the eval).
+public sealed class DeploymentLemonadeHost(LemonadeChatHostOptions? options, ILemonadeModelSource models) : ILemonadeHosts
+{
+    public LemonadeHost? For(string? householdId, bool home) =>
+        home && options is { IsConfigured: true } ? new LemonadeHost(options, models) : null;
+
+    public IReadOnlyDictionary<string, IReadOnlyList<LemonadeModel>> ModelsByHousehold { get; } =
+        new Dictionary<string, IReadOnlyList<LemonadeModel>>();
+}
+
+// Every household's own box, read from the agent's lemonade-boxes view on each refresh, each with a
+// discovery of its own; the deployment's box beside them for the home. A box whose address or key
+// changed gets a fresh discovery; one removed is dropped at once.
+public sealed class HouseholdLemonadeHosts(
+    LemonadeChatHostOptions deployment,
+    ILemonadeModelSource deploymentModels,
+    IHouseholdConfiguration households,
+    ILoggerFactory loggers,
+    Func<string, HttpMessageHandler>? kitTransport = null) : ILemonadeHosts
+{
+    private readonly ILogger _logger = loggers.CreateLogger<HouseholdLemonadeHosts>();
+    private readonly ConcurrentDictionary<string, (LemonadeBox Box, LemonadeHost Served, LemonadeModelDiscovery Discovery)> _boxes = new();
+    private volatile string? _home;
+
+    public LemonadeHost? For(string? householdId, bool home)
+    {
+        if (home && householdId is not null)
+        {
+            _home = householdId;
+        }
+
+        return householdId is not null && _boxes.TryGetValue(householdId, out var own)
+            ? own.Served
+            : home && deployment.IsConfigured
+                ? new LemonadeHost(deployment, deploymentModels)
+                : null;
+    }
+
+    // Every household's own box as last read, each under its household: what the dashboard's Lemonade
+    // tiles are probed from (LemonadeBoxHealthProbes). The deployment's own box is not among them.
+    public IReadOnlyList<HouseholdLemonadeTarget> Boxes =>
+        [.. _boxes.Select(b => new HouseholdLemonadeTarget(b.Key, b.Value.Served))];
+
+    public IReadOnlyDictionary<string, IReadOnlyList<LemonadeModel>> ModelsByHousehold
+    {
+        get
+        {
+            var models = _boxes.ToDictionary(b => b.Key, b => b.Value.Served.Models.Current);
+            if (_home is { } home && !models.ContainsKey(home) && deployment.IsConfigured)
+            {
+                models[home] = deploymentModels.Current;
+            }
+
+            return models;
+        }
+    }
+
+    // A box at an address is dialled through the shared pool with its key. One through the tenant kit is
+    // reached through that household's own forwarder's tunnel, at a name nothing resolves, with no
+    // key: the kit adds its own. Its discovery and its turns go through the one transport.
+    private (LemonadeBox, LemonadeHost, LemonadeModelDiscovery)? Served(string household, LemonadeBox box)
+    {
+        if (box.ThroughKit && kitTransport is null)
+        {
+            _logger.LogWarning("Household {Household}'s Lemonade box is through its tenant kit, which this host cannot reach", household);
+            return null;
+        }
+
+        var transport = box.ThroughKit ? kitTransport!(household) : null;
+        var options = box.ThroughKit
+            ? new LemonadeChatHostOptions { ApiUrl = $"http://{HouseholdServerNames.Lemonade}.{household}.tunnel" }
+            : new LemonadeChatHostOptions { ApiUrl = box.ApiUrl!, ApiKey = box.ApiKey };
+        var discovery = new LemonadeModelDiscovery(
+            new HttpClient(transport ?? HostedConnectionPool.Shared, disposeHandler: false), options,
+            loggers.CreateLogger<LemonadeModelDiscovery>());
+        return (box, new LemonadeHost(options, discovery, transport), discovery);
+    }
+
+    public async Task RefreshAsync(CancellationToken ct)
+    {
+        // The home's id, before any turn of the home's has named it: the pickers are told its box's
+        // models under it from the first refresh.
+        if (_home is null)
+        {
+            try
+            {
+                _home = (await households.ForAgentAsync(HouseholdConfigProtocol.HomeHousehold, ct)).HouseholdId;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "The home household could not be read; its Lemonade models wait for the next refresh");
+            }
+        }
+
+        try
+        {
+            var boxes = (await households.LemonadeBoxesAsync(ct)).ToDictionary(b => b.HouseholdId, b => b.Box);
+            foreach (var gone in _boxes.Keys.Where(id => !boxes.ContainsKey(id)).ToList())
+            {
+                _boxes.TryRemove(gone, out _);
+            }
+
+            foreach (var (household, box) in boxes.Where(b => !_boxes.TryGetValue(b.Key, out var kept) || kept.Box != b.Value))
+            {
+                if (Served(household, box) is { } served)
+                {
+                    _boxes[household] = served;
+                }
+                else
+                {
+                    _boxes.TryRemove(household, out _);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            // The boxes known stay as they were: an accounts outage is not every box removed.
+            _logger.LogWarning(ex, "The households' Lemonade boxes could not be read; keeping the ones known");
+        }
+
+        await Task.WhenAll(_boxes.Values.Select(b => b.Discovery.RefreshAsync(ct)));
+    }
+}

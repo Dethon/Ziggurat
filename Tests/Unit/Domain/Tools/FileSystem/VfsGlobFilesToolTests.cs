@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
@@ -35,9 +36,24 @@ public class VfsGlobFilesToolTests
             Total = 2
         }, out _);
 
-        var result = await tool.RunAsync("/ha/entities", "**", CancellationToken.None);
+        var result = await tool.RunAsync("/ha/entities", "**", cancellationToken: CancellationToken.None);
 
         Entries(result).ShouldBe(["/ha/entities/light/kitchen/", "/ha/entities/light/kitchen/state.json"]);
+    }
+
+    // What a mount says its answer leaves out reaches the model, across the wire the agent reads a
+    // server's answer from as well as out of the tool: the media library listing its disk while the
+    // download client is down says the live downloads are missing.
+    [Fact]
+    public async Task Run_CarriesWhatTheMountSaysItsAnswerLeavesOut()
+    {
+        var sent = new FsGlobResult { Entries = ["books/dune.epub"], Truncated = false, Total = 1, Note = "downloads/ is missing its live downloads" };
+        var received = FsResultContract.ToNode(sent).Deserialize<FsGlobResult>(FsResultContract.ValidationOptions)!;
+        var tool = Build("/media", "", received, out _);
+
+        var result = await tool.RunAsync("/media", "**", cancellationToken: CancellationToken.None);
+
+        result["note"]!.GetValue<string>().ShouldBe("downloads/ is missing its live downloads");
     }
 
     [Fact]
@@ -50,7 +66,7 @@ public class VfsGlobFilesToolTests
             Total = 2
         }, out _);
 
-        var result = await tool.RunAsync("/print-queue", "*", CancellationToken.None);
+        var result = await tool.RunAsync("/print-queue", "*", cancellationToken: CancellationToken.None);
 
         Entries(result).ShouldBe(["/print-queue/note.txt", "/print-queue/status.json"]);
     }
@@ -70,7 +86,7 @@ public class VfsGlobFilesToolTests
             BudgetReached = true
         }, out _);
 
-        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", cancellationToken: CancellationToken.None);
 
         var hint = result["hint"]!.GetValue<string>();
         hint.ShouldContain("50,000");
@@ -89,7 +105,7 @@ public class VfsGlobFilesToolTests
             BudgetReached = false
         }, out _);
 
-        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", cancellationToken: CancellationToken.None);
 
         result["hint"].ShouldBeNull();
     }

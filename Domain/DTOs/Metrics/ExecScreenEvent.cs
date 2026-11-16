@@ -22,6 +22,8 @@ public record ExecScreenEvent : MetricEvent
 
     public double? RunsDownloaded { get; init; }
 
+    public double? ReachesLan { get; init; }
+
     // One of ExecScreenAbsences, or null when the judge answered in time.
     public string? AbsenceReason { get; init; }
 

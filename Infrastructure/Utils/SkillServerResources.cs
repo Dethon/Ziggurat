@@ -8,7 +8,7 @@ namespace Infrastructure.Utils;
 // The twin of AddFileSystemResource, for skills. A tool server ships the skills that teach its
 // tools as resources in the standard shape — one index document naming every skill and where its
 // body is, and one body per skill as markdown under a name-and-description frontmatter — and both
-// are built here from the constants beside the skill's declaration, so no server hand-writes a
+// are built here from the skill's document (Domain/Prompts/Skills), so no server hand-writes a
 // resource and the wire shape is the same for every server (docs/adr/0039).
 //
 // The reader is McpClientManager, which finds the index by its address, reads each body it names

@@ -63,7 +63,7 @@ public sealed class ReconnectionEffectTests : IDisposable
     {
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         _mockTopicService
-            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, false, TopicFilter.Everyone))
             .ThrowsAsync(new InvalidOperationException("catch-up failed"));
 
         CreateEffect();
@@ -74,6 +74,32 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         var entry = await _logger.WaitForEntryAsync();
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("catch-up failed");
+    }
+
+    // Marta, granted every topic, had Nico's private one open when the grant was withdrawn: the renewed
+    // connection's list no longer had it and the hub refused its history, but it stayed on her screen.
+    // A topic the hub says does not exist for this person is closed, as a delete closes it.
+    [Fact]
+    public async Task WhenTheOpenTopicIsNoLongerThisPersons_ItIsClosed()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", Name = "Nico's", AgentId = "agent-1", ChatId = 1, ThreadId = 1 };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+        _mockTopicService
+            .Setup(s => s.GetHistoryAsync("agent-1", 1, 1))
+            .ThrowsAsync(new Microsoft.AspNetCore.SignalR.HubException(
+                $"An unexpected error occurred invoking 'GetHistory' on the server. HubException: {TopicRefusals.NoSuchConversation}"));
+        _mockSessionService
+            .Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+
+        CreateEffect();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await Eventually.Until(() => _topicsStore.State.SelectedTopicId is null, "the open topic is closed");
+        _topicsStore.State.SelectedTopic.ShouldBeNull();
     }
 
     [Fact]
@@ -108,7 +134,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new SelectAgent("agent-1"));
         var now = DateTimeOffset.UtcNow;
         _mockTopicService
-            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, false, TopicFilter.Everyone))
             .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
                 [
                     new TopicMetadata("topic-1", 1, 1, "agent-1", "Topic 1", now, null),
@@ -147,7 +173,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ShowArchivedTopics(true));
         var now = DateTimeOffset.UtcNow;
         _mockTopicService
-            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, true))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, true, TopicFilter.Everyone))
             .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
                 [new TopicMetadata("topic-a", 1, 1, "agent-1", "Archived", now, null)], null)));
 
@@ -160,7 +186,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-a");
         _mockTopicService.Verify(
-            s => s.GetTopicPageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), false),
+            s => s.GetTopicPageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), false, It.IsAny<TopicFilter?>()),
             Times.Never);
     }
 
@@ -171,7 +197,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new SearchTopics("abc"));
         var now = DateTimeOffset.UtcNow;
         _mockTopicService
-            .Setup(s => s.SearchTopicsAsync("agent-1", "abc", "default", null))
+            .Setup(s => s.SearchTopicsAsync("agent-1", "abc", "default", null, TopicFilter.Everyone))
             .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
                 [new TopicMetadata("topic-s", 1, 1, "agent-1", "abc things", now, null)], null)));
 
@@ -185,7 +211,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-s");
         _mockTopicService.Verify(
             s => s.GetTopicPageAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>()),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<TopicFilter?>()),
             Times.Never);
     }
 
@@ -203,7 +229,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         var now = DateTimeOffset.UtcNow;
         _mockTopicService
-            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, false, TopicFilter.Everyone))
             .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
                 [new TopicMetadata("topic-top", 9, 9, "agent-1", "Top", now, null)], null)));
         _mockSessionService
@@ -341,7 +367,7 @@ public sealed class ReconnectionEffectTests : IDisposable
             new("topic-2", 789, 101, "agent-1", "New Topic", now, null)
         };
         _mockTopicService
-            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null, false, TopicFilter.Everyone))
             .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(serverTopics, null)));
 
         CreateEffect();
@@ -352,7 +378,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
-        _mockTopicService.Verify(s => s.GetTopicPageAsync("agent-1", "default", null), Times.Once);
+        _mockTopicService.Verify(s => s.GetTopicPageAsync("agent-1", "default", null, false, TopicFilter.Everyone), Times.Once);
         _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "topic-2");
     }
 

@@ -15,8 +15,10 @@ public static class LlmAttempt
     private const int MaxStallRetries = 2;
 
     // What one turn against a real provider is given before it counts as stalled. Call sites with
-    // a heavier turn pass their own.
-    public static readonly TimeSpan Budget = TimeSpan.FromSeconds(120);
+    // a heavier turn pass their own. The slowest answered turn across many full runs took about
+    // twenty seconds; a stall is a provider that stopped sending, and at two minutes one stall made
+    // a whole run wait two minutes for the retry that then answered in seven seconds.
+    public static readonly TimeSpan Budget = TimeSpan.FromSeconds(45);
 
     public static async Task<T> UntilAsync<T>(Func<Task<T>> call, Func<T, bool> usable)
     {

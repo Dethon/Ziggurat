@@ -45,7 +45,7 @@ public class WatchFireReachesTheAgentTests
         try
         {
             await using var connection = new McpChannelConnection(
-                "homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200), mcpSecret: McpTestSecret.Value);
+                "homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200), mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
             var run = connection.RunAsync($"http://localhost:{port}/mcp",
                 () => [new AgentCatalogEntry("jonas", "Jonas", "the assistant")], cts.Token);
             var reading = connection.Messages.FirstAsync(cts.Token).AsTask();
@@ -74,8 +74,9 @@ public class WatchFireReachesTheAgentTests
             message.ChannelId.ShouldBe("homeassistant");
             message.AgentId.ShouldBe("jonas");
             message.Sender.ShouldBe("watch");
-            message.Content.ShouldStartWith("[watch \"Laura's sugar\" fired] Glucosa Laura (sensor.glucosa_laura) went from 176 to 183");
-            message.Content.ShouldEndWith("Look into it.");
+            message.FireReport.ShouldNotBeNull()
+                .ShouldStartWith("[watch \"Laura's sugar\" fired] Glucosa Laura (sensor.glucosa_laura) went from 176 to 183");
+            message.Content.ShouldBe("Look into it.");
             message.ReplyTo.ShouldBe([new ReplyTarget("telegram", null)]);
             // The title a minted conversation takes, so the answer lands in one named after the watch.
             message.Origin.ShouldBe(new MessageOrigin(MessageOriginKind.Watch, null, "laura-sugar-high", "Laura's sugar"));

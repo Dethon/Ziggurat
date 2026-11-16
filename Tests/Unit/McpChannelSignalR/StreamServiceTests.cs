@@ -13,6 +13,7 @@ public class StreamServiceTests : IDisposable
 {
     private readonly SessionService _sessionService = new();
     private readonly Mock<IPushNotificationService> _pushNotification = new();
+    private readonly Mock<IThreadStateStore> _threadStore = new();
     private readonly Mock<ILogger<StreamService>> _logger = new();
     private readonly StreamService _sut;
 
@@ -20,6 +21,7 @@ public class StreamServiceTests : IDisposable
     {
         _sut = new StreamService(
             _sessionService,
+            _threadStore.Object,
             _pushNotification.Object,
             _logger.Object);
     }
@@ -138,6 +140,7 @@ public class StreamServiceTests : IDisposable
     public async Task WriteReplyAsync_StreamComplete_SendsPushNotificationWithTopicName()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        HoldsASharedTopic();
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
@@ -147,17 +150,55 @@ public class StreamServiceTests : IDisposable
         await Task.Delay(100);
 
         _pushNotification.Verify(p => p.SendToSpaceAsync(
+            "home",
             "myspace",
-            "Apartment search",
-            "The agent has finished responding",
-            "/myspace",
+            new PushNotice("Apartment search", "The agent has finished responding", "/myspace", new PushTopic("agent1", "topic1")),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A finished reply is news for whoever may see the topic, and its name with it: a private
+    // topic's reaches its owner's devices and nobody else's in the space.
+    [Fact]
+    public async Task WriteReplyAsync_StreamCompleteOnAPrivateTopic_PushesToItsOwnerAlone()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        _threadStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("agent1", 100, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopicMetadata("topic1", 100, 200, "agent1", "Apartment search", DateTimeOffset.UtcNow, null,
+                SpaceSlug: "myspace", OwnerId: "fran", TenantId: "home"));
+        _sut.GetOrCreateStream("topic1", "prompt", "fran", CancellationToken.None);
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
+
+        await Eventually.Until(() => _pushNotification.Invocations.Count > 0, "the push to go out");
+        _pushNotification.Verify(p => p.SendToPersonAsync(
+            new Account("home", "fran"), "myspace",
+            new PushNotice("Apartment search", "The agent has finished responding", "/myspace", new PushTopic("agent1", "topic1")),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _pushNotification.Verify(p => p.SendToSpaceAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<PushNotice>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A space is its household's, so a conversation no topic of a household holds has no space whose
+    // phones may hear of it.
+    [Fact]
+    public async Task WriteReplyAsync_StreamCompleteOnAConversationNoHouseholdHolds_PushesToNobody()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
+
+        await Eventually.Settle();
+        _pushNotification.VerifyNoOtherCalls();
     }
 
     [Fact]
     public async Task WriteReplyAsync_StreamComplete_FallsBackToDefaultTitleWhenNoTopicName()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace");
+        HoldsASharedTopic();
         _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
 
         await _sut.WriteReplyAsync(new SendReplyParams
@@ -167,12 +208,62 @@ public class StreamServiceTests : IDisposable
         await Task.Delay(100);
 
         _pushNotification.Verify(p => p.SendToSpaceAsync(
+            "home",
             "myspace",
-            "New response",
-            "The agent has finished responding",
-            "/myspace",
+            new PushNotice("New response", "The agent has finished responding", "/myspace", new PushTopic("agent1", "topic1")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    // A finished reply's push says what the reply said — its last text, not the reasoning or the
+    // tool calls on the way — and names the conversation, so a tap opens it.
+    [Fact]
+    public async Task WriteReplyAsync_StreamComplete_PushesWhatTheReplySaid()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        HoldsASharedTopic();
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        await Reply("Let me look.", "msg-1");
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "searching listings", ContentType = ReplyContentType.Reasoning, IsComplete = false, MessageId = "msg-2" });
+        await Reply("**Two flats** fit", "msg-2");
+        await Reply(" your budget.", "msg-2");
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
+
+        await Eventually.Until(() => _pushNotification.Invocations.Count > 0, "the push to go out");
+        _pushNotification.Verify(p => p.SendToSpaceAsync(
+            "home", "myspace",
+            new PushNotice("Apartment search", "Two flats fit your budget.", "/myspace", new PushTopic("agent1", "topic1")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A phone shows a line or two; the rest is a tap away.
+    [Fact]
+    public async Task WriteReplyAsync_StreamCompleteOnALongReply_PushesItsOpening()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        HoldsASharedTopic();
+        _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        await Reply(string.Join(' ', Enumerable.Repeat("flat", 100)), "msg-1");
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
+
+        await Eventually.Until(() => _pushNotification.Invocations.Count > 0, "the push to go out");
+        var notice = (PushNotice)_pushNotification.Invocations.Single().Arguments[2];
+        notice.Body.ShouldEndWith("flat…");
+        notice.Body.Length.ShouldBeLessThanOrEqualTo(StreamService.PushExcerptLength + 1);
+    }
+
+    private Task Reply(string text, string messageId) =>
+        _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = text, ContentType = ReplyContentType.Text, IsComplete = false, MessageId = messageId });
+
+    private void HoldsASharedTopic() =>
+        _threadStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("agent1", 100, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopicMetadata("topic1", 100, 200, "agent1", "Apartment search", DateTimeOffset.UtcNow, null,
+                SpaceSlug: "myspace", OwnerId: "fran", TenantId: "home", Shared: true));
 
     [Fact]
     public async Task WriteReplyAsync_FirstAgentCompletes_StreamStaysAliveForSecondAgent()

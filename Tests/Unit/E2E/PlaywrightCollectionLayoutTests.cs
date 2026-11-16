@@ -90,7 +90,8 @@ public class PlaywrightCollectionLayoutTests
     // so serialising it behind the cookie-clearing chain bought isolation nobody needed and cost
     // the run its tail: eleven classes in one collection ran end to end for the last twenty seconds
     // of the suite while the rest of the machine sat idle. These take a third backend and run
-    // beside that chain instead.
+    // beside that chain instead — in one of several lanes over that backend, since they do not
+    // need to wait for each other either.
     [Fact]
     public void AClassThatOnlyDrivesItsOwnSessions_RunsBesideTheCookieClearingChain()
     {
@@ -100,6 +101,6 @@ public class PlaywrightCollectionLayoutTests
             .ToList();
 
         isolated.ShouldNotBeEmpty();
-        isolated.ShouldAllBe(t => CollectionOf(t) == PlaywrightCollections.IsolatedSessions);
+        isolated.ShouldAllBe(t => PlaywrightCollections.IsolatedSessionLanes.Contains(CollectionOf(t)));
     }
 }

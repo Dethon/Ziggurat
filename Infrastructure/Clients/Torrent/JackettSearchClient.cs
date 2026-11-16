@@ -1,3 +1,4 @@
+using System.Net;
 using System.Web;
 using System.Xml.Linq;
 using Domain.Contracts;
@@ -14,12 +15,30 @@ public class JackettSearchClient(HttpClient client, string apiKey, TimeSpan? sea
     {
         using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadlineCts.CancelAfter(_searchDeadline);
-        var indexers = await GetIndexers(deadlineCts.Token);
-        var tasks = indexers.Select(x => QueryIndexer(x, query, deadlineCts.Token));
-        return (await Task.WhenAll(tasks)).SelectMany(x => x).ToArray();
+        var (indexers, listingFailure) = await GetIndexers(deadlineCts.Token);
+        var answers = await Task.WhenAll(indexers.Select(x => QueryIndexer(x, query, deadlineCts.Token)));
+
+        // One indexer down is the others' results, and indexers still running at the deadline are a
+        // search that ran out of time with what arrived. No indexer answering while something failed
+        // - Jackett unreachable, every indexer erroring - is no search at all, and "nothing found"
+        // would tell the person there is nothing to download when nothing was searched.
+        if (!answers.Any(a => a.Answered)
+            && (listingFailure ?? answers.Select(a => a.Failure).FirstOrDefault(f => f is not null)) is { } failure)
+        {
+            throw new HttpRequestException(
+                $"Jackett did not answer the search: {failure}", null, HttpStatusCode.ServiceUnavailable);
+        }
+
+        return answers.SelectMany(a => a.Results).ToArray();
     }
 
-    private async Task<string[]> GetIndexers(CancellationToken cancellationToken)
+    // Answered: the indexer gave a response, whatever it held. Neither answered nor failed: still
+    // running at the deadline.
+    private sealed record IndexerAnswer(SearchResult[] Results, bool Answered, string? Failure = null);
+
+    // The configured indexers, or "all" when they cannot be listed - and why not, when the listing
+    // failed rather than ran out of time.
+    private async Task<(string[] Indexers, string? Failure)> GetIndexers(CancellationToken cancellationToken)
     {
         try
         {
@@ -33,15 +52,19 @@ public class JackettSearchClient(HttpClient client, string apiKey, TimeSpan? sea
                 .Cast<string>()
                 .ToArray();
 
-            return indexerIds.Length > 0 ? indexerIds : ["all"];
+            return (indexerIds.Length > 0 ? indexerIds : ["all"], null);
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return ["all"];
+            return (["all"], null);
+        }
+        catch (Exception ex)
+        {
+            return (["all"], ex.Message);
         }
     }
 
-    private async Task<SearchResult[]> QueryIndexer(
+    private async Task<IndexerAnswer> QueryIndexer(
         string indexer, string searchQuery, CancellationToken cancellationToken)
     {
         try
@@ -51,12 +74,16 @@ public class JackettSearchClient(HttpClient client, string apiKey, TimeSpan? sea
             var response = await client.GetAsync(requestUri, cancellationToken);
 
             return !response.IsSuccessStatusCode
-                ? []
-                : ParseTorznabResponse(await response.Content.ReadAsStringAsync(cancellationToken));
+                ? new IndexerAnswer([], false, $"indexer {indexer} answered {(int)response.StatusCode}")
+                : new IndexerAnswer(ParseTorznabResponse(await response.Content.ReadAsStringAsync(cancellationToken)), true);
         }
-        catch
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            return [];
+            return new IndexerAnswer([], false);
+        }
+        catch (Exception ex)
+        {
+            return new IndexerAnswer([], false, ex.Message);
         }
     }
 

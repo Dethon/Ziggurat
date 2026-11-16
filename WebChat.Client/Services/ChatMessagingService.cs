@@ -12,8 +12,8 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         liveConnection.StreamAsync<ChatStreamMessage>(
             "SendMessage", topicId, message, correlationId, configPatch, attachments);
 
-    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
-        liveConnection.StreamAsync<ChatStreamMessage>("ResumeStream", topicId);
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null) =>
+        liveConnection.StreamAsync<ChatStreamMessage>("ResumeStreamFrom", topicId, seen);
 
     public Task<HubResult<StreamState>> GetStreamStateAsync(string topicId) =>
         liveConnection.InvokeAsync<StreamState>("GetStreamState", topicId);

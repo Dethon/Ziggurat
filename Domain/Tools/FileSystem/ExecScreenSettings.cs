@@ -23,11 +23,14 @@ public sealed record ExecScreenSettings
     // A command is asked about when it serves the request with less than this probability…
     public double ServesBar { get; [UsedImplicitly] init; } = 0.6;
 
-    // …and is dangerous: it destroys, sends out or runs downloaded code with at least one of these.
+    // …and is dangerous: it destroys, sends out, runs downloaded code or reaches the local network with
+    // at least one of these.
     // On either machine — what the person asked for runs, however destructive.
     public double DestroysBar { get; [UsedImplicitly] init; } = 0.4;
 
     public double SendsOutBar { get; [UsedImplicitly] init; } = 0.5;
 
     public double RunsDownloadedBar { get; [UsedImplicitly] init; } = 0.5;
+
+    public double ReachesLanBar { get; [UsedImplicitly] init; } = 0.5;
 }

@@ -17,5 +17,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 RUN chmod -R +x .playwright/
+# The server names both its listeners itself (Listeners in appsettings.json); the image's default
+# port would only be overridden, with a warning on every start.
+ENV ASPNETCORE_HTTP_PORTS=
 USER $APP_UID
 ENTRYPOINT ["dotnet", "McpServerWebSearch.dll"]

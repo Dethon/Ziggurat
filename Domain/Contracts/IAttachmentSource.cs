@@ -9,4 +9,10 @@ namespace Domain.Contracts;
 public interface IAttachmentSource
 {
     Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct);
+
+    // The same, from the connection of the household that took the file (null for a channel serving
+    // every household): two households' servers of one name each keep their own. A source with one
+    // connection per channel id has no other to ask.
+    Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct) =>
+        FetchAsync(channelId, attachmentId, ct);
 }

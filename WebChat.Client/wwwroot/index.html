@@ -13,7 +13,9 @@
     <link rel="preload" href="/fonts/fraunces.woff2" as="font" type="font/woff2" crossorigin/>
 
     <link href="css/app.css" rel="stylesheet"/>
-    <link rel="manifest"/>
+    <!-- With credentials: the page is behind the session check, and a browser fetches a manifest
+         without cookies unless told to. -->
+    <link rel="manifest" crossorigin="use-credentials"/>
     <link href="favicon.svg" rel="icon" type="image/svg+xml"/>
 
     <!-- Early theme initialization to prevent flash + per-space manifest -->

@@ -1,6 +1,8 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
+using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
 using Domain.Tools.Sugary.Labels;
 using McpServerSugary.Channel;
@@ -19,13 +21,13 @@ public static class LabelEndpoints
 {
     public static void MapLabelEndpoints(this IEndpointRouteBuilder api)
     {
-        // The session cookie is SameSite=Strict, so a cross-site form post never carries it.
+        // The proxy's session cookie is SameSite=Lax, so a cross-site form post never carries it.
         api.MapPost("/labels", ReadLabelAsync).DisableAntiforgery();
     }
 
-    // Read rather than bound, as the estimate's form is, so the cookie gate answers first.
+    // Read rather than bound, as the estimate's form is; a turn of the person the proxy named.
     private static async Task<IResult> ReadLabelAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
+        HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, HouseholdAgentCatalogue agents,
         SugarySettings settings, ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
@@ -39,7 +41,7 @@ public static class LabelEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Attach a photo of the label.");
         }
 
-        var agent = catalog.Get(settings.Agent);
+        var agent = await SugaryAgent.OfAsync(person, agents, settings, loggers.CreateLogger("McpServerSugary.App.Labels"), ct);
         if (NotSwitchable(agent, settings.LabelModel))
         {
             return Problem(StatusCodes.Status502BadGateway,
@@ -59,7 +61,8 @@ public static class LabelEndpoints
         var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
         var attachments = await PhotoUpload.StoreAsync(conversation, photos, uploads, ct);
         var reply = await channel.AskAsync(
-            conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format, attachments,
+            person.Account, person.Assertion, conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format,
+            attachments,
             new AgentConfigPatch { Model = settings.LabelModel },
             new ReviewCopy { Title = ReviewTitle }, ct);
         return Answer(reply, loggers.CreateLogger("McpServerSugary.App.Labels"));
@@ -81,6 +84,9 @@ public static class LabelEndpoints
     private static IResult Answer(TurnReply reply, ILogger log) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text, log),
+        // A turn the agent refused for the household (Sugary off, its key refused, out of credit) is
+        // forbidden with the refusal's code, which the app says in her language with who can fix it.
+        TurnReply.Failed failed when RefusalAnswers.CodeOf(failed.Reason) is { } code => Problem(StatusCodes.Status403Forbidden, code),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,

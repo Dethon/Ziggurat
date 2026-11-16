@@ -11,7 +11,7 @@ namespace Tests.Integration.Clients;
 //
 // NavigateAsync only accepts http/https, so a route-fulfilled anchor page (HermeticPage) is the
 // canvas the fixture markup is injected onto -- no third party involved anywhere in this file.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsC)]
 public class PageImageMeasurementTests(IsolatedSessionBrowserFixture fixture)
 {
     [SkippableFact]

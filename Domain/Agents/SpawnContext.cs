@@ -19,4 +19,19 @@ public sealed record SpawnContext(
     // resolved: a worker names neither, so one profile serves every agent on that agent's own
     // model. Routing says who serves a model, which is why the two travel together.
     string Model,
-    ProviderRouting? ProviderRouting = null);
+    ProviderRouting? ProviderRouting = null,
+    // The household the parent's turns are for: a worker reaches the household servers its parent
+    // reaches, resolved against the same household.
+    string? TenantId = null,
+    // The shared servers that household's features turned off, which its workers do not reach any
+    // more than its agents do, whatever their profile names.
+    IReadOnlyList<string>? WithheldServers = null,
+    // That household's zone, whose day the worker's prompt names as its parent's does.
+    string? TimeZone = null,
+    // The key that household pays its parent's calls with, which pays the worker's too; null is the
+    // deployment's (the home household's, or nobody's).
+    ModelKey? Key = null,
+    // The household's own servers the parent names, which bound the worker's as the parent's opt-in
+    // bounds its machines: a worker reaches none its parent could not. Null puts no bound (a spawn no
+    // parent agent made).
+    IReadOnlyList<string>? OwnServers = null);

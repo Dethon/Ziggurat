@@ -7,16 +7,25 @@
 # own prototype, so covering the real conditions (facing the mic, facing away, across
 # the room) is what makes off-axis speech score like you instead of like a stranger.
 #
-# Usage: enroll-voice.sh <name> [count] [scp-target]
-#   name        identity folder (e.g. fran)
+# The profile folder is named after the person's account user id, because a conclusive match on
+# it is resolved through the accounts service to that account: the turn acts for them and goes by
+# their display name. A folder named anything else is nobody's account, so its speaker is the
+# voice guest. The account page (/accounts/account) shows this command with the id filled in.
+#
+# Usage: enroll-voice.sh <user id> [count] [scp-target]
+#   user id     the person's account user id (32 lowercase hex, as the account page shows it)
 #   count       recordings to take (default 5)
 #   scp-target  optional, e.g. pi5:/opt/jackbot/DockerCompose/volumes/voices
-#               (omit to leave files in ./voices/<name>/ and copy manually)
+#               (omit to leave files in ./voices/<user id>/ and copy manually)
 set -euo pipefail
 
-NAME="${1:?usage: enroll-voice.sh <name> [count] [scp-target]}"
+NAME="${1:?usage: enroll-voice.sh <user id> [count] [scp-target]}"
 COUNT="${2:-5}"
 TARGET="${3:-}"
+[[ "$NAME" =~ ^[0-9a-f]{32}$ ]] || {
+    echo "'$NAME' is not an account user id: copy the command from your account page (/accounts/account)." >&2
+    exit 1
+}
 SECONDS_PER_TAKE=5
 OUT="./voices/$NAME"
 mkdir -p "$OUT"

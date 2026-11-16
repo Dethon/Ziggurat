@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Infrastructure.Agents;
 
 namespace Infrastructure.Clients.Channels;
 
@@ -10,8 +11,11 @@ namespace Infrastructure.Clients.Channels;
 // behaviour per member, and they differ because their callers differ
 // (docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md):
 //
-// - SendReplyAsync, RequestApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an
+// - SendReplyAsync, AskApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an
 //   agent mid-turn, which has somewhere to report a failure.
+// - OfferApprovalAsync returns null and SettleApprovalAsync returns silently. An offer is the
+//   question put beside the one the turn asked, so a channel that is down has merely not been
+//   answered on; telling a channel it was answered elsewhere runs off the turn and can only log.
 // - CreateConversationAsync returns null. DeliveryTargetResolver reads null as "this channel minted
 //   nothing", which is also what an attach-only channel and a channel with no create_conversation
 //   tool return; its job is to try the next target, and an exception would make it catch in order
@@ -23,6 +27,9 @@ namespace Infrastructure.Clients.Channels;
 //   review copy's background copy only logs the second (ADR 0046).
 // - Messages yields forever. The agent's read loop awaits messages for the process lifetime, so a
 //   reconnect is invisible to it; a completed sequence would end the loop.
+// - Domain's IAlertChannel, which the same type implements, keeps the shape of the approval offer:
+//   OfferAlertAsync is false (not dismissed here), SettleAlertAsync returns silently, and Alerts,
+//   like Messages, yields forever.
 //
 // The first three of those members are on Domain's IChannelConnection, which the same type
 // implements. Only the run verb is here, because it is the only one a supervisor calls.
@@ -37,5 +44,9 @@ public interface IMcpChannelConnection
     // The catalog is a function rather than a list because it is not constant: attachment
     // capability is discovered from the model provider and refreshed hourly, so every registration
     // has to read what is true now rather than what was true when the host started.
-    Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct);
+    //
+    // The endpoint carries what the connection presents and what carries it: a deployment server's
+    // URL and credential, or one opening of a household server's tunnel. A run bound to a tunnel is
+    // given a token that goes with the tunnel, and once a run returns the connection is not connected.
+    Task RunAsync(McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct);
 }

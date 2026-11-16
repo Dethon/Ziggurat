@@ -505,6 +505,37 @@ public class MediaLibraryFileSystemTests : IDisposable
         glob.Entries.ShouldContain("downloads/42/payload.mkv");
     }
 
+    // The library is the disk; the download client only adds the live downloads on top. A client
+    // that is not answering takes those away and nothing else, and the listing says what is missing
+    // rather than failing whole - a person's books do not stop existing because qBittorrent did.
+    [Fact]
+    public async Task Glob_TheDownloadClientIsNotAnswering_ListsTheDiskAndSaysTheDownloadsAreMissing()
+    {
+        _client.ListFailure = new HttpRequestException("Name or service not known (qbittorrent:8001)");
+        _disk.GlobResults.Add(Path.Combine(_libraryRoot, "books", "dune.epub"));
+
+        var glob = (await _sut.GlobAsync("", "**", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        glob.Entries.ShouldContain("books/dune.epub");
+        glob.Note.ShouldNotBeNull();
+        glob.Note.ShouldContain("downloads/");
+    }
+
+    // With nothing on disk to list, the disk's not_found is no answer: the downloads it could not
+    // ask about may be there, so the failure is the one the client gave.
+    [Fact]
+    public async Task Glob_NothingOnDiskAndTheDownloadClientIsNotAnswering_SaysTheDependencyIsDown()
+    {
+        _client.ListFailure = new HttpRequestException("Name or service not known (qbittorrent:8001)");
+        _disk.ThrowIfBaseMissing = true;
+
+        var error = (await _sut.GlobAsync("downloads/42", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Err>().Error;
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
+    }
+
     [Fact]
     public async Task Glob_WithARelativePattern_IsUnchanged()
     {

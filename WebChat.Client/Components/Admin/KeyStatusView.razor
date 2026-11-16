@@ -1,0 +1,37 @@
+@using Domain.DTOs.Admin
+
+@* A saved key as the owner is shown it: whether it works, its last characters and when it was last
+   checked — never the key. *@
+@if (Status is null)
+{
+    <p class="admin-key-status admin-key-status-none">Not set</p>
+}
+else
+{
+    <p class="admin-key-status admin-key-status-@Status.State.ToString().ToLowerInvariant()">
+        <span class="admin-key-state">@Label(Status.State)</span>
+        @if (Status.LastCharacters.Length > 0)
+        {
+            <span class="admin-key-ending">ending in @Status.LastCharacters</span>
+        }
+        @if (Status.CheckedAt is { } checkedAt)
+        {
+            <span class="admin-key-checked">checked @AdminTime.Of(checkedAt)</span>
+        }
+        @if (Status.Reason is { } reason)
+        {
+            <span class="admin-key-reason">@reason</span>
+        }
+    </p>
+}
+
+@code {
+    [Parameter] public KeyStatus? Status { get; set; }
+
+    private static string Label(KeyState state) => state switch
+    {
+        KeyState.Working => "Working",
+        KeyState.Rejected => "Rejected",
+        _ => "Unchecked"
+    };
+}

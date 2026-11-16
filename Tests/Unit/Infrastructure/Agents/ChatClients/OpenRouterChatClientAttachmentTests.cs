@@ -73,6 +73,20 @@ public class OpenRouterChatClientAttachmentTests
         captured.Last(m => m.Role == ChatRole.User).Contents.OfType<DataContent>().ShouldBeEmpty();
     }
 
+    // A household's own server's file is asked of that household's connection, which the turn named.
+    [Fact]
+    public async Task AFileAHouseholdsOwnServerTook_IsAskedOfThatHouseholdsConnection()
+    {
+        var turn = UserTurnWith(_photo);
+        turn.SetAttachmentChannelId("voice");
+        turn.SetAttachmentHouseholdId("casa");
+        var source = new HouseholdRecordingSource();
+
+        await SendAsync(turn, source);
+
+        source.Asked.ShouldBe([("voice", "casa", _photo.Id)]);
+    }
+
     private static ChatMessage UserTurnWith(params AttachmentReference[] attachments)
     {
         var message = new ChatMessage(ChatRole.User, "what is in this?");
@@ -106,6 +120,20 @@ public class OpenRouterChatClientAttachmentTests
         }
 
         return captured;
+    }
+
+    private sealed class HouseholdRecordingSource : IAttachmentSource
+    {
+        public List<(string ChannelId, string? HouseholdId, string AttachmentId)> Asked { get; } = [];
+
+        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+            FetchAsync(channelId, null, attachmentId, ct);
+
+        public Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct)
+        {
+            Asked.Add((channelId, householdId, attachmentId));
+            return Task.FromResult<byte[]?>(_bytes);
+        }
     }
 
     private sealed class StubAttachmentSource(byte[] bytes) : IAttachmentSource

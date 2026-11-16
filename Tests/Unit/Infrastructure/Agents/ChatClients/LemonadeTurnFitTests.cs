@@ -97,6 +97,27 @@ public sealed class LemonadeTurnFitTests
         _openRouter.CapturedBody.ShouldNotBeNull();
     }
 
+    // A household's kit box is reached through its own tunnel: the host carries that transport, and a
+    // turn on it goes there rather than to the shared pool.
+    [Fact]
+    public async Task ATurnOnAKitBox_GoesThroughTheHostsOwnTransport()
+    {
+        var kitBox = new LemonadeResponsesSseHandler();
+        var factory = new MultiAgentFactory(
+            Mock.Of<IServiceProvider>(),
+            Mock.Of<IAgentDefinitionProvider>(),
+            new OpenRouterConfig { ApiUrl = "http://openrouter.test/api/v1", ApiKey = "key" },
+            Mock.Of<IDomainToolRegistry>());
+        using var client = factory.CreateChatClient(
+            "configured/model", _metrics, AgentWindow, transportHandler: _openRouter,
+            lemonade: new LemonadeHost(new LemonadeChatHostOptions { ApiUrl = "http://lemonade.casa.tunnel" }, _models, kitBox));
+
+        var updates = await client.GetStreamingResponseAsync(History(10), Options("lemonade/small")).ToListAsync();
+
+        updates.ToChatResponse().Text.ShouldBe("ok");
+        kitBox.CapturedBody.ShouldNotBeNull();
+    }
+
     private IChatClient Client(HttpMessageHandler? lemonade = null)
     {
         var serviceProvider = new Mock<IServiceProvider>();
@@ -110,9 +131,11 @@ public sealed class LemonadeTurnFitTests
             new OpenRouterConfig { ApiUrl = "http://openrouter.test/api/v1", ApiKey = "key" },
             Mock.Of<IDomainToolRegistry>());
 
+        // The box the turn's household runs on, as the factory hands it to the client it builds.
         return factory.CreateChatClient(
             "configured/model", _metrics, AgentWindow,
-            transportHandler: _openRouter, lemonadeTransportHandler: lemonade ?? _lemonade);
+            transportHandler: _openRouter, lemonadeTransportHandler: lemonade ?? _lemonade,
+            lemonade: new LemonadeHost(new LemonadeChatHostOptions { ApiUrl = "http://box.test:13305/api/v1" }, _models));
     }
 
     // Four characters to a token in the estimator, so this many tokens of history plus the last

@@ -175,7 +175,9 @@ public sealed class OutpostExecTests : IDisposable
         {
             Name = "laptop",
             WorkingDirectory = "/home/someone/project",
-            Exec = exec
+            Exec = exec,
+            Hub = "https://assistants.example",
+            Credential = "minted-for-outpost-laptop"
         });
         using var provider = services.BuildServiceProvider();
 

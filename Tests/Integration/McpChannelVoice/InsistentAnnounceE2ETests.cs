@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
 using Tests.Unit;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -91,7 +92,7 @@ public class InsistentAnnounceE2ETests
         builder.Services.AddSingleton<ReplyTextAccumulator>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<VoiceConversationManager>(sp => new VoiceConversationManager(
-            Mock.Of<IConversationFactory>(), sp.GetRequiredService<ReplyTextAccumulator>(),
+            new FakeTopicMinter(), sp.GetRequiredService<ReplyTextAccumulator>(),
             sp.GetRequiredService<TimeProvider>(), TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();

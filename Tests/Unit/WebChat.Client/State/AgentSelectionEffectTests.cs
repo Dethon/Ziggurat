@@ -52,6 +52,20 @@ public sealed class AgentSelectionEffectTests : IDisposable
             _logger);
     }
 
+    // A grant or withdrawal of "sees all conversations" changes which of the household's topics this
+    // person sees: the list of the agent they are on is asked again.
+    [Fact]
+    public async Task ReloadTopics_AsksForTheSelectedAgentsListAgain()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-seen-now", agentId: "agent-1"));
+
+        _dispatcher.Dispatch(new ReloadTopics());
+
+        await Tests.Eventually.Until(() => _topicsStore.State.Topics.Any(t => t.TopicId == "topic-seen-now"),
+            "the selected agent's topics to be loaded again");
+    }
+
     [Fact]
     public void SelectAgent_FirstSelection_LoadsNothing()
     {
@@ -79,6 +93,35 @@ public sealed class AgentSelectionEffectTests : IDisposable
         // Switching agent costs one page of rows and nothing per conversation.
         _messagesStore.State.MessagesByTopic.ShouldBeEmpty();
         _calls.Calls.ShouldNotContain(call => call.StartsWith("history:"));
+    }
+
+    // A pick is the space's: the kitchen remembers its own, and the front page keeps its.
+    [Fact]
+    public async Task HandleAgentChangedAsync_InAnotherSpace_RemembersThePickForThatSpace()
+    {
+        _dispatcher.Dispatch(new SpaceValidated("kitchen", "Kitchen", "#123456"));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+
+        await _effect.HandleAgentChangedAsync("agent-2");
+
+        _localStorage.Values["selectedAgentId:kitchen"].ShouldBe("agent-2");
+        _localStorage.Values.ShouldNotContainKey("selectedAgentId");
+    }
+
+    // Moving to a space mid-session opens it on its own agent, which is the space's choice and not
+    // the person's, so it is not remembered as their pick.
+    [Fact]
+    public async Task ASpaceOpenedMidSession_OpensOnItsDefaultAgentWithoutRememberingIt()
+    {
+        _dispatcher.Dispatch(new SetAgents([_agentOne, _agentTwo]));
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21, agentId: "agent-2") with { SpaceSlug = "kitchen" });
+
+        _dispatcher.Dispatch(new SpaceValidated("kitchen", "Kitchen", "#123456", DefaultAgent: "agent-2"));
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-2");
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _localStorage.Values.ShouldNotContainKey("selectedAgentId:kitchen");
     }
 
     [Fact]

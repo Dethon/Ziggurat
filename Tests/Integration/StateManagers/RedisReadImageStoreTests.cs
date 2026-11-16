@@ -83,8 +83,10 @@ public sealed class RedisReadImageStoreTests(RedisFixture fixture) : IClassFixtu
         var ttl = await fixture.Connection.GetDatabase()
             .KeyTimeToLiveAsync(RedisReadImageStore.KeyFor(conversation, "call-1"));
 
+        // Redis counts the TTL down on its host's clock, which this machine's WSL steps by seconds now and
+        // then: read just after a step back it is a little over the horizon it was given (24h + 2.65s, once).
         ttl.ShouldNotBeNull();
-        ttl.Value.ShouldBeLessThanOrEqualTo(RedisReadImageStore.Horizon);
+        ttl.Value.ShouldBeLessThanOrEqualTo(RedisReadImageStore.Horizon + TimeSpan.FromSeconds(30));
         ttl.Value.ShouldBeGreaterThan(RedisReadImageStore.Horizon - TimeSpan.FromMinutes(1));
     }
 

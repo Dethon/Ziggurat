@@ -44,6 +44,16 @@ public class PromptComposerTests
         Compose(Context()).ShouldContain("Today is Friday, 2026-05-15.");
     }
 
+    // A household away from the deployment's zone is told its own, beside its own day.
+    [Fact]
+    public void Compose_WithATimeZone_NamesItBesideTheDate()
+    {
+        var prompt = Compose(Context() with { TimeZone = "America/New_York" });
+
+        prompt.ShouldContain("Today is Friday, 2026-05-15, in the America/New_York time zone.");
+        prompt.ShouldNotContain("Today is Friday, 2026-05-15.");
+    }
+
     // The date used to be the first line, which made the opening bytes of the system prompt change
     // every midnight and invalidated the whole cached prefix with them. It is the only dated
     // section, so it belongs after every static one: a day rollover then re-prefills the tail.

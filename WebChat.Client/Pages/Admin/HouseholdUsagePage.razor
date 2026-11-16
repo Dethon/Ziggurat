@@ -1,0 +1,86 @@
+@page "/admin/usage"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using System.Globalization
+@using Domain.DTOs.Admin
+@using Domain.DTOs.Metrics
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdUsageStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household usage</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-usage-heading">
+    <h1 id="admin-usage-heading">Usage</h1>
+    <p class="admin-lede">
+        What the household's agents used in a month: tokens and what they cost, by agent and by person, and what
+        its voice and memory asked of the deployment's speech and memory models. Days are counted in UTC, and the
+        deployment keeps each day's figures for thirty days, so a month further back shows only the days still kept.
+    </p>
+
+    <label class="admin-field admin-usage-month">
+        <span class="admin-field-label">Month</span>
+        <input type="month" name="month" value="@_month" @oninput="Pick" />
+    </label>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+    else if (_state.Usage is null)
+    {
+        <p class="admin-status">Loading the household's usage</p>
+    }
+
+    @if (_state.Usage is { } usage)
+    {
+        <UsageTable Caption="Per agent" Heading="Agent" Lines="usage.Agents" />
+        <UsageTable Caption="Per person" Heading="Person" Lines="usage.People" />
+
+        <section class="admin-member admin-usage-lemonade" aria-label="Speech and memory">
+            <h2>Speech and memory</h2>
+            <ul>
+                <li>@Seconds(usage.Lemonade.TranscribedSeconds) seconds heard</li>
+                <li>@Count(usage.Lemonade.SpokenCharacters) characters spoken</li>
+                <li>@Count(usage.Lemonade.Embeddings) embeddings</li>
+            </ul>
+        </section>
+    }
+</section>
+
+@code {
+    private HouseholdUsageState _state = HouseholdUsageState.Initial;
+    private string _month = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The field shows the month the admin API answered for, the current one on opening.
+        Subscribe(Store.StateObservable, state => state.Usage?.Month, month =>
+        {
+            if (month is not null)
+            {
+                _month = month;
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdUsage(null));
+    }
+
+    // A month input holds no value until a whole month is in it, so a half-typed one asks for nothing.
+    // Read as typed, not bound: Blazor binds a month input to a DateTime, and the API's month is yyyy-MM.
+    private void Pick(ChangeEventArgs change)
+    {
+        if (change.Value is string { Length: > 0 } month)
+        {
+            _month = month;
+            Dispatcher.Dispatch(new LoadHouseholdUsage(month));
+        }
+    }
+
+    internal static string Count(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
+
+    internal static string Cost(decimal value) => string.Create(CultureInfo.InvariantCulture, $"${value:0.00##}");
+
+    private static string Seconds(double value) => value.ToString("0.#", CultureInfo.InvariantCulture);
+}

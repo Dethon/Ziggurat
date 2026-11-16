@@ -52,6 +52,7 @@ public class SatelliteConnectionTests
         };
         public string TranscriptText = "hola";
         public ISpeakerVerifier? Verifier;
+        public FakeAccountResolver Accounts = new();
         // A conversation's FIRST turn — the normal case for a one-shot command, given the 5-minute
         // mapping expiry — makes GetOrCreateAsync a full create_conversation MCP round trip to the
         // agent process. Exaggerated by a test that needs the gap unambiguous.
@@ -86,19 +87,16 @@ public class SatelliteConnectionTests
                     }
                 });
 
-            var factory = new Mock<IConversationFactory>();
-            factory.Setup(f => f.CreateAsync(
-                    It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            var factory = new Mock<ITopicMinter>();
+            factory.Setup(f => f.MintAsync(
+                    It.IsAny<TopicMintRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .Returns(async () =>
                 {
                     if (CreateConversationDelay > TimeSpan.Zero)
                     {
                         await Task.Delay(CreateConversationDelay);
                     }
-                    var identity = ConversationIdGenerator.CreateFor("topic-x");
-                    var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                        $"{Config.Identity} @ {Config.Room}", DateTimeOffset.UtcNow, null);
-                    return new ConversationCreation(identity, topic);
+                    return new TopicMinted("topic-x", ConversationIdGenerator.CreateFor("topic-x").ConversationId);
                 });
             var manager = new VoiceConversationManager(
                 factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
@@ -126,7 +124,7 @@ public class SatelliteConnectionTests
                     });
 
             var dispatcher = new TranscriptDispatcher(
-                Emitter.Emitter, publisher.Object, manager,
+                Emitter.Emitter, Accounts, publisher.Object, manager,
                 new LocalCommandDispatcher(
                     new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
                 new ReplyTextAccumulator(),
@@ -665,7 +663,8 @@ public class SatelliteConnectionTests
                 FollowUp = new FollowUpSettings { Enabled = false },
                 SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = 0 }
             },
-            Verifier = new IdentifyingVerifier("fran")
+            Verifier = new IdentifyingVerifier("fran"),
+            Accounts = new FakeAccountResolver().Holding("fran", "t-home", "Fran")
         };
         var connection = h.Build();
         var run = connection.RunAsync(h.Events, cts.Token);
@@ -677,7 +676,8 @@ public class SatelliteConnectionTests
 
         var msg = await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token);
         msg.Content.ShouldBe("hola");
-        msg.Sender.ShouldBe("fran"); // conclusive identity routed into Sender, not "household"
+        msg.Sender.ShouldBe("Fran"); // the matched profile's account, under its name, not "household"
+        msg.Principal!.Account.ShouldBe(new Account("t-home", "fran"));
 
         // The gate's verdict must reach the STT chain, not just the message Sender: the decorator's
         // whole TSE policy is keyed off TargetSpeaker, so prove the wiring lands the identified name

@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -54,6 +55,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -62,16 +64,18 @@ public sealed class ChatHubAttachmentTests : IDisposable
             _streamService,
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
-            new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new MutableAgentCatalog(),
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             _attachments,
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
@@ -87,9 +91,9 @@ public sealed class ChatHubAttachmentTests : IDisposable
     }
 
     [Fact]
-    public void CreateUploadTicket_IsScopedToTheTopicAndExpires()
+    public async Task CreateUploadTicket_IsScopedToTheTopicAndExpires()
     {
-        var ticket = _hub.CreateUploadTicket(TopicId);
+        var ticket = await _hub.CreateUploadTicket(TopicId);
 
         ticket.Token.ShouldNotBeNullOrWhiteSpace();
         ticket.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_settings.TicketTtlSeconds));
@@ -98,9 +102,9 @@ public sealed class ChatHubAttachmentTests : IDisposable
     }
 
     [Fact]
-    public void CreateUploadTicket_ForAnUnknownTopic_IsRefused()
+    public async Task CreateUploadTicket_ForAnUnknownTopic_IsRefused()
     {
-        Should.Throw<HubException>(() => _hub.CreateUploadTicket("no-such-topic"));
+        await Should.ThrowAsync<HubException>(() => _hub.CreateUploadTicket("no-such-topic"));
     }
 
     [Fact]
@@ -118,22 +122,11 @@ public sealed class ChatHubAttachmentTests : IDisposable
     {
         var reference = await StoreAsync("default");
 
-        var download = _hub.CreateAttachmentDownload(reference.Id);
+        var download = await _hub.CreateAttachmentDownload(reference.Id);
 
         download.ShouldNotBeNull();
         download.Url.ShouldStartWith($"/api/attachments/{reference.Id}?ticket=");
         download.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_settings.TicketTtlSeconds));
-    }
-
-    // The registration gate its sibling CreateUploadTicket already enforces: a download URL is a
-    // read over the upload store, so an anonymous connection gets neither direction.
-    [Fact]
-    public async Task CreateAttachmentDownload_BeforeRegistering_IsRefused()
-    {
-        var reference = await StoreAsync("default");
-        _hub.Context.Items.Remove("UserId");
-
-        Should.Throw<HubException>(() => _hub.CreateAttachmentDownload(reference.Id));
     }
 
     [Fact]
@@ -141,13 +134,13 @@ public sealed class ChatHubAttachmentTests : IDisposable
     {
         var reference = await StoreAsync("private");
 
-        _hub.CreateAttachmentDownload(reference.Id).ShouldBeNull();
+        (await _hub.CreateAttachmentDownload(reference.Id)).ShouldBeNull();
     }
 
     [Fact]
-    public void CreateAttachmentDownload_ForAFileThatIsGone_IsRefused()
+    public async Task CreateAttachmentDownload_ForAFileThatIsGone_IsRefused()
     {
-        _hub.CreateAttachmentDownload("7-42/deadbeef").ShouldBeNull();
+        (await _hub.CreateAttachmentDownload("7-42/deadbeef")).ShouldBeNull();
     }
 
     // The references are what the agent is woken with. Bytes never ride the hub, so if they do
@@ -181,6 +174,6 @@ public sealed class ChatHubAttachmentTests : IDisposable
     private async Task<AttachmentReference> StoreAsync(string spaceSlug)
     {
         using var content = new MemoryStream("bytes"u8.ToArray());
-        return await _store.SaveAsync("7:42", spaceSlug, "photo.png", "image/png", content, CancellationToken.None);
+        return await _store.SaveAsync(new AgentKey("7:42"), spaceSlug, "photo.png", "image/png", content, CancellationToken.None);
     }
 }

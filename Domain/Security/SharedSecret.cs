@@ -3,9 +3,8 @@ using System.Text;
 
 namespace Domain.Security;
 
-// The one comparison behind every shared-secret gate in the repo: an outpost in both directions
-// (the machine when it registers and keeps alive, the agent when it dials it back), the agent
-// registration API, and every deployment MCP server's /mcp. The secrets differ; the rule does not —
+// The one comparison behind every shared-secret gate in the repo: the agent registration API, every
+// deployment MCP server's /mcp, and a tunnelled server's /mcp asking for its tunnel credential. The secrets differ; the rule does not —
 // a bearer token, compared in constant time, and nothing let through when none is configured.
 //
 // It lives here rather than in any one end because every end has to agree, and a comparison

@@ -1,5 +1,6 @@
 @code {
     [Parameter] public AgentCatalogEntry? SelectedAgent { get; set; }
+    [Parameter] public string? RemovedAgentName { get; set; }
     [Parameter] public EventCallback<string> OnSuggestionClicked { get; set; }
 }
 
@@ -9,6 +10,10 @@
     </div>
     @if (SelectedAgent is not null)
     {
+        @if (RemovedAgentName is not null)
+        {
+            <p class="empty-state-notice" role="status">@RemovedAgentName was removed from the household: your conversations with it are no longer shown, and what you write now goes to @SelectedAgent.Name.</p>
+        }
         <h2>Chat with @SelectedAgent.Name</h2>
         <p>Start a new conversation. Your chat will be saved automatically.</p>
         <SuggestionChips OnSuggestionClicked="OnSuggestionClicked"/>

@@ -2,13 +2,11 @@ using WebChat.Client.Models;
 
 namespace WebChat.Client.State.UserIdentity;
 
-public record LoadUsers : IAction;
+public record SignedIn(SignedInPerson Person) : IAction;
 
-public record UsersLoaded(IReadOnlyList<UserConfig> Users) : IAction;
-
-public record SelectUser(string UserId) : IAction;
-
-public record ClearUser : IAction;
+// Who is signed in, asked for by a page that is not the chat — the admin area — which never sends
+// Initialize: that starts the chat's live connection, which such a page has no use for.
+public record LoadSignedIn : IAction;
 
 public sealed class UserIdentityStore : IDisposable
 {
@@ -29,10 +27,7 @@ public sealed class UserIdentityStore : IDisposable
 
     private static UserIdentityState Reduce(UserIdentityState state, IAction action) => action switch
     {
-        LoadUsers => state with { IsLoading = true },
-        UsersLoaded a => state with { AvailableUsers = a.Users, IsLoading = false },
-        SelectUser a => state with { SelectedUserId = a.UserId },
-        ClearUser => state with { SelectedUserId = null },
+        SignedIn a => state with { SignedIn = a.Person },
         _ => state
     };
 }

@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -93,7 +94,7 @@ public class AnnounceEndToEndTests
         builder.Services.AddSingleton<ReplyTextAccumulator>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<VoiceConversationManager>(sp => new VoiceConversationManager(
-            Mock.Of<IConversationFactory>(),
+            new FakeTopicMinter(),
             sp.GetRequiredService<ReplyTextAccumulator>(),
             sp.GetRequiredService<TimeProvider>(),
             TimeSpan.FromMinutes(5),

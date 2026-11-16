@@ -7,20 +7,18 @@ var builder = WebApplication.CreateBuilder(args);
 var settings = builder.Configuration.GetOutpostSettings(args);
 builder.Services.ConfigureMcp(settings);
 
-// Every interface, because the outpost cannot know which one the hub will reach it on — that is
-// exactly what --advertise exists to settle, and it settles the address the hub is told, not the
-// socket this listens on. IPv6Any rather than Any: the dual-mode socket takes IPv4 as well, and
-// Any alone would let --advertise name an IPv6 address nothing here listens on — a registration
-// that looks exactly like a machine that is asleep, forever.
-builder.WebHost.UseKestrel(options => options.Listen(IPAddress.IPv6Any, settings.Port));
+// Loopback, on whatever port the system hands out: nothing dials this machine. The outpost opens its
+// own tunnel to the hub, and every stream the relay opens inside it becomes a connection to this
+// listener from this same process (the hosting library's TunnelClient reads the port once bound). So
+// a machine on somebody's network offers its filesystem — and, where they asked for it, a shell — on
+// no interface anybody else can reach.
+builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
 
 var app = builder.Build();
 
-// The other half of the shared secret is the host's gate on /mcp, installed by the hosting library
-// with the secret OutpostSettings answers for: this machine's own, the one it registers with. This
-// port is on somebody's own computer, listening on every interface, offering their whole filesystem
-// and — where they asked for it — a shell, so the gate is the same one every deployment server has
-// rather than one written here to drift from it.
+// The gates are the hosting library's, as for every tunnelled server: /mcp asks for the tunnel
+// credential the relay presents, and every tool call's token is checked against the keys the relay
+// hands over the tunnel.
 app.MapMcp("/mcp");
 
 await app.RunAsync();

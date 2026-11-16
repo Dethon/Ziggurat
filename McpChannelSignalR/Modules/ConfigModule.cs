@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
@@ -7,9 +8,11 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
+using McpChannelSignalR.Hubs;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.SignalR;
 using StackExchange.Redis;
 
 namespace McpChannelSignalR.Modules;
@@ -39,17 +42,24 @@ public static class ConfigModule
             .AddSingleton<ISessionService>(sp => sp.GetRequiredService<SessionService>())
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
+            .AddSingleton<AlertService>()
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
             .AddSingleton(settings.Attachments)
             .AddMetricsPublishing("mcp-channel-signalr")
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            // The household's spaces, asked with this server's own credential and its person's assertion.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
-            .AddHostedService<AttachmentSweeper>();
+            .AddHostedService<AttachmentSweeper>()
+            .AddHostedService<HouseholdAgentsAnnouncer>()
+            .AddHostedService<EndedSessionsListener>();
 
         if (settings.WebPush?.IsConfigured == true)
         {
@@ -75,6 +85,10 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<OfferApprovalTool>()
+            .WithTools<SettleApprovalTool>()
+            .WithTools<OfferAlertTool>()
+            .WithTools<SettleAlertTool>()
             .WithTools<CreateConversationTool>()
             // This server's own register_agents, not the shared catalog-writing one: registration
             // here also broadcasts OnAgentsUpdated so WebChat refreshes live.
@@ -95,6 +109,12 @@ public static class ConfigModule
     // and costs nothing to hold — this hub keeps no per-connection state to release.
     private static readonly TimeSpan _frozenPageTolerance = TimeSpan.FromMinutes(2);
 
+    // The registration guard rides with the hub's own options, so wherever the hub is served it is
+    // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
-        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance).Services;
+        services.AddSingleton<AccountConnections>()
+            .AddSingleton<SessionConnections>()
+            .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
+            .AddHubOptions<ChatHub>(options => options.AddFilter<SignedInConnectionFilter>())
+            .Services;
 }

@@ -40,8 +40,9 @@ public sealed class SessionService : ISessionService
             return;
         }
 
-        _chatToTopic.TryRemove(session.ChatId, out _);
-        _conversationToTopic.TryRemove(session.Identity.ConversationId, out _);
+        // Only while they still name this topic: a conversation another agent's copy now holds keeps it.
+        _chatToTopic.TryRemove(KeyValuePair.Create(session.ChatId, topicId));
+        _conversationToTopic.TryRemove(KeyValuePair.Create(session.Identity.ConversationId, topicId));
     }
 
     public string? GetTopicIdByChatId(long chatId)

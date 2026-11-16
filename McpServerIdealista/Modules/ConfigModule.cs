@@ -1,5 +1,5 @@
-using Domain.Contracts;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Extensions;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -17,7 +17,10 @@ public static class ConfigModule
         public IServiceCollection ConfigureMcp(McpSettings settings)
         {
             services
-                .AddIdealistaClient(settings)
+                .AddIdealistaClients(settings)
+                // The calling household's keys, asked with this server's own credential. It has no
+                // Redis to hear a save on, so a saved key reaches it when what it kept runs out.
+                .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpPropertySearchTool>()
                 .WithPrompts<McpSystemPrompt>();
@@ -25,20 +28,19 @@ public static class ConfigModule
             return services;
         }
 
-        private IServiceCollection AddIdealistaClient(McpSettings settings)
+        private IServiceCollection AddIdealistaClients(McpSettings settings)
         {
-            services.AddHttpClient<IIdealistaClient, IdealistaClient>((httpClient, _) =>
+            services.AddHttpClient(IdealistaClients.ClientName, httpClient =>
                 {
                     httpClient.BaseAddress = new Uri(settings.Idealista.ApiUrl);
                     httpClient.Timeout = TimeSpan.FromSeconds(30);
-                    return new IdealistaClient(httpClient, settings.Idealista.ApiKey, settings.Idealista.ApiSecret);
                 })
                 .AddRetryWithExponentialWaitPolicy(
                     attempts: 2,
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
 
-            return services;
+            return services.AddSingleton<IdealistaClients>();
         }
     }
 }

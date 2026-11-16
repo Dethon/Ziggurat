@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
@@ -14,8 +15,8 @@ public class DeliveryTargetResolverTests
     {
         var m = new Mock<IChannelConnection>();
         m.SetupGet(c => c.ChannelId).Returns(id);
-        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? _, CancellationToken _) => $"minted-{id}");
+        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? _, Principal? _, bool _, CancellationToken _) => $"minted-{id}");
         return m.Object;
     }
 
@@ -109,8 +110,8 @@ public class DeliveryTargetResolverTests
         captor.SetupGet(c => c.ChannelId).Returns("signalr");
         string? capturedPrompt = null;
         captor.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? p, string? _, string? _, CancellationToken _) => capturedPrompt = p)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? p, string? _, string? _, Principal? _, bool _, CancellationToken _) => capturedPrompt = p)
             .ReturnsAsync("minted-signalr");
         var channels = new[] { origin, captor.Object };
         var msg = new ChannelMessage
@@ -141,8 +142,8 @@ public class DeliveryTargetResolverTests
         captor.SetupGet(c => c.ChannelId).Returns("signalr");
         string? topic = null;
         captor.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string t, string _, string? _, string? _, string? _, CancellationToken _) => topic = t)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string t, string _, string? _, string? _, string? _, Principal? _, bool _, CancellationToken _) => topic = t)
             .ReturnsAsync("minted-signalr");
         var msg = new ChannelMessage
         {
@@ -167,7 +168,7 @@ public class DeliveryTargetResolverTests
         var failing = new Mock<IChannelConnection>();
         failing.SetupGet(c => c.ChannelId).Returns("signalr");
         failing.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection reset"));
         var channels = new[] { origin, failing.Object };
         var msg = new ChannelMessage
@@ -189,8 +190,8 @@ public class DeliveryTargetResolverTests
         captor.SetupGet(c => c.ChannelId).Returns("voice");
         string? capturedAddress = null;
         captor.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? _, string? a, string? _, CancellationToken _) => capturedAddress = a)
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? _, string? a, string? _, Principal? _, bool _, CancellationToken _) => capturedAddress = a)
             .ReturnsAsync("minted-voice");
         var channels = new[] { origin, captor.Object };
         var msg = new ChannelMessage
@@ -220,8 +221,8 @@ public class DeliveryTargetResolverTests
         notify.SetupGet(c => c.ChannelId).Returns("notify");
         notify.SetupGet(c => c.AttachOnly).Returns(true);
         notify.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing ?? "minted-notify");
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, Principal? _, bool _, CancellationToken _) => existing ?? "minted-notify");
         var msg = new ChannelMessage
         {
             ConversationId = "fire-1", Content = "x", Sender = "s", ChannelId = "scheduling",
@@ -233,6 +234,71 @@ public class DeliveryTargetResolverTests
         targets.Count.ShouldBe(2);
         targets[0].Channel.ChannelId.ShouldBe("signalr");
         targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
+    }
+
+    // An attach-only channel shows no topic of its own, so a fire it alone delivers would anchor on
+    // nothing: the agent mints the topic itself, for the fire's verified principal, and hands the
+    // channel that conversation to attach to — the channel never decides whose a topic is.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AnAttachOnlyChannelAlone_AttachesToATopicTheAgentMints()
+    {
+        var origin = Channel("scheduling");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.SetupGet(c => c.AttachOnly).Returns(true);
+        voice.SetupGet(c => c.IsConnected).Returns(true);
+        voice.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, Principal? _, bool _, CancellationToken _) => existing);
+        var topics = new Mock<IConversationFactory>();
+        var fran = new Principal("scheduling", "u-fran", new Account("t-home", "u-fran"));
+        topics.Setup(t => t.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationCreation(
+                new ConversationIdentity(7, 9),
+                new global::Domain.DTOs.WebChat.TopicMetadata("topic-7", 7, 9, "jonas", "Scheduled task", DateTimeOffset.UtcNow, null)));
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1", Content = "riega las plantas", Sender = "scheduler", ChannelId = "scheduling",
+            AgentId = "jonas", Principal = fran,
+            ReplyTo = [new ReplyTarget("voice", null, "kitchen-01")]
+        };
+
+        var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
+            .ResolveAsync(msg, origin, CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().ConversationId.ShouldBe("7:9");
+        topics.Verify(t => t.CreateAsync(
+            It.Is<CreateConversationParams>(p =>
+                p.AgentId == "jonas" && p.TopicName == "Scheduled task" && p.Sender == "scheduler" && p.Principal == fran),
+            It.IsAny<CancellationToken>()), Times.Once);
+        voice.Verify(c => c.CreateConversationAsync(
+            "jonas", "Scheduled task", "scheduler", "riega las plantas", "kitchen-01", "7:9", fran, false,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Voice is the fire's only target and its server is not connected: nothing would attach to a
+    // topic minted for it, and an empty "Scheduled task" would be left in the person's sidebar.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AnAttachOnlyChannelAloneThatIsNotConnected_MintsNoTopic()
+    {
+        var origin = Channel("scheduling");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.SetupGet(c => c.AttachOnly).Returns(true);
+        voice.SetupGet(c => c.IsConnected).Returns(false);
+        var topics = new Mock<IConversationFactory>();
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1", Content = "riega las plantas", Sender = "scheduler", ChannelId = "scheduling",
+            AgentId = "jonas", Principal = new Principal("scheduling", "u-fran", new Account("t-home", "u-fran")),
+            ReplyTo = [new ReplyTarget("voice", null, "kitchen-01")]
+        };
+
+        var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
+            .ResolveAsync(msg, origin, CancellationToken.None);
+
+        targets.ShouldBeEmpty();
+        topics.Verify(t => t.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -292,6 +358,45 @@ public class DeliveryTargetResolverTests
         webchat.CreatedConversations.ShouldBeEmpty();
     }
 
+    // Whose the review copy's topic is, the host decides from the turn it shows: the turn's principal
+    // goes with the request to show it, so the asking channel never names the owner (ADR 0046).
+    [Fact]
+    public async Task ResolveDeliveryTargets_AReviewCopy_HandsTheReviewHostTheTurnsPrincipal()
+    {
+        var sugary = Channel("sugary");
+        var webchat = new FakeChannelConnection { ChannelId = "signalr", HostsReviewCopies = true, ConversationIdToReturn = "11:22" };
+        var fran = new Principal("sugary", "u-fran", new Account("t-home", "u-fran"));
+        var msg = new ChannelMessage
+        {
+            ConversationId = "11:22", Content = "x", Sender = "Fran", ChannelId = "sugary", Principal = fran,
+            ReviewCopy = new ReviewCopy { Title = "t" }
+        };
+
+        await Resolver(sugary, webchat).ResolveAsync(msg, sugary, CancellationToken.None);
+
+        webchat.CreatedFor.ShouldBe([fran]);
+    }
+
+    // A group's conversation is shown to the household, not to whoever's turn showed it first; the
+    // fact that it is a group's goes with the request, and the host decides from it.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AGroupsReviewCopy_TellsTheReviewHostItIsAGroups()
+    {
+        var telegram = Channel("telegram");
+        var webchat = new FakeChannelConnection { ChannelId = "signalr", HostsReviewCopies = true, ConversationIdToReturn = "-100:-100" };
+        var bob = new Principal("telegram", "bob", new Account("t-home", "u-bob"));
+        var msg = new ChannelMessage
+        {
+            ConversationId = "-100:-100", Content = "x", Sender = "bob", ChannelId = "telegram", Principal = bob,
+            ReviewCopy = new ReviewCopy { Title = "Telegram: Family", Group = true }
+        };
+
+        await Resolver(telegram, webchat).ResolveAsync(msg, telegram, CancellationToken.None);
+
+        webchat.CreatedFor.ShouldBe([bob]);
+        webchat.CreatedAsGroup.ShouldBe([true]);
+    }
+
     [Fact]
     public async Task ResolveDeliveryTargets_AReviewCopyWithNoReviewHost_IsTheChannelAlone()
     {
@@ -317,7 +422,7 @@ public class DeliveryTargetResolverTests
         failing.SetupGet(c => c.ChannelId).Returns("signalr");
         failing.SetupGet(c => c.HostsReviewCopies).Returns(true);
         failing.Setup(c => c.CreateConversationAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection reset"));
         var notConnected = new FakeChannelConnection { ChannelId = "signalr", HostsReviewCopies = true };
         var msg = new ChannelMessage

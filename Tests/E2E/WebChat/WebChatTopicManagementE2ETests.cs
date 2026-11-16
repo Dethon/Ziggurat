@@ -12,10 +12,10 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // A conversation outlives the run that made it, and the user this test is handed comes off a
         // counter that restarts every run — so a later run can be shown the rows an earlier one left
@@ -71,6 +71,40 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // A finished reply's notification, tapped, opens the app at its space with the conversation in the
+    // address (push-handler.js). The window is made to forget the conversation it had open, so the
+    // one on screen after the load is the address's doing; the address is cleaned after.
+    [SkippableFact]
+    public async Task AnAddressNamingAConversation_OpensIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+        await WebChatE2ETests.SelectAgentAsync(page);
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync($"Launched {tag} for E2E — answer in one short sentence.");
+        await chatInput.PressAsync("Enter");
+        await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
+
+        // The household's first space, whichever the stack made it; its page is where a push leads.
+        var slug = await page.EvaluateAsync<string>("() => location.pathname.split('/').filter(Boolean)[0] || 'default'");
+        var topicId = await page.WaitForFunctionAsync($"() => sessionStorage.getItem('openTopic:{slug}')");
+        var agentId = await page.Locator(".agent-seg.on:visible").First.GetAttributeAsync("data-agent-id");
+
+        await page.EvaluateAsync($"() => sessionStorage.removeItem('openTopic:{slug}')");
+
+        await WebChatE2ETests.GotoWebChatAsync(page,
+            $"{new Uri(page.Url).GetLeftPart(UriPartial.Authority)}/{slug}?agent={Uri.EscapeDataString(agentId!)}&topic={Uri.EscapeDataString(await topicId.JsonValueAsync<string>())}");
+
+        await page.Locator(".message-content", new PageLocatorOptions { HasText = $"Launched {tag} for E2E" }).First
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await page.WaitForFunctionAsync("() => !location.search.includes('topic=')");
+    }
+
     // The stack serves one row a page, so a second conversation is only reachable if the sidebar
     // asks for the page below its cursor. Real-browser scroll behaviour with rows reordering
     // underneath is the case a fake cannot reproduce.
@@ -79,10 +113,9 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
-        var user = fixture.NextUserIndex();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, user);
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var tag = Guid.NewGuid().ToString("N")[..4];
 
@@ -105,7 +138,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         // actually holds, because both conversations were created in this client and are held
         // whether they were paged to or not.
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, user);
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         await page.EvaluateAsync(
             "() => { const r = document.querySelector('.hearth-rows'); if (r) r.scrollTop = r.scrollHeight; }");
@@ -121,11 +154,11 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Unique per run, for the same reason as the topic rows above: the name this test settles on
         // is the one it then looks up, and an earlier run's row carrying it would match too.
@@ -161,10 +194,10 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Unique per run: this one deletes the row it finds, so matching an earlier run's row would
         // delete somebody else's conversation and then assert against the survivor.

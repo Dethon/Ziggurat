@@ -23,4 +23,8 @@ public record TranscriptionRequest
     public string? Prompt { get; init; }
 
     public TimeSpan? Timeout { get; init; }
+
+    // The household the recording is transcribed for, which its seconds count against. A kit
+    // server's is left null: the relay stamps its tunnel's household on what it publishes.
+    public string? TenantId { get; init; }
 }

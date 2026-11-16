@@ -15,7 +15,10 @@ public static class ChatHistoryMessageExtensions
             Role = history.Role,
             Content = history.Content,
             SenderId = history.SenderId,
+            SenderName = history.SenderName,
             Timestamp = history.Timestamp,
-            Attachments = history.Attachments
+            Attachments = history.Attachments,
+            IsError = history.IsError,
+            ResponseFormat = history.ResponseFormat
         };
 }

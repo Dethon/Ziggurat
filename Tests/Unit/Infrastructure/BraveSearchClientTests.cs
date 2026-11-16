@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.Tools;
 using Infrastructure.Clients;
 using Shouldly;
 using WireMock.RequestBuilders;
@@ -69,6 +70,39 @@ public class BraveSearchClientTests : IDisposable
         result.Results[0].Url.ShouldBe("https://example.com/page");
         result.Results[0].Domain.ShouldBe("example.com");
         result.SearchEngine.ShouldBe("brave");
+    }
+
+    // Brave answers a missing or rejected key with a 422, its status for any bad request, and as a
+    // bare 422 it reached the model as invalid_argument: it rewrote its query twice before giving up
+    // on a search no query could fix. Both say so in the body, and are a credential's failure.
+    [Theory]
+    [InlineData("""{"error":{"code":"SUBSCRIPTION_TOKEN_INVALID","detail":"The provided subscription token is invalid.","meta":{"component":"authentication"},"status":422},"type":"ErrorResponse"}""")]
+    [InlineData("""{"error":{"code":"VALIDATION","detail":"Unable to validate request parameter(s)","meta":{"errors":[{"input":null,"loc":["header","x-subscription-token"],"msg":"Field required","type":"missing"}]},"status":422},"type":"ErrorResponse"}""")]
+    public async Task AKeyBraveRefuses_IsACredentialsFailure_NotTheQuerys(string body)
+    {
+        _server.Given(Request.Create().WithPath("/web/search").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(422)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody(body));
+
+        var thrown = await Should.ThrowAsync<HttpRequestException>(() => _client.SearchAsync(new WebSearchQuery("q")));
+
+        ToolError.CodeFor(thrown).ShouldBe(ToolError.Codes.Authentication);
+    }
+
+    [Fact]
+    public async Task AQueryBraveCannotValidate_IsStillTheArgumentsFailure()
+    {
+        _server.Given(Request.Create().WithPath("/web/search").UsingGet())
+            .RespondWith(Response.Create()
+                .WithStatusCode(422)
+                .WithHeader("Content-Type", "application/json")
+                .WithBody("""{"error":{"code":"VALIDATION","detail":"Unable to validate request parameter(s)","meta":{"errors":[{"loc":["query","count"],"msg":"too large","type":"less_than_equal"}]},"status":422},"type":"ErrorResponse"}"""));
+
+        var thrown = await Should.ThrowAsync<HttpRequestException>(() => _client.SearchAsync(new WebSearchQuery("q")));
+
+        ToolError.CodeFor(thrown).ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
     [Fact]

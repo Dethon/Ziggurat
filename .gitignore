@@ -7,6 +7,10 @@ riderModule.iml
 *.DotSettings.user
 *.csproj.lscache
 DockerCompose/volumes
+TenantKit/volumes
+TenantKit/satellites.env
+# The agent's signing key on a host run (Agent/appsettings.Local.json).
+Agent/.signing
 .idea
 .playwright-mcp
 temp
@@ -25,3 +29,7 @@ temp
 /Tests/Eval/Sugary/photos
 # ...and the clips and stills of its video cases, made from Nutrition5k by Tests/Eval/Sugary/fetch-clips.sh
 /Tests/Eval/Sugary/clips
+
+# Python bytecode (the smoke stack's test satellite and helper scripts)
+__pycache__/
+*.py[cod]

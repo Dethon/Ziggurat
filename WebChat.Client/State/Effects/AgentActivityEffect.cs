@@ -57,7 +57,7 @@ public sealed class AgentActivityEffect : IDisposable
         // busy now, and anything busy is by definition recently written to, so it is on the
         // first page.
         var fetches = await Task.WhenAll(agents.Select(async agent =>
-            (Agent: agent, Page: await _topicService.GetTopicPageAsync(agent.Id, slug))));
+            (Agent: agent, Page: await _topicService.GetTopicPageAsync(agent.Id, slug, filter: _topicsStore.State.Filter))));
 
         // Seeded with what we already know: an agent whose read failed keeps its last-known
         // mapping instead of losing it because a sibling agent's read succeeded. Only the

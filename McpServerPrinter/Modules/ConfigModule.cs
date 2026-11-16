@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.Tools.Printing;
 using Domain.Tools.Printing.Vfs;
 using Infrastructure.Clients.Printer;
+using Infrastructure.Metrics;
 using Infrastructure.Printing;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -44,6 +45,11 @@ public static class ConfigModule
             .AddFileSystemTools<PrinterQueueFileSystem>()
             .AddFileSystemResource<PrinterQueueFileSystem>()
             .WithPrompts<McpSystemPrompt>();
+
+        if (settings.Metrics.Url.Length > 0)
+        {
+            services.AddMetricsPublishing("mcp-printer", settings.Metrics);
+        }
 
         return services;
     }

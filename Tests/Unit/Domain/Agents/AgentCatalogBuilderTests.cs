@@ -133,4 +133,46 @@ public class AgentCatalogBuilderTests
 
         catalogue.Single().PatchableModels!.Select(m => m.Id).ShouldBe(["openai/gpt-5.6-luna"]);
     }
+
+    // The household's catalogue says which agent answers by default, so a page with nothing else to
+    // go by opens on that one rather than whichever the household happens to list first.
+    [Fact]
+    public void AHouseholdsCatalogue_MarksTheAgentThatAnswersByDefault()
+    {
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames("jonas",
+            [new("jack", "Jack"), new("jonas", "Jonas"), new("nabu", "Nabu")]);
+
+        var catalogue = AgentCatalogBuilder.ForHousehold(household, []);
+
+        catalogue.Where(e => e.IsHouseholdDefault).Select(e => e.Id).ShouldBe(["jonas"]);
+    }
+
+    // A household that names none answers by its first agent, which is what the catalogue says.
+    [Fact]
+    public void AHouseholdNamingNoDefault_HasItsFirstAgentMarked()
+    {
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames(null,
+            [new("jack", "Jack"), new("jonas", "Jonas")]);
+
+        AgentCatalogBuilder.ForHousehold(household, []).Where(e => e.IsHouseholdDefault).Select(e => e.Id)
+            .ShouldBe(["jack"]);
+    }
+    // A Lemonade model is the box's household's to pick: a household's picker offers the configured
+    // models and its own box's — the home's included, whose box is the deployment's unless it saved one —
+    // and never the models the agent registered from the deployment's box for the home.
+    [Fact]
+    public void AHouseholdsCatalogue_OffersItsOwnBoxsModels_AndNoOtherBoxs()
+    {
+        var registered = AgentCatalogBuilder.Build(
+            [_agent], [_configured], _permissive,
+            new FixedLemonadeModelSource([new LemonadeModel("deployments", [], null)]));
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames("jonas",
+            [new("jonas", "Jonas", null, "other/model"), new("jack", "Jack", null, _agent.Model)]);
+
+        var withABox = AgentCatalogBuilder.ForHousehold(household, registered, [new PatchableModel("lemonade/theirs", "theirs")]);
+        var withNone = AgentCatalogBuilder.ForHousehold(household, registered, []);
+
+        withABox.ShouldAllBe(entry => entry.PatchableModels!.Select(m => m.Id).SequenceEqual(new[] { _configured.Id, "lemonade/theirs" }));
+        withNone.ShouldAllBe(entry => entry.PatchableModels!.Select(m => m.Id).SequenceEqual(new[] { _configured.Id }));
+    }
 }

@@ -127,6 +127,24 @@ public class ToolApprovalChatClientExecScreenTests
         request.Caller.AgentId.ShouldBe("jonas");
     }
 
+    // The screen is a judgment for the household whose agent made the call, paid on that household's
+    // key as the agent's own calls are.
+    [Fact]
+    public async Task TheScreen_IsPaidByTheAgentsHousehold()
+    {
+        var payer = new ModelPayer("0123456789abcdef0123456789abcdef", new ModelKey("household-key"));
+        var screen = new ScriptedExecScreen(_ => ExecScreenVerdict.Run);
+        var inner = new FakeChatClient();
+        inner.SetNextResponse(CreateToolCallResponse(Exec, "c1", ExecArgs("/laptop/home/fran", "cargo build")));
+        var client = new ToolApprovalChatClient(
+            inner, new TestApprovalHandler(ToolApprovalResult.Approved), "7:42", ["domain__filesystem__*"],
+            execScreen: screen, agentId: "jonas", payer: payer);
+
+        await AskAsync(client, ExecFunction());
+
+        screen.Screened.ShouldHaveSingleItem().Caller.Payer.ShouldBe(payer);
+    }
+
     // A call the person is asked about anyway is not screened: asking is already what a flag
     // would produce, and a judgment nobody acts on is a cost with no use.
     [Fact]

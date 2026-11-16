@@ -24,6 +24,7 @@ public static class InMemoryMcpServer
         Action<IServiceCollection> configure, int? port = null, Action<WebApplication>? map = null,
         string? webRoot = null)
     {
+        var owned = port is null;
         port ??= TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = webRoot });
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port.Value));
@@ -39,7 +40,7 @@ public static class InMemoryMcpServer
         // it, and one booted from the bare SDK ignores the header.
         var client = await McpClient.CreateAsync(McpTestSecret.Transport(endpoint));
 
-        return new RunningServer(app, client, endpoint);
+        return new RunningServer(app, client, endpoint) { OwnedPort = owned ? port : null };
     }
 
     public static string Text(CallToolResult result) =>
@@ -50,11 +51,19 @@ public static class InMemoryMcpServer
 // say — at this server instead of using the one built above.
 public sealed record RunningServer(WebApplication App, McpClient Client, string Endpoint) : IAsyncDisposable
 {
+    // Only a port the server took for itself goes back to the pool: one a test handed in is that
+    // test's, which may be about to start the next server on it.
+    internal int? OwnedPort { get; init; }
+
     public async ValueTask DisposeAsync()
     {
         await Client.DisposeAsync();
         await App.StopAsync();
         await App.DisposeAsync();
+        if (OwnedPort is { } port)
+        {
+            TestPort.Release(port);
+        }
     }
 }
 

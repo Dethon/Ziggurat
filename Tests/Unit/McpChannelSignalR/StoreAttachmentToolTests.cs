@@ -57,7 +57,7 @@ public sealed class StoreAttachmentToolTests : IDisposable
         record.Reference.FileName.ShouldBe("meal-1.jpg");
         record.Reference.MediaType.ShouldBe("image/jpeg");
         record.Reference.SizeBytes.ShouldBe(3);
-        _attachments.MintDownload("11-22/aaa", "default").ShouldNotBeNull()
+        _attachments.MintDownload("11-22/aaa", "default", "0123456789abcdef0123456789abcdef").ShouldNotBeNull()
             .Url.ShouldStartWith("/api/attachments/11-22/aaa?ticket=");
     }
 
@@ -70,8 +70,8 @@ public sealed class StoreAttachmentToolTests : IDisposable
 
         await StoreAsync("11-22/aaa", [1, 2, 3]);
 
-        _attachments.MintDownload("11-22/aaa", "default").ShouldBeNull();
-        _attachments.MintDownload("11-22/aaa", "household").ShouldNotBeNull();
+        _attachments.MintDownload("11-22/aaa", "default", "0123456789abcdef0123456789abcdef").ShouldBeNull();
+        _attachments.MintDownload("11-22/aaa", "household", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
     }
 
     // The tool names its own file: one that already rests here — a person's upload, or the same
@@ -132,7 +132,7 @@ public sealed class StoreAttachmentToolTests : IDisposable
         record.Reference.MediaType.ShouldBe("video/mp4");
         record.Reference.FileName.ShouldBe("meal.mp4");
         record.Reference.SizeBytes.ShouldBe(6000);
-        _attachments.MintDownload("11-22/clip", "default").ShouldNotBeNull();
+        _attachments.MintDownload("11-22/clip", "default", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
     }
 
     [Fact]

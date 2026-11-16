@@ -28,7 +28,7 @@ public class VfsFileInfoToolTests
                 Exists = true, Path = "notes/todo.md", IsDirectory = false, Size = 1234, LastModified = "2026-05-05T12:34:56Z"
             }));
 
-        var result = await _tool.RunAsync("/library/notes/todo.md", CancellationToken.None);
+        var result = await _tool.RunAsync("/library/notes/todo.md", cancellationToken: CancellationToken.None);
 
         result!["exists"]!.GetValue<bool>().ShouldBeTrue();
         result["isDirectory"]!.GetValue<bool>().ShouldBeFalse();

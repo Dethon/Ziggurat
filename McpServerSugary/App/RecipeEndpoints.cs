@@ -15,14 +15,16 @@ public record RecipeDto(
     int Uses,
     DateTimeOffset? LastUsedAt);
 
+// Loaded is what the sheet opened with, on a change (StaleEdits).
 public record SaveRecipeRequest(
     string? Name,
     double? CookedGrams,
     double? Servings,
-    IReadOnlyList<RecipeIngredient>? Ingredients);
+    IReadOnlyList<RecipeIngredient>? Ingredients,
+    SaveRecipeRequest? Loaded = null);
 
-// Her recipes, kept as their shape alone: which of her foods, how much of each, and what the pot
-// makes. The app works out the carbs from her foods as they are now.
+// The household's recipes, kept as their shape alone: which of its foods, how much of each, and
+// what the pot makes. The app works out the carbs from the foods as they are now.
 public static class RecipeEndpoints
 {
     private const double MaxAmount = 5000;
@@ -39,7 +41,7 @@ public static class RecipeEndpoints
         recipes.MapDelete("/{id:guid}", DeleteAsync);
     }
 
-    // Most recently eaten first, as her foods are, so the two sit in one list.
+    // Most recently eaten first by the person asking, as the foods are, so the two sit in one list.
     private static async Task<IReadOnlyList<RecipeDto>> ListAsync(SugaryDbContext db, CancellationToken ct)
     {
         var recipes = await db.Recipes.AsNoTracking().ToListAsync(ct);
@@ -65,17 +67,33 @@ public static class RecipeEndpoints
         return Results.Created($"/api/recipes/{recipe.Id}", ToDto(recipe, new Dictionary<Guid, Use>()));
     }
 
-    private static async Task<IResult> UpdateAsync(
-        Guid id, SaveRecipeRequest request, SugaryDbContext db, CancellationToken ct)
-    {
-        if (await ValidateAsync(request, db, ct) is { } problem)
-        {
-            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
-        }
+    private static readonly Dictionary<string, string> _ingredientsByFood = new() { ["ingredients"] = "foodId" };
 
+    private static async Task<IResult> UpdateAsync(
+        Guid id, SaveRecipeRequest request, SugaryDbContext db, HttpContext http, CancellationToken ct)
+    {
         if (await db.Recipes.FindAsync([id], ct) is not { } recipe)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, loaded with { Loaded = null }, request with { Loaded = null },
+                new SaveRecipeRequest(recipe.Name, recipe.CookedGrams, recipe.Servings,
+                    [.. recipe.Ingredients.OrderBy(i => i.Position)]),
+                _ingredientsByFood);
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
+        }
+
+        if (await ValidateAsync(request, db, ct) is { } problem)
+        {
+            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
 
         Apply(request, recipe);

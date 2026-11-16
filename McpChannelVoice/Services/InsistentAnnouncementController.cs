@@ -52,7 +52,7 @@ public sealed class InsistentAnnouncementController(
             return new AnnounceResponse
             {
                 AnnouncementId = announcementId,
-                Satellites = targetIds.Select(id => new AnnouncementOutcome { Id = id, Status = "offline" }).ToList()
+                Satellites = targetIds.Select(id => new AnnouncementOutcome { Id = id, Status = AnnouncementOutcome.Offline }).ToList()
             };
         }
 
@@ -66,7 +66,7 @@ public sealed class InsistentAnnouncementController(
         {
             AnnouncementId = announcementId,
             Satellites = targetIds.Select(id =>
-                new AnnouncementOutcome { Id = id, Status = sessions.Get(id) is not null ? "started" : "offline" }).ToList()
+                new AnnouncementOutcome { Id = id, Status = sessions.Get(id) is not null ? AnnouncementOutcome.Started : AnnouncementOutcome.Offline }).ToList()
         };
     }
 

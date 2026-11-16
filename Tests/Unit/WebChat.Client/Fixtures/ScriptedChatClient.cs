@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -35,9 +36,12 @@ public sealed class ScriptedChatClient : IAsyncDisposable
 {
     private readonly ServiceProvider _provider;
     private readonly AsyncServiceScope _scope;
+    private readonly string _startUri;
 
-    public ScriptedChatClient()
+    // The address the app was opened at: a notification's tap names a conversation in it.
+    public ScriptedChatClient(string startUri = "http://localhost/")
     {
+        _startUri = startUri;
         _provider = BuildRegistrations().BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true });
         _scope = _provider.CreateAsyncScope();
@@ -58,10 +62,11 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
             typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
-            typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
+            typeof(TopicSelectionEffect), typeof(OpenTopicEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
-            typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect)
+            typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect),
+            typeof(TopicShareEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -76,9 +81,11 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     // on it, which is both deterministic and instant.
     public ArmedClock Clock { get; } = new();
 
-    public FakeConfigService ConfigService { get; } = new FakeConfigService().WithSpace("default");
+    public FakeConfigService ConfigService { get; } = new();
 
     public FakeLocalStorageService LocalStorage { get; } = new();
+
+    public FakeAccountService Accounts { get; } = new();
 
     public IChatLiveConnection LiveConnection => Services.GetRequiredService<IChatLiveConnection>();
 
@@ -129,7 +136,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(Clock);
-        services.AddScoped<NavigationManager>(_ => new FakeNavigationManager());
+        services.AddScoped<NavigationManager>(_ => new FakeNavigationManager(_startUri));
         services.AddScoped(_ => new Mock<IJSRuntime>().Object);
 
         services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
@@ -160,6 +167,9 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IHubConnectionFactory>(_ => Factory);
         services.AddScoped<IConfigService>(_ => ConfigService);
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
+        services.AddScoped<IOpenTopicMemory>(_ => new FakeOpenTopicMemory());
+        services.AddScoped<ILaunchLink, LaunchLink>();
+        services.AddScoped<IAccountService>(_ => Accounts);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
         services.AddScoped<IAttachmentUploader>(_ => Uploader);
         services.AddScoped<IDictationBridge>(_ => Dictation);
@@ -171,9 +181,12 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     // one call fails inside an unrelated one. These are the empty-but-live answers.
     private static void ApplyDefaultAnswers(FakeHubConnection connection)
     {
-        connection.Answer("GetTopicPage", new TopicPage([], null));
+        connection.Answer("GetTopicPageFiltered", new TopicPage([], null));
         connection.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[]);
         connection.Answer("GetAgents", (IReadOnlyList<AgentCatalogEntry>)[]);
+        // A household that saved no spaces has the one default space, and a test's hearth beside it.
+        connection.Answer("GetSpaces", (IReadOnlyList<HouseholdSpace>)
+            [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "hearth", Name = "Hearth", Order = 1 }]);
         connection.Answer("GetStreamState", (object?)null);
         connection.Answer("GetPendingApprovalForTopic", (object?)null);
         connection.Answer("StartSession", true);

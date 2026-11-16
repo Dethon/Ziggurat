@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fromEstimate, manualItem, scaled, withGrams } from "./carbs";
-import { clarifications, counted, editFact, emptyDraft, reduce, type Draft } from "./draft";
+import { clarifications, counted, draftFor, editFact, emptyDraft, keptDraft, reduce, type Draft } from "./draft";
 import type { MealEstimate } from "./types";
 
 const estimate = (names: string[], questions: string[] = []): MealEstimate => ({
@@ -114,5 +114,30 @@ describe("a share she took of an estimated food", () => {
 
   it("leaves a weight she typed told as a weighing", () => {
     expect(editFact(withGrams(paella, 150))).toBe('Correction: "paella" weighs 150 g.');
+  });
+});
+
+// A phone signed in as one person after another: Eva described a meal and left it unsaved, then the
+// phone was signed in as Dani, who was shown Eva's words (and would have been her meal's thumbnail
+// and the insulin she typed). A draft is its person's: it names them, and anyone else finds none.
+describe("a draft left on the phone", () => {
+  const evas: Draft = { ...emptyDraft, description: "Eva: tarta a escondidas", insulin: "4" };
+
+  it("is its person's again when they come back", () => {
+    expect(draftFor(keptDraft("eva", evas), "eva")).toEqual(evas);
+  });
+
+  it("is nobody else's", () => {
+    expect(draftFor(keptDraft("eva", evas), "dani")).toEqual(emptyDraft);
+  });
+
+  // One from before drafts named their person cannot say whose it is.
+  it("from before drafts named a person is nobody's", () => {
+    expect(draftFor(evas, "dani")).toEqual(emptyDraft);
+  });
+
+  // Offline at launch nobody is known: nothing is shown, and what is kept stays for its person.
+  it("is shown to nobody while who is signed in is unknown", () => {
+    expect(draftFor(keptDraft("eva", evas), null)).toEqual(emptyDraft);
   });
 });

@@ -1,0 +1,100 @@
+@page "/admin/features"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Household
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdFeaturesStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household features</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-features-heading">
+    <h1 id="admin-features-heading">Features</h1>
+    <p class="admin-lede">
+        What the household's agents may do beyond talking. A feature turned off is gone from every agent's
+        next reply, and back on the one after it is turned on again.
+    </p>
+
+    @if (_state.Features is null)
+    {
+        @if (_state.Notice is { } notice)
+        {
+            <AdminNoticeView Notice="notice" />
+        }
+        else
+        {
+            <p class="admin-status">Loading the household's features</p>
+        }
+    }
+    else
+    {
+        <form class="admin-form" @onsubmit="Save">
+            @foreach (var feature in _features)
+            {
+                <label class="admin-toggle">
+                    <input type="checkbox" name="@feature.Name" @bind="feature.On" />
+                    <span class="admin-toggle-text">
+                        <span class="admin-field-label">@feature.Label</span>
+                        <span class="admin-field-hint">@feature.Hint</span>
+                    </span>
+                </label>
+            }
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
+            </div>
+            @if (_state.Notice is { } notice)
+            {
+                <AdminNoticeView Notice="notice" />
+            }
+        </form>
+    }
+</section>
+
+@code {
+    private HouseholdFeaturesState _state = HouseholdFeaturesState.Initial;
+    private IReadOnlyList<FeatureToggle> _features = [];
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The toggles take what the admin API answered — on opening and after a save — and are the
+        // owner's to change in between.
+        Subscribe(Store.StateObservable, state => state.Features, features =>
+        {
+            if (features is not null)
+            {
+                _features =
+                [
+                    new("scheduling", "Schedules and reminders", "Agents set up messages and tasks for later.", features.Scheduling),
+                    new("timers", "Timers and alarms", FeatureHints.Timers, features.Timers),
+                    new("sugary", "Sugary", FeatureHints.Sugary, features.Sugary),
+                    new("idealista", "Idealista", "Agents search homes for sale and to rent, on the household's own Idealista keys.", features.Idealista),
+                    new("memory", "Memory", "Agents remember what people tell them from one conversation to the next.", features.Memory),
+                    new("workers", "Workers", "Agents hand parts of a long task to workers that run beside them.", features.Workers)
+                ];
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdFeatures());
+    }
+
+    private bool IsOn(string name) => _features.Single(f => f.Name == name).On;
+
+    private void Save() => Dispatcher.Dispatch(new SaveHouseholdFeatures(new FeaturesSection
+    {
+        Scheduling = IsOn("scheduling"),
+        Timers = IsOn("timers"),
+        Sugary = IsOn("sugary"),
+        Idealista = IsOn("idealista"),
+        Memory = IsOn("memory"),
+        Workers = IsOn("workers")
+    }, Store.State.Features));
+
+    private sealed class FeatureToggle(string name, string label, string hint, bool on)
+    {
+        public string Name { get; } = name;
+        public string Label { get; } = label;
+        public string Hint { get; } = hint;
+        public bool On { get; set; } = on;
+    }
+}

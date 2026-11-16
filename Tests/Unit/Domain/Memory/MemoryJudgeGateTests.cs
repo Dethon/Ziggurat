@@ -108,7 +108,7 @@ public class MemoryJudgeGateTests
         await Judge(judge).GateAsync(_window, _context, CancellationToken.None);
 
         judge.Requests.ShouldHaveSingleItem().Caller
-            .ShouldBe(new JudgmentCaller(TurnModel: null, "user1", "nabu", "conv-1"));
+            .ShouldBe(new JudgmentCaller(TurnModel: null, "user1", "nabu", "conv-1") { UserId = "user1" });
     }
 
     [Fact]

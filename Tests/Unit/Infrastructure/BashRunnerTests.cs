@@ -274,30 +274,30 @@ public class BashRunnerTests
         result["stderr"]!.GetValue<string>().ShouldBe("oops\n");
     }
 
+    // Cancelled once the command is running — its shell and the child it started have written their
+    // pids, which is state rather than a guess at how long bash takes to start on a busy machine — the
+    // call throws and leaves neither process behind. The child runs far longer than any test, so it is
+    // only gone because the tree was killed.
     [SkippableFact]
     public async Task RunAsync_CallerCancels_KillsProcessTreeBeforeThrowing()
     {
         SkipIfNotLinux();
         var runner = new BashRunner(_settings);
-
-        // Sentinel file the bash process touches after a delay; if the process is killed
-        // promptly the file should never appear, but if it leaks it will.
-        var sentinel = Path.Combine(Path.GetTempPath(), $"bash-cancel-{Guid.NewGuid():N}.flag");
-        var command = $"sleep 3 && touch '{sentinel}'";
+        var pids = Path.Combine(Path.GetTempPath(), $"bash-cancel-{Guid.NewGuid():N}.pids");
+        var command = $"sleep 300 & echo \"$$ $!\" > '{pids}.tmp' && mv '{pids}.tmp' '{pids}'; wait";
 
         using var cts = new CancellationTokenSource();
-        var task = runner.RunAsync("", command, timeoutSeconds: 30, null, cts.Token);
+        var task = runner.RunAsync("", command, timeoutSeconds: 600, null, cts.Token);
+        await Eventually.Until(() => File.Exists(pids), "the command and its child to be running");
+        var running = File.ReadAllText(pids).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(int.Parse).ToList();
 
-        // Give bash time to start, then cancel.
-        await Task.Delay(300);
         cts.Cancel();
 
         await Should.ThrowAsync<OperationCanceledException>(task);
-
-        // Wait past the sleep duration; if the process leaked the sentinel will be created.
-        await Task.Delay(3500);
-        File.Exists(sentinel).ShouldBeFalse(
-            $"bash subprocess leaked after caller cancellation; sentinel '{sentinel}' was created");
+        await Eventually.Until(() => running.All(pid => !Directory.Exists($"/proc/{pid}")),
+            "the command's shell and its child to be killed");
+        File.Delete(pids);
     }
 
     [SkippableFact]

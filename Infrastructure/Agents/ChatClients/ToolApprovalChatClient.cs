@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -12,6 +13,7 @@ using Domain.Judgments;
 using Domain.Metrics;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Web;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Agents.Skills;
 using Infrastructure.Metrics;
@@ -27,11 +29,17 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     // Concurrent because it is read off the turn: a sandbox command's file operations ask it
     // through the bridge while another call's approval may be remembering a tool.
     private readonly ConcurrentDictionary<string, byte> _dynamicallyApproved;
+
+    // The sites a call acting as the person was approved and remembered for, each with its tool.
+    // Apart from the tools remembered above on purpose: those answer the exec bridge by tool name
+    // (ToolPermission), and a yes for one site must never read there as a yes for the tool.
+    private readonly ConcurrentDictionary<AsPersonSubject, byte> _approvedSubjects = new();
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
     private readonly IExecScreen? _execScreen;
     private readonly string? _agentId;
+    private readonly ModelPayer _payer;
     private int _observed;
 
     // One line per request, found by the history the request's calls are all handed. Per request
@@ -53,12 +61,15 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         IMetricsPublisher? metricsPublisher = null,
         IToolInvocationObserver? observer = null,
         IExecScreen? execScreen = null,
-        string? agentId = null)
+        string? agentId = null,
+        ModelPayer? payer = null)
         : base(innerClient)
     {
         _observer = observer;
         _execScreen = execScreen;
         _agentId = agentId;
+        // Who pays for the agent's calls, which the screen asked about one of them is paid by too.
+        _payer = payer ?? ModelPayer.Deployment;
         ArgumentNullException.ThrowIfNull(approvalHandler);
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
@@ -105,6 +116,28 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
+        // A call acting as the person is asked about by its site, whatever the whitelist or a
+        // remembered tool says: the flag is the model's to set, and a page's own text can ask it
+        // to, so nothing but the person's own yes for that site lets it run.
+        if (AsPersonSubject.Of(toolName, request.Arguments) is { } subject && !IsUnpromptedFire(context.Options))
+        {
+            if (subject.Site is not null && _approvedSubjects.ContainsKey(subject))
+            {
+                return await RunUnaskedAsync(context, request, place, cancellationToken);
+            }
+
+            return await AskAsync(
+                context, request with { Screen = [ExecScreenCodes.AsPerson] }, place, cancellationToken,
+                remember: () =>
+                {
+                    // A call with no site has nothing to scope the yes to, so it is asked again.
+                    if (subject.Site is not null)
+                    {
+                        _approvedSubjects.TryAdd(subject, 0);
+                    }
+                });
+        }
+
         if (RunsUnasked(toolName))
         {
             // Every path that would run unasked is screened first — a remembered approval included,
@@ -115,35 +148,58 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 return await AskAsync(context, request with { Screen = flagged.Codes }, place, cancellationToken);
             }
 
-            // The notification is display-only; overlapping it with the invocation keeps a
-            // channel round trip off the tool's critical path. A notify failure still
-            // surfaces, but no longer prevents the tool from executing.
-            var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
-                _conversationId, [request], cancellationToken);
-            var invokeTask = InvokeInTurnAsync(context, toolName, place, cancellationToken).AsTask();
-            await Task.WhenAll(notifyTask, invokeTask);
-            return await invokeTask;
+            return await RunUnaskedAsync(context, request, place, cancellationToken);
         }
 
         return await AskAsync(context, request, place, cancellationToken);
     }
 
-    // A person is asked the moment the model wrote the call; what waits for the calls ahead is
-    // the running, so the questions of one message still arrive together.
-    private async ValueTask<object?> AskAsync(
+    // The notification is display-only; overlapping it with the invocation keeps a channel round
+    // trip off the tool's critical path. A notify failure still surfaces, but no longer prevents
+    // the tool from executing.
+    private async ValueTask<object?> RunUnaskedAsync(
         FunctionInvocationContext context,
         ToolApprovalRequest request,
         WrittenOrder.Place place,
         CancellationToken cancellationToken)
     {
-        var toolName = request.ToolName;
-        var result = await _approvalHandler.RequestApprovalAsync(
+        var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
             _conversationId, [request], cancellationToken);
+        var invokeTask = InvokeInTurnAsync(context, request.ToolName, place, cancellationToken).AsTask();
+        await Task.WhenAll(notifyTask, invokeTask);
+        return await invokeTask;
+    }
+
+    // A schedule's, a watch's or a finished download's turn has nobody present to ask: its
+    // approvals go to the channel it delivers to, so asking there would leave a card on every
+    // morning's fresh conversation. Such a fire runs as the whitelist says, and what bounds where
+    // it may act as the person is the browse server's own rule. A login wake is not one of these:
+    // it is the person's own conversation, just after they pressed Done.
+    private static bool IsUnpromptedFire(ChatOptions? options) =>
+        ConversationContextMeta.TryRead(options)?.OriginKind
+            is MessageOriginKind.Schedule or MessageOriginKind.Watch or MessageOriginKind.Download;
+
+    // A person is asked the moment the model wrote the call; what waits for the calls ahead is
+    // the running, so the questions of one message still arrive together. Approve-and-remember
+    // remembers the tool, unless the caller says what else the yes covers.
+    private async ValueTask<object?> AskAsync(
+        FunctionInvocationContext context,
+        ToolApprovalRequest request,
+        WrittenOrder.Place place,
+        CancellationToken cancellationToken,
+        Action? remember = null)
+    {
+        var toolName = request.ToolName;
+        // The turn rides with the question as a field of it, so whose question it is never depends
+        // on which call happens to be in flight.
+        var result = await _approvalHandler.RequestApprovalAsync(
+            ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
+            cancellationToken);
 
         switch (result)
         {
             case ToolApprovalResult.ApprovedAndRemember:
-                _dynamicallyApproved.TryAdd(toolName, 0);
+                (remember ?? (() => _dynamicallyApproved.TryAdd(toolName, 0)))();
                 return await InvokeInTurnAsync(context, toolName, place, cancellationToken);
 
             case ToolApprovalResult.Approved:
@@ -153,7 +209,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             case ToolApprovalResult.Rejected:
             default:
                 context.Terminate = true;
-                return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+                return ApprovalRejection.ResultFor(toolName);
         }
     }
 
@@ -182,6 +238,10 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 shellReach, CallArguments.Text(context.Arguments, "command") ?? "", path, context.Messages)
             {
                 Caller = new JudgmentCaller(asking?.GetTurnModel(), asking?.GetSenderId(), _agentId, _conversationId)
+                {
+                    Payer = _payer,
+                    UserId = asking?.GetAccountId()
+                }
             },
             ct);
     }

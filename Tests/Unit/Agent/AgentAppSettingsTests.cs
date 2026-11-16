@@ -1,19 +1,26 @@
 using System.Reflection;
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
+using global::Agent.Modules;
 using global::Agent.Settings;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
+using Tests.Integration.McpServers;
+using Tests.Unit.Deployment;
 
 namespace Tests.Unit.Agent;
 
 // Guards the appsettings -> definition -> prompt chain, and the cross-key rules that break a
-// turn outright. Deliberately not the values the file happens to carry: reading a value back
+// turn outright. The agents are the home household's own now, seeded by the household migration
+// (HouseholdMigration/Home/agents.json, read here as the accounts service reads an agents section);
+// the settings file keeps the worker profiles, the channel defaults and the shared servers. Deliberately not the values the file happens to carry: reading a value back
 // off the same file only fails when someone changes it on purpose, and then the test is edited
 // to match -- friction, never a defect caught. What is left is the wiring that fails silently
 // and the couplings no single reader would spot.
@@ -26,7 +33,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void VoiceRules_Nabu_SelectsThemAndTheyCarryNoCompetingRelativeLanguageRule()
     {
-        BoundAgents().Single(a => a.Id == "nabu").PromptSections.ShouldContain(VoicePrompt.Name);
+        HomeAgents.Definition("nabu").PromptSections.ShouldContain(VoicePrompt.Name);
 
         VoicePrompt.Instructions.ShouldNotContain("the language the user spoke");
     }
@@ -39,7 +46,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void Outposts_TheDownloadAssistant_IsNotOptedIn()
     {
-        BoundAgents().Single(a => a.Id == "jack").UsesOutposts.ShouldBeFalse();
+        HomeAgents.Definition("jack").UsesOutposts.ShouldBeFalse();
     }
 
     // The other half of the same rule, and the delegation path the deployment actually uses: both
@@ -70,7 +77,7 @@ public class AgentAppSettingsTests
     [Fact]
     public void Language_Nabu_ReachesTheSystemPromptAsItsLastSection()
     {
-        var nabu = BoundAgents().Single(a => a.Id == "nabu");
+        var nabu = HomeAgents.Definition("nabu");
         nabu.Language.ShouldBe("es");
 
         PromptComposer.Compose(new PromptContext
@@ -94,11 +101,9 @@ public class AgentAppSettingsTests
     [Fact]
     public void Binding_EveryKeyDeclaredInAppSettings_ReachesItsDefinition()
     {
-        var agents = BoundAgents();
         var subAgents = BoundSubAgents();
 
-        var severed = Declared("agents", id => agents.Single(a => a.Id == id))
-            .Concat(Declared("subAgents", id => subAgents.Single(a => a.Id == id)))
+        var severed = Declared("subAgents", id => subAgents.Single(a => a.Id == id))
             .Where(binding => binding.Bound is null)
             .Select(binding => binding.Path)
             .ToList();
@@ -106,12 +111,20 @@ public class AgentAppSettingsTests
         severed.ShouldBeEmpty();
     }
 
+    // A household's agents are its configuration's: the file that used to carry them carries none,
+    // so nothing in it can disagree with what a household runs.
+    [Fact]
+    public void TheSettingsFile_CarriesNoAgentDefinitions()
+    {
+        Root()["agents"].ShouldBeNull();
+        Root()["agentDefaults"]!["fallback"].ShouldBeNull();
+    }
+
     // The migration exists to remove the dual-idiom problem; a pasted suffix would bring it back.
     [Fact]
     public void Model_NoAgent_CarriesARoutingSuffix()
     {
-        var models = Root()["agents"]!.AsArray()
-            .Select(a => a!["model"]!.GetValue<string>());
+        var models = HomeAgents.Definitions().Concat(AgentTemplates.All).Select(a => a.Model);
 
         models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
     }
@@ -139,8 +152,7 @@ public class AgentAppSettingsTests
     }
 
     private static List<string>? Ignored(string agentId) =>
-        Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!
-            ["providerRouting"]?["ignore"]?.AsArray().Select(p => p!.GetValue<string>()).ToList();
+        HomeAgents.Definition(agentId).ProviderRouting?.Ignore?.ToList();
 
     // A worker runs its parent's model, served by whoever serves its parent. A key naming either
     // here would bind to nothing and read as a setting that works.
@@ -197,28 +209,49 @@ public class AgentAppSettingsTests
         BindSettings().LemonadeChat.ApiUrl.ShouldBe("");
     }
 
-    // Who answers a message whose channel named no agent is configuration, and the two halves of
-    // it live in the same file: a default naming an agent this file does not declare routes
-    // nothing at all, and the host refuses to start rather than fail one message at a time.
+    // Who answers a message whose channel named no agent is configuration, in two halves: the
+    // deployment's per channel here, the household's own default in its agents section. A channel
+    // default naming an agent the home does not have routes the home's messages nowhere, and the
+    // Sugary app's must name an agent every new household has as well, the Sugary template's. Voice has
+    // none: a satellite's turn goes to its household's voice agent, which for the home is its Nabu.
     [Fact]
-    public void AgentDefaults_EveryConfiguredDefault_NamesAnAgentThisFileDeclares()
+    public void AgentDefaults_EveryChannelDefault_NamesOneOfTheHomesAgents()
     {
         var defaults = BoundConfig().GetSection("agentDefaults").Get<AgentDefaults>()!;
+        var home = HomeAgents.Section();
 
-        Should.NotThrow(() => defaults.Validate(BoundAgents().Select(a => a.Id)));
+        defaults.ByChannel.Values.ShouldAllBe(id => home.Agents.Any(a => a.Id == id));
+        home.Agents.ShouldContain(a => a.Id == home.DefaultAgent);
+        HouseholdAgents.Starting.Select(a => a.Id).ShouldContain(defaults.For("sugary")!);
+        defaults.For("voice").ShouldBeNull();
+        HouseholdAgents.VoiceAgentOf(home).ShouldBe(AgentTemplates.Nabu);
     }
 
     // The nested map is the part that fails silently: a renamed key binds to nothing, the
-    // fallback answers for every channel, and voice starts speaking with the general assistant.
+    // household's default answers for every channel, and the Sugary app's estimates go to the
+    // general assistant.
     [Fact]
-    public void Bind_AgentDefaults_BindsTheFallbackAndThePerChannelMap()
+    public void Bind_AgentDefaults_BindsThePerChannelMap()
     {
-        var settings = BindSettings(
-            ("agentDefaults:fallback", "jonas"),
-            ("agentDefaults:byChannel:voice", "nabu"));
+        var settings = BindSettings(("agentDefaults:byChannel:sugary", "sugary"));
 
-        settings.AgentDefaults.For("voice").ShouldBe("nabu");
-        settings.AgentDefaults.For("telegram").ShouldBe("jonas");
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+        settings.AgentDefaults.For("telegram").ShouldBeNull();
+    }
+
+    // A feature turned off withholds its shared server by the address the agents dial it at, so each
+    // is the address the home's agents and the templates name it by.
+    [Fact]
+    public void SharedServers_AreTheAddressesTheAgentsDialThemAt()
+    {
+        var shared = BoundConfig().GetSection("sharedServers").Get<SharedServers>()!;
+        var dialled = HomeAgents.Definitions().Concat(AgentTemplates.All)
+            .SelectMany(a => a.McpServerEndpoints)
+            .Where(e => !global::Domain.DTOs.Tunnel.TunnelCredentialProtocol.IsServerName(e))
+            .Distinct()
+            .ToList();
+
+        shared.All.ShouldBe(dialled, ignoreOrder: true);
     }
 
     // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled
@@ -229,13 +262,14 @@ public class AgentAppSettingsTests
     [Fact]
     public void Sugary_DialsTheSugaryServerAloneForItsPrompt_AndCallsNothing()
     {
-        var sugary = BoundAgents().Single(a => a.Id == "sugary");
-
-        sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
-        sugary.NoTools.ShouldBeTrue();
-        sugary.EnabledFeatures.ShouldBeEmpty();
-        sugary.WhitelistPatterns.ShouldBeEmpty();
-        sugary.UsesOutposts.ShouldBeFalse();
+        foreach (var sugary in (AgentDefinition[])[HomeAgents.Definition("sugary"), AgentTemplates.Named("sugary")!])
+        {
+            sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
+            sugary.NoTools.ShouldBeTrue();
+            sugary.EnabledFeatures.ShouldBeEmpty();
+            sugary.WhitelistPatterns.ShouldBeEmpty();
+            sugary.UsesOutposts.ShouldBeFalse();
+        }
     }
 
     // Her log is Jonas's to read, beside the glucose history /ha serves, so a meal can be lined up
@@ -245,11 +279,34 @@ public class AgentAppSettingsTests
     public void Jonas_DialsTheSugaryServerForHerLog_AndHerEstimatesStaySugarys()
     {
         var settings = BoundConfig().Get<AgentSettings>()!;
-        var jonas = BoundAgents().Single(a => a.Id == "jonas");
+        var jonas = HomeAgents.Definition("jonas");
 
         jonas.McpServerEndpoints.ShouldContain("http://mcp-sugary:8080/mcp");
-        jonas.McpServerEndpoints.ShouldContain("http://mcp-homeassistant:8080/mcp");
+        jonas.McpServerEndpoints.ShouldContain("homeassistant");
         settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+    }
+
+    // A household's server is named rather than addressed, and one no stack runs under that name is
+    // never an error: it is offline, left out of the turn and named in its context. So a misspelt
+    // name would only ever show as a context line. Every name the definitions and the channels give
+    // is a server the repo has — the one the integration suites and the eval host in its place, by the
+    // same name — and a server of the kind it is named as: tools for an agent, a channel for a channel.
+    [Fact]
+    public void EveryHouseholdServerTheDefinitionsName_IsOneTheTestStacksHostInItsPlace()
+    {
+        var hosted = McpServerRegistrations.All.ToDictionary(row => row.Id, row => row.Role);
+        McpServerRole[] tools = [McpServerRole.Tool, McpServerRole.DualRole];
+        McpServerRole[] channels = [McpServerRole.Channel, McpServerRole.DualRole];
+
+        var toolServers = ShippedAgentSettings.ToolServerNames();
+        var channelServers = ShippedAgentSettings.ChannelServerNames();
+
+        toolServers.ShouldNotBeEmpty();
+        channelServers.ShouldNotBeEmpty();
+        toolServers.Where(name => !hosted.TryGetValue(name, out var role) || !tools.Contains(role))
+            .ShouldBeEmpty("an agent names a household server no stack hosts as a tool server");
+        channelServers.Where(name => !hosted.TryGetValue(name, out var role) || !channels.Contains(role))
+            .ShouldBeEmpty("a channel names a household server no stack hosts as a channel");
     }
 
     // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:
@@ -307,17 +364,34 @@ public class AgentAppSettingsTests
         host.AttachOnly.ShouldBeFalse();
     }
 
+    // The binder leaves a required member it found nothing for null, whatever the type says, and the
+    // agent used to start anyway and fail on that member's first use, far from its name.
+    [Fact]
+    public void Bind_ARequiredSettingMissing_FailsAtStartupNamingIt()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["openRouter:apiKey"] = "key",
+            ["backCalls:lemonadeUrl"] = "http://lemonade:13305"
+        }).Build();
+
+        var settings = config.Get<AgentSettings>()!;
+
+        var refused = Should.Throw<InvalidOperationException>(() =>
+            new ServiceCollection().AddLogging().AddAgent(settings));
+
+        refused.Message.ShouldContain("openRouter:apiUrl");
+        refused.Message.ShouldContain("redis");
+        refused.Message.ShouldNotContain("backCalls");
+    }
+
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)
     {
         var config = new Dictionary<string, string?>
         {
             ["openRouter:apiUrl"] = "https://openrouter.ai/api/v1/",
             ["openRouter:apiKey"] = "key",
-            ["redis:connectionString"] = "redis:6379",
-            ["agents:0:id"] = "agent",
-            ["agents:0:name"] = "Agent",
-            ["agents:0:model"] = "openai/gpt-5",
-            ["agents:0:mcpServerEndpoints:0"] = "http://localhost"
+            ["redis:connectionString"] = "redis:6379"
         };
         foreach (var (key, value) in entries)
         {
@@ -329,9 +403,6 @@ public class AgentAppSettingsTests
             .Build()
             .Get<AgentSettings>()!;
     }
-
-    private static AgentDefinition[] BoundAgents() =>
-        BoundConfig().GetSection("agents").Get<AgentDefinition[]>()!;
 
     private static SubAgentDefinition[] BoundSubAgents() =>
         BoundConfig().GetSection("subAgents").Get<SubAgentDefinition[]>()!;
@@ -359,9 +430,6 @@ public class AgentAppSettingsTests
             .GetProperty(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
             ?.GetValue(definition);
 
-    private static JsonNode Agent(string agentId) =>
-        Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!;
-
     // The deadline is spent from the moment Jev is asked. A warm judgment from prod has measured
     // 270–590 ms, so the shipped budget sits above that tail; a cold handshake alone is ~660 ms
     // there, which is what the connection keep-alive exists to spare the turn, not the deadline.
@@ -384,7 +452,8 @@ public class AgentAppSettingsTests
         var shipped = section.Get<ExecScreenSettings>()!;
 
         section.GetChildren().Select(c => c.Key).ShouldBe(
-            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar", "runsDownloadedBar"],
+            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar", "runsDownloadedBar",
+                "reachesLanBar"],
             ignoreOrder: true);
         shipped.Enabled.ShouldBeTrue();
         shipped.DeadlineMs.ShouldBe(1500);
@@ -394,6 +463,7 @@ public class AgentAppSettingsTests
         shipped.DestroysBar.ShouldBe(0.4);
         shipped.SendsOutBar.ShouldBe(0.5);
         shipped.RunsDownloadedBar.ShouldBe(0.5);
+        shipped.ReachesLanBar.ShouldBe(0.5);
         shipped.ShouldBe(new ExecScreenSettings());
     }
 

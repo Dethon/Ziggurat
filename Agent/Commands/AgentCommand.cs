@@ -1,0 +1,208 @@
+using System.CommandLine;
+using System.Net.Http.Json;
+using Agent.Settings;
+using Domain.DTOs.Tunnel;
+using Domain.Security;
+using Domain.Security.Signing;
+using Infrastructure.Agents;
+using Infrastructure.Agents.Mcp;
+using ModelContextProtocol.Client;
+
+namespace Agent.Commands;
+
+// The agent's verbs besides serving, run inside its container beside the running agent, over the
+// same key volume and the same channel endpoints:
+//
+//   docker exec agent dotnet Agent.dll rotate-signing-key
+//   docker exec agent dotnet Agent.dll redelegate [--yes]
+//   docker exec agent dotnet Agent.dll retire-signing-keys [--force]
+//   docker exec agent dotnet Agent.dll list-household-servers --household <tenantId>
+//
+// The agent signs call tokens and the delegations deferred turns act on with one key. A rotation
+// makes a new key the signing one and keeps the previous published, which the running agent and
+// every server notice on their own. Call tokens live two minutes; delegations live as long as their
+// objects, so retiring a key would leave every schedule and watch it signed acting for nobody —
+// redelegate signs them again with the current key first, and retirement refuses while any is left.
+// After the key is lost (the volume gone), the agent generates a new one on start and every stored
+// delegation stops verifying: redelegate shows each as it claims to be and signs it again on the
+// operator's yes.
+//
+// A household's own servers are connected to the running agent alone, through their tunnels, so
+// list-household-servers asks it: each server of the household connected now, since when, and the
+// tools it offers, through the agent's /internal listing behind the agent API's secret.
+public static class AgentCommand
+{
+    public const string RotateSigningKey = "rotate-signing-key";
+    public const string RetireSigningKeys = "retire-signing-keys";
+    public const string Redelegate = "redelegate";
+    public const string ListHouseholdServers = "list-household-servers";
+
+    // Where the agent answers inside its own container, which is where these commands run.
+    public const string OwnAddress = "http://localhost:8080";
+
+    public static bool IsCommand(IReadOnlyList<string> args) =>
+        args is [RotateSigningKey or RetireSigningKeys or Redelegate or ListHouseholdServers, ..];
+
+    // The clock is the wall clock the running agent signs on, handed in by the host: a command signs
+    // and verifies the same tokens the agent does.
+    public static Task<int> RunAsync(
+        string[] args, AgentSettings settings, TimeProvider clock, TextReader input, TextWriter output,
+        CancellationToken ct)
+    {
+        var yes = new Option<bool>("--yes")
+        {
+            Description = "Re-delegate every delegation the agent cannot believe as it claims to be, without asking"
+        };
+        var force = new Option<bool>("--force")
+        {
+            Description = "Retire even while stored delegations are signed with a key it unpublishes, or a server could not be or was not asked"
+        };
+
+        var rotate = new Command(RotateSigningKey, "Sign with a new key from now on, keeping the previous one published");
+        rotate.SetAction((_, _) => RotateAsync(settings, output));
+
+        var redelegate = new Command(Redelegate, "Sign every stored delegation again with the current key") { yes };
+        redelegate.SetAction((parse, token) => WithKeysAsync(settings, clock, output, async (keys, tokens) =>
+            await Redelegation(keys, tokens, settings, clock, input, output)
+                .RedelegateAsync(await ServersAsync(settings, tokens, token), parse.GetValue(yes), token)));
+
+        var retire = new Command(RetireSigningKeys, "Unpublish every key but the current one") { force };
+        retire.SetAction((parse, token) => RetireAsync(settings, clock, parse.GetValue(force), input, output, token));
+
+        var household = new Option<string>("--household")
+        {
+            Description = "The household (tenant id) whose connected servers to list",
+            Required = true
+        };
+        var agent = new Option<string>("--agent")
+        {
+            Description = "Where the running agent answers",
+            DefaultValueFactory = _ => OwnAddress
+        };
+        var list = new Command(ListHouseholdServers, "List a household's servers connected now, since when, and their tools")
+        {
+            household, agent
+        };
+        list.SetAction((parse, token) => ListAsync(
+            settings, parse.GetValue(household)!, parse.GetValue(agent)!, output, token));
+
+        var root = new RootCommand("The agent's operator commands") { rotate, redelegate, retire, list };
+        return root.Parse(args).InvokeAsync(new InvocationConfiguration { Output = output, Error = output }, ct);
+    }
+
+    private static async Task<int> ListAsync(
+        AgentSettings settings, string household, string agent, TextWriter output, CancellationToken ct)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri(agent) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, ConnectedServers.For(household));
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(settings.AgentApi.SharedSecret));
+        using var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            await output.WriteLineAsync(
+                $"The agent at {agent} refused the listing ({(int)response.StatusCode}): it asks for AGENTAPI__SHAREDSECRET.");
+            return 1;
+        }
+
+        var servers = await response.Content.ReadFromJsonAsync<IReadOnlyList<ConnectedServer>>(
+            TunnelProtocol.SerializerOptions, ct) ?? [];
+        if (servers.Count == 0)
+        {
+            await output.WriteLineAsync($"No server of household {household} is connected.");
+            return 0;
+        }
+
+        foreach (var server in servers)
+        {
+            await output.WriteLineAsync(
+                $"{server.ServerName}  connected since {server.OpenedAt:u} (tunnel generation {server.Generation})");
+            await output.WriteLineAsync(server.Tools is { } tools
+                ? $"  tools: {(tools.Count == 0 ? "none" : string.Join(", ", tools))}"
+                : "  tools: it did not answer when asked for them");
+        }
+
+        return 0;
+    }
+
+    private static async Task<int> RotateAsync(AgentSettings settings, TextWriter output)
+    {
+        if (await ProvidedKeyAsync(settings, output))
+        {
+            return 1;
+        }
+
+        var keys = SigningKeyStore.Open(settings.Signing);
+        var before = keys.PublishedKeys.Keys.Select(k => k.KeyId).ToList();
+        keys.Rotate();
+        await output.WriteLineAsync(
+            $"The agent now signs with key {SigningKeyStore.Open(settings.Signing).CurrentKeyId}. Still published: {string.Join(", ", before)}. "
+            + $"Run {Redelegate} to sign every stored delegation again with it, then {RetireSigningKeys} once the last call token "
+            + $"the old key signed has run out, {RetireAfter(settings).TotalMinutes:0.#} minutes from now.");
+        return 0;
+    }
+
+    private static Task<int> RetireAsync(
+        AgentSettings settings, TimeProvider clock, bool force, TextReader input, TextWriter output, CancellationToken ct) =>
+        WithKeysAsync(settings, clock, output, async (keys, tokens) =>
+        {
+            var stranded = await Redelegation(keys, tokens, settings, clock, input, output)
+                .StrandedByRetiringAsync(await ServersAsync(settings, tokens, ct), ct);
+            if (!force && stranded is not 0)
+            {
+                await output.WriteLineAsync(stranded is null
+                    ? "Nothing was retired: a server that may keep delegations could not be or was not asked. Run it again once every server is connected, or with --force."
+                    : $"Nothing was retired: {stranded} stored delegation(s) are still signed with a key it would unpublish. Run {Redelegate} first.");
+                return 1;
+            }
+
+            var before = keys.PublishedKeys.Keys.Select(k => k.KeyId).ToList();
+            keys.Retire();
+            await output.WriteLineAsync($"Published now: {keys.CurrentKeyId} alone. Retired: "
+                                        + string.Join(", ", before.Where(id => id != keys.CurrentKeyId).DefaultIfEmpty("none")) + ".");
+            return 0;
+        });
+
+    private static async Task<int> WithKeysAsync(
+        AgentSettings settings, TimeProvider clock, TextWriter output, Func<SigningKeyStore, CallTokens, Task<int>> run)
+    {
+        if (await ProvidedKeyAsync(settings, output))
+        {
+            return 1;
+        }
+
+        var keys = SigningKeyStore.Open(settings.Signing);
+        return await run(keys, new CallTokens(keys, clock, settings.CallTokens, settings.Delegations));
+    }
+
+    private static Redelegation Redelegation(
+        SigningKeyStore keys, CallTokens tokens, AgentSettings settings, TimeProvider clock, TextReader input,
+        TextWriter output) =>
+        new(keys, tokens, clock, settings.Mcp.TokenVerification, input, output);
+
+    // A test stack's agent signs with the one key it is handed, which is neither rotated nor retired,
+    // and its delegations never need signing again.
+    private static async Task<bool> ProvidedKeyAsync(AgentSettings settings, TextWriter output)
+    {
+        if (settings.Signing.PrivateKey.Length == 0)
+        {
+            return false;
+        }
+
+        await output.WriteLineAsync(
+            "Nothing was changed: the agent signs with the one key SIGNING__PRIVATEKEY provides, which is neither rotated nor retired here.");
+        return true;
+    }
+
+    // Every channel endpoint, dialled the way the agent dials it — one named by its server name is every
+    // household's server of that name, each through the running agent's relay down its own tunnel
+    // (CommandServers): the dual-role servers among them keep the schedules and watches, and the rest
+    // answer that they keep nothing.
+    private static Task<IReadOnlyList<Redelegation.Server>> ServersAsync(
+        AgentSettings settings, CallTokens tokens, CancellationToken ct) =>
+        CommandServers.OfAsync(settings.ChannelEndpoints, McpCredentials.From(settings.Mcp), tokens, new Uri(OwnAddress),
+            settings.AgentApi.SharedSecret, ct);
+
+    // The last call token the old key signed has run out, with the skew every verifier forgives.
+    private static TimeSpan RetireAfter(AgentSettings settings) =>
+        settings.CallTokens.Lifetime + settings.Mcp.TokenVerification.ClockSkew;
+}

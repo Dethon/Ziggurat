@@ -14,7 +14,8 @@ public interface IChatMessagingService
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendMessageAsync(
         string topicId, string message, string? correlationId = null, AgentConfigPatch? configPatch = null,
         IReadOnlyList<AttachmentReference>? attachments = null);
-    Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId);
+    // seen: what of the stream the page drew from its state, so the wire starts with the rest (StreamSeen).
+    Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null);
     Task<HubResult<StreamState>> GetStreamStateAsync(string topicId);
     Task<HubResult<Nothing>> CancelTopicAsync(string topicId);
     Task<HubResult<bool>> EnqueueMessageAsync(

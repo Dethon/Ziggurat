@@ -9,6 +9,9 @@ public sealed class FakeAgentService(CallRecorder? recorder = null) : IAgentServ
 
     public Exception? ThrowOnGetAgents { get; set; }
 
+    // How many fetches throw ThrowOnGetAgents before the rest answer; unset, every one does.
+    public int? ThrowTimes { get; set; }
+
     // Set to answer not live for every call, the way a transport between connections does.
     public bool NotLive { get; set; }
 
@@ -19,8 +22,9 @@ public sealed class FakeAgentService(CallRecorder? recorder = null) : IAgentServ
     {
         recorder?.Record("agents");
 
-        if (ThrowOnGetAgents is not null)
+        if (ThrowOnGetAgents is not null && ThrowTimes is not 0)
         {
+            ThrowTimes--;
             throw ThrowOnGetAgents;
         }
 

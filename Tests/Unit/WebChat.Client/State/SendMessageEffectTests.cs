@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
@@ -112,8 +113,10 @@ public sealed class SendMessageEffectTests : IDisposable
         remaining.ShouldContain(m => m.Content == "Old error");
         remaining.ShouldNotContain(m => m.Content == "New error");
 
-        // Assert - "Second message" was resent (appears twice: original + retry)
-        remaining.Count(m => m.Role == "user" && m.Content == "Second message").ShouldBe(2);
+        // Assert - "Second message" was resent in its own place: the retry takes the failed turn's,
+        // as the conversation the agent keeps does, so it reads once rather than twice.
+        remaining.Count(m => m.Role == "user" && m.Content == "Second message").ShouldBe(1);
+        remaining.Select(m => m.Content).Take(3).ShouldBe(["First message", "Old error", "Second message"]);
     }
 
     // The handler task is abandoned by construction, so a fault inside it — here the topic
@@ -145,6 +148,46 @@ public sealed class SendMessageEffectTests : IDisposable
         var entry = await _logger.WaitForEntryAsync();
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("send faulted");
         _toastStore.State.Toasts.Count.ShouldBe(1);
+    }
+
+    // A conversation started while the list shows another person's is the starter's own: it is theirs
+    // from the start, and the list moves to theirs, once the server holds it, so it is listed there.
+    [Fact]
+    public async Task ANewConversation_StartedWhileListingAnotherPersons_IsOwnAndMovesTheListToMine()
+    {
+        _dispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
+        _dispatcher.Dispatch(new SelectAgent("jonas"));
+        _dispatcher.Dispatch(new FilterTopics(TopicFilter.Of("fran")));
+        StoredTopic? started = null;
+        _mockSessionService.Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .Callback<StoredTopic>(topic => started = topic)
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+        var chosen = new List<TopicFilter>();
+        using var _ = _dispatcher.RegisterHandler<ChooseTopicFilter>(action => chosen.Add(action.Filter));
+
+        _dispatcher.Dispatch(new SendMessage(null, "hello"));
+
+        await Tests.Eventually.Until(() => chosen.Count > 0, "the list to move to the starter's own");
+        chosen.ShouldBe([TopicFilter.Mine]);
+        (started!.OwnerId, started.TenantId).ShouldBe(("olga", "home"));
+    }
+
+    [Fact]
+    public async Task ANewConversation_StartedWhileListingTheStartersOwn_LeavesTheListAsItIs()
+    {
+        _dispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
+        _dispatcher.Dispatch(new SelectAgent("jonas"));
+        _dispatcher.Dispatch(new FilterTopics(TopicFilter.Mine));
+        _mockSessionService.Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+        var chosen = new List<TopicFilter>();
+        using var _ = _dispatcher.RegisterHandler<ChooseTopicFilter>(action => chosen.Add(action.Filter));
+
+        _dispatcher.Dispatch(new SendMessage(null, "hello"));
+
+        await Tests.Eventually.Until(() => _topicsStore.State.Topics.Count == 1, "the new conversation's row");
+        await Tests.Eventually.Settle();
+        chosen.ShouldBeEmpty();
     }
 
     [Fact]

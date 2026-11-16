@@ -101,6 +101,24 @@ export function periodProblem(start: string, end: string | null, today: string, 
   return { key: clash.end === null && clash.start < start ? "periodStillOpen" : "periodOverlaps", start: clash.start };
 }
 
+// A save the server refused was checked against her log as it is now, which another of her phones may
+// have changed since this page read it (both tapping "my period started today"): her log is read again,
+// so the page shows it, and the clash is said in her language rather than as a bad number. Null when
+// it cannot be read again.
+export async function refusedBecause(
+  values: { start: string; end: string | null },
+  self: string | undefined,
+  today: string,
+  read: () => Promise<Period[]>,
+): Promise<{ periods: Period[]; problem: PeriodProblem | null } | null> {
+  try {
+    const periods = await read();
+    return { periods, problem: periodProblem(values.start, values.end, today, periods.filter((other) => other.id !== self)) };
+  } catch {
+    return null;
+  }
+}
+
 // One day of the calendar and what is on it.
 export interface CalendarDay {
   day: string;

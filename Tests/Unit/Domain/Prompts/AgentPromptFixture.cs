@@ -4,7 +4,6 @@ using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
-using Microsoft.Extensions.Configuration;
 using Moq;
 using Tests.Integration.McpServers;
 
@@ -71,6 +70,7 @@ internal static class AgentPromptFixture
             [VaultPrompt.Name] = VaultPrompt.Prompt,
             [WebBrowsingPrompt.Name] = WebBrowsingPrompt.AgentSystemPrompt,
             [DownloaderPrompt.Name] = DownloaderPrompt.AgentSystemPrompt,
+            [LibraryGuide.Name] = LibraryGuide.Text,
             [IdealistaPrompt.Name] = IdealistaPrompt.SystemPrompt,
             [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
             [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,
@@ -81,12 +81,15 @@ internal static class AgentPromptFixture
 
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
+    // A server's own skills in the order its registration lists them (the home's watches first).
+    private static readonly IReadOnlyList<PromptSkill> _servedInOrder =
+    [
+        .. new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.Text, SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
+            .Select(text => PromptManifest.BindSkill(text.Name, text.Description, text.Body))
+    ];
+
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
-            .ToDictionary(
-                text => text.Name,
-                text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),
-                StringComparer.OrdinalIgnoreCase);
+        _servedInOrder.ToDictionary(skill => skill.Name, StringComparer.OrdinalIgnoreCase);
 
     // The feature prompts, keyed by the feature name that turns them on — the same key the manifest
     // declares them under.
@@ -97,22 +100,30 @@ internal static class AgentPromptFixture
             [PromptManifest.Memory] = MemoryPrompts.FeatureSystemPrompt
         };
 
-    public static IReadOnlyList<AgentDefinition> Agents { get; } =
-        Config().GetSection("agents").Get<AgentDefinition[]>()!;
+    // The tests' own copies of the agents, not the agent's settings file: a snapshot holds today's
+    // definitions still, whatever a household is configured with.
+    public static IReadOnlyList<AgentDefinition> Agents => TestAgents.Repository.Agents;
 
-    public static IReadOnlyList<SubAgentDefinition> SubAgents { get; } =
-        Config().GetSection("subAgents").Get<SubAgentDefinition[]>()!;
+    public static IReadOnlyList<SubAgentDefinition> SubAgents => TestAgents.Repository.SubAgents;
 
-    public static AgentDefaults AgentDefaults { get; } =
-        Config().GetSection("agentDefaults").Get<AgentDefaults>() ?? new AgentDefaults();
+    public static AgentDefaults AgentDefaults => TestAgents.Repository.Defaults;
+
+    // A shipped template's snapshot id, kept apart from the home's agent of the same name.
+    private const string TemplatePrefix = "template.";
 
     // Every agent and worker a snapshot is kept for: the two people talk to, the worker the
-    // delegating ones spawn, and the one her carb-counting app reaches.
-    public static IReadOnlyList<string> SnapshotIds { get; } = ["jonas", "nabu", "jonas-worker", "sugary"];
+    // delegating ones spawn, the one her carb-counting app reaches, and the voice template, whose
+    // prompt is what every household's agent that answers aloud is told — the home's Nabu is not.
+    public static IReadOnlyList<string> SnapshotIds { get; } =
+        ["jonas", "nabu", "jonas-worker", "sugary", TemplatePrefix + AgentTemplates.Nabu];
 
     public static PromptAssembly Assemble(string id)
     {
-        var agent = Agents.FirstOrDefault(a => a.Id == id);
+        // As a household runs it before its owner said anything: the template's own name, no custom
+        // instructions, and no language, which is the household's.
+        var agent = id.StartsWith(TemplatePrefix, StringComparison.Ordinal)
+            ? AgentTemplates.Named(id[TemplatePrefix.Length..])
+            : Agents.FirstOrDefault(a => a.Id == id);
         var worker = SubAgents.FirstOrDefault(a => a.Id == id);
 
         return agent is not null
@@ -125,7 +136,7 @@ internal static class AgentPromptFixture
                     worker.Id, worker.Name, worker.Description, worker.McpServerEndpoints,
                     worker.EnabledFeatures, worker.PromptSections, worker.CustomInstructions,
                     worker.Language, worker.UsesOutposts, noTools: false)
-                : throw new InvalidOperationException($"No agent or subagent '{id}' in appsettings.json");
+                : throw new InvalidOperationException($"No agent or subagent '{id}' in {TestAgents.Repository.Path}");
     }
 
     private static PromptAssembly Compose(
@@ -186,23 +197,23 @@ internal static class AgentPromptFixture
             .SelectMany(service => PromptManifest.Declarations.Where(d => d.ServedBy == service))
             .Select(d => d.Bind(ServedText[d.Name]));
 
-    // The skills arrive with the servers, so an agent has exactly the skills of the services it dials.
+    // The skills arrive with the servers, so an agent has exactly the skills of the services it dials,
+    // in the order each server lists them in its index.
     public static IEnumerable<PromptSkill> SkillsOf(IEnumerable<string> endpoints) =>
         endpoints
             .Select(ServiceOf)
-            .SelectMany(service => PromptManifest.Skills.Where(s => s.ServedBy == service))
-            .Select(s => ServedSkills[s.Name]);
+            .SelectMany(service => _servedInOrder.Where(s => s.Declaration.ServedBy == service));
 
-    public static string ServiceOf(string endpoint) => new Uri(endpoint).Host;
+    // A household's server, named rather than addressed, is the server the deployment ran under the
+    // compose name the manifest declares it by (vault -> mcp-vault), which is what serves its prompts.
+    public static string ServiceOf(string endpoint) =>
+        global::Domain.DTOs.Tunnel.TunnelCredentialProtocol.IsServerName(endpoint)
+            ? $"mcp-{endpoint}"
+            : new Uri(endpoint).Host;
 
     public static string SkillSnapshotPath(string name) =>
         Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"skill.{name}.md");
 
     public static string SnapshotPath(string id) =>
         Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"prompt.{id}.txt");
-
-    private static IConfigurationRoot Config() =>
-        new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(McpServerRegistrations.RepoRoot, "Agent", "appsettings.json"))
-            .Build();
 }

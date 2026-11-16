@@ -1,17 +1,17 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Judgments;
 using Domain.Tools;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebBrowseTool(IWebBrowser browser)
+public class McpWebBrowseTool(IWebBrowser browser, AsMeGate asMeGate)
     : WebBrowseTool(browser)
 {
     [McpServerTool(Name = Name)]
@@ -35,17 +35,33 @@ public class McpWebBrowseTool(IWebBrowser browser)
         int scrollSteps = 3,
         [Description("Include the accessibility tree (snapshot) in the same call. Use when you intend to interact with the page; saves a separate web_snapshot round trip.")]
         bool snapshot = false,
+        [Description("Browse as the person you are talking to, carrying their own logins. Only when the task needs their account; without it the browse carries nobody's cookies.")]
+        bool asMe = false,
         CancellationToken ct = default)
     {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        if (!context.TryScope(out var sessionId))
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
                 "Conversation context is missing from request _meta; cannot scope the browser session."));
         }
 
-        var caller = JudgmentCaller.For(ConversationScope.Parse(context.Params?.Meta));
-        var result = await RunAsync(sessionId, caller, url, selector, maxLength, offset,
+        var conversation = context.Turn;
+        string? person = null;
+        if (asMe)
+        {
+            switch (await asMeGate.ResolveAsync(conversation, url, ct))
+            {
+                case PersonResolution.Found found:
+                    person = found.Person;
+                    break;
+                case PersonResolution.Refused refused:
+                    return ToolResponse.Create(refused.Error);
+            }
+        }
+
+        var caller = JudgmentCaller.For(conversation);
+        var result = await RunAsync(sessionId, caller, person, url, selector, maxLength, offset,
             useReadability, scrollToLoad, scrollSteps, snapshot, ct);
         return result.Body is null
             ? ToolResponse.Create(result.Envelope)

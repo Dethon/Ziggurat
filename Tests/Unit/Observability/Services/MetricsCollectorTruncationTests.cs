@@ -46,7 +46,7 @@ public class MetricsCollectorTruncationTests
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            "metrics:truncations:2026-05-03",
+            "metrics:truncations:deployment:2026-05-03",
             It.IsAny<RedisValue>(),
             It.IsAny<double>(),
             It.IsAny<SortedSetWhen>(),

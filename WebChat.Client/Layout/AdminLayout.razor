@@ -1,0 +1,71 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject UserIdentityStore IdentityStore
+@inject IDispatcher Dispatcher
+@inject NavigationManager Navigation
+
+@* The household's admin area: its own header and menu around each admin page, and no chat. It
+   starts no live connection, so it asks who is signed in itself; a page is shown to an owner alone,
+   and the admin API refuses anyone else whatever this draws. *@
+<div class="main-layout admin-layout">
+    <header class="header">
+        <div class="header-title">
+            <img src="/icon.svg" alt="" class="header-logo"/>
+            <span class="admin-heading">Household</span>
+        </div>
+        <div class="header-right">
+            <a class="admin-back" href="/" @onclick="BackToChat" @onclick:preventDefault>Back to chat</a>
+            <SignedInBadge />
+        </div>
+    </header>
+
+    <main class="content admin-content">
+        @if (_person is null)
+        {
+            <p class="admin-status">Checking who is signed in</p>
+        }
+        else if (!_person.IsOwner)
+        {
+            <p class="admin-status" role="alert">Only the household's owners manage it.</p>
+        }
+        else
+        {
+            <nav class="admin-nav" aria-label="Household">
+                @foreach (var (path, label) in AdminArea.Pages)
+                {
+                    <NavLink href="@path" Match="NavLinkMatch.All">@label</NavLink>
+                }
+            </nav>
+            <div class="admin-page">@Body</div>
+        }
+    </main>
+</div>
+
+@code {
+    private SignedInPerson? _person;
+    private IDisposable? _identitySubscription;
+    private bool _disposed;
+
+    protected override void OnInitialized()
+    {
+        _person = IdentityStore.State.SignedIn;
+        _identitySubscription = IdentityStore.StateObservable.Subscribe(state => InvokeAsync(() =>
+        {
+            if (_disposed || ReferenceEquals(_person, state.SignedIn)) return;
+            _person = state.SignedIn;
+            StateHasChanged();
+        }));
+        if (_person is null)
+        {
+            Dispatcher.Dispatch(new LoadSignedIn());
+        }
+    }
+
+    private void BackToChat() => AdminArea.BackToChat(Navigation);
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _identitySubscription?.Dispose();
+    }
+}

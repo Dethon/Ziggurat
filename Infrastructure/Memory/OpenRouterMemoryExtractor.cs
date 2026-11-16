@@ -11,11 +11,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Memory;
 
+// Its model is asked through the payer's own client (PaidChatClients): on the household's key, counted
+// under it.
 public class OpenRouterMemoryExtractor(
-    IChatClient chatClient,
+    Func<ModelPayer, IChatClient> chatClients,
     IMemoryStore store,
     ILogger<OpenRouterMemoryExtractor> logger) : IMemoryExtractor
 {
+    // One client for everybody, as a test drives it.
+    public OpenRouterMemoryExtractor(IChatClient chatClient, IMemoryStore store, ILogger<OpenRouterMemoryExtractor> logger)
+        : this(_ => chatClient, store, logger)
+    {
+    }
+
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -51,7 +59,7 @@ public class OpenRouterMemoryExtractor(
     }
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-        IReadOnlyList<ChatMessage> contextWindow, string userId, CancellationToken ct)
+        IReadOnlyList<ChatMessage> contextWindow, string userId, string? agentId, ModelPayer payer, CancellationToken ct)
     {
         if (contextWindow.Count == 0)
         {
@@ -67,10 +75,15 @@ public class OpenRouterMemoryExtractor(
 
         var userMessage = new ChatMessage(ChatRole.User, userPrompt);
         userMessage.SetSenderId(userId);
+        userMessage.SetAccountId(userId);
+        if (agentId is not null)
+        {
+            userMessage.SetAgentId(agentId);
+        }
 
         var messages = new List<ChatMessage> { userMessage };
 
-        var response = await chatClient.GetResponseAsync(messages, _extractionChatOptions, ct);
+        var response = await chatClients(payer).GetResponseAsync(messages, _extractionChatOptions, ct);
         return ParseCandidates(response.Text);
     }
 

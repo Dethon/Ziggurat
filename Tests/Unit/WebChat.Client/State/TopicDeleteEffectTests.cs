@@ -88,6 +88,23 @@ public sealed class TopicDeleteEffectTests : IDisposable
         _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
     }
 
+    // The owner made the topic private while its reply streamed on another member's page: the page may
+    // no longer see it and drops it, and stops reading the reply — it never asks the server to stop a
+    // reply that is not its own (the hub refused, "No such conversation", the removal threw and the
+    // page kept the topic and its reply growing).
+    [Fact]
+    public async Task HandleRemoveTopicAsync_ServerNotificationOnAStreamingTopic_StopsReadingWithoutCancellingTheReply()
+    {
+        GivenTopicWithMessages("topic-1");
+        GivenAReplyInFlight("topic-1");
+
+        await _effect.HandleRemoveTopicAsync("topic-1");
+
+        _messagingService.CancelledTopics.ShouldBeEmpty();
+        _topicsStore.State.Topics.ShouldBeEmpty();
+        _streamingStore.State.StreamingByTopic.ShouldNotContainKey("topic-1");
+    }
+
     // The server already deleted the topic; the notification only reports it. A cancel that cannot
     // be made is best-effort cleanup, not a failed user action — the row must still leave, and no
     // toast may blame the user for something they never did.

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -21,6 +22,7 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
         [Description("Virtual path to destination")] string destinationPath,
         [Description("Overwrite destination if it exists (default: false)")] bool overwrite = false,
         [Description("Create destination parent directories if missing (default: true)")] bool createDirectories = true,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         if (!registry.Resolve(sourcePath).TryGetValue(out var src, out var unresolvedSource))
@@ -33,11 +35,12 @@ public class VfsMoveTool(IVirtualFileSystemRegistry registry)
             return unresolvedDestination.ToNode();
         }
 
+        var (source, destination) = ToolCaller.As(src, dst, arguments);
         var result = await Transfer.RunAsync(
             new TransferRequest
             {
-                Source = src,
-                Destination = dst,
+                Source = source,
+                Destination = destination,
                 SourcePath = sourcePath,
                 DestinationPath = destinationPath,
                 Intent = TransferIntent.Move,

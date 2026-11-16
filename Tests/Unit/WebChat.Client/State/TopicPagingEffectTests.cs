@@ -114,6 +114,32 @@ public sealed class TopicPagingEffectTests : IDisposable
         _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-1", "topic-0"]);
     }
 
+    // Choosing whose topics to list starts the list over from the top under the new filter, and every
+    // page after it — a scroll, a search — keeps asking with it.
+    [Fact]
+    public async Task FilteringTheList_ReadsItFromTheTopUnderTheFilter_AndKeepsIt()
+    {
+        var start = new DateTimeOffset(2026, 8, 1, 9, 0, 0, TimeSpan.Zero);
+        foreach (var (i, owner) in new[] { (0, "me"), (1, "fran"), (2, "fran"), (3, "me"), (4, "fran") })
+        {
+            _topicService.SeedTopic(new global::Domain.DTOs.WebChat.TopicMetadata(
+                $"topic-{i}", 100 + i, 0, "agent-1", $"Topic {i}", start, start.AddMinutes(i), OwnerId: owner, TenantId: "home"));
+        }
+
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _dispatcher.Dispatch(new FilterTopics(global::Domain.DTOs.WebChat.TopicFilter.Of("fran")));
+        await _effect.LoadFirstPageAsync();
+        await _effect.LoadNextPageAsync();
+
+        _topicsStore.State.Topics.Select(t => t.TopicId).ShouldBe(["topic-4", "topic-2", "topic-1"]);
+        _topicService.Filters.ShouldAllBe(f => f == global::Domain.DTOs.WebChat.TopicFilter.Of("fran"));
+
+        _dispatcher.Dispatch(new SearchTopics("Topic"));
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        await Eventually.Until(() => _calls.Calls.Any(c => c.StartsWith("search:")), "the search to be asked");
+        _topicService.Filters[^1].ShouldBe(global::Domain.DTOs.WebChat.TopicFilter.Of("fran"));
+    }
+
     [Fact]
     public async Task PagingTheArchive_KeepsAskingForTheArchivedRange()
     {

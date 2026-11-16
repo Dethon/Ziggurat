@@ -12,6 +12,10 @@ public record ConnectionReconnected : IAction;
 
 public record ConnectionClosed(string? Error) : IAction;
 
+// The hub's session check answered the connection itself — signed out, or a household no longer let
+// in — which no reconnect gets past.
+public record HubSessionRefused(bool SignedOut) : IAction;
+
 public sealed class ConnectionStore : IDisposable
 {
     private readonly Store<ConnectionState> _store;
@@ -61,7 +65,9 @@ public sealed class ConnectionStore : IDisposable
 
     // Every epoch after the one accounted for above — that is, each interruption a subscriber
     // still has to catch up on. Both catch-up and session recovery are keyed on this, so the
-    // rule lives here once instead of in each of them.
+    // rule lives here once instead of in each of them. A connection is its person from the
+    // moment it is live — the hub took them from the proxy's headers as it arrived — so nothing
+    // here waits for a registration.
     public IObservable<int> BecameLiveAgain => _store.StateObservable
         .Where(state => state.Status == ConnectionStatus.Connected)
         .Select(state => state.Epoch)

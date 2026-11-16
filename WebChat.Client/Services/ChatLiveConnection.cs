@@ -17,11 +17,14 @@ public sealed class ChatLiveConnection(
     private static readonly TimeSpan _closedRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan _rebuildAttemptTimeout = TimeSpan.FromSeconds(2.5);
     private static readonly TimeSpan _rebuildRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _firstRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _maxRetryDelay = TimeSpan.FromSeconds(30);
 
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     private readonly SemaphoreSlim _reconnectLock = new(1, 1);
     private IChatHubConnection? _connection;
     private bool _disposed;
+    private bool _refused;
 
     // The one place that decides whether a hub call can be made. A connection that is null,
     // still connecting or reconnecting cannot carry one — the last two are present and not
@@ -107,7 +110,44 @@ public sealed class ChatLiveConnection(
     private static bool IsConnectionInactiveMessage(string message) =>
         message.Contains("connection is not active", StringComparison.OrdinalIgnoreCase);
 
-    public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
+    // An installed app opens on its cached client whatever the proxy would now say, so a refusal here
+    // is announced like one on a reconnect, and still thrown to the caller as the failed connect it is.
+    public async Task ConnectAsync()
+    {
+        try
+        {
+            await StartLiveConnectionAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (HubRefusal.Is(exception))
+        {
+            _connectionEventDispatcher.HandleSessionRefused(HubRefusal.IsSignedOut(exception));
+            throw;
+        }
+        catch
+        {
+            // Nothing else retries a first connect: the visibility and online triggers fire when a
+            // page is backgrounded or the network drops, and a page opened while the hub restarts (a
+            // deploy) has neither happen to it, so it would sit Disconnected until somebody reloaded.
+            // The caller still sees this attempt fail; becoming live later is a new epoch, which is
+            // where whatever the first connect was for gets done.
+            _ = KeepTryingAsync();
+            throw;
+        }
+    }
+
+    // Waits first, so the attempt that just failed is not repeated at once, and doubles up to a
+    // ceiling, so a hub that stays down is asked about twice a minute rather than hammered. Ends once
+    // live, refused (RebuildAsync has announced it) or disposed.
+    private async Task KeepTryingAsync()
+    {
+        var delay = _firstRetryDelay;
+        while (!_disposed && !_refused && LiveHubConnection is null)
+        {
+            await Task.Delay(delay, timeProvider);
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, _maxRetryDelay.Ticks));
+            await ReconnectIfNeededAsync();
+        }
+    }
 
     private async Task StartLiveConnectionAsync(CancellationToken cancellationToken)
     {
@@ -174,6 +214,27 @@ public sealed class ChatLiveConnection(
     {
         await ReconnectAsync(waitForOneInFlight: true);
         return LiveHubConnection is not null;
+    }
+
+    public async Task RenewAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _reconnectLock.WaitAsync();
+        try
+        {
+            if (!_disposed)
+            {
+                await RebuildAsync();
+            }
+        }
+        finally
+        {
+            _reconnectLock.Release();
+        }
     }
 
     private async Task ReconnectAsync(bool waitForOneInFlight)
@@ -255,6 +316,14 @@ public sealed class ChatLiveConnection(
     {
         _connectionEventDispatcher.HandleClosed(exception);
 
+        // Refused by the hub's session check, which no rebuild gets past: the page goes to the
+        // proxy instead (HubSessionRefused).
+        if (HubRefusal.Is(exception))
+        {
+            _connectionEventDispatcher.HandleSessionRefused(HubRefusal.IsSignedOut(exception));
+            return;
+        }
+
         // On mobile, the browser suspends JS when backgrounded, so SignalR's automatic
         // reconnect can't run. When the app resumes the transport may be dead and queued
         // retries fail at once, firing Closed. Wait briefly then rebuild from scratch.
@@ -264,17 +333,25 @@ public sealed class ChatLiveConnection(
 
     private async Task RebuildAsync()
     {
-        foreach (var attempt in Enumerable.Range(1, MaxRebuildAttempts))
+        foreach (var number in Enumerable.Range(1, MaxRebuildAttempts))
         {
             await TearDownAsync();
 
-            var becameLive = await TryBecomeLiveAsync();
-            if (_disposed || becameLive)
+            var attempt = await TryBecomeLiveAsync();
+            if (_disposed || attempt == Attempt.Live)
             {
                 return;
             }
 
-            if (attempt < MaxRebuildAttempts)
+            if (attempt is Attempt.SignedOut or Attempt.NotLetIn)
+            {
+                _refused = true;
+                _connectionEventDispatcher.HandleClosed(null);
+                _connectionEventDispatcher.HandleSessionRefused(attempt == Attempt.SignedOut);
+                return;
+            }
+
+            if (number < MaxRebuildAttempts)
             {
                 await Task.Delay(_rebuildRetryDelay, timeProvider);
             }
@@ -288,7 +365,15 @@ public sealed class ChatLiveConnection(
         _connectionEventDispatcher.HandleClosed(null);
     }
 
-    private async Task<bool> TryBecomeLiveAsync()
+    private enum Attempt
+    {
+        Live,
+        Failed,
+        SignedOut,
+        NotLetIn
+    }
+
+    private async Task<Attempt> TryBecomeLiveAsync()
     {
         try
         {
@@ -297,11 +382,15 @@ public sealed class ChatLiveConnection(
             // seconds — the exact stall this rebuild exists to escape.
             using var cts = new CancellationTokenSource(_rebuildAttemptTimeout, timeProvider);
             await StartLiveConnectionAsync(cts.Token);
-            return true;
+            return Attempt.Live;
+        }
+        catch (Exception exception) when (HubRefusal.Is(exception))
+        {
+            return HubRefusal.IsSignedOut(exception) ? Attempt.SignedOut : Attempt.NotLetIn;
         }
         catch
         {
-            return false;
+            return Attempt.Failed;
         }
     }
 

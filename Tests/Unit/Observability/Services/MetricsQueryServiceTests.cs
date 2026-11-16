@@ -24,7 +24,7 @@ public class MetricsQueryServiceTests
         var from = new DateOnly(2026, 3, 14);
         var to = new DateOnly(2026, 3, 15);
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-14", It.IsAny<CommandFlags>()))
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-14", It.IsAny<CommandFlags>()))
             .ReturnsAsync([
                 new HashEntry("tokens:input", 100),
                 new HashEntry("tokens:output", 50),
@@ -33,7 +33,7 @@ public class MetricsQueryServiceTests
                 new HashEntry("tools:errors", 1)
             ]);
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-15", It.IsAny<CommandFlags>()))
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
             .ReturnsAsync([
                 new HashEntry("tokens:input", 200),
                 new HashEntry("tokens:output", 100),
@@ -57,7 +57,7 @@ public class MetricsQueryServiceTests
     {
         var date = new DateOnly(2026, 3, 15);
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-15", It.IsAny<CommandFlags>()))
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
             .ReturnsAsync([]);
 
         var result = await _sut.GetSummaryAsync(date, date);
@@ -75,7 +75,7 @@ public class MetricsQueryServiceTests
     {
         var date = new DateOnly(2026, 3, 15);
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-15", It.IsAny<CommandFlags>()))
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
             .ReturnsAsync([
                 new HashEntry("tokens:input", 100),
                 new HashEntry("tokens:byUser:alice", 100),
@@ -94,7 +94,7 @@ public class MetricsQueryServiceTests
     public async Task GetSummaryAsync_WithMemoryFields_ReturnsMemoryTotals()
     {
         var date = new DateOnly(2026, 3, 15);
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:2026-03-15", It.IsAny<CommandFlags>()))
+        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
             .ReturnsAsync(
             [
                 new HashEntry("tokens:input", 100),

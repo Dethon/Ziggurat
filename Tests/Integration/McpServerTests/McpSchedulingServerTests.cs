@@ -1,5 +1,9 @@
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.Prompts;
+using Domain.Security.Signing;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -14,6 +18,16 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await McpClient.CreateAsync(
             McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
+
+    // A schedule is kept under the household of the call that writes it, so a write is a person's turn,
+    // signed as the agent signs one.
+    private static IFileSystemBackend AsAPerson(McpClient client) =>
+        new McpFileSystemBackend(client, "schedules", null).As(new ConversationContext(
+            "jonas", "conv-1", "u-1", new ReplyTarget(ChannelIds.SignalR, "conv-1"),
+            Principal: new Principal(ChannelIds.SignalR, "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f",
+                new Account("4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b", "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f")),
+            Identity: IdentityClaims.Person(
+                "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f", "4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b", ChannelIds.SignalR, ["member"])));
 
     [Fact]
     public async Task McpServer_ReadFilesystemResource_ReturnsMetadata()
@@ -55,8 +69,34 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await client.DisposeAsync();
     }
 
+    // The skill and the mount's description are served per session, before any call names a
+    // household, and cached for every household; a schedule is read in the calling household's zone.
+    // So neither names a zone — the server's would tell a household elsewhere that "nine" means nine
+    // in the deployment's zone — and both say local time: the zone today's date is given in.
     [Fact]
-    public async Task McpServer_GetSchedulingPrompt_IncludesRegisteredAgents()
+    public async Task McpServer_TheSkillAndTheMount_NameNoTimeZone_OnlyLocalTime()
+    {
+        var client = await ConnectAsync();
+
+        var skill = await client.ReadResourceAsync(
+            SkillServerResources.BodyAddress(SchedulingSkill.Name), cancellationToken: CancellationToken.None);
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+        var mount = string.Join("", (await client.ReadResourceAsync("filesystem://schedules")).Contents
+            .OfType<TextResourceContents>().Select(c => c.Text));
+
+        foreach (var text in new[] { body, mount })
+        {
+            text.ShouldNotContain(TimeZoneInfo.Local.Id);
+            text.ShouldContain("local time");
+        }
+
+        await client.DisposeAsync();
+    }
+
+    // The prompt is fetched for nobody and cached for every household, so it names no agent: the
+    // catalogue the agent registers is the home's, and was shown to every household from here.
+    [Fact]
+    public async Task McpServer_GetSchedulingPrompt_NamesNoRegisteredAgent()
     {
         var client = await ConnectAsync();
 
@@ -79,15 +119,17 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
 
-        text.ShouldContain("## Current scheduling setup");
-        text.ShouldContain("/schedules/itest-summary-agent");
-        text.ShouldContain("- `itest-summary-agent` (Summary Agent) — Used by the snippet test.");
+        text.ShouldBe(SchedulingPrompt.Prompt);
+        text.ShouldNotContain("itest-summary-agent");
 
         await client.DisposeAsync();
     }
 
+    // Registering the home's catalogue gives no household a directory: a call's agents are its own
+    // household's (the fixture's every household runs jonas alone), so an agent only the catalogue
+    // names is refused, and the household's own is written to.
     [Fact]
-    public async Task RegisterAgents_ThenCreateForNewAgent_PassesValidation()
+    public async Task RegisterAgents_GivesNoHouseholdAnAgentItDoesNotRun()
     {
         var client = await ConnectAsync();
 
@@ -101,23 +143,11 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
 
         (register.IsError ?? false).ShouldBeFalse();
 
-        var create = await client.CallToolAsync(
-            "fs_create",
-            new Dictionary<string, object?>
-            {
-                ["path"] = "/jack/itest-register/schedule.json",
-                ["content"] = """{"prompt":"do the thing","cron":"0 7 * * *"}"""
-            },
-            cancellationToken: CancellationToken.None);
-
-        (create.IsError ?? false).ShouldBeFalse();
-
-        var info = await client.CallToolAsync(
-            "fs_read",
-            new Dictionary<string, object?> { ["path"] = "/jack/agent_info.json" },
-            cancellationToken: CancellationToken.None);
-
-        info.Content.OfType<TextContentBlock>().First().Text.ShouldContain("Jack");
+        (await AsAPerson(client).CreateAsync("/jack/itest-register/schedule.json",
+                """{"prompt":"do the thing","cron":"0 7 * * *"}""", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        (await AsAPerson(client).ReadAsync("/jonas/agent_info.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("Jonas");
 
         await client.DisposeAsync();
     }
@@ -144,30 +174,17 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     {
         var client = await ConnectAsync();
 
-        var create = await client.CallToolAsync(
-            "fs_create",
-            new Dictionary<string, object?>
-            {
-                ["path"] = "/jonas/itest-news/schedule.json",
-                ["content"] = """{"prompt":"summarize the integration news","cron":"0 8 * * *"}"""
-            },
-            cancellationToken: CancellationToken.None);
+        var person = AsAPerson(client);
 
-        (create.IsError ?? false).ShouldBeFalse();
+        (await person.CreateAsync("/jonas/itest-news/schedule.json",
+                """{"prompt":"summarize the integration news","cron":"0 8 * * *"}""", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
-        var glob = await client.CallToolAsync(
-            "fs_glob",
-            new Dictionary<string, object?> { ["pattern"] = "*", ["basePath"] = "/jonas" },
-            cancellationToken: CancellationToken.None);
+        (await person.GlobAsync("/jonas", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries.ShouldContain("/jonas/itest-news/");
 
-        glob.Content.OfType<TextContentBlock>().First().Text.ShouldContain("/jonas/itest-news");
-
-        var read = await client.CallToolAsync(
-            "fs_read",
-            new Dictionary<string, object?> { ["path"] = "/jonas/itest-news/schedule.json" },
-            cancellationToken: CancellationToken.None);
-
-        read.Content.OfType<TextContentBlock>().First().Text.ShouldContain("summarize the integration news");
+        (await person.ReadAsync("/jonas/itest-news/schedule.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("summarize the integration news");
 
         await client.DisposeAsync();
     }

@@ -29,6 +29,19 @@ public sealed class BroadcastChannel<T>
         await Task.WhenAll(subs.Select(s => s.Writer.WriteAsync(item, cancellationToken).AsTask()));
     }
 
+    // Every subscriber's channel is unbounded, so a write never waits: it is made under the caller's
+    // lock, beside the stream's buffer, so a reader joining takes the buffer and its subscription as one.
+    public void Write(T item)
+    {
+        lock (_lock)
+        {
+            foreach (var s in _subscribers)
+            {
+                s.Writer.TryWrite(item);
+            }
+        }
+    }
+
     public void Complete()
     {
         lock (_lock)

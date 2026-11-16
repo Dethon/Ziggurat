@@ -7,12 +7,20 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Memory;
 
-// Who the judgment is about, for the event it publishes.
+// Who the judgment is about, for the event it publishes, and who pays for it: the household the
+// extraction or the night's dreaming is for, on its key.
 public sealed record MemoryJudgmentContext(string UserId, string? AgentId = null, string? ConversationId = null)
 {
+    public ModelPayer Payer { get; init; } = ModelPayer.Deployment;
+
+    // Whether a candidate's words may go on the operator's dashboard with its judgment: what a person
+    // said about themselves is their household's, so only the home's are shown, and a context that
+    // says nothing shows nothing.
+    public bool ShowsContent { get; init; }
+
     // No turn is behind a memory question — dreaming has none, and extraction is never enqueued
     // for a turn addressed to the local box — so it bills the user alone.
-    public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId);
+    public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId) { Payer = Payer, UserId = UserId };
 }
 
 // Gate: whether the extractor is asked at all. Skip is only ever true on an answer.
@@ -278,7 +286,7 @@ public sealed class MemoryJudge(
         Publish(Answered(MemoryJudgmentKinds.Verify, context, answered.Judgment, latency) with
         {
             Scores = scores,
-            Candidate = candidate.Content,
+            Candidate = context.ShowsContent ? candidate.Content : null,
             Category = candidate.Category.ToString(),
             Dropped = dropped
         });
@@ -328,6 +336,7 @@ public sealed class MemoryJudge(
 
     private static MemoryJudgmentEvent Answered(string kind, MemoryJudgmentContext context, Judgment judgment, TimeSpan latency) => new()
     {
+        TenantId = context.Payer.TenantId,
         Kind = kind,
         UserId = context.UserId,
         AgentId = context.AgentId,
@@ -349,6 +358,7 @@ public sealed class MemoryJudge(
 
         Publish(new MemoryJudgmentEvent
         {
+            TenantId = context.Payer.TenantId,
             Kind = kind,
             UserId = context.UserId,
             AgentId = context.AgentId,

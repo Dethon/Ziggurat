@@ -7,7 +7,7 @@ namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 // served model is a file path on that box's disk, which is why nothing downstream may use it.
 internal sealed class LemonadeResponsesSseHandler : HttpMessageHandler
 {
-    private const string Sse =
+    internal const string Sse =
         """
         event: response.created
         data: {"type":"response.created","response":{"id":"resp_1","object":"response","status":"in_progress"}}

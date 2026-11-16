@@ -1,0 +1,36 @@
+using Domain.Security;
+using Domain.Security.Signing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
+
+namespace Infrastructure.Clients.Accounts;
+
+// An app behind the proxy believes the person the accounts service's assertion names, checked
+// against the keys the service publishes at its JWKS (Accounts:JwksUrl). One verifier per host, so
+// one copy of the keys: the copy is what spares the service a request per request.
+public static class AssertionVerifierRegistration
+{
+    public const string ClientName = "accounts-jwks";
+
+    // The verifier's timing is the host's own binding of the shared policy file
+    // (Domain/token-verification.json, its Mcp.TokenVerification), so every host agrees about time.
+    public static IServiceCollection AddAssertionVerifier(
+        this IServiceCollection services, string jwksUrl, TokenVerificationSettings verification)
+    {
+        // The fetch's bound is the cache's own (KeysFetchTimeout), the same on every verifying host.
+        services.AddHttpClient(ClientName);
+        services.TryAddSingleton(TimeProvider.System);
+        // A client per fetch, from the factory, so a handler the factory has rotated is never kept
+        // for the life of the host.
+        return services.AddSingleton(sp =>
+        {
+            var clients = sp.GetRequiredService<IHttpClientFactory>();
+            return AssertionVerifier.OverJwks(
+                ct => clients.CreateClient(ClientName).GetStringAsync(jwksUrl, ct),
+                sp.GetRequiredService<TimeProvider>(),
+                verification,
+                sp.GetService<ILoggerFactory>());
+        });
+    }
+}

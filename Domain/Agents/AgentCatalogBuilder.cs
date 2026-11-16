@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 
 namespace Domain.Agents;
 
@@ -39,4 +40,54 @@ public static class AgentCatalogBuilder
                 capabilities.GetAcceptedAttachmentKinds(agent.Model)))
             .ToList();
     }
+
+    // The catalogue a person of a household picks from: its own agents as its configuration names them,
+    // with what the deployment decides about models taken from the catalogue the agent registered — the
+    // patchable models, the efforts, what a model accepts. An agent the agent registered under the same
+    // id and on the same model keeps its entry, renamed, so the home's people see what was registered;
+    // any other is the household's word on its model and the deployment's on what that model accepts,
+    // none where the registered catalogue is silent (AttachmentCapability is permissive there).
+    public static IReadOnlyList<AgentCatalogEntry> ForHousehold(
+        HouseholdAgentNames household, IReadOnlyList<AgentCatalogEntry> registered,
+        IReadOnlyList<PatchableModel>? householdLemonade = null)
+    {
+        var deployment = registered.FirstOrDefault();
+        // A Lemonade model is its box's household's: the configured models, then the household's own
+        // box's (the home's own or the deployment's), never the registered ones from the deployment's.
+        IReadOnlyList<PatchableModel>? patchable = deployment?.PatchableModels is { } models
+            ? [.. models.Where(m => !LemonadeModelId.IsLemonade(m.Id)), .. householdLemonade ?? []]
+            : householdLemonade is { Count: > 0 } ? householdLemonade : null;
+        var answersByDefault = household.Agents.Any(a => a.Id == household.DefaultAgent)
+            ? household.DefaultAgent
+            : household.Agents.FirstOrDefault()?.Id;
+        return
+        [
+            .. household.Agents.Select(agent => Entry(agent) with { IsHouseholdDefault = agent.Id == answersByDefault })
+        ];
+
+        AgentCatalogEntry Entry(HouseholdAgentName agent) =>
+                registered.FirstOrDefault(entry => entry.Id == agent.Id && entry.DefaultModel == agent.Model) is { } same
+                    ? same with
+                    {
+                        Name = agent.Name,
+                        Description = agent.Description,
+                        DefaultReasoningEffort = agent.ReasoningEffort,
+                        PatchableModels = patchable
+                    }
+                    : new AgentCatalogEntry(
+                        agent.Id,
+                        agent.Name,
+                        agent.Description,
+                        agent.Model,
+                        agent.ReasoningEffort,
+                        patchable,
+                        deployment?.PatchableReasoningEfforts,
+                        AcceptedBy(agent.Model, registered));
+    }
+
+    private static IReadOnlyList<AttachmentKind>? AcceptedBy(string? model, IReadOnlyList<AgentCatalogEntry> registered) =>
+        model is null
+            ? null
+            : registered.FirstOrDefault(entry => entry.DefaultModel == model)?.DefaultModelAttachmentKinds
+              ?? registered.SelectMany(entry => entry.PatchableModels ?? []).FirstOrDefault(m => m.Id == model)?.AcceptedAttachmentKinds;
 }

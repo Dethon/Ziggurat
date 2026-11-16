@@ -9,11 +9,19 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Memory;
 
+// Its model is asked through the payer's own client (PaidChatClients): on the household's key, counted
+// under it.
 public class OpenRouterMemoryConsolidator(
-    IChatClient chatClient,
+    Func<ModelPayer, IChatClient> chatClients,
     MemoryJudge judge,
     ILogger<OpenRouterMemoryConsolidator> logger) : IMemoryConsolidator
 {
+    // One client for everybody, as a test drives it.
+    public OpenRouterMemoryConsolidator(IChatClient chatClient, MemoryJudge judge, ILogger<OpenRouterMemoryConsolidator> logger)
+        : this(_ => chatClient, judge, logger)
+    {
+    }
+
     private const double ClusterSimilarityThreshold = 0.60;
 
     private static readonly JsonSerializerOptions _jsonOptions = new()
@@ -37,7 +45,7 @@ public class OpenRouterMemoryConsolidator(
     };
 
     public async Task<Consolidation> ConsolidateAsync(
-        IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
+        IReadOnlyList<MemoryEntry> memories, ModelPayer payer, CancellationToken ct)
     {
         if (memories.Count == 0)
         {
@@ -59,12 +67,12 @@ public class OpenRouterMemoryConsolidator(
 
         foreach (var chunk in BuildClusters(memories).SelectMany(cluster => Chunks(cluster, cap)))
         {
-            var verdict = await judge.RelateAsync(chunk, Context(chunk), ct);
+            var verdict = await judge.RelateAsync(chunk, Context(chunk, payer), ct);
             var groupsToMerge = verdict.Answered ? verdict.Linked : [chunk];
 
             foreach (var group in groupsToMerge)
             {
-                decisions.AddRange(await ConsolidateClusterAsync(group, ct));
+                decisions.AddRange(await ConsolidateClusterAsync(group, payer, ct));
                 groups.Add(group.Select(m => m.Id).ToHashSet(StringComparer.Ordinal));
             }
         }
@@ -72,7 +80,8 @@ public class OpenRouterMemoryConsolidator(
         return new Consolidation(decisions, groups);
     }
 
-    private static MemoryJudgmentContext Context(IReadOnlyList<MemoryEntry> cluster) => new(cluster[0].UserId);
+    private static MemoryJudgmentContext Context(IReadOnlyList<MemoryEntry> cluster, ModelPayer payer) =>
+        new(cluster[0].UserId) { Payer = payer };
 
     // A cluster over the cap is judged in chunks of the cap, all in this pass, so no request
     // carries more than the cap's pairs and no member waits for another night. The chunks are
@@ -122,7 +131,7 @@ public class OpenRouterMemoryConsolidator(
     }
 
     private async Task<IReadOnlyList<MergeDecision>> ConsolidateClusterAsync(
-        IReadOnlyList<MemoryEntry> cluster, CancellationToken ct)
+        IReadOnlyList<MemoryEntry> cluster, ModelPayer payer, CancellationToken ct)
     {
         var ordered = cluster
             .OrderBy(m => m.Category)
@@ -137,7 +146,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, _consolidationChatOptions, ct);
+        var response = await chatClients(payer).GetResponseAsync(messages, _consolidationChatOptions, ct);
         return ParseMergeDecisions(response.Text);
     }
 
@@ -234,7 +243,7 @@ public class OpenRouterMemoryConsolidator(
     }
 
     public async Task<PersonalityProfile> SynthesizeProfileAsync(
-        string userId, IReadOnlyList<MemoryEntry> memories, CancellationToken ct)
+        string userId, IReadOnlyList<MemoryEntry> memories, ModelPayer payer, CancellationToken ct)
     {
         var summary = string.Join("\n", memories.Select(m =>
             $"- ({m.Category.ToString().ToLowerInvariant()}) {m.Content} (importance: {m.Importance:F1})"));
@@ -244,7 +253,7 @@ public class OpenRouterMemoryConsolidator(
             new(ChatRole.User, summary)
         };
 
-        var response = await chatClient.GetResponseAsync(messages, _profileSynthesisChatOptions, ct);
+        var response = await chatClients(payer).GetResponseAsync(messages, _profileSynthesisChatOptions, ct);
         return ParseProfile(userId, memories.Count, response.Text);
     }
 

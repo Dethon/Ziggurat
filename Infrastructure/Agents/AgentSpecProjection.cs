@@ -1,8 +1,11 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Tunnel;
 using Domain.Prompts;
+using Domain.Security;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Web;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -19,16 +22,19 @@ internal static class AgentSpecProjection
         OpenRouterConfig openRouterConfig,
         IPatchableModelSource patchableModels,
         string? lemonadeHostAddress,
-        string? mcpSecret,
+        McpCredentials credentials,
         DeploymentEndpoints deployment,
-        ILogger? logger) => new()
+        ILogger? logger,
+        string? tenantId = null,
+        HouseholdAgents? household = null) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
+            WithheldTools = new HashSet<string>(),
             AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
             PromptName = definition.Name,
             Description = definition.Description ?? "",
-            MetricsAgentId = definition.Name,
+            MetricsAgentName = definition.Name,
             RoutingSessionId = $"{definition.Id}:{agentKey.ConversationId}",
             ConversationId = agentKey.ConversationId,
             UserId = userId,
@@ -39,16 +45,24 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
             // Every endpoint a definition names is dialled as configured, but only the ones the
-            // deployment's own settings name present the deployment secret every deployment
-            // server's /mcp asks for. A built-in agent's all do; a registered agent's are whatever
-            // the registration said, and the secret must not follow it to an address of its
-            // choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
-            // registry of them is reachable, each with its own secret.
+            // deployment's own settings name present a deployment credential, each its own server's.
+            // A built-in agent's all do; a registered agent's are whatever the registration said,
+            // and no credential may follow it to an address of its choosing. Dynamic endpoints — the
+            // household's live outposts — are merged in downstream, each through its own tunnel.
+            //
+            // A household's own server is named rather than addressed, and presents no deployment
+            // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
             McpServerEndpoints =
             [
-                .. definition.McpServerEndpoints.Select(address =>
-                    McpServerEndpoint.Configured(address, deployment.Names(address) ? mcpSecret : null))
+                .. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Of(
+                    address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
+            TenantId = tenantId,
+            // Who pays was settled where the household was read: a household that cannot pay never
+            // reaches here.
+            Key = household?.Payer?.Key,
+            TimeZone = household?.TimeZone,
+            WithheldServers = household?.WithheldServers ?? [],
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
@@ -57,7 +71,6 @@ internal static class AgentSpecProjection
             PromptSections = ResolveSections(definition.Id, definition.PromptSections),
             Language = definition.Language,
             KeepsHistory = true,
-            RecordsOutpostVerdicts = true,
             PatchableModels = patchableModels,
             LemonadeHostAddress = lemonadeHostAddress
         };
@@ -68,7 +81,7 @@ internal static class AgentSpecProjection
         OpenRouterConfig openRouterConfig,
         IPatchableModelSource patchableModels,
         string? lemonadeHostAddress,
-        string? mcpSecret,
+        McpCredentials credentials,
         ILogger? logger)
     {
         var identity = $"subagent-{definition.Id}";
@@ -82,7 +95,7 @@ internal static class AgentSpecProjection
             DisplayName = identity,
             PromptName = identity,
             Description = definition.Description ?? "",
-            MetricsAgentId = definition.Name,
+            MetricsAgentName = definition.Name,
             // Fresh every spawn, so a subagent never shares the parent's prompt cache: its
             // static prefix is its own instructions and its own tools, and sticking it to the
             // parent's session would route the two to the same cached prefix.
@@ -102,8 +115,29 @@ internal static class AgentSpecProjection
             // A worker's endpoints are the deployment's servers as much as its parent's are.
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
+            // Less the shared servers its parent's household turned off: a profile is the deployment's,
+            // shared by every household's agents, and a feature off is off for their workers too.
             McpServerEndpoints =
-                [.. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Configured(address, mcpSecret))],
+            [
+                .. definition.McpServerEndpoints
+                    .Where(address => !SharedServers.Names(spawn.WithheldServers ?? [], address))
+                    .Select(address => McpServerEndpoint.Of(address, credentials.For))
+            ],
+            // The parent's household, whose servers the worker reaches as its parent does, and whose
+            // day its prompt names.
+            TenantId = spawn.TenantId,
+            // And on its key: a worker's calls are its parent household's as much as its parent's are.
+            Key = spawn.Key,
+            TimeZone = spawn.TimeZone,
+            // And the own servers its profile names that its parent does not: withheld at the turn as a
+            // server the household never set up is, so the worker neither dials nor names them.
+            WithheldServers =
+            [
+                .. spawn.WithheldServers ?? [],
+                .. spawn.OwnServers is { } parents
+                    ? definition.McpServerEndpoints.Where(e => TunnelCredentialProtocol.IsServerName(e) && !parents.Contains(e))
+                    : []
+            ],
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by
@@ -112,6 +146,9 @@ internal static class AgentSpecProjection
             // and never a set of machines: the session build below asks the registry itself, so
             // a subagent mounts whatever is live when it is spawned. See docs/adr/0028.
             UsesOutposts = spawn.UsesOutposts && definition.UsesOutposts,
+            // A worker that meets a login wall reports it to its parent, which can start the
+            // handoff in the conversation the person is in; the logins page is the person's too.
+            WithheldTools = new HashSet<string> { WebLoginTool.Name, WebLoginsTool.Name },
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = spawn.WhitelistPatterns,
@@ -124,7 +161,6 @@ internal static class AgentSpecProjection
             // that agent: its endpoint list is its own, so it can reach a different verdict for
             // the same machine, and writing it would report a collision inside somebody's
             // delegated task as the operator's name being taken.
-            RecordsOutpostVerdicts = false,
             // The parent's whitelist, because the parent's model on a turn the person moved
             // elsewhere is the model that turn asked for. The run tool writes that model onto the
             // worker's request and the worker resolves it here exactly as the parent did, so the

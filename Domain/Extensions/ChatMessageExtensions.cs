@@ -9,6 +9,8 @@ namespace Domain.Extensions;
 public static class ChatMessageExtensions
 {
     private const string SenderIdKey = "SenderId";
+    private const string AccountIdKey = "AccountId";
+    private const string AgentIdKey = "AgentId";
     private const string TimestampKey = "Timestamp";
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
@@ -19,11 +21,31 @@ public static class ChatMessageExtensions
     private const string ResponseFormatKey = "ResponseFormat";
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
+    private const string AttachmentHouseholdIdKey = "AttachmentHouseholdId";
     private const string SandboxPathsKey = "SandboxPaths";
     private const string LandingFailuresKey = "LandingFailures";
+    private const string OfflineServersKey = "OfflineServers";
+    private const string FailedTurnKey = "FailedTurn";
 
     extension(ChatMessage message)
     {
+        // A message of a turn that failed: the person's words and what they were told instead of an
+        // answer, kept so the conversation they come back to shows both (RedisChatMessageStore),
+        // and never read back by the model.
+        public bool IsFailedTurn() =>
+            message.AdditionalProperties?.GetValueOrDefault(FailedTurnKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkFailedTurn()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[FailedTurnKey] = true;
+        }
+
         public string? GetSenderId()
         {
             var value = message.AdditionalProperties?.GetValueOrDefault(SenderIdKey);
@@ -44,6 +66,39 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SenderIdKey] = senderId;
+        }
+
+        // The account a model call made for this message is billed to: the one named on the message
+        // itself — a request no turn is behind, as memory's extraction — else the account its turn
+        // acts for, off the turn's context. None for the guest and nobody.
+        public string? GetAccountId() =>
+            message.AdditionalProperties?.GetValueOrDefault(AccountIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => message.GetConversationContext()?.Principal?.Account?.UserId
+            };
+
+        public void SetAccountId(string accountId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AccountIdKey] = accountId;
+        }
+
+        // The agent a request no agent's publisher sends is made for (memory's extraction), so its
+        // usage is billed to that agent rather than to none.
+        public string? GetAgentId() =>
+            message.AdditionalProperties?.GetValueOrDefault(AgentIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetAgentId(string agentId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AgentIdKey] = agentId;
         }
 
         public string? GetLocation()
@@ -172,6 +227,14 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[ConversationContextKey] = context;
         }
 
+        // Whose message this is, as a client tells its own from others': the account a person's own
+        // turn acted for where its channel knew one, since the sender is only the name the account
+        // goes by; otherwise the sender. A fire's message is nobody's own, whoever it runs as.
+        public string? GetAuthorId() =>
+            message.GetConversationContext() is { OriginKind: null, Principal.Account: { } account }
+                ? account.UserId
+                : message.GetSenderId();
+
         // The model the turn this message started asked for: its own config patch, or — for a
         // worker's request, which carries none — its parent turn's, off the context stamped on it.
         // What every Jev use hands the judge's client, which sends nothing for the local box.
@@ -256,6 +319,30 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[AttachmentChannelIdKey] = channelId;
         }
 
+        // Whose connection of that channel took them, for a household's own server: two households'
+        // servers of one name each keep their own files. None for a channel serving every household.
+        public string? GetAttachmentHouseholdId()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentHouseholdIdKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetAttachmentHouseholdId(string? householdId)
+        {
+            if (string.IsNullOrWhiteSpace(householdId))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AttachmentHouseholdIdKey] = householdId;
+        }
+
         // Where this turn's attachments landed in the agent's sandbox. Metadata rather than text
         // for the same reason the references are: the model is told on the way out, and the
         // transcript a person reads must not grow an internal path. It outlives hydration, so a
@@ -274,6 +361,17 @@ public static class ChatMessageExtensions
 
         public void SetLandingFailures(IReadOnlyList<string>? fileNames) =>
             SetList(message, LandingFailuresKey, fileNames);
+
+        // The household's servers that were not connected when this turn started, by the names the
+        // agent's definition gives them. Set by the agent on every turn it runs, so a message run
+        // again after one came back loses the name rather than keeping it.
+        public IReadOnlyList<string>? GetOfflineServers() => GetList<string>(message, OfflineServersKey);
+
+        public void SetOfflineServers(IReadOnlyList<string> serverNames)
+        {
+            message.AdditionalProperties?.Remove(OfflineServersKey);
+            SetList(message, OfflineServersKey, serverNames);
+        }
     }
 
     // The three list-valued properties are read and written the same way: the list itself on the

@@ -1,4 +1,5 @@
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -12,9 +13,11 @@ public record ExerciseDto(
 
 // Kind is text rather than the enum so a kind the app does not know is refused with a sentence,
 // where a failed bind would be a bare 400; the start is nullable so a missing one is refused rather
-// than stored as the first day of the calendar. No end is a session still running.
+// than stored as the first day of the calendar. No end is a session still running. Loaded is what
+// the sheet opened with, on a change (StaleEdits).
 public record SaveExerciseRequest(
-    string? Kind, string? Name, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, string? Note);
+    string? Kind, string? Name, DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, string? Note,
+    SaveExerciseRequest? Loaded = null);
 
 // Her exercise, recorded by her as she does it. Starting a session is creating one with no end, and
 // stopping it is sending it again with one.
@@ -77,11 +80,25 @@ public static class ExerciseEndpoints
     }
 
     private static async Task<IResult> ReplaceAsync(
-        Guid id, SaveExerciseRequest request, SugaryDbContext db, HomeCalendar calendar, CancellationToken ct)
+        Guid id, SaveExerciseRequest request, SugaryDbContext db, HomeCalendar calendar, HttpContext http,
+        CancellationToken ct)
     {
         if (await db.ExerciseSessions.FindAsync([id], ct) is not { } session)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, Compared(loaded), Compared(request),
+                new SaveExerciseRequest(SugaryTables.Word(session.Kind), session.Name, session.StartedAt,
+                    session.EndedAt, session.Note));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
         }
 
         if (await ValidateAsync(request, id, db, calendar, ct) is { } problem)
@@ -98,6 +115,15 @@ public static class ExerciseEndpoints
         await db.ExerciseSessions.Where(e => e.Id == id).ExecuteDeleteAsync(ct) > 0
             ? Results.NoContent()
             : Results.NotFound();
+
+    // In the stored session's own terms: a name only on another kind, a note as it would be kept.
+    private static SaveExerciseRequest Compared(SaveExerciseRequest request) =>
+        request with
+        {
+            Name = ExerciseRules.Name(ExerciseRules.Kind(request.Kind), request.Name),
+            Note = ExerciseRules.Note(request.Note),
+            Loaded = null
+        };
 
     private static void Apply(SaveExerciseRequest request, ExerciseSession session)
     {
