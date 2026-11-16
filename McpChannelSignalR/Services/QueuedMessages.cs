@@ -9,6 +9,9 @@ public sealed record QueuedMessage(string Id, SenderSnapshot Sender, TurnMessage
     public static QueuedMessage Of(SenderSnapshot sender, TurnMessage message) =>
         new(Guid.NewGuid().ToString("N"), sender, message, DateTimeOffset.UtcNow);
 
+    public ReturnedMessage ToReturned() =>
+        new(Id, Message.Content, Message.Attachments ?? [], Message.ConfigPatch);
+
     public QueuedMessageItem ToItem() =>
         new(Id, Message.Content, Message.Attachments?.Count ?? 0, Sender.UserId, Sender.DisplayName, QueuedAt);
 }

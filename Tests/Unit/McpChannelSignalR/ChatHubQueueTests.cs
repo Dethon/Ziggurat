@@ -393,6 +393,47 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Edit: the message comes back to its sender as they queued it, to be reworked and sent again.
+    [Fact]
+    public async Task ATakenBackMessage_IsHandedBackAsItWasQueued_AndNeverRuns()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var patch = new AgentConfigPatch { Model = "sees/pictures", ReasoningEffort = "high" };
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", patch, [Photo])).ShouldBeTrue();
+        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+
+        var taken = await fran.TakeBackQueued(TopicId, second.Id);
+
+        (taken.Id, taken.Content, taken.ConfigPatch).ShouldBe((second.Id, "second", patch));
+        taken.Attachments.ShouldBe([Photo]);
+        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+        Sent().ShouldBe(["first"]);
+    }
+
+    [Fact]
+    public async Task AnotherMembersTakeBack_IsRefused()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        var second = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem();
+
+        var refused = await Should.ThrowAsync<HubException>(() => marta.TakeBackQueued(TopicId, second.Id));
+
+        refused.Message.ShouldBe(TopicRefusals.NotTheSenders);
+        (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id.ShouldBe(second.Id);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     private static readonly AttachmentReference Photo = new()
     {
         Id = "7-42/abc",

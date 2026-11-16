@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 
 namespace Domain.DTOs.WebChat;
@@ -86,6 +87,14 @@ public record QueuedMessageItem(
     string SenderId,
     string SenderName,
     DateTimeOffset QueuedAt);
+
+// A queued message handed back to its sender — taken back to be edited — as they queued it: its words,
+// its files as the upload store holds them, and the model and effort it was sent with.
+public record ReturnedMessage(
+    string Id,
+    string Content,
+    IReadOnlyList<AttachmentReference> Attachments,
+    AgentConfigPatch? ConfigPatch);
 
 // A topic's queue changed. The whole queue, in the order it will run, so a page replaces what it
 // showed; Revision orders two pushes sent close together, since they may arrive the other way round.

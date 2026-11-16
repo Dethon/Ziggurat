@@ -604,6 +604,11 @@ public sealed class ChatHub(
     public async Task RemoveQueued(string topicId, string queuedId) =>
         await WithdrawAsync(topicId, queuedId);
 
+    // A queued message its sender takes back into their composer, to rework and send again; its files
+    // are kept, since the composer holds them now.
+    public async Task<ReturnedMessage> TakeBackQueued(string topicId, string queuedId) =>
+        (await WithdrawAsync(topicId, queuedId)).ToReturned();
+
     private async Task<QueuedMessage> WithdrawAsync(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
