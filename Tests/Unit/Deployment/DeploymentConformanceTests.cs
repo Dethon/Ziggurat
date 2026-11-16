@@ -629,6 +629,7 @@ public class DeploymentConformanceTests
     [Theory]
     [InlineData(MainHost, "webui:8080")]
     [InlineData(SugaryHost, "mcp-sugary:8080")]
+    [InlineData(SexyHost, "sexytime:8080")]
     public void TheAppsOwnFiles_AreServedSignedOut_ButNoNavigationAndNoApi(string hostName, string app)
     {
         var host = DeploymentFiles.Caddyfile().Host(hostName);

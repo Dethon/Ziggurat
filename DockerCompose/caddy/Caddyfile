@@ -225,6 +225,18 @@ sexy.herfluffness.com {
         reverse_proxy accounts:8080
     }
 
+    # The app's own files, signed out too, to any request that is not a page being opened and is not
+    # its API, as on the main host: Android fetches an installed app's splash icon without the page's
+    # session, and answered 401 it drew the small launcher icon blown up, pixelated, on every launch.
+    @shell {
+        not header Sec-Fetch-Mode navigate
+        not header Accept *text/html*
+        not path /api/*
+    }
+    handle @shell {
+        reverse_proxy sexytime:8080
+    }
+
     # SexyTime itself is behind the same sign-in as the chat client: a signed-out page is sent to
     # sign-in on the main host and back here, a signed-out call to its API is answered 401.
     handle {
