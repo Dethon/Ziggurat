@@ -53,13 +53,15 @@ public sealed class QueueDispatcher(
             var started = await streamService.StartAsync(turn, async () =>
             {
                 await _turns.WriteMessageAsync(sender, queued.Message);
-                if (vouching.Account is not { } account)
+                switch (vouching)
                 {
-                    await _turns.RefuseAsync(sender, vouching.Refusal);
-                    return;
+                    case NotVouched refused:
+                        await _turns.RefuseAsync(sender, refused.Refusal);
+                        break;
+                    case Vouched vouched:
+                        await _turns.EmitAsync(new VouchedSender(sender, vouched.Account), queued.Message, CancellationToken.None);
+                        break;
                 }
-
-                await _turns.EmitAsync(new VouchedSender(sender, account), queued.Message, CancellationToken.None);
             });
 
             // Its sender's turn is running now, which the pages are told so its sender may steer it.

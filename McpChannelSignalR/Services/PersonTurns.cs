@@ -43,7 +43,11 @@ public sealed record TurnMessage(
 public sealed record VouchedSender(SenderSnapshot Sender, ResolvedAccount Account);
 
 // The person a turn may carry, or what the browser is told instead.
-public sealed record Vouching(ResolvedAccount? Account, string Refusal);
+public abstract record Vouching;
+
+public sealed record Vouched(ResolvedAccount Account) : Vouching;
+
+public sealed record NotVouched(string Refusal) : Vouching;
 
 // A person's turn sent from a snapshot of its sender: vouched for, written on the topic's stream and
 // emitted to the agent, each refusal ending the turn on the stream as a reply would. In steps, because
@@ -57,13 +61,15 @@ public sealed class PersonTurns(
     // Null once refused, the refusal having ended the turn on the stream.
     public async Task<VouchedSender?> VouchAsync(SenderSnapshot sender, CancellationToken ct)
     {
-        var vouching = await VouchingAsync(sender.UserId, sender.SessionId, ct);
-        if (vouching.Account is { } vouched)
+        switch (await VouchingAsync(sender.UserId, sender.SessionId, ct))
         {
-            return new VouchedSender(sender, vouched);
+            case Vouched vouched:
+                return new VouchedSender(sender, vouched.Account);
+            case NotVouched refused:
+                await RefuseAsync(sender, refused.Refusal);
+                break;
         }
 
-        await RefuseAsync(sender, vouching.Refusal);
         return null;
     }
 
@@ -85,19 +91,19 @@ public sealed class PersonTurns(
     {
         if (sessionId is null)
         {
-            return new Vouching(null, TopicRefusals.SignedOut);
+            return new NotVouched(TopicRefusals.SignedOut);
         }
 
         try
         {
             return await sessions.SessionAsync(userId, sessionId, ct) is { } vouched
-                ? new Vouching(vouched, "")
-                : new Vouching(null, TopicRefusals.SignedOut);
+                ? new Vouched(vouched)
+                : new NotVouched(TopicRefusals.SignedOut);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "The accounts service could not vouch for account {UserId}; its turn is not sent", userId);
-            return new Vouching(null, TopicRefusals.Unvouched);
+            return new NotVouched(TopicRefusals.Unvouched);
         }
     }
 

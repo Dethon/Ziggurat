@@ -40,17 +40,21 @@ public sealed record QueueSnapshot(IReadOnlyList<QueuedMessage> Messages, long R
 
 // What taking a queued message back came to: the message, with the ones still queued behind it, or why
 // not — it left the queue already, or it is somebody else's.
-public sealed record Withdrawal(QueuedMessage? Message, IReadOnlyList<QueuedMessage> StillQueued, string? Refusal = null)
+public abstract record Withdrawal;
+
+public sealed record Withdrawn(QueuedMessage Message, IReadOnlyList<QueuedMessage> StillQueued) : Withdrawal
 {
-    public static Withdrawal AlreadySent { get; } = new(null, [], TopicRefusals.AlreadySent);
-
-    public static Withdrawal NotTheSenders { get; } = new(null, [], TopicRefusals.NotTheSenders);
-
-    public static Withdrawal ReturnedToComposer { get; } = new(null, [], TopicRefusals.ReturnedToComposer);
-
-    public static Withdrawal NotYourTurn { get; } = new(null, [], TopicRefusals.NotYourTurn);
-
     // The files the queue still names once this message has left it.
     public IEnumerable<string> StillQueuedAttachments() =>
         StillQueued.SelectMany(m => m.Message.Attachments ?? []).Select(a => a.Id);
 }
+
+public sealed record WithdrawalRefused(string Refusal) : Withdrawal;
+
+// What steering with a queued message came to: taken out of the queue to wait for the running turn's
+// end, or why not — a withdrawal's refusals, someone else's turn, or nobody there to send it to.
+public abstract record Steering;
+
+public sealed record Steered(QueuedMessage Message) : Steering;
+
+public sealed record SteerRefused(string Refusal) : Steering;

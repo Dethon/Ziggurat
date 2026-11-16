@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
@@ -225,7 +226,7 @@ public sealed class ChatHub(
     private async Task<T> HouseholdViewAsync<T>(
         Func<string, HouseholdProof, CancellationToken, Task<T>> view, string what, string refusal, CancellationToken ct)
     {
-        if ((await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, ct)).Account is not { } vouched)
+        if (await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, ct) is not Vouched { Account: var vouched })
         {
             throw new HubException(refusal);
         }
@@ -611,7 +612,7 @@ public sealed class ChatHub(
     public async Task RemoveQueued(string topicId, string queuedId)
     {
         var withdrawal = await WithdrawAsync(topicId, queuedId);
-        var removed = withdrawal.Message!;
+        var removed = withdrawal.Message;
         var conversationId = removed.Sender.Conversation.ConversationId;
         ConversationHistory conversation;
         try
@@ -635,7 +636,7 @@ public sealed class ChatHub(
     // A queued message its sender takes back into their composer, to rework and send again; its files
     // are kept, since the composer holds them now.
     public async Task<ReturnedMessage> TakeBackQueued(string topicId, string queuedId) =>
-        (await WithdrawAsync(topicId, queuedId)).Message!.ToReturned();
+        (await WithdrawAsync(topicId, queuedId)).Message.ToReturned();
 
     // Steer now: the caller's queued message sent into the running turn, which must be their own, to come
     // in at its next tool boundary. Vouched for afresh before it leaves the queue, for the session that
@@ -651,32 +652,32 @@ public sealed class ChatHub(
         var vouching = queued is null
             ? null
             : await _turns.VouchingAsync(queued.Sender.UserId, queued.Sender.SessionId, Context.ConnectionAborted);
-        if (vouching is { Account: null })
+        if (vouching is NotVouched unvouched)
         {
-            throw new HubException(vouching.Refusal);
+            throw new HubException(unvouched.Refusal);
         }
 
-        var steered = await streamService.InAgentOrderAsync(async () =>
+        var outcome = await streamService.InAgentOrderAsync(async () =>
         {
             var steering = streamService.Steer(topicId, queuedId, SignedIn.Account);
-            if (steering.Message is not { } steer)
+            if (steering is not Steered { Message: var steer })
             {
                 return steering;
             }
 
             // Not vouched for only when it was not in the queue as the caller's a moment ago, and a message
             // leaves the queue for good.
-            if (vouching?.Account is not { } vouched)
+            if (vouching is not Vouched { Account: var vouched })
             {
                 streamService.Unsteer(topicId, steer);
-                return Withdrawal.AlreadySent;
+                return new SteerRefused(TopicRefusals.AlreadySent);
             }
 
             if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer, CancellationToken.None))
             {
                 if (streamService.Unsteer(topicId, steer))
                 {
-                    return new Withdrawal(null, [], TopicRefusals.NotLive);
+                    return new SteerRefused(TopicRefusals.NotLive);
                 }
 
                 await _turns.EndUnheardAsync(steer.Sender);
@@ -684,12 +685,14 @@ public sealed class ChatHub(
 
             return steering;
         });
-        if (steered.Message is not { } sent)
+        switch (outcome)
         {
-            throw new HubException(steered.Refusal);
+            case SteerRefused refused:
+                throw new HubException(refused.Refusal);
+            case Steered steered:
+                await _queueNews.TellOrLogAsync(steered.Message.Sender, logger);
+                break;
         }
-
-        await _queueNews.TellOrLogAsync(sent.Sender, logger);
     }
 
     // The caller's messages a stop handed back on this topic, in the order they were queued, for their
@@ -702,17 +705,17 @@ public sealed class ChatHub(
         return [.. streamService.TakeReturned(topicId, SignedIn.Account).Select(m => m.ToReturned())];
     }
 
-    private async Task<Withdrawal> WithdrawAsync(string topicId, string queuedId)
+    private async Task<Withdrawn> WithdrawAsync(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
-        var withdrawal = streamService.Withdraw(topicId, queuedId, SignedIn.Account);
-        if (withdrawal.Message is not { } withdrawn)
+        var withdrawn = streamService.Withdraw(topicId, queuedId, SignedIn.Account) switch
         {
-            throw new HubException(withdrawal.Refusal);
-        }
-
-        await _queueNews.TellOrLogAsync(withdrawn.Sender, logger);
-        return withdrawal;
+            Withdrawn taken => taken,
+            WithdrawalRefused refused => throw new HubException(refused.Refusal),
+            _ => throw new UnreachableException()
+        };
+        await _queueNews.TellOrLogAsync(withdrawn.Message.Sender, logger);
+        return withdrawn;
     }
 
     // Admitted as any send is — the capability guard, then the accounts service's word for the
@@ -728,7 +731,7 @@ public sealed class ChatHub(
         try
         {
             refusal = await CapabilityRefusalAsync(session.AgentId, turn.ConfigPatch, turn.Attachments, ct);
-            if (refusal is null && await _turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is { Account: null } unvouched)
+            if (refusal is null && await _turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is NotVouched unvouched)
             {
                 refusal = unvouched.Refusal;
             }

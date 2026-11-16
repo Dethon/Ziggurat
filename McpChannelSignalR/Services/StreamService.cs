@@ -308,63 +308,63 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
-            if (Senders(topicId, queuedId, by) is not { } at)
+            if (RefusalToTake(topicId, queuedId, by) is { } refusal)
             {
-                return RefusalFor(topicId, queuedId, by);
+                return new WithdrawalRefused(refusal);
             }
 
-            var queue = _queues[topicId];
-            var message = queue[at];
-            queue.RemoveAt(at);
-            _queueRevision++;
-            return new Withdrawal(message, [.. queue]);
+            var message = TakeOut(topicId, queuedId);
+            return new Withdrawn(message, [.. _queues[topicId]]);
         }
     }
 
-    // Where a queued message its caller sent waits in its topic's queue; null when it is not there or
-    // not theirs (RefusalFor says which).
-    private int? Senders(string topicId, string queuedId, Account by) =>
-        (_queues.GetValueOrDefault(topicId) ?? []).FindIndex(m => m.Id == queuedId) is var at and >= 0
-        && _queues[topicId][at].Sender.Principal.Account == by
-            ? at
-            : null;
-
-    private Withdrawal RefusalFor(string topicId, string queuedId, Account by)
+    // Why the caller may not take a message out of the topic's queue, or null when it waits there and is
+    // theirs. A message gone from the queue is told apart by where it went, so a page that lost the race
+    // says the right thing: sent, or handed back by a stop.
+    private string? RefusalToTake(string topicId, string queuedId, Account by)
     {
-        if ((_queues.GetValueOrDefault(topicId) ?? []).Any(m => m.Id == queuedId))
+        if ((_queues.GetValueOrDefault(topicId) ?? []).FirstOrDefault(m => m.Id == queuedId) is { } queued)
         {
-            return Withdrawal.NotTheSenders;
+            return queued.Sender.Principal.Account == by ? null : TopicRefusals.NotTheSenders;
         }
 
         return _stopped.TryGetValue(topicId, out var stopped) && stopped.Returned.TryGetValue(queuedId, out var sender)
-            ? sender == by ? Withdrawal.ReturnedToComposer : Withdrawal.NotTheSenders
-            : Withdrawal.AlreadySent;
+            ? sender == by ? TopicRefusals.ReturnedToComposer : TopicRefusals.NotTheSenders
+            : TopicRefusals.AlreadySent;
+    }
+
+    // The same step a turn's end takes the head in, so a message is either taken out or sent, never both.
+    private QueuedMessage TakeOut(string topicId, string queuedId)
+    {
+        var queue = _queues[topicId];
+        var at = queue.FindIndex(m => m.Id == queuedId);
+        var message = queue[at];
+        queue.RemoveAt(at);
+        _queueRevision++;
+        return message;
     }
 
     // A queued message its sender steers the running turn with, taken out of the queue in the same step a
     // turn's end would take it, while that turn is still their own: it waits as pending, ahead of the
     // queue, for the running turn to end (Finish), and the caller sends it to the agent now.
-    public Withdrawal Steer(string topicId, string queuedId, Account by)
+    public Steering Steer(string topicId, string queuedId, Account by)
     {
         lock (_streamLock)
         {
-            if (Senders(topicId, queuedId, by) is not { } at)
+            if (RefusalToTake(topicId, queuedId, by) is { } refusal)
             {
-                return RefusalFor(topicId, queuedId, by);
+                return new SteerRefused(refusal);
             }
 
             if (_runningFor.GetValueOrDefault(topicId) != by)
             {
-                return Withdrawal.NotYourTurn;
+                return new SteerRefused(TopicRefusals.NotYourTurn);
             }
 
-            var queue = _queues[topicId];
-            var message = queue[at];
-            queue.RemoveAt(at);
+            var message = TakeOut(topicId, queuedId);
             SteersOf(topicId).Add(new WaitingSteer(message));
             _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
-            _queueRevision++;
-            return new Withdrawal(message, [.. queue]);
+            return new Steered(message);
         }
     }
 
