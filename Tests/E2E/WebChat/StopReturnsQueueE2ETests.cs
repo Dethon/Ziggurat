@@ -68,6 +68,10 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
                     .ToHaveCountAsync(2, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
             }
 
+            // Sent, so the composers are empty: whatever is in them after the stop came back from it.
+            await Assertions.Expect(ana.Locator("textarea.chat-input")).ToHaveValueAsync("");
+            await Assertions.Expect(carlos.Locator("textarea.chat-input")).ToHaveValueAsync("");
+
             // The approval's overlay covers the composer, so the press is dispatched on Stop itself.
             await ana.Locator("[data-testid=composer-cancel]").DispatchEventAsync("click");
 
