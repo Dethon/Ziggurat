@@ -8,10 +8,18 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Another member's remove or take-back is refused (hub seam).
-- [ ] A remove or take-back racing the dispatch either succeeds or answers "already sent", never both (hub seam).
-- [ ] A removed message's upload is deleted, and a taken-back one's is kept (hub seam).
-- [ ] Edit merges text and files into the composer as described, and the chip disappears (client seam).
-- [ ] Only the reader's own chips offer the actions (client seam).
+- [x] Another member's remove or take-back is refused (hub seam).
+- [x] A remove or take-back racing the dispatch either succeeds or answers "already sent", never both (hub seam).
+- [x] A removed message's upload is deleted, and a taken-back one's is kept (hub seam).
+- [x] Edit merges text and files into the composer as described, and the chip disappears (client seam).
+- [x] Only the reader's own chips offer the actions (client seam).
+
+**Notes from the implementation:**
+- `RemoveQueued(topicId, queuedId)` and `TakeBackQueued(topicId, queuedId)` → `ReturnedMessage(Id, Content, Attachments, ConfigPatch)`; refusals are `TopicRefusals.AlreadySent` ("This message was already sent.") and `TopicRefusals.NotTheSenders`, a topic the caller may not see "No such conversation.".
+- `QueuedMessageItem` is unchanged: the take-back's answer carries the references, so the push never hands other people's file ids to every page.
+- Remove deletes only files kept under the topic's own conversation: `EnqueueMessage` does not check that a reference is the conversation's.
+- The composer merge is `ReturnToComposer(topicId, messages)` (`ComposerStore`), for ticket 06's returned items too. The client ignores the config patch; the picker stays as the person left it.
+- Until ticket 06, a stop empties the queue, so a Remove or Edit after a stop answers "already sent".
+
