@@ -603,14 +603,25 @@ public sealed class ChatHub(
     // A queued message its sender withdraws before its turn starts, and the files uploaded for it that
     // nothing else names: neither the conversation (a message re-run with its files) nor the queue. A
     // page names its files by id and nothing checked, as it was queued, that they were this
-    // conversation's, so only this conversation's are deleted.
+    // conversation's, so only this conversation's are deleted. The message is gone once withdrawn, so
+    // a conversation that cannot be read just now fails nothing: its files are left to the sweep.
     public async Task RemoveQueued(string topicId, string queuedId)
     {
         var withdrawal = await WithdrawAsync(topicId, queuedId);
         var removed = withdrawal.Message!;
         var conversationId = removed.Sender.Conversation.ConversationId;
-        var conversation = await threadStore.GetConversationAsync(
-            new AgentKey(conversationId, removed.Sender.AgentId).ToString());
+        ConversationHistory conversation;
+        try
+        {
+            conversation = await threadStore.GetConversationAsync(
+                new AgentKey(conversationId, removed.Sender.AgentId).ToString());
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not read conversation {ConversationId} to delete a removed message's files", conversationId);
+            return;
+        }
+
         attachmentService.Delete((removed.Message.Attachments ?? [])
             .Select(a => a.Id)
             .Where(id => attachmentService.ConversationOf(id)?.ConversationId == conversationId)

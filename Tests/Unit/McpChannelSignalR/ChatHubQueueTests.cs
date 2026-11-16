@@ -691,6 +691,27 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Whether the conversation still names the file cannot be told just now: the removal stands, and
+    // the file is left for the sweep rather than deleted from under a message that may hold it.
+    [Fact]
+    public async Task ARemovalWhoseConversationCannotBeRead_StillRemoves_AndDeletesNothing()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var photo = await UploadAsync();
+        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
+        _store.Setup(s => s.GetConversationAsync(It.IsAny<string>())).ThrowsAsync(new IOException("redis is away"));
+
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id);
+
+        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        _attachmentStore.Find(photo.Id).ShouldNotBeNull();
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+        Sent().ShouldBe(["first"]);
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
