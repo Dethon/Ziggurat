@@ -69,6 +69,15 @@ for this, and each shape below is one that has already failed here.
   both edges: asking only whether a window has closed is answered instantly by one that has not
   opened yet.
 
+## Containers
+
+- A container's bind mount comes from `HostMountDirectory.Claim(name)`, never a fresh temp
+  directory. Docker Desktop on WSL keeps a staging mount for every source path it has seen, for
+  good, and each one makes every later container start slower, so a new path per test slows every
+  run after it. A stable path reuses its staging. A container that writes its mount as root leaves
+  nothing that can be emptied; such a fixture keeps a temp directory and should be one per run, not
+  one per test
+
 ## E2E Tests
 
 - Fixtures extend `E2EFixtureBase` (`IAsyncLifetime`), which manages browser lifecycle and

@@ -19,13 +19,14 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
     private const string VadModelFile = "ggml-silero-v5.1.2.bin";
 
     private readonly string? _imageSkipReason;
+    private readonly HostMountDirectory _mount;
     private readonly string _configDir;
 
     public LemonadeEntrypointConfigTests(LemonadeImageFixture image)
     {
         _imageSkipReason = image.SkipReason;
-        _configDir = Path.Combine(Path.GetTempPath(), $"lemonade-entrypoint-{Guid.NewGuid()}");
-        Directory.CreateDirectory(_configDir);
+        _mount = HostMountDirectory.Claim("lemonade-entrypoint");
+        _configDir = _mount.Path;
         // The image runs as UID 10001; the mount must be writable for config.json. Guarded because
         // File.SetUnixFileMode throws PlatformNotSupportedException on Windows — which would fail
         // the constructor (an error, not a skip) before RunEntrypoint's platform gate can fire.
@@ -35,13 +36,7 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         }
     }
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_configDir))
-        {
-            Directory.Delete(_configDir, true);
-        }
-    }
+    public void Dispose() => _mount.Dispose();
 
     private void SeedVadModel()
     {

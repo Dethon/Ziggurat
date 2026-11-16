@@ -3,6 +3,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using Tests.E2E.Fixtures;
+using Tests.Integration.Fixtures;
 
 namespace Tests.Eval.Fixtures;
 
@@ -23,6 +24,8 @@ public sealed class EvalSandbox : IAsyncDisposable
 
     private IContainer _container = null!;
 
+    private HostMountDirectory? _mount;
+
     public string WorkspaceOnHost { get; private set; } = "";
 
     public string Endpoint { get; private set; } = "";
@@ -33,11 +36,8 @@ public sealed class EvalSandbox : IAsyncDisposable
     {
         await EnsureImageAsync();
 
-        var sandbox = new EvalSandbox
-        {
-            WorkspaceOnHost = Path.Combine(Path.GetTempPath(), $"eval-sandbox-{Guid.NewGuid():N}")
-        };
-        Directory.CreateDirectory(sandbox.WorkspaceOnHost);
+        var mount = HostMountDirectory.Claim("eval-sandbox");
+        var sandbox = new EvalSandbox { WorkspaceOnHost = mount.Path, _mount = mount };
 
         // Compose's pairing, the same way SandboxE2EFixture reproduces it: an unprivileged user
         // and a home-directory mount it owns. The wait strategy is a GET against the POST-only
@@ -103,16 +103,6 @@ public sealed class EvalSandbox : IAsyncDisposable
     {
         await _container.DisposeAsync();
 
-        try
-        {
-            if (Directory.Exists(WorkspaceOnHost))
-            {
-                Directory.Delete(WorkspaceOnHost, recursive: true);
-            }
-        }
-        catch (IOException)
-        {
-            // A leftover temp directory is not a failing run.
-        }
+        _mount?.Dispose();
     }
 }
