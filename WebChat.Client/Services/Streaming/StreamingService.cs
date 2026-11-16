@@ -315,13 +315,16 @@ public sealed class StreamingService(
             lease => ProcessStreamAsync(topic, chunks, lease));
         if (opened is null)
         {
-            _ = ShowRefusalsOfAsync(topic, chunks);
+            _ = ShowRefusalsOfAsync(topic, chunks, outgoing.CorrelationId);
         }
     }
 
     // The losing wire's errors, and nothing else: its content is the holder's to show, and the two
-    // wires share no numbering to merge chunks by.
-    private async Task ShowRefusalsOfAsync(StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks)
+    // wires share no numbering to merge chunks by. An error on it is this send's — the hub refusing it
+    // as it queued it behind another member's running reply — so it is drawn under the send's own
+    // message, never at the end, where it would sit between that member's message and the reply to it.
+    private async Task ShowRefusalsOfAsync(
+        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, string? correlationId)
     {
         try
         {
@@ -329,7 +332,7 @@ public sealed class StreamingService(
             {
                 if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
                 {
-                    ShowErrorOnce(topic.TopicId, error);
+                    ShowRefusalUnder(topic.TopicId, correlationId, error);
                 }
             }
         }
@@ -337,6 +340,25 @@ public sealed class StreamingService(
         {
             // The holder's wire answers for the reply; a drop on this one says nothing new.
         }
+    }
+
+    private void ShowRefusalUnder(string topicId, string? correlationId, string error)
+    {
+        var shown = messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []).ToList();
+        var sent = correlationId is null ? -1 : shown.FindLastIndex(m => m.CorrelationId == correlationId);
+        if (correlationId is null || sent < 0)
+        {
+            ShowErrorOnce(topicId, error);
+            return;
+        }
+
+        dispatcher.Dispatch(new ShowError(error));
+        if (shown.ElementAtOrDefault(sent + 1) is { IsError: true } under && under.Content == error)
+        {
+            return;
+        }
+
+        dispatcher.Dispatch(new AddMessageUnder(topicId, correlationId, CreateErrorMessage(error)));
     }
 
     // Once, whichever wire it came on: two readers of one topic can both carry the same answer, and

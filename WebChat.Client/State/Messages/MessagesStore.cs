@@ -8,6 +8,11 @@ public record MessagesLoaded(string TopicId, IReadOnlyList<ChatMessageModel> Mes
 
 public record AddMessage(string TopicId, ChatMessageModel Message, string? StreamMessageId = null) : IAction;
 
+// A message drawn right under the person's own message the page sent with that correlation id, or at the
+// end when the page shows none: a refusal read off a send's own wire is that send's, and another member's
+// turn may have been drawn after it meanwhile.
+public record AddMessageUnder(string TopicId, string CorrelationId, ChatMessageModel Message) : IAction;
+
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
@@ -78,6 +83,8 @@ public sealed class MessagesStore : IDisposable
 
         AddMessage a => AddMessageWithDedup(state, a.TopicId, a.Message, a.StreamMessageId),
 
+        AddMessageUnder a => AddMessageUnderSent(state, a),
+
         UpdateMessage a => state with
         {
             MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
@@ -137,6 +144,19 @@ public sealed class MessagesStore : IDisposable
         }
 
         return messagesByTopic.With(topicId, (IReadOnlyList<ChatMessageModel>)updated);
+    }
+
+    private static MessagesState AddMessageUnderSent(MessagesState state, AddMessageUnder a)
+    {
+        var shown = state.MessagesByTopic.GetValueOrDefault(a.TopicId, []).ToList();
+        var sent = shown.FindLastIndex(m => m.CorrelationId == a.CorrelationId);
+        return sent < 0
+            ? AddMessageWithDedup(state, a.TopicId, a.Message, null)
+            : state with
+            {
+                MessagesByTopic = state.MessagesByTopic.With(
+                    a.TopicId, [.. shown.Take(sent + 1), a.Message, .. shown.Skip(sent + 1)])
+            };
     }
 
     private static MessagesState AddMessageWithDedup(

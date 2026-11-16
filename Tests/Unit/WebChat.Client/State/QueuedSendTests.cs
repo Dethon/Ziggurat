@@ -215,6 +215,75 @@ public sealed class QueuedSendTests
         transport.Calls.Count(call => call.MethodName == "SendMessage").ShouldBe(1);
     }
 
+    // A send from a page that had not heard another member's reply start is queued behind it by the hub,
+    // and refused as it is queued: the refusal comes first on the send's wire, with no end, and the wire
+    // then follows the running reply. The refusal stays outside that reply, which keeps its one bubble.
+    [Fact]
+    public async Task ASendQueuedBehindAnotherMembersReplyAndRefused_LeavesThatReplyWhole()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var wire = new GatedChatStream { Opening = null };
+        transport.Answer("SendMessage", _ => wire.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
+
+        wire.Write(new ChatStreamMessage { Error = "This device was signed out" });
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
+        wire.Write(new ChatStreamMessage
+        {
+            Content = "first", UserMessage = new UserMessageInfo("marta", DateTimeOffset.UtcNow, "Marta", "marta-1")
+        });
+        wire.Write(new ChatStreamMessage { Content = "thinking", MessageId = "m-1" });
+        wire.Write(new ChatStreamMessage { Content = " and done", MessageId = "m-1" });
+        wire.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-1" });
+        wire.Release();
+        await replyEnding;
+
+        Shown(client).ShouldBe([
+            "user: second", "assistant: This device was signed out", "user: first", "assistant: thinking and done"
+        ]);
+    }
+
+    // The same refusal on a send that lost the topic to a resume already reading the other member's reply:
+    // only the refusal is shown off the losing wire, and it is the send's, so it is drawn under the send's
+    // own message, never between the other member's message and the reply to it.
+    [Fact]
+    public async Task ASendQueuedAndRefusedWhileAResumeReadsAnotherMembersReply_LeavesThatReplyWhole()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var wire = new GatedChatStream { Opening = null };
+        var resumed = new GatedChatStream { Opening = null };
+        transport.Answer("SendMessage", _ => wire.Chunks());
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "thinking", MessageId = "m-1" }], "m-1", "first", "marta"));
+        transport.Answer("ResumeStreamFrom", _ => resumed.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
+
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
+        await TestChat.Eventually(() =>
+            client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "thinking");
+        var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
+        wire.Write(new ChatStreamMessage { Error = "This device was signed out" });
+        wire.Release();
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message.Contains("signed out")));
+        resumed.Write(new ChatStreamMessage { Content = " and done", MessageId = "m-1" });
+        resumed.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-1" });
+        resumed.Release();
+        await replyEnding;
+
+        Shown(client).ShouldBe([
+            "user: second", "assistant: This device was signed out", "user: first", "assistant: thinking and done"
+        ]);
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 
