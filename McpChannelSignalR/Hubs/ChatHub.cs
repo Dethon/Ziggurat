@@ -42,6 +42,8 @@ public sealed class ChatHub(
     // stay what every hub test constructs it with; it holds no state, so one per hub costs nothing.
     private readonly PersonTurns _turns = new(streamService, notificationEmitter, sessions, logger);
 
+    private readonly QueueNews _queueNews = new(streamService, threadStore, hubSender);
+
     // What the browser is told when its household's spaces could not be asked for its person: signed
     // out since, or the accounts service unreachable just now.
     private const string UnvouchedSpacesError = "This household's spaces could not be read right now.";
@@ -464,12 +466,31 @@ public sealed class ChatHub(
         var conversationId = session.Identity.ConversationId;
 
         // The stream's prompt is what a page joining it draws as the person's message: Continue's ask is none.
-        var (broadcastChannel, linkedToken) =
-            streamService.GetOrCreateStream(topicId, continuation ? "" : message, userId, cancellationToken);
-        streamService.TryIncrementPending(topicId);
+        var (broadcastChannel, linkedToken, opened) =
+            streamService.OpenOrHold(topicId, continuation ? "" : message, userId, cancellationToken);
 
         // Subscribe before emitting so no early reply chunks are lost
         var (subscription, carried) = streamService.Join(topicId, broadcastChannel);
+
+        // A message finding a reply already running waits behind it, as one the page knew to queue
+        // does: a page that had not heard the stream start yet must not jump the queue. Its wire
+        // follows the stream, which carries the message once its turn starts.
+        if (!opened && rerunOf is null && !continuation)
+        {
+            if (await QueueAsync(
+                    session, SenderOf(topicId, session), new TurnMessage(message, correlationId, configPatch, attachments),
+                    cancellationToken) is { } refusal)
+            {
+                yield return new ChatStreamMessage { Error = refusal };
+            }
+
+            await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
+            {
+                yield return chunk;
+            }
+
+            yield break;
+        }
 
         // Refused before anything is written or emitted, for the race where the model changes
         // between picking a file and sending it: no turn is created, no agent is woken, and no
@@ -516,21 +537,40 @@ public sealed class ChatHub(
 
         await _turns.EmitAsync(vouched, turn, cancellationToken);
 
+        await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
+        {
+            yield return chunk;
+        }
+    }
+
+    // What the stream carried before this wire subscribed, then the stream itself — the loop ends when
+    // the channel completes (when nothing is pending or queued), not on individual IsComplete messages.
+    private async IAsyncEnumerable<ChatStreamMessage> FollowAsync(
+        string topicId,
+        IReadOnlyList<ChatStreamMessage> carried,
+        System.Threading.Channels.ChannelReader<ChatStreamMessage> subscription,
+        CancellationToken linkedToken,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         // An approval it carried is the other person's, shown to them where it was asked.
         foreach (var earlier in carried.Where(m => m.ApprovalRequest is null))
         {
             yield return earlier;
         }
 
-        // Stream responses back to the browser — the loop ends when the channel completes
-        // (i.e. when the last pending agent finishes), not on individual IsComplete messages.
-        await foreach (var msg in WhileTheyMaySee(topicId, subscription.ReadAllAsync(linkedToken))
+        // The stream's token is its opener's; a wire that joined it ends with its own caller too.
+        using var reading = CancellationTokenSource.CreateLinkedTokenSource(linkedToken, cancellationToken);
+        await foreach (var msg in WhileTheyMaySee(topicId, subscription.ReadAllAsync(reading.Token))
                            .IgnoreCancellation(cancellationToken))
         {
             yield return msg;
         }
     }
 
+    // A message sent while a reply runs: held in the topic's queue and sent once the running turn
+    // ends (QueueDispatcher). False when nothing is running to queue behind, which is the page's
+    // signal to open a stream itself; a refusal is the hub's answer, since the stream it would end
+    // belongs to the turn that is running.
     public async Task<bool> EnqueueMessage(
         string topicId,
         string message,
@@ -548,27 +588,52 @@ public sealed class ChatHub(
             return false;
         }
 
-        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, Context.ConnectionAborted) is { } refused)
-        {
-            await AnswerRefusedAsync(topicId, session.Identity.ConversationId, refused);
-            return true;
-        }
-
-        var sender = SenderOf(topicId, session);
         var turn = new TurnMessage(message, correlationId, configPatch, attachments);
-        if (await _turns.VouchAsync(sender, Context.ConnectionAborted) is not { } vouched)
+        if (await QueueAsync(session, SenderOf(topicId, session), turn, Context.ConnectionAborted) is { } refusal)
         {
-            return true;
+            throw new HubException(refusal);
         }
 
-        await _turns.WriteMessageAsync(sender, turn);
-        await _turns.EmitAsync(vouched, turn, CancellationToken.None);
-
-        // True either way, and deliberately: false is the client's signal that there was no stream
-        // to enqueue onto, which makes it open a second one and send the same prompt again. The
-        // channel took this prompt; what it could not do is find anyone listening, and the stream
-        // above has just been told so.
         return true;
+    }
+
+    public async Task<IReadOnlyList<QueuedMessageItem>> GetQueue(string topicId)
+    {
+        await SessionToReadAsync(topicId);
+        return [.. streamService.QueueOf(topicId).Messages.Select(m => m.ToItem())];
+    }
+
+    // Admitted as any send is — the capability guard, then the accounts service's word for the
+    // session — before it waits, so an obvious refusal shows at once; it is vouched for again as it
+    // leaves. Either way the place the caller held on the running stream is given up: by queueing,
+    // or, refused, by releasing it, since ending a turn on the stream would end the one running.
+    private async Task<string?> QueueAsync(
+        ChannelSession session, SenderSnapshot sender, TurnMessage turn, CancellationToken ct)
+    {
+        string? refusal;
+        try
+        {
+            refusal = await CapabilityRefusalAsync(session.AgentId, turn.ConfigPatch, turn.Attachments, ct);
+            if (refusal is null && await _turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is { Account: null } unvouched)
+            {
+                refusal = unvouched.Refusal;
+            }
+        }
+        catch
+        {
+            streamService.Release(sender.TopicId);
+            throw;
+        }
+
+        if (refusal is not null)
+        {
+            streamService.Release(sender.TopicId);
+            return refusal;
+        }
+
+        streamService.Enqueue(sender.TopicId, QueuedMessage.Of(sender, turn));
+        await _queueNews.TellAsync(sender);
+        return null;
     }
 
     // The composer already blocks this case; this is the guard for the race where the model
@@ -624,7 +689,8 @@ public sealed class ChatHub(
 
     public async Task CancelTopic(string topicId)
     {
-        if (await SessionToContinueAsync(topicId) is { } session)
+        var session = await SessionToContinueAsync(topicId);
+        if (session is not null)
         {
             await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
             {
@@ -634,7 +700,14 @@ public sealed class ChatHub(
             });
         }
 
+        // Stopping the stream empties its queue, so nothing queued is later sent into a stream that
+        // was stopped. Ticket 06 gives those messages back to their senders instead.
+        var queued = streamService.QueueOf(topicId).Messages.Count > 0;
         streamService.CancelStream(topicId);
+        if (queued && session is not null)
+        {
+            await _queueNews.TellAsync(SenderOf(topicId, session));
+        }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it
         // holds the tool call open and keeps the modal on screen over a stream that has ended.

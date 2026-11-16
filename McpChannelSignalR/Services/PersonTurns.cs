@@ -77,11 +77,17 @@ public sealed class PersonTurns(
             return new VouchedSender(sender, vouched);
         }
 
+        await RefuseAsync(sender, vouching.Refusal);
+        return null;
+    }
+
+    // The turn ended on the stream with what the browser is told instead of an answer.
+    public Task RefuseAsync(SenderSnapshot sender, string refusal)
+    {
         logger.LogWarning(
             "No assertion for conversation {ConversationId} (topic {TopicId}): {Refusal}; answering instead of sending a turn",
-            sender.Conversation.ConversationId, sender.TopicId, vouching.Refusal);
-        await EndTurnAsync(sender, vouching.Refusal);
-        return null;
+            sender.Conversation.ConversationId, sender.TopicId, refusal);
+        return EndTurnAsync(sender, refusal);
     }
 
     // The accounts service's word for a person, asked afresh for every turn, which the turn carries to

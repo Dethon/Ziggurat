@@ -139,25 +139,16 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
     public async Task AnEnqueuedMessageWithAnIncapableModel_IsRefusedTheSameWay()
     {
         await ReceivedAsync();
-        var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
-        var subscription = channel.Subscribe();
+        _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
 
-        (await _hub.EnqueueMessage(TopicId, "look", null, null, [_photo])).ShouldBeTrue();
+        // Told to its sender alone: the stream belongs to the turn running, which this is no part of.
+        var refused = await Should.ThrowAsync<Microsoft.AspNetCore.SignalR.HubException>(
+            () => _hub.EnqueueMessage(TopicId, "look", null, null, [_photo]));
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var received = new List<ChatStreamMessage>();
-        try
-        {
-            await foreach (var chunk in subscription.ReadAllAsync(cts.Token))
-            {
-                received.Add(chunk);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-
-        received.ShouldContain(c => (c.Error ?? "").Contains("text/only"));
+        refused.Message.ShouldContain("text/only");
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+        (await _hub.GetQueue(TopicId)).ShouldBeEmpty();
         (await ReceivedAsync()).ShouldBeEmpty();
     }
 

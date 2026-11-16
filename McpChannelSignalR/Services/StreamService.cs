@@ -22,6 +22,23 @@ public sealed class StreamService(
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
 
+    // The messages waiting for each topic's running turn to end, and which stream each topic's is,
+    // both kept under _streamLock with the stream itself: a message is queued only while the topic
+    // streams, and the stream ends only once nothing is pending or queued.
+    private readonly Dictionary<string, List<QueuedMessage>> _queues = new();
+    private readonly Dictionary<string, long> _streamIds = new();
+    private long _lastStreamId;
+
+    // Numbered from the clock rather than from one, so a page that heard this process's predecessor
+    // does not take a restarted hub's changes for older ones.
+    private long _queueRevision = DateTimeOffset.UtcNow.UtcTicks;
+
+    // A queue's head, taken as the turn before it ended, for the dispatcher to send. A channel rather
+    // than a call, so the turn completing (send_reply's call) waits on nothing the head's sending does,
+    // and the dispatcher, which writes on these streams, is not something they depend on.
+    private readonly Channel<QueuedTurn> _dispatches = Channel.CreateUnbounded<QueuedTurn>(
+        new UnboundedChannelOptions { SingleReader = true });
+
     // Bumped whenever who may see a topic changes (its owner shares it or stops), so a reply streaming
     // to a page asks again whether that page's person still may, and only then.
     private readonly ConcurrentDictionary<string, int> _audiences = new();
@@ -114,6 +131,7 @@ public sealed class StreamService(
 
             var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
             _responseChannels[topicId] = broadcastChannel;
+            _streamIds[topicId] = ++_lastStreamId;
 
             _streamBuffers.TryRemove(topicId, out _);
 
@@ -127,6 +145,76 @@ public sealed class StreamService(
             _cancellationTokens[topicId] = cts;
 
             return (broadcastChannel, cts.Token);
+        }
+    }
+
+    // A person's send: the topic's stream opened for it, or, when one is running already, a place held
+    // on that one — counted as pending, so the stream cannot end while the send is being admitted —
+    // which the send gives up by queueing (Enqueue) or by being refused (Release). The running stream's
+    // prompt and sender stay those of the turn it is on.
+    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened) OpenOrHold(
+        string topicId, string prompt, string senderId, CancellationToken parentToken)
+    {
+        lock (_streamLock)
+        {
+            var opened = !_responseChannels.ContainsKey(topicId);
+            var (channel, token) = opened
+                ? GetOrCreateStream(topicId, prompt, senderId, parentToken)
+                : (_responseChannels[topicId], TokenOf(topicId, parentToken));
+            _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
+            return (channel, token, opened);
+        }
+    }
+
+    private CancellationToken TokenOf(string topicId, CancellationToken parentToken)
+    {
+        if (_cancellationTokens.TryGetValue(topicId, out var existing))
+        {
+            return existing.Token;
+        }
+
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+        _cancellationTokens[topicId] = linked;
+        return linked.Token;
+    }
+
+    // A place held on the running stream (OpenOrHold, TryIncrementPending), turned into a message
+    // waiting at the back of its queue.
+    public void Enqueue(string topicId, QueuedMessage message)
+    {
+        lock (_streamLock)
+        {
+            if (!_queues.TryGetValue(topicId, out var queue))
+            {
+                _queues[topicId] = queue = [];
+            }
+
+            queue.Add(message);
+            _queueRevision++;
+        }
+
+        Release(topicId);
+    }
+
+    // The topic's queue now, in the order it will run.
+    public QueueSnapshot QueueOf(string topicId)
+    {
+        lock (_streamLock)
+        {
+            return new QueueSnapshot(
+                _queues.TryGetValue(topicId, out var queue) ? [.. queue] : [], _queueRevision);
+        }
+    }
+
+    public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
+
+    // Whether the stream a queued turn was taken from is still the topic's: a stop, or a stop and a
+    // new send, while its sender was being vouched for leaves it nothing to be written on.
+    public bool IsRunning(string topicId, long stream)
+    {
+        lock (_streamLock)
+        {
+            return _streamIds.TryGetValue(topicId, out var running) && running == stream;
         }
     }
 
@@ -198,6 +286,10 @@ public sealed class StreamService(
     public const int PushExcerptLength = 140;
     private const string NoExcerpt = "The agent has finished responding";
 
+    // A turn on the stream is over (or a place held on it given up): the next queued message's turn
+    // starts on the same stream, and only once nothing is pending or queued does the stream end.
+    public void Release(string topicId) => CompleteStream(topicId);
+
     private void CompleteStream(string topicId)
     {
         ChannelSession? finished = null;
@@ -211,6 +303,15 @@ public sealed class StreamService(
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
             if (remaining > 0)
             {
+                return;
+            }
+
+            if (TakeHead(topicId) is { } head)
+            {
+                _pendingPromptCounts[topicId] = 1;
+                _currentPrompts[topicId] = head.Message.Message.Content;
+                _currentSenderIds[topicId] = head.Message.Sender.UserId;
+                _dispatches.Writer.TryWrite(head);
                 return;
             }
 
@@ -241,6 +342,20 @@ public sealed class StreamService(
         {
             _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, LastSaid(carried));
         }
+    }
+
+    private QueuedTurn? TakeHead(string topicId)
+    {
+        if (!_queues.TryGetValue(topicId, out var queue) || queue.Count == 0
+            || !_streamIds.TryGetValue(topicId, out var stream))
+        {
+            return null;
+        }
+
+        var head = queue[0];
+        queue.RemoveAt(0);
+        _queueRevision++;
+        return new QueuedTurn(head, stream);
     }
 
     // The reply's last words, not its reasoning, its tool calls or a person's message on the stream.
@@ -355,6 +470,11 @@ public sealed class StreamService(
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
         _audiences.TryRemove(topicId, out _);
+        _streamIds.Remove(topicId);
+        if (_queues.Remove(topicId, out var queue) && queue.Count > 0)
+        {
+            _queueRevision++;
+        }
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {
@@ -370,6 +490,7 @@ public sealed class StreamService(
         }
 
         _disposed = true;
+        _dispatches.Writer.TryComplete();
 
         foreach (var channel in _responseChannels.Values)
         {
