@@ -33,11 +33,24 @@ internal sealed class QueueNews(StreamService streamService, IThreadStateStore t
     }
 
     // Messages a stop handed back, told to each of their senders on every page they have open, whatever
-    // space it shows: only the sender's own pages may take them.
-    public Task TellReturnedAsync(IReadOnlyList<QueuedMessage> returned) =>
+    // space it shows: only the sender's own pages may take them. Told after the stop, which a failed
+    // telling must not fail: a page finds them anyway as it next opens the topic.
+    public Task TellReturnedOrLogAsync(IReadOnlyList<QueuedMessage> returned, ILogger logger) =>
         Task.WhenAll(returned
             .DistinctBy(m => m.Sender.UserId)
-            .Select(m => hubSender.SendToGroupAsync(
-                TopicAudience.Account(m.Sender.UserId), "OnQueueReturned",
-                new QueueReturnedNotification(m.Sender.TopicId, m.Sender.SpaceSlug))));
+            .Select(m => TellReturnedOrLogAsync(m.Sender, logger)));
+
+    private async Task TellReturnedOrLogAsync(SenderSnapshot to, ILogger logger)
+    {
+        try
+        {
+            await hubSender.SendToGroupAsync(
+                TopicAudience.Account(to.UserId), "OnQueueReturned", new QueueReturnedNotification(to.TopicId, to.SpaceSlug));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not tell {UserId} their queued messages in topic {TopicId} were returned",
+                to.UserId, to.TopicId);
+        }
+    }
 }

@@ -765,8 +765,8 @@ public sealed class ChatHub(
         var returned = streamService.Stop(topicId);
         if (returned.Count > 0)
         {
-            await _queueNews.TellAsync(returned[0].Sender);
-            await _queueNews.TellReturnedAsync(returned);
+            await _queueNews.TellOrLogAsync(returned[0].Sender, logger);
+            await _queueNews.TellReturnedOrLogAsync(returned, logger);
         }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it

@@ -431,6 +431,32 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await marta.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["marta one"]);
     }
 
+    // An installed page from before ignores what a stop returns and never takes it: its stop still ends
+    // the reply, and so does one whose pushes cannot be sent, and the topic's next message runs alone.
+    [Fact]
+    public async Task AStopFromAPageThatIgnoresReturns_StillStops_EvenWhenItsPushesFail()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        _sender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), It.IsIn("OnQueueChanged", "OnQueueReturned"), It.IsAny<object>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("the backplane is down"));
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        await FinishTurnAsync("answer one, too late");
+
+        var next = Read(fran.SendMessage(TopicId, "next", "c-3", null, null, CancellationToken.None));
+        await AgentWasSentAsync("next");
+        await FinishTurnAsync("answer next");
+        await next.Ended;
+        next.Said().ShouldBe(["user: next", "agent: answer next"]);
+        Sent().ShouldBe(["first", "next"]);
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {
