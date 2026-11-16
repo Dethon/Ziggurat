@@ -91,7 +91,8 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
 
         var chatInput = page.Locator("textarea.chat-input");
         await chatInput.FillAsync(
-            $"markup {tag} <img src=\"x\" onerror=\"document.body.dataset.xss='ran'\"> [pulsa](javascript:document.body.dataset.xss='ran')");
+            $"markup {tag} <img src=\"x\" onerror=\"document.body.dataset.xss='ran'\"> [pulsa](javascript:document.body.dataset.xss='ran') "
+            + "Reply with one word. Do not call any tools.");
         await chatInput.PressAsync("Enter");
 
         var bubble = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
@@ -100,11 +101,11 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
         (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();
         (await bubble.Locator("img").CountAsync()).ShouldBe(0);
 
-        // The reply is the proof the turn's record was written; reloading before it races the history
-        // read against the agent's own persistence (as the attachment test waits).
-        // A message this odd is sometimes answered with a tool call, whose approval holds the reply
-        // until it is answered; the wait answers it as it comes, as SendMessage_AppearsInChat's does.
-        await WaitForAssistantTextAsync(page);
+        // The turn's end is the proof its record was written; reloading before it races the history
+        // read against the agent's own persistence. Its end, not its text: a message this odd is
+        // sometimes answered with a tool call, and turning that down ends the turn with no text at
+        // all, which a wait for text sat out for three minutes.
+        await WaitForTurnKeptAsync(page, page.Locator(".chat-message.user", new PageLocatorOptions { HasText = $"markup {tag}" }));
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" }).First;
         await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
@@ -126,7 +127,7 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
         await SelectAgentAsync(page);
 
         var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Hello, this is an E2E test message");
+        await chatInput.FillAsync("Hello, this is an E2E test message. Do not call any tools.");
         await chatInput.PressAsync("Enter");
 
         // .First, because the agent often quotes the message back and then two bubbles carry the
@@ -139,9 +140,8 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
 
         // Wait for agent response — the assistant message element may appear early (with empty
         // content during "thinking"), so poll until it has non-empty text. The model sometimes
-        // answers even a greeting with a tool call, and that raises an approval prompt which
-        // holds the reply hostage until it is answered — reject whatever appears between waits,
-        // or no amount of timeout produces text.
+        // answers even a greeting with a tool call, and turning its approval down ends the turn with
+        // no text at all, so the message asks for none.
         // The reply comes from a real model over the network, so what bounds this is the provider's
         // worst case rather than the app's. Three minutes: a queued or slow generation ran past the
         // old ninety seconds and reported it as an empty bubble, which reads as a broken client
@@ -151,9 +151,9 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
     }
 
     // The reply comes from a real model over the network, so what bounds this is the provider's
-    // worst case rather than the app's. The model sometimes answers with a tool call, which raises an
-    // approval prompt that holds the reply hostage until it is answered — rejected between waits, or
-    // no amount of timeout produces text. Returns the moment text appears.
+    // worst case rather than the app's. Returns the moment text appears. An approval holds the turn
+    // until it is answered, so one is turned down as it comes; but that ends the turn with no text, so
+    // a caller asks the model not to call tools, and a turn that ended empty fails at once.
     internal static async Task WaitForAssistantTextAsync(IPage page)
     {
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
@@ -167,9 +167,17 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
                     .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
                 break;
             }
-            catch (PlaywrightException) when (DateTime.UtcNow < deadline)
+            catch (PlaywrightException ex) when (DateTime.UtcNow < deadline)
             {
-                // An approval may have arrived mid-wait; loop to reject it and keep waiting.
+                // An approval may have arrived mid-wait; loop to reject it and keep waiting — unless
+                // the turn is already over. A turned-down call ends the turn with no text
+                // (ApprovalRejection), so no amount of waiting produces any: say so now.
+                if (await TurnEndedWithoutTextAsync(page, assistantMessage))
+                {
+                    throw new InvalidOperationException(
+                        "The turn ended with no assistant text: the model called a tool and its approval "
+                        + "was turned down, which ends the turn. Ask the model not to call tools.", ex);
+                }
             }
             catch (PlaywrightException ex)
             {
@@ -178,6 +186,44 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
                 throw new TimeoutException(
                     "No assistant text after 3 minutes. The reply comes from a real model here, so "
                     + "this is a slow or failed generation rather than the chat client.", ex);
+            }
+        }
+    }
+
+    // Ended, read from what says so rather than from a quiet moment: the page has named the asking
+    // message from the stored turn (its actions appear only then, and never while a reply streams),
+    // and the reply under it has no text.
+    private static async Task<bool> TurnEndedWithoutTextAsync(IPage page, ILocator assistantMessage) =>
+        await page.Locator(".chat-message.user").Last
+            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Message actions" }).CountAsync() == 1
+        && !await page.Locator("[data-testid=composer-cancel]").IsVisibleAsync()
+        && await assistantMessage.CountAsync() > 0
+        && string.IsNullOrWhiteSpace(await assistantMessage.Last.InnerTextAsync());
+
+    // A turn is kept once the page has named its message from the stored turn, which it does when the
+    // reply ends: the message's actions appear then and not before. Approvals are turned down as they
+    // come, since one holds the turn open until it is answered.
+    internal static async Task WaitForTurnKeptAsync(IPage page, ILocator asked)
+    {
+        var actions = asked.Last.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Message actions" });
+        var deadline = DateTime.UtcNow.AddMinutes(3);
+        while (true)
+        {
+            await DismissApprovalOverlayAsync(page);
+            try
+            {
+                await Assertions.Expect(actions).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 10_000 });
+                await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
+                    .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
+                return;
+            }
+            catch (PlaywrightException ex) when (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException("The turn was not kept after 3 minutes: its message never got its actions.", ex);
+            }
+            catch (PlaywrightException)
+            {
+                // An approval may be holding the turn; loop to turn it down and keep waiting.
             }
         }
     }

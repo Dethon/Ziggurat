@@ -114,6 +114,19 @@ for this, and each shape below is one that has already failed here.
 - A wait on a real model is bounded by the provider, not the app. The reply in
   `SendMessage_AppearsInChat` crosses the network to a live LLM; when that cap is exceeded the
   failure must say so, or an ordinary slow generation is read as the client failing to render
+- A message whose test waits for the model's text says "Do not call any tools". The waits turn
+  approvals down as they come, and a turned-down call ends the turn with no text
+  (`ApprovalRejection`), so a model that reached for a tool left `WaitForAssistantTextAsync`
+  spinning to its three-minute cap. A test that needs only the turn stored, not its words, waits for
+  the turn (`WaitForTurnKeptAsync`). Where the claim is that a long reply grew or streamed, stop it
+  once that is seen rather than idling out the rest of the story — the provider's half minute
+- Where a new class goes decides the run's length more than what it does. Tests in one collection
+  run end to end, so a class waiting on the real model or a browser goes into a collection whose
+  chain is short, or one of its own (a WebChat collection: a space name and `CollectionSlices`
+  raised) — never appended to the longest. Chat-edits' six real-model turns joined `Conversation`'s
+  three and became the suite's tail by forty seconds; the login handoff's eight joined the already
+  longest Camoufox lane. After adding one, read its collection's span in the run's `.trx` against
+  the others' before calling it done
 - What a run spent its wall clock on is answerable rather than guessable: set `E2E_TRACE_FILE` and
   every fixture phase, container start and row-settle wait appends its seconds to that file
   (`E2ETrace`, a null check when the variable is unset). Read it beside the run's `.trx` — the trx
