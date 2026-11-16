@@ -272,7 +272,20 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<bool> CreatedAsGroup { get; } = [];
 
-    public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
+    // Written by every call of a batch at once when the tool loop runs them concurrently, so kept
+    // under a lock and read as a copy.
+    private readonly List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> _notifiedAutoApproved = [];
+
+    public IReadOnlyList<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls
+    {
+        get
+        {
+            lock (_notifiedAutoApproved)
+            {
+                return [.. _notifiedAutoApproved];
+            }
+        }
+    }
 
     public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
     {
@@ -289,12 +302,30 @@ internal sealed class FakeChannelConnection : IChannelConnection
         OnReply?.Invoke(reply);
     }
 
-    public List<ApprovalAsk> AskedApprovals { get; } = [];
+    // What a person asked here answers: a yes, unless a test has them turn calls down.
+    public ToolApprovalResult ApprovalAnswer { get; init; } = ToolApprovalResult.Approved;
+
+    private readonly List<ApprovalAsk> _askedApprovals = [];
+
+    public IReadOnlyList<ApprovalAsk> AskedApprovals
+    {
+        get
+        {
+            lock (_askedApprovals)
+            {
+                return [.. _askedApprovals];
+            }
+        }
+    }
 
     public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
     {
-        AskedApprovals.Add(ask);
-        return Task.FromResult<ToolApprovalResult?>(ToolApprovalResult.Approved);
+        lock (_askedApprovals)
+        {
+            _askedApprovals.Add(ask);
+        }
+
+        return Task.FromResult<ToolApprovalResult?>(ApprovalAnswer);
     }
 
     public List<ApprovalAsk> OfferedApprovals { get; } = [];
@@ -364,7 +395,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Task NotifyAutoApprovedAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
     {
-        NotifyAutoApprovedCalls.Add((conversationId, requests));
+        lock (_notifiedAutoApproved)
+        {
+            _notifiedAutoApproved.Add((conversationId, requests));
+        }
+
         return Task.CompletedTask;
     }
 
