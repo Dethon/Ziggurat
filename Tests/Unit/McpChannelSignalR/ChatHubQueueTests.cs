@@ -1192,6 +1192,52 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
     }
 
+    // Vouched for afresh as it leaves the queue, as any turn is: a device signed out since steers
+    // nothing, and the message keeps its place, to be refused again when its turn comes.
+    [Fact]
+    public async Task ASteerFromASessionSignedOutSince_IsRefused_AndTheMessageKeepsItsPlace()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var franOnThePhone = HubFor(CallerAs("fran", "session-phone"));
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await franOnThePhone.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+
+        var queued = IdOf(await fran.GetQueue(TopicId), "steer me");
+
+        _accounts.SignOut("session-phone");
+        var refused = await Should.ThrowAsync<HubException>(() => franOnThePhone.SteerQueued(TopicId, queued));
+
+        refused.Message.ShouldContain("signed out");
+        (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["steer me"]);
+        await Eventually.Settle();
+        SentAsSteers().ShouldBeEmpty();
+        wire.Said().ShouldBe(["user: first"]);
+    }
+
+    // Every page is told whose own turn the stream is running, the one person it offers Steer now to:
+    // nobody's while an agent's turn runs or a queued turn is about to start, then that turn's sender.
+    [Fact]
+    public async Task TheQueue_SaysWhoseOwnTurnIsRunning_AsEachTurnStarts()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "from marta", "c-2", null)).ShouldBeTrue();
+        (await fran.GetQueue(TopicId)).RunningFor.ShouldBe("fran");
+        var told = TellsOfTheQueue();
+
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("from marta");
+
+        await Eventually.Until(() => Latest(told) is { RunningFor: "marta" }, "the pages are told marta's turn runs");
+        (await fran.GetQueue(TopicId)).RunningFor.ShouldBe("marta");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
 
