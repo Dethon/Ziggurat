@@ -121,6 +121,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<OfferedApprovalsEffect>();
             services.AddScoped<RingingAlertsEffect>();
             services.AddScoped<QueueEffect>();
+            services.AddScoped<ReturnedMessagesEffect>();
 
             return services;
         }

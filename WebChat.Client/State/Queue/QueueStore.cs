@@ -7,6 +7,9 @@ namespace WebChat.Client.State.Queue;
 // The hub told the page a topic's queue as it is now.
 public record QueueChanged(QueueChangedNotification Notification) : IAction;
 
+// A stop handed back messages this person queued on a topic, waiting for one of their pages to take.
+public record QueueReturned(string TopicId) : IAction;
+
 // The reader takes their own queued message back into the composer, to rework and send again.
 public record EditQueuedMessage(string TopicId, string QueuedId) : IAction;
 

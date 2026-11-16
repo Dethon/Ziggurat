@@ -67,7 +67,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
             typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect),
-            typeof(TopicShareEffect), typeof(QueueEffect)
+            typeof(TopicShareEffect), typeof(QueueEffect), typeof(ReturnedMessagesEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -201,6 +201,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             (object?[] args) => new AttachmentDownload(
                 $"/api/attachments/{args[0]}?ticket=download-1", DateTimeOffset.UtcNow.AddMinutes(15)));
         connection.Answer("EnqueueMessage", false);
+        connection.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[]);
         connection.Answer("RespondToApprovalAsync", true);
     }
 

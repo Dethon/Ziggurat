@@ -28,7 +28,8 @@ public sealed class HubEventBinderTests : IDisposable
         "OnAgentsUpdated",
         "OnAccessChanged",
         "OnHistoryChanged",
-        "OnQueueChanged"
+        "OnQueueChanged",
+        "OnQueueReturned"
     ];
 
     private readonly Dispatcher _dispatcher = new();

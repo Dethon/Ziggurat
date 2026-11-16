@@ -28,4 +28,5 @@ public interface IChatMessagingService
         IReadOnlyList<AttachmentReference>? attachments = null);
     Task<HubResult<Nothing>> RemoveQueuedAsync(string topicId, string queuedId);
     Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId);
+    Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId);
 }
