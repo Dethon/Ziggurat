@@ -8,10 +8,19 @@
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] After a stop the queue is empty, each sender's items are held for them in order, and no further turn is emitted (hub seam).
-- [ ] Each sender is told their items are waiting. A take hands them over once, and a second take, from any of their devices, gets nothing (hub seam).
-- [ ] A page takes returned items when told while showing the topic, and on every topic open, and merges them into the composer (client seam).
-- [ ] An installed page from before, which ignores what Stop returns, still stops the reply (hub seam).
-- [ ] E2E: two members on a shared topic each queue a message, one presses Stop, and each finds their own text in their composer with no further turn run.
+- [x] After a stop the queue is empty, each sender's items are held for them in order, and no further turn is emitted (hub seam).
+- [x] Each sender is told their items are waiting. A take hands them over once, and a second take, from any of their devices, gets nothing (hub seam).
+- [x] A page takes returned items when told while showing the topic, and on every topic open, and merges them into the composer (client seam).
+- [x] An installed page from before, which ignores what Stop returns, still stops the reply (hub seam).
+- [x] E2E: two members on a shared topic each queue a message, one presses Stop, and each finds their own text in their composer with no further turn run.
+
+**Notes from the implementation:**
+- Hub: `TakeReturned(topicId)` → `IReadOnlyList<ReturnedMessage>` (empty when none); push `OnQueueReturned` with one record, `QueueReturnedNotification(TopicId, SpaceSlug)`, to `account:{userId}`. Both of the stop's pushes are best-effort, so a stop never fails on them and its approvals are still cancelled.
+- The returned set lives in `StreamService` (`_returned`, keyed by topic and sender account, under the stream lock), outlives the stream, and is gone once taken, when the topic is deleted (`StreamService.Forget`, the user's delete; a delete of a streaming topic from the page stops it first, so its queue is returned and then dropped with the topic) or when the hub restarts.
+- Dispatched-not-started already existed implicitly: a head taken as the turn ended, before the dispatcher wrote it on the stream, was lost to a stop. It is now held (`StreamService.Start`, which the dispatcher must win before writing) and returned first. Ticket 07's steers can go there.
+- A Remove or Edit that loses to a stop answers "already sent", although the message was returned to the composer.
+- Residual, unchanged: a stop after the dispatcher wrote the head on the stream but before it was emitted leaves it drawn on the stream, neither sent nor returned; and the cancel is emitted to the agent before the queue is returned, so a turn ending in between can dispatch the next head into the cancel.
+- The page takes on `OnQueueReturned` while showing the topic, on every topic open and on becoming live again (`ReturnedMessagesEffect`); an answer landing after the person moved to another topic is kept on the page for that topic's next open.
+
