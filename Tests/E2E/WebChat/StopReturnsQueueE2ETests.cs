@@ -54,8 +54,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
 
             await GotoWebChatAsync(carlos, fixture.WebChatUrl);
             await SelectAgentAsync(carlos);
-            await carlos.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
-                .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+            await OpenTopicAsync(carlos, topic);
 
             // Carlos's page has heard the reply start, so his send queues rather than opening a turn.
             await Assertions.Expect(carlos.Locator("[data-testid=composer-cancel]"))
@@ -100,8 +99,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             var fresh = await carlosContext.NewPageAsync();
             await GotoWebChatAsync(fresh, fixture.WebChatUrl);
             await SelectAgentAsync(fresh);
-            await fresh.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
-                .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+            await OpenTopicAsync(fresh, topic);
             await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
@@ -110,6 +108,16 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
         {
             await DrainPendingApprovalsAsync(ana);
         }
+    }
+
+    // The held approval's overlay can reach a member's page and covers the whole viewport, and rejecting
+    // it would end the very turn the queue waits behind: the press is dispatched on the row itself, once
+    // the row is there.
+    private static async Task OpenTopicAsync(IPage page, string topic)
+    {
+        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = topic });
+        await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        await row.DispatchEventAsync("click");
     }
 
     private static ILocator UserMessage(IPage page, string words) =>
