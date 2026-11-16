@@ -157,7 +157,7 @@ public class CreateConversationToolTests
 
         var stream = _streamService.Hold(topicId).ShouldNotBeNull();
         _streamService.Enqueue(topicId, stream, QueuedMessage.Of(sender, new TurnMessage("and dessert", null, null, null)))
-            .ShouldBeTrue();
+            .ShouldBe(Queueing.Queued);
 
         _streamService.Dispatches.TryRead(out _).ShouldBeFalse();
         await _streamService.WriteReplyAsync(new SendReplyParams

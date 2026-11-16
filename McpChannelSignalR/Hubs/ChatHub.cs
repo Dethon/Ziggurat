@@ -569,9 +569,9 @@ public sealed class ChatHub(
     }
 
     // A message sent while a reply runs: held in the topic's queue and sent once the running turn
-    // ends (QueueDispatcher). False when nothing is running to queue behind, which is the page's
-    // signal to open a stream itself; a refusal is the hub's answer, since the stream it would end
-    // belongs to the turn that is running.
+    // ends (QueueDispatcher), or handed back to its sender by a stop that lands as it is admitted. False
+    // when nothing is running to queue behind, which is the page's signal to open a stream itself; a
+    // refusal is the hub's answer, since the stream it would end belongs to the turn that is running.
     public async Task<bool> EnqueueMessage(
         string topicId,
         string message,
@@ -660,8 +660,9 @@ public sealed class ChatHub(
     // Admitted as any send is — the capability guard, then the accounts service's word for the
     // session — before it waits, so an obvious refusal shows at once; it is vouched for again as it
     // leaves. Either way the place the caller held on the running stream is given up: by queueing,
-    // or, refused, by releasing it, since ending a turn on the stream would end the one running. Not
-    // queued, and not refused, when that stream was stopped meanwhile: there is nothing to queue behind.
+    // or, refused, by releasing it, since ending a turn on the stream would end the one running. A stop
+    // that took that stream meanwhile hands the message back to its sender with the rest of the queue,
+    // and the page is told it was taken, not sent, so it does not run behind the cancel.
     private async Task<(bool Queued, string? Refusal)> QueueAsync(
         ChannelSession session, SenderSnapshot sender, TurnMessage turn, long stream, CancellationToken ct)
     {
@@ -686,13 +687,18 @@ public sealed class ChatHub(
             return (false, refusal);
         }
 
-        if (!streamService.Enqueue(sender.TopicId, stream, QueuedMessage.Of(sender, turn)))
+        var message = QueuedMessage.Of(sender, turn);
+        switch (streamService.Enqueue(sender.TopicId, stream, message))
         {
-            return (false, null);
+            case Queueing.NotRunning:
+                return (false, null);
+            case Queueing.Returned:
+                await _queueNews.TellReturnedOrLogAsync([message], logger);
+                return (true, null);
+            default:
+                await _queueNews.TellAsync(sender);
+                return (true, null);
         }
-
-        await _queueNews.TellAsync(sender);
-        return (true, null);
     }
 
     // The composer already blocks this case; this is the guard for the race where the model

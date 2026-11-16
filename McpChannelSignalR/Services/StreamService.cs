@@ -39,6 +39,11 @@ public sealed class StreamService(
     // deleted: a sender with no page open finds it the next time they open the topic.
     private readonly Dictionary<(string TopicId, Account? Sender), List<QueuedMessage>> _returned = new();
 
+    // Each topic's last stopped stream, under _streamLock until the topic is deleted: a message still
+    // being admitted to that stream's queue as it stopped goes back to its sender with the rest, rather
+    // than be answered "nothing runs" and sent by its page as a new turn behind the cancel.
+    private readonly Dictionary<string, long> _stopped = new();
+
     // Numbered from the clock rather than from one, so a page that heard this process's predecessor
     // does not take a restarted hub's changes for older ones.
     private long _queueRevision = DateTimeOffset.UtcNow.UtcTicks;
@@ -212,9 +217,9 @@ public sealed class StreamService(
     }
 
     // A place held on the running stream (OpenOrHold, Hold), turned into a message waiting at the back
-    // of its queue. False when that stream was stopped meanwhile: the place went with it, and a
-    // stream opened since is no part of it.
-    public bool Enqueue(string topicId, long stream, QueuedMessage message) => Finish(topicId, stream, message);
+    // of its queue, or, when a stop took that stream meanwhile, handed back to its sender with the rest
+    // of it. The place went with the stream either way, and a stream opened since is no part of it.
+    public Queueing Enqueue(string topicId, long stream, QueuedMessage message) => Finish(topicId, stream, message);
 
     // A place held on the running stream given up, the message it was held for refused.
     public void Release(string topicId, long stream) => Finish(topicId, stream, null);
@@ -366,7 +371,7 @@ public sealed class StreamService(
     // next queued message's turn starts on the same stream, and only once nothing is pending or queued
     // does the stream end. A place is given up only on the stream it was held on, in the same step as
     // its message is queued, so a stop in between can neither lose the message nor end another stream.
-    private bool Finish(string topicId, long? heldOn, QueuedMessage? queueing)
+    private Queueing Finish(string topicId, long? heldOn, QueuedMessage? queueing)
     {
         ChannelSession? finished = null;
         string? spaceSlug = null;
@@ -377,7 +382,13 @@ public sealed class StreamService(
         {
             if (heldOn is { } held && !(_streamIds.TryGetValue(topicId, out var running) && running == held))
             {
-                return false;
+                if (queueing is null || !(_stopped.TryGetValue(topicId, out var stopped) && stopped == held))
+                {
+                    return Queueing.NotRunning;
+                }
+
+                ReturnedTo(topicId, queueing.Sender.Principal.Account).Add(queueing);
+                return Queueing.Returned;
             }
 
             if (queueing is not null)
@@ -395,7 +406,7 @@ public sealed class StreamService(
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
             if (remaining > 0)
             {
-                return true;
+                return Queueing.Queued;
             }
 
             if (TakeHead(topicId) is { } head)
@@ -404,7 +415,7 @@ public sealed class StreamService(
                 _currentPrompts[topicId] = head.Message.Message.Content;
                 _currentSenderIds[topicId] = head.Message.Sender.UserId;
                 _dispatches.Writer.TryWrite(head);
-                return true;
+                return Queueing.Queued;
             }
 
             // Resolve space slug and topic name before cleanup
@@ -435,7 +446,7 @@ public sealed class StreamService(
             _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, LastSaid(carried));
         }
 
-        return true;
+        return Queueing.Queued;
     }
 
     private QueuedTurn? TakeHead(string topicId)
@@ -540,6 +551,11 @@ public sealed class StreamService(
                 .GroupBy(m => m.Sender.Principal.Account)
                 .ToList()
                 .ForEach(sender => ReturnedTo(topicId, sender.Key).AddRange(sender));
+            if (_streamIds.TryGetValue(topicId, out var stream))
+            {
+                _stopped[topicId] = stream;
+            }
+
             CancelStream(topicId);
             return stopped;
         }
@@ -571,6 +587,7 @@ public sealed class StreamService(
         lock (_streamLock)
         {
             CancelStream(topicId);
+            _stopped.Remove(topicId);
             _returned.Keys.Where(key => key.TopicId == topicId).ToList().ForEach(key => _returned.Remove(key));
         }
     }

@@ -296,12 +296,14 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         wire.Said().ShouldBe(["user: first", "agent: answer one", "user: second", "agent: answer two"]);
     }
 
-    // A stop while a message is being admitted takes the place it held with the stream it was held on:
-    // a stream another send opened meanwhile is no part of it, and the page is told there was nothing
-    // to queue behind.
+    // A stop while a message is being admitted takes the place it held with the stream it was held on,
+    // and the message goes back to its sender with the rest of the queue: the page is told it was taken,
+    // so it does not send it as a new turn behind the cancel, and a stream another send opened
+    // meanwhile is no part of it.
     [Fact]
-    public async Task AStopWhileAMessageIsBeingQueued_LeavesTheNextStreamAlone()
+    public async Task AStopWhileAMessageIsBeingQueued_ReturnsItToItsSender_AndLeavesTheNextStreamAlone()
     {
+        var told = TellsOfReturns();
         var fran = HubFor(new SignedInCaller());
         var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
         var stopped = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
@@ -316,13 +318,15 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await AgentWasSentAsync("new");
 
         vouching.Answer();
-        (await queueing).ShouldBeFalse();
+        (await queueing).ShouldBeTrue();
         await FinishTurnAsync("answer new");
         await next.Ended;
         await Eventually.Settle();
 
         next.Said().ShouldBe(["user: new", "agent: answer new"]);
-        Sent().ShouldBe(["first", "new"]);
+        (await SentSoFarAsync()).ShouldBe(["first", "new"]);
+        Snapshot(told).ShouldContain(("account:fran", new QueueReturnedNotification(TopicId, "default")));
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second"]);
     }
 
     // Two people queueing at once: each one's messages run in the order they sent them, and all of
