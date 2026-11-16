@@ -1256,7 +1256,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         _inboxClock.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
         var refused = await Should.ThrowAsync<HubException>(() => fran.SteerQueued(TopicId, queued));
 
-        refused.Message.ShouldBe(PersonTurns.NotLiveError);
+        refused.Message.ShouldBe(TopicRefusals.NotLive);
         (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["steer me", "older"]);
         _streamService.IsStreaming(TopicId).ShouldBeTrue();
         wire.Said().ShouldBe(["user: first"]);

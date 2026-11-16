@@ -676,7 +676,7 @@ public sealed class ChatHub(
             {
                 if (streamService.Unsteer(topicId, steer))
                 {
-                    return new Withdrawal(null, [], PersonTurns.NotLiveError);
+                    return new Withdrawal(null, [], TopicRefusals.NotLive);
                 }
 
                 await _turns.EndUnheardAsync(steer.Sender);

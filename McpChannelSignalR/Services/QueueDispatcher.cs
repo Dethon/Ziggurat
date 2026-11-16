@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 
 namespace McpChannelSignalR.Services;
@@ -74,7 +75,7 @@ public sealed class QueueDispatcher(
             await streamService.WriteReplyAsync(new SendReplyParams
             {
                 ConversationId = sender.Conversation.ConversationId,
-                Content = "This message could not be sent.",
+                Content = TopicRefusals.NotSent,
                 ContentType = ReplyContentType.Error,
                 IsComplete = true
             });

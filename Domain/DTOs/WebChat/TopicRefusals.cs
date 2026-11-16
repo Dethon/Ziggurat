@@ -38,4 +38,21 @@ public static class TopicRefusals
     // Steer now cuts the running turn short, so only the person that turn is for may: never another
     // member's turn, nor a turn an agent started for a schedule or a watch.
     public const string NotYourTurn = "Only a reply to your own message can be steered. This message waits its turn.";
+
+    // Nothing answered the turn's emit. The message may still sit in a buffer for an agent that comes
+    // back, so this says the turn cannot be answered now rather than claiming it was thrown away.
+    public const string NotLive = "No agent is connected right now, so this message has not been answered.";
+
+    // The accounts service could not vouch for the person just now, so no turn could carry its word;
+    // nothing was sent, and sending again later may work.
+    public const string Unvouched = "Who you are could not be checked right now, so this message has not been answered.";
+
+    // The session the page signed in with is no longer live (revoked from the account page, or a
+    // connection that came with none to ask about): nothing is sent until it signs in again, and
+    // sending again will not help.
+    public const string SignedOut = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
+
+    // A queued message whose sending failed after it was taken from the queue: said so its turn ends
+    // rather than hold the stream open for good.
+    public const string NotSent = "This message could not be sent.";
 }

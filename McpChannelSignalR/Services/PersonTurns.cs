@@ -54,20 +54,6 @@ public sealed class PersonTurns(
     ISessionAccounts sessions,
     ILogger logger)
 {
-    // What the browser is told when the emit reached nobody. The message may still be sitting in a
-    // buffer for an agent that comes back, so this says the turn cannot be answered now rather
-    // than claiming it was thrown away.
-    internal const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
-
-    // What the browser is told when the accounts service could not vouch for the person just now, so
-    // no turn could carry its word; nothing was sent, and sending again later may work.
-    private const string UnvouchedError = "Who you are could not be checked right now, so this message has not been answered.";
-
-    // What it is told once the session it signed in with is no longer live — revoked from the account
-    // page, or a connection that came with no session to ask about: nothing is sent until it signs in
-    // again, and sending again will not help.
-    internal const string SignedOutError = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
-
     // Null once refused, the refusal having ended the turn on the stream.
     public async Task<VouchedSender?> VouchAsync(SenderSnapshot sender, CancellationToken ct)
     {
@@ -93,25 +79,25 @@ public sealed class PersonTurns(
     // The accounts service's word for a person, asked afresh for every turn, which the turn carries to
     // the agent: the connection's own assertion was checked as it arrived and lives ten minutes, while
     // a chat client stays connected for hours. Asked for the session that assertion named, never for
-    // the account by its id, so a session revoked since starts no turn (SignedOutError); one the
-    // service could not answer now — unreachable — is UnvouchedError. Either way no turn leaves.
+    // the account by its id, so a session revoked since starts no turn (TopicRefusals.SignedOut); one the
+    // service could not answer now — unreachable — is TopicRefusals.Unvouched. Either way no turn leaves.
     public async Task<Vouching> VouchingAsync(string userId, string? sessionId, CancellationToken ct)
     {
         if (sessionId is null)
         {
-            return new Vouching(null, SignedOutError);
+            return new Vouching(null, TopicRefusals.SignedOut);
         }
 
         try
         {
             return await sessions.SessionAsync(userId, sessionId, ct) is { } vouched
                 ? new Vouching(vouched, "")
-                : new Vouching(null, SignedOutError);
+                : new Vouching(null, TopicRefusals.SignedOut);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "The accounts service could not vouch for account {UserId}; its turn is not sent", userId);
-            return new Vouching(null, UnvouchedError);
+            return new Vouching(null, TopicRefusals.Unvouched);
         }
     }
 
@@ -157,7 +143,7 @@ public sealed class PersonTurns(
             "Nothing is polling for conversation {ConversationId} (topic {TopicId}); " +
             "answering not live instead of streaming a reply that cannot arrive",
             sender.Conversation.ConversationId, sender.TopicId);
-        return EndTurnAsync(sender, NotLiveError);
+        return EndTurnAsync(sender, TopicRefusals.NotLive);
     }
 
     private Task<bool> SendAsync(
