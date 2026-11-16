@@ -180,4 +180,25 @@ public class ChatMonitorSteeringTests
             "assistant: Steered"
         ]);
     }
+
+    // The chat hub hands a steer still waiting back to its sender when they stop the reply, so the
+    // agent must not run it: it is dropped with the rest of what waited behind the cancelled turn.
+    [Fact]
+    public async Task AStopWithASteerPending_DropsTheSteer()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [lookUp]);
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("the other one", steer: true);
+        await run.AdmittedSoFarAsync();
+        run.Stop();
+        await run.FinishAsync();
+
+        model.Requests.Count.ShouldBe(1);
+        run.StoredLine().ShouldNotContain("user: the other one");
+        run.StoredLine().First().ShouldBe("user: look it up");
+    }
 }

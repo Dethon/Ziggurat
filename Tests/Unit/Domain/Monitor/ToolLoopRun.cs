@@ -89,6 +89,16 @@ internal sealed class ToolLoopRun : IAsyncDisposable
         });
     }
 
+    // Stop, as a channel's cancel reaches the monitor.
+    public void Stop() => Channel.WriteUnsigned(new ChannelMessage
+    {
+        ConversationId = ConversationId,
+        Content = "/cancel",
+        Sender = ChannelProtocol.SystemSender,
+        ChannelId = ChatChannel,
+        AgentId = AgentId
+    });
+
     // A schedule Fran wrote, firing in this conversation: its delegation holds, so it acts for her, and it
     // is still a fire, not her turn.
     public void Fire(string prompt)
