@@ -1,0 +1,47 @@
+@inherits StoreSubscriberComponent
+
+@inject QueueStore QueueStore
+@inject UserIdentityStore UserIdentityStore
+
+@code {
+    [Parameter] public string? TopicId { get; set; }
+
+    private IReadOnlyList<QueueChip> _chips = [];
+
+    protected override void OnInitialized()
+    {
+        Subscribe(QueueStore.StateObservable, state => state, _ => Update());
+        Subscribe(UserIdentityStore.StateObservable, state => state.SignedIn?.UserId, _ => Update());
+    }
+
+    protected override void OnParametersSet() => Update();
+
+    private void Update() =>
+        _chips = QueueSelectors.Chips(QueueStore.State, TopicId, UserIdentityStore.State.SignedIn?.UserId);
+}
+
+@* The messages waiting for the running reply to end, in the order they will run. Each is a chip
+   until its turn starts, when the hub writes it on the stream and the page draws it in the
+   conversation. *@
+@if (_chips.Count > 0)
+{
+    <ol class="queue-chips" data-testid="queue-chips" aria-label="Messages waiting to be sent">
+        @foreach (var chip in _chips)
+        {
+            <li class="queue-chip @(chip.Mine ? "mine" : "")" data-testid="queue-chip" @key="chip.Id">
+                @if (chip.SenderName is not null)
+                {
+                    <span class="queue-chip-sender">@chip.SenderName</span>
+                }
+                <span class="queue-chip-text">@chip.Excerpt</span>
+                @if (chip.FileCount > 0)
+                {
+                    <span class="queue-chip-files" title="@(chip.FileCount == 1 ? "1 file" : $"{chip.FileCount} files")">
+                        <Icon Glyph="Icons.Paperclip" Size="12" />
+                        @chip.FileCount
+                    </span>
+                }
+            </li>
+        }
+    </ol>
+}

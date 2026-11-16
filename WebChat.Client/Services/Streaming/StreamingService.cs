@@ -1,6 +1,8 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
+using WebChat.Client.Helpers;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
@@ -67,6 +69,83 @@ public sealed class StreamingService(
         }
     }
 
+    // A message sent while the topic's reply streams waits in the hub's queue and is drawn by nobody
+    // now, so the reply keeps its one bubble: the hub writes it on the stream as its turn starts, and
+    // this page draws it there. Decided under the lock, against the stream as it is then: finding none
+    // after all, it is sent and drawn as any message is.
+    public async Task QueueMessageAsync(
+        StoredTopic topic,
+        string message,
+        string? senderId,
+        IReadOnlyList<AttachmentReference>? attachments = null)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var sending = attachments is null
+                ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
+                : [];
+            var references = attachments ?? ComposerSelectors.References(sending);
+            var outgoing = new Outgoing(topic, message, null, GetConfigPatch(topic), references, sending);
+
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                var queued = await EnqueueAsync(outgoing with { CorrelationId = pipeline.QueueUserMessage() });
+                if (queued is null)
+                {
+                    // Nothing was drawn for it, so its words go back where they were typed; its
+                    // files never left the composer.
+                    dispatcher.Dispatch(new OfferComposerText(message));
+                    return;
+                }
+
+                if (queued.Value)
+                {
+                    ClearSent(topic.TopicId, sending);
+                    return;
+                }
+            }
+
+            // Nothing to queue behind: the reply this page showed is over, and is closed off before
+            // the message is drawn under it.
+            topicStreams.FinalizeCurrent(topic.TopicId);
+            var correlationId = pipeline.SubmitUserMessage(
+                topic.TopicId, message, senderId, references is { Count: > 0 } ? references : null);
+            await StartNewStreamAsync(outgoing with { CorrelationId = correlationId }, seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    // True when the hub queued it, false when nothing was running to queue behind, and null when the
+    // person has been told why it went nowhere: not live, or the hub's refusal.
+    private async Task<bool?> EnqueueAsync(Outgoing outgoing)
+    {
+        HubResult<bool> enqueued;
+        try
+        {
+            enqueued = await messagingService.EnqueueMessageAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments);
+        }
+        catch (HubException refused)
+        {
+            dispatcher.Dispatch(new ShowError(Helpers.HubRefusal.MessageOf(refused)));
+            return null;
+        }
+
+        if (!enqueued.IsLive)
+        {
+            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return null;
+        }
+
+        return enqueued.Value;
+    }
+
     public async Task RerunAsync(
         StoredTopic topic,
         string message,
@@ -129,20 +208,15 @@ public sealed class StreamingService(
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
-        var enqueued = await messagingService.EnqueueMessageAsync(
-            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
-            outgoing.ConfigPatch, outgoing.Attachments);
-
         // A not-live enqueue is not the server saying "there is no stream to enqueue onto".
         // Falling through here would open a second stream over a transport that cannot carry it
         // and show the user a reply that has already failed.
-        if (!enqueued.IsLive)
+        if (await EnqueueAsync(outgoing) is not { } enqueued)
         {
-            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
             return;
         }
 
-        if (!enqueued.Value)
+        if (!enqueued)
         {
             await StartNewStreamAsync(outgoing, seen);
             return;
@@ -325,10 +399,14 @@ public sealed class StreamingService(
                 // cut the reply shown so far from the rest of it.
                 if (chunk.UserMessage is { } sent)
                 {
+                    // One this page queued is known by its own id alone: the same words loaded with
+                    // the history are an earlier message, never this one.
                     var mine = pipeline.WasSentByThisClient(sent.CorrelationId);
-                    if (!mine && BufferRebuildUtility.IsShown(
-                            messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
-                            sent.SenderId, chunk.Content ?? "", sent.CorrelationId))
+                    var page = messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+                    var shown = pipeline.WasQueuedByThisClient(sent.CorrelationId)
+                        ? page.Any(m => m.CorrelationId == sent.CorrelationId)
+                        : BufferRebuildUtility.IsShown(page, sent.SenderId, chunk.Content ?? "", sent.CorrelationId);
+                    if (!mine && shown)
                     {
                         continue;
                     }

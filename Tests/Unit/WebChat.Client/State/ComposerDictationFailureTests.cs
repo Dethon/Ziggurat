@@ -61,11 +61,11 @@ public sealed class ComposerDictationFailureTests
     public void WhileATranscriptIsInFlight_SendIsUnavailable()
     {
         ChatInputLogic.CanSend(
-            disabled: false, inputText: "half a thought", isStreaming: false,
+            disabled: false, inputText: "half a thought",
             readyAttachments: 0, uploadInFlight: true).ShouldBeFalse();
 
         ChatInputLogic.CanSend(
-            disabled: false, inputText: "half a thought", isStreaming: false,
+            disabled: false, inputText: "half a thought",
             readyAttachments: 0, uploadInFlight: false).ShouldBeTrue();
     }
 

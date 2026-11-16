@@ -77,3 +77,20 @@ public record AgentsUpdatedNotification;
 // The household's people changed (a role, "sees all conversations", a member disabled): what this
 // connection may see was read off its assertion as it opened, so the page opens a fresh one.
 public record AccessChangedNotification;
+// A person's message waiting for the running turn to end, as every page on the topic shows it: whose
+// it is, so a page labels other people's and offers its own person theirs, and what it carries.
+public record QueuedMessageItem(
+    string Id,
+    string Content,
+    int FileCount,
+    string SenderId,
+    string SenderName,
+    DateTimeOffset QueuedAt);
+
+// A topic's queue changed. The whole queue, in the order it will run, so a page replaces what it
+// showed; Revision orders two pushes sent close together, since they may arrive the other way round.
+public record QueueChangedNotification(
+    string TopicId,
+    IReadOnlyList<QueuedMessageItem> Items,
+    long Revision,
+    string? SpaceSlug = null);

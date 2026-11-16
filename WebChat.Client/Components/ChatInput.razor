@@ -131,10 +131,12 @@
         || _dictation.Status == DictationStatus.Transcribing;
 
     private bool CanSend => ChatInputLogic.CanSend(
-        _disabled, _inputText, _isStreaming, ReadyCount, UploadInFlight, _capabilityRefusal);
+        _disabled, _inputText, ReadyCount, UploadInFlight, _capabilityRefusal);
 
-    private SendControl Control =>
-        ComposerSelectors.SendControl(_isStreaming, _inputText, ReadyCount, _dictation.Status);
+    private ComposerControls Controls =>
+        ComposerSelectors.Controls(_isStreaming, _inputText, ReadyCount, _dictation.Status);
+
+    private SendControl Control => Controls.Main;
 
     private string? Refusal => _capabilityRefusal ?? _dictation.Refusal;
 
@@ -226,6 +228,8 @@
         <div class="composer-hint">@_dictation.Hint</div>
     }
 
+    <QueueChips TopicId="@_topicId" />
+
     @if (_attachments.Count > 0)
     {
         <div class="composer-attachments">
@@ -316,11 +320,12 @@
         }
     </div>
 
-    @* One control in this spot, always the one the person is about to use: Cancel while the reply
-       runs, the microphone where Send would have nothing to send. The microphone stays in the
-       markup either way — hidden rather than removed — so the browser registers against it once
-       and does not lose its listeners to a keystroke. *@
-    @if (Control == SendControl.Cancel)
+    @* Stop beside the control the person is about to use while the reply runs, never in its place:
+       a message sent then is queued, so sending and stopping never compete for one button. That
+       control is Send, or the microphone where Send would have nothing to send. The microphone stays
+       in the markup either way — hidden rather than removed — so the browser registers against it
+       once and does not lose its listeners to a keystroke. *@
+    @if (Controls.Stop)
     {
         <button class="btn btn-secondary cancel-button"
                 data-testid="composer-cancel"

@@ -11,6 +11,7 @@ using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Queue;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -40,6 +41,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<SpaceStore>();
             services.AddScoped<AgentActivityStore>();
             services.AddScoped<ComposerStore>();
+            services.AddScoped<QueueStore>();
             services.AddScoped<ComposerTopic>();
 
             services.AddScoped<RenderCoordinator>();

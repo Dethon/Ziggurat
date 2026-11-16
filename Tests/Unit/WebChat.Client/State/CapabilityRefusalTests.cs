@@ -125,7 +125,7 @@ public class CapabilityRefusalTests
     public void ARefusal_BlocksTheSendEvenWithTextTyped()
     {
         ChatInputLogic.CanSend(
-            disabled: false, "look at this", isStreaming: false,
+            disabled: false, "look at this",
             readyAttachments: 1, uploadInFlight: false,
             capabilityRefusal: "text/only cannot read images.").ShouldBeFalse();
     }
@@ -134,7 +134,7 @@ public class CapabilityRefusalTests
     public void NoRefusal_AllowsASendWithAttachmentsAndNoText()
     {
         ChatInputLogic.CanSend(
-            disabled: false, inputText: "", isStreaming: false,
+            disabled: false, inputText: "",
             readyAttachments: 1).ShouldBeTrue();
     }
 

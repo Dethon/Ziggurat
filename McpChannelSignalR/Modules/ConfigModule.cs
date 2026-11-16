@@ -58,6 +58,7 @@ public static class ConfigModule
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
             .AddHostedService<AttachmentSweeper>()
+            .AddHostedService<QueueDispatcher>()
             .AddHostedService<HouseholdAgentsAnnouncer>()
             .AddHostedService<EndedSessionsListener>();
 

@@ -89,7 +89,8 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
             .AddSingleton(new Mock<IHubNotificationSender>().Object)
             .AddSingleton(new RetentionSettings())
             .AddSingleton(new DictationSettings())
-            .AddSingleton(TestAssertions.Verifier());
+            .AddSingleton(TestAssertions.Verifier())
+            .AddHostedService<QueueDispatcher>();
 
         _app = builder.Build();
         _app.MapHub<ChatHub>("/hubs/chat");
@@ -230,10 +231,15 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         Send(connection, "one");
         var first = await SingleTurnAsync();
         (await connection.InvokeAsync<bool>("EnqueueMessage", "topic-1", "two", null, null, null)).ShouldBeTrue();
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "7:42", Content = "one answered", ContentType = ReplyContentType.Text, IsComplete = true
+        });
         var second = await SingleTurnAsync();
 
         _accounts.Asked.Distinct().ShouldBe([(Fran, Phone)]);
-        first.Assertion.ShouldBe(_accounts.Issued[^2]);
+        // Asked as it was queued, then again as it left.
+        first.Assertion.ShouldBe(_accounts.Issued[^3]);
         second.Assertion.ShouldBe(_accounts.Issued[^1]);
         second.Assertion.ShouldNotBe(first.Assertion);
         var verified = await TestAssertions.Verifier().VerifyTurnAsync(second.Assertion, "signalr", CancellationToken.None);

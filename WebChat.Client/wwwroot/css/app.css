@@ -1806,6 +1806,54 @@ h1, h2, h3 {
     gap: 0.5rem;
 }
 
+/* The messages waiting for the running reply, one line each, in the order they will run. */
+.queue-chips {
+    flex-basis: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.queue-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    padding: 0.35rem 0.6rem;
+    border: 1px dashed var(--input-border);
+    border-radius: 10px;
+    background-color: var(--input-bg);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+}
+
+.queue-chip.mine {
+    color: var(--text-primary);
+}
+
+.queue-chip-sender {
+    flex: none;
+    font-weight: 600;
+}
+
+.queue-chip-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.queue-chip-files {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
 .composer-attachment {
     display: flex;
     align-items: center;

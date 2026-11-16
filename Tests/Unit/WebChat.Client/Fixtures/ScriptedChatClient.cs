@@ -20,6 +20,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Queue;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -60,7 +61,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         {
             typeof(TopicsStore), typeof(MessagesStore), typeof(StreamingStore), typeof(ConnectionStore),
             typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
-            typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore),
+            typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore), typeof(QueueStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
             typeof(TopicSelectionEffect), typeof(OpenTopicEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),

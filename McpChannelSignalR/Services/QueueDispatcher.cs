@@ -1,0 +1,98 @@
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Mcp.Hosting;
+
+namespace McpChannelSignalR.Services;
+
+// Sends each queued message as the turn before it ends. A turn ends when the agent's send_reply
+// finishes it, where there is no hub call and no connection in hand, so this is a collaborator of the
+// stream service rather than a hub method: the stream service hands it each head it takes, and it
+// sends the head from the snapshot taken as the message was queued. It depends on the stream service
+// and never the other way round, so the two are not a cycle.
+public sealed class QueueDispatcher(
+    StreamService streamService,
+    ChannelNotificationEmitter notificationEmitter,
+    ISessionAccounts sessions,
+    IThreadStateStore threadStore,
+    IHubNotificationSender hubSender,
+    ILogger<QueueDispatcher> logger) : BackgroundService
+{
+    private readonly PersonTurns _turns = new(streamService, notificationEmitter, sessions, logger);
+    private readonly QueueNews _news = new(streamService, threadStore, hubSender);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await foreach (var turn in streamService.Dispatches.ReadAllAsync(stoppingToken))
+            {
+                // Each on its own: one topic's sender being vouched for holds up no other topic's.
+                _ = DispatchAsync(turn);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    // The chips are the pages' to catch up on; a topic that could not be read just now costs the turn nothing.
+    private async Task TellQueueAsync(SenderSnapshot sender)
+    {
+        try
+        {
+            await _news.TellAsync(sender);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", sender.TopicId);
+        }
+    }
+
+    // Written, then vouched for afresh, then sent: the person saw the message waiting, so it takes its
+    // place in the conversation as its turn starts even when the turn is refused under it. A queued
+    // message runs whether or not its sender still has a page open, so nothing here is bound to one.
+    private async Task DispatchAsync(QueuedTurn turn)
+    {
+        var (queued, stream) = turn;
+        var sender = queued.Sender;
+        await TellQueueAsync(sender);
+        try
+        {
+            if (!streamService.IsRunning(sender.TopicId, stream))
+            {
+                return;
+            }
+
+            await _turns.WriteMessageAsync(sender, queued.Message);
+            var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
+
+            // Asked again once the accounts service has answered: what ends a refused turn ends whatever
+            // stream the topic has, which after a stop may be another one.
+            if (!streamService.IsRunning(sender.TopicId, stream))
+            {
+                return;
+            }
+
+            if (vouching.Account is not { } account)
+            {
+                await _turns.RefuseAsync(sender, vouching.Refusal);
+                return;
+            }
+
+            await _turns.EmitAsync(new VouchedSender(sender, account), queued.Message, CancellationToken.None);
+        }
+        catch (Exception ex) when (streamService.IsRunning(sender.TopicId, stream))
+        {
+            // The turn it was given would otherwise hold the stream open for good.
+            logger.LogError(ex, "Sending queued message {MessageId} in topic {TopicId} failed", queued.Id, sender.TopicId);
+            await streamService.WriteReplyAsync(new SendReplyParams
+            {
+                ConversationId = sender.Conversation.ConversationId,
+                Content = "This message could not be sent.",
+                ContentType = ReplyContentType.Error,
+                IsComplete = true
+            });
+        }
+    }
+}

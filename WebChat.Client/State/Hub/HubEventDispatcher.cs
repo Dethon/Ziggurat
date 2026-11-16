@@ -5,6 +5,7 @@ using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Queue;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -20,6 +21,9 @@ public sealed class HubEventDispatcher(
 {
     public void HandleHistoryChanged(HistoryChangedNotification notification) =>
         dispatcher.Dispatch(new HistoryChanged(notification.TopicId));
+
+    public void HandleQueueChanged(QueueChangedNotification notification) =>
+        dispatcher.Dispatch(new QueueChanged(notification));
 
     public void HandleTopicChanged(TopicChangedNotification notification)
     {
