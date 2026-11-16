@@ -314,7 +314,9 @@ public sealed class StreamService(
         lock (_streamLock)
         {
             var running = RunningOf(topicId);
-            return new QueueSnapshot([.. running?.Waiting ?? []], _queueRevision, running?.RunningFor?.UserId);
+            return new QueueSnapshot(
+                [.. running?.Waiting ?? []], _queueRevision, running?.RunningFor?.UserId,
+                [.. running?.Steers.Select(s => s.Message) ?? []]);
         }
     }
 
@@ -596,13 +598,16 @@ public sealed class StreamService(
     // A turn ending with a steer waiting: the steer's turn is the next, already sent, and the reply splits
     // here, so its message is written now, before anything of its answer. A steer the agent already
     // answered (refused as it arrived) is drawn with that answer, and its turn is over too, so the one
-    // after it starts. Answers how many turns are still pending.
+    // after it starts. Each drawn is no longer steering, which the pages are told. Answers how many
+    // turns are still pending.
     private int StartSteers(string topicId, RunningQueue running, int remaining)
     {
         while (remaining > 0 && running.Steers.Count > 0)
         {
             var steer = running.Steers[0];
             running.Steers.RemoveAt(0);
+            _queueRevision++;
+            QueueChanged(topicId);
             var sender = steer.Message.Sender;
             Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message, time.GetUtcNow()));
             steer.Held.ForEach(chunk => Write(topicId, chunk));
@@ -824,7 +829,7 @@ public sealed class StreamService(
         _audiences.TryRemove(topicId, out _);
         if (_topics.GetValueOrDefault(topicId) is { } topic)
         {
-            if (topic.Running is { Waiting.Count: > 0 })
+            if (topic.Running is { Waiting.Count: > 0 } or { Steers.Count: > 0 })
             {
                 _queueRevision++;
             }

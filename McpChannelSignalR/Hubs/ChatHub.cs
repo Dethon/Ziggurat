@@ -683,6 +683,12 @@ public sealed class ChatHub(
         switch (outcome)
         {
             case SteerRefused refused:
+                // A steer taken and put back (nobody heard it) may have been told as steering meanwhile.
+                if (queued is not null)
+                {
+                    await queueNews.TellOrLogAsync(queued.Sender);
+                }
+
                 throw new HubException(refused.Refusal);
             case Steered steered:
                 await queueNews.TellOrLogAsync(steered.Message.Sender);

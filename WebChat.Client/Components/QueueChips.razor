@@ -47,13 +47,22 @@
 
 @* The messages waiting for the running reply to end, in the order they will run. Each is a chip
    until its turn starts, when the hub writes it on the stream and the page draws it in the
-   conversation. *@
+   conversation. One steered into the running reply waits first, marked steering, with nothing left
+   to do to it. *@
 @if (_chips.Count > 0)
 {
     <ol class="queue-chips" data-testid="queue-chips" aria-label="Messages waiting to be sent">
         @foreach (var chip in _chips)
         {
-            <li class="queue-chip @(chip.Mine ? "mine" : "")" data-testid="queue-chip" @key="chip.Id">
+            <li class="queue-chip @(chip.Mine ? "mine" : "") @(chip.Steering ? "steering" : "")" data-testid="queue-chip"
+                data-steering="@(chip.Steering ? "true" : null)" @key="chip.Id">
+                @if (chip.Steering)
+                {
+                    <span class="queue-chip-steering" data-testid="queue-chip-steering" title="Steering the running reply">
+                        <Icon Glyph="Icons.Steer" Size="12" />
+                        Steering
+                    </span>
+                }
                 @if (chip.SenderName is not null)
                 {
                     <span class="queue-chip-sender">@chip.SenderName</span>

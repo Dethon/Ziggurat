@@ -24,9 +24,16 @@ public record SteerQueuedMessage(string TopicId, string QueuedId) : IAction;
 // so a second press does not ask again about a message already withdrawn.
 public record QueuedMessageWithdrawn(string TopicId, string QueuedId) : IAction;
 
+// The hub took a message this page steered with: its chip turns to steering now, ahead of the hub's own
+// telling, rather than go and come back.
+public record QueuedMessageSteered(string TopicId, string QueuedId) : IAction;
+
 // A topic's queue as the hub last told it, with the revision it was read at, and whose own turn was
-// running then (by user id): the one person Steer now is offered to.
-public sealed record TopicQueue(IReadOnlyList<QueuedMessageItem> Items, long Revision, string? RunningFor = null);
+// running then (by user id): the one person Steer now is offered to. Steering is what was steered into
+// that turn and waits for it to end, when it is drawn in the conversation.
+public sealed record TopicQueue(
+    IReadOnlyList<QueuedMessageItem> Items, long Revision, string? RunningFor = null,
+    IReadOnlyList<QueuedMessageItem>? Steering = null);
 
 public sealed record QueueState(ImmutableDictionary<string, TopicQueue> ByTopic)
 {
@@ -46,24 +53,35 @@ public enum QueueChipActions
 
 // One queued message as the composer shows it. SenderName only for somebody else's: a page labels
 // other people's messages, and offers its own person theirs.
+// Steering: sent into the running turn and waiting for it to end, when it is drawn; nothing is offered on it.
 public sealed record QueueChip(
-    string Id, string Excerpt, int FileCount, string? SenderName, bool Mine, QueueChipActions Actions = QueueChipActions.None);
+    string Id, string Excerpt, int FileCount, string? SenderName, bool Mine, QueueChipActions Actions = QueueChipActions.None,
+    bool Steering = false);
 
 public static class QueueSelectors
 {
     // A chip is a line: past this the words are cut at a word.
     private const int ExcerptLength = 80;
 
+    // What steers the running turn goes first: it runs before anything still queued.
     public static IReadOnlyList<QueueChip> Chips(QueueState state, string? topicId, string? readerId) =>
         topicId is not null && state.ByTopic.TryGetValue(topicId, out var queue)
-            ? [.. queue.Items.Select(item => new QueueChip(
-                item.Id,
-                item.Content.Excerpt(ExcerptLength),
-                item.FileCount,
-                item.SenderId == readerId ? null : item.SenderName,
-                item.SenderId == readerId,
-                ActionsOn(item, queue, readerId)))]
+            ?
+            [
+                .. (queue.Steering ?? []).Select(item => ChipOf(item, readerId, QueueChipActions.None, steering: true)),
+                .. queue.Items.Select(item => ChipOf(item, readerId, ActionsOn(item, queue, readerId), steering: false))
+            ]
             : [];
+
+    private static QueueChip ChipOf(QueuedMessageItem item, string? readerId, QueueChipActions actions, bool steering) =>
+        new(
+            item.Id,
+            item.Content.Excerpt(ExcerptLength),
+            item.FileCount,
+            item.SenderId == readerId ? null : item.SenderName,
+            item.SenderId == readerId,
+            actions,
+            steering);
 
     private static QueueChipActions ActionsOn(QueuedMessageItem item, TopicQueue queue, string? readerId) =>
         item.SenderId != readerId ? QueueChipActions.None
@@ -93,7 +111,8 @@ public sealed class QueueStore : IDisposable
             when !state.ByTopic.TryGetValue(told.TopicId, out var shown) || told.Revision > shown.Revision =>
             state with
             {
-                ByTopic = state.ByTopic.SetItem(told.TopicId, new TopicQueue(told.Items, told.Revision, told.RunningFor))
+                ByTopic = state.ByTopic.SetItem(
+                    told.TopicId, new TopicQueue(told.Items, told.Revision, told.RunningFor, told.Steering ?? []))
             },
         QueuedMessageWithdrawn { TopicId: var topicId, QueuedId: var queuedId }
             when state.ByTopic.TryGetValue(topicId, out var shown) =>
@@ -101,6 +120,16 @@ public sealed class QueueStore : IDisposable
             {
                 ByTopic = state.ByTopic.SetItem(
                     topicId, shown with { Items = [.. shown.Items.Where(item => item.Id != queuedId)] })
+            },
+        QueuedMessageSteered { TopicId: var topicId, QueuedId: var queuedId }
+            when state.ByTopic.TryGetValue(topicId, out var shown) && shown.Items.Any(item => item.Id == queuedId) =>
+            state with
+            {
+                ByTopic = state.ByTopic.SetItem(topicId, shown with
+                {
+                    Items = [.. shown.Items.Where(item => item.Id != queuedId)],
+                    Steering = [.. shown.Steering ?? [], .. shown.Items.Where(item => item.Id == queuedId)]
+                })
             },
         _ => state
     };

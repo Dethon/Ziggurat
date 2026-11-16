@@ -1422,6 +1422,59 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         ]);
     }
 
+    // A steered message has left the queue but not yet been drawn: until the running turn ends, every
+    // page shows it apart from the queue, as steering, and is told once it is drawn.
+    [Fact]
+    public async Task ASteer_IsToldAsSteering_ApartFromTheQueue_UntilTheRunningTurnEndsAndDrawsIt()
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        var told = TellsOfTheQueue();
+
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+
+        var steering = await fran.GetQueue(TopicId);
+        steering.Items.Select(i => i.Content).ShouldBe(["older"]);
+        (steering.Steering ?? []).Select(i => i.Content).ShouldBe(["steer me"]);
+        (Latest(told).Steering ?? []).Select(i => i.Content).ShouldBe(["steer me"]);
+
+        await FinishTurnAsync("cut short");
+
+        await Eventually.Until(
+            () => Latest(told) is { Steering: [] or null } latest && latest.Revision > steering.Revision,
+            "the pages are told the steer was drawn");
+        await Eventually.Until(() => wire.Said().Contains("user: steer me"), "the steer is drawn");
+        (await fran.GetQueue(TopicId)).Steering.ShouldBeEmpty();
+        await FinishTurnAsync("answer to the steer");
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+    }
+
+    // A stop with only a steer waiting hands it back, and the pages are told it no longer steers.
+    [Fact]
+    public async Task AStopWithOnlyASteerWaiting_TellsThePagesItNoLongerSteers()
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        var told = TellsOfTheQueue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        var steering = Latest(told);
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        Latest(told).Revision.ShouldBeGreaterThan(steering.Revision);
+        (Latest(told).Steering ?? []).ShouldBeEmpty();
+    }
+
     // A schedule's turn attaching to the topic while the person's own turn runs makes the running turn
     // nobody's to steer, and every page is told at once: a page still offering Steer now would only be
     // refused for it.

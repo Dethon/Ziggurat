@@ -40,10 +40,14 @@ public readonly record struct StreamKey(string TopicId, long Number);
 
 // A topic's queue as of one change, numbered so a page told of two changes keeps the later.
 // With whose own turn the stream is running, by their account's user id: the one person who may steer it.
-public sealed record QueueSnapshot(IReadOnlyList<QueuedMessage> Messages, long Revision, string? RunningFor = null)
+// Messages is what still waits; Steering what was steered into the running turn and is not drawn yet.
+public sealed record QueueSnapshot(
+    IReadOnlyList<QueuedMessage> Messages, long Revision, string? RunningFor = null,
+    IReadOnlyList<QueuedMessage>? Steering = null)
 {
     public QueueChangedNotification ToNotification(string topicId, string spaceSlug) =>
-        new(topicId, [.. Messages.Select(m => m.ToItem())], Revision, spaceSlug, RunningFor);
+        new(topicId, [.. Messages.Select(m => m.ToItem())], Revision, spaceSlug, RunningFor,
+            [.. (Steering ?? []).Select(m => m.ToItem())]);
 }
 
 // What taking a queued message back came to: the message, with the ones still queued behind it, or why

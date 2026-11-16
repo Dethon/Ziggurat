@@ -99,13 +99,16 @@ public record ReturnedMessage(
 // A topic's queue changed. The whole queue, in the order it will run, so a page replaces what it
 // showed; Revision orders two pushes sent close together, since they may arrive the other way round.
 // RunningFor is the account (user id) whose own turn the stream is running, the one person a page offers
-// Steer now to; none while an agent's turn runs, or a queued one is about to start.
+// Steer now to; none while an agent's turn runs, or a queued one is about to start. Steering is what was
+// steered into the running turn and is not drawn yet, apart from Items so a page from before, which knows
+// only Items, never offers to edit or remove a message that has left the queue.
 public record QueueChangedNotification(
     string TopicId,
     IReadOnlyList<QueuedMessageItem> Items,
     long Revision,
     string? SpaceSlug = null,
-    string? RunningFor = null);
+    string? RunningFor = null,
+    IReadOnlyList<QueuedMessageItem>? Steering = null);
 // A stop handed back messages this person queued on a topic: a page showing it takes them
 // (ChatHub.TakeReturned) into its composer; any other finds them when the topic is next opened.
 public record QueueReturnedNotification(string TopicId, string? SpaceSlug = null);

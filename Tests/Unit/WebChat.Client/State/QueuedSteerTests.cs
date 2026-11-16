@@ -39,8 +39,10 @@ public sealed class QueuedSteerTests
         ]);
     }
 
+    // Taken by the hub, the message waits for the running turn to end as a chip marked steering, with
+    // nothing left to do to it, rather than vanish until it is drawn.
     [Fact]
-    public async Task SteerNow_AsksTheHubToSteerWithIt_AndTheChipGoes()
+    public async Task SteerNow_AsksTheHubToSteerWithIt_AndTheChipWaitsAsSteering()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
@@ -52,7 +54,8 @@ public sealed class QueuedSteerTests
 
         client.Dispatcher.Dispatch(new SteerQueuedMessage("topic-1", "q1"));
 
-        await TestChat.Eventually(() => Chips(client).Count == 0);
+        await TestChat.Eventually(() => Chips(client) is [{ Steering: true }]);
+        Chips(client).Single().Actions.ShouldBe(QueueChipActions.None);
         transport.Calls.ShouldContain(call =>
             call.MethodName == "SteerQueued" && call.Arguments.SequenceEqual(new object?[] { "topic-1", "q1" }));
     }
@@ -74,6 +77,34 @@ public sealed class QueuedSteerTests
         client.Dispatcher.Dispatch(new SteerQueuedMessage("topic-1", "q1"));
 
         await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message == TopicRefusals.NotYourTurn));
+        Chips(client).Select(chip => chip.Id).ShouldBe(["q1"]);
+    }
+
+    // Every page of the topic shows a steer as the hub tells it, ahead of the queue, marked steering and
+    // with no action for anybody, until the hub tells it was drawn.
+    [Theory]
+    [InlineData("fran")]
+    [InlineData("marta")]
+    public async Task ASteerTheHubTells_ShowsAheadOfTheQueueAsSteering_UntilItIsDrawn(string steeredBy)
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client);
+
+        transport.Raise("OnQueueChanged", new QueueChangedNotification("topic-1",
+            [new QueuedMessageItem("q1", "waiting", 0, "fran", "Fran", DateTimeOffset.UnixEpoch)],
+            Revision: 5, RunningFor: steeredBy,
+            Steering: [new QueuedMessageItem("s1", "steering in", 0, steeredBy, steeredBy, DateTimeOffset.UnixEpoch)]));
+
+        Chips(client).Select(chip => (chip.Id, chip.Steering, chip.Actions == QueueChipActions.None)).ShouldBe([
+            ("s1", true, true),
+            ("q1", false, false)
+        ]);
+
+        transport.Raise("OnQueueChanged", new QueueChangedNotification("topic-1",
+            [new QueuedMessageItem("q1", "waiting", 0, "fran", "Fran", DateTimeOffset.UnixEpoch)],
+            Revision: 6, RunningFor: steeredBy));
+
         Chips(client).Select(chip => chip.Id).ShouldBe(["q1"]);
     }
 

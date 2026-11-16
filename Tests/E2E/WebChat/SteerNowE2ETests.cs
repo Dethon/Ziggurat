@@ -40,9 +40,15 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
             var steer = chip.Locator("[data-testid=queue-chip-steer]");
             await Assertions.Expect(steer).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
             await steer.DispatchEventAsync("click");
-            await Assertions.Expect(chip).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+
+            // Steered, it waits for the running reply's end as a chip marked steering, with nothing left
+            // to do to it, and goes once that end draws it.
+            await Assertions.Expect(chip.Locator("[data-testid=queue-chip-steering]"))
+                .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            await Assertions.Expect(chip.Locator(".queue-chip-action")).ToHaveCountAsync(0);
 
             await page.Locator(".btn-approve").ClickAsync();
+            await Assertions.Expect(chip).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 180_000 });
 
             await WaitForAsync(page, () => AnswerTo(page, $"STEER{tag}"), "the steer to be answered");
             await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))

@@ -71,12 +71,14 @@ public sealed class QueueEffect : IDisposable
     public Task HandleRemoveAsync(string topicId, string queuedId) =>
         WithdrawAsync(topicId, queuedId, () => _messagingService.RemoveQueuedAsync(topicId, queuedId));
 
-    // Sent into the running turn: the chip goes as for any message leaving the queue, and the page draws
-    // it where the hub writes it on the stream, once that turn has ended.
+    // Sent into the running turn: the chip waits as steering until the page draws the message where the
+    // hub writes it on the stream, once that turn has ended.
     public Task HandleSteerAsync(string topicId, string queuedId) =>
-        WithdrawAsync(topicId, queuedId, () => _messagingService.SteerQueuedAsync(topicId, queuedId));
+        WithdrawAsync(topicId, queuedId, () => _messagingService.SteerQueuedAsync(topicId, queuedId),
+            new QueuedMessageSteered(topicId, queuedId));
 
-    private async Task<T?> WithdrawAsync<T>(string topicId, string queuedId, Func<Task<HubResult<T>>> call)
+    private async Task<T?> WithdrawAsync<T>(
+        string topicId, string queuedId, Func<Task<HubResult<T>>> call, IAction? taken = null)
     {
         HubResult<T> answered;
         try
@@ -95,7 +97,7 @@ public sealed class QueueEffect : IDisposable
             return default;
         }
 
-        _dispatcher.Dispatch(new QueuedMessageWithdrawn(topicId, queuedId));
+        _dispatcher.Dispatch(taken ?? new QueuedMessageWithdrawn(topicId, queuedId));
         return answered.Value;
     }
 
