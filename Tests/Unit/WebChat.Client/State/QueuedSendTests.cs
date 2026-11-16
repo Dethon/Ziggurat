@@ -273,7 +273,9 @@ public sealed class QueuedSendTests
         var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
         wire.Write(new ChatStreamMessage { Error = "This device was signed out" });
         wire.Release();
-        await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message.Contains("signed out")));
+        // The refusal drawn, not just its toast, which is dispatched first: the losing wire is done
+        // before the reply goes on, as the page's one thread would have it.
+        await TestChat.Eventually(() => Shown(client).Contains("assistant: This device was signed out"));
         resumed.Write(new ChatStreamMessage { Content = " and done", MessageId = "m-1" });
         resumed.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-1" });
         resumed.Release();
