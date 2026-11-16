@@ -117,7 +117,7 @@ Decisions with the user, 2026-11-16:
 
 ### Stop
 
-- **Stop empties the queue.** `CancelTopic` cancels the turn and the stream as today. It then moves every queued item, and any dispatched-not-started steer, into returned under its sender, and pushes `OnQueueChanged` and `OnQueueReturned`.
+- **Stop empties the queue.** `CancelTopic` first moves every queued item, and any dispatched-not-started steer, into returned under its sender, and ends the stream, in one locked step; only then is the agent told to cancel (ticket 08: returning after the cancel let a turn ending in between dispatch the head). It pushes `OnQueueChanged` and `OnQueueReturned`.
 - **Taking returned items is atomic per person.** A page takes them with `TakeReturned` when told and showing that topic, and on every topic open. The first device to take them gets them.
 - **The agent drops a steer it held as pending in the cancel's teardown**, as it drops any pending turn today. The hub has already returned that steer to its sender.
 - **Why nothing restarts after a stop.** Keeping other people's messages queued would mean starting a new stream right after the cancel, and that races the agent's teardown, which drops anything that arrives behind a cancel. Returning them avoids the race.
