@@ -8,23 +8,18 @@ public class HostMountDirectoryAsRootTests
 {
     private const string Image = "redis/redis-stack-server:latest";
 
+    // Empty is what lets the slot be handed out again; which slot a later claim gets is a race with
+    // whatever other test process is claiming the same name, so it is not asserted.
     [Fact]
-    public async Task AMountARootContainerWroteIn_IsEmptiedThroughItsImage_AndHandedOutAgain()
+    public async Task AMountARootContainerWroteIn_IsEmptiedThroughItsImage()
     {
         // A fixed name: a fresh one per run would be the leak this guards against.
-        const string name = "as-root-test";
-        string path;
-        using (var mount = HostMountDirectory.Claim(name))
-        {
-            path = mount.Path;
-            await RunAsRootAsync(mount.Path, "mkdir -p /m/.storage/deep && echo x > /m/.storage/deep/f && echo y > /m/top");
+        using var mount = HostMountDirectory.Claim("as-root-test");
+        await RunAsRootAsync(mount.Path, "mkdir -p /m/.storage/deep && echo x > /m/.storage/deep/f && echo y > /m/top");
 
-            (await mount.TryEmptyAsRootAsync(Image)).ShouldBeTrue();
-        }
+        (await mount.TryEmptyAsRootAsync(Image)).ShouldBeTrue();
 
-        using var again = HostMountDirectory.Claim(name);
-        again.Path.ShouldBe(path);
-        Directory.EnumerateFileSystemEntries(again.Path).ShouldBeEmpty();
+        Directory.EnumerateFileSystemEntries(mount.Path).ShouldBeEmpty();
     }
 
     private static async Task RunAsRootAsync(string path, string script)
