@@ -25,20 +25,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
         await GotoWebChatAsync(ana, fixture.WebChatUrl);
         await SelectAgentAsync(ana);
         var topic = $"Stop {tag}";
-        await SendAsync(ana, $"{topic}: answer only OK.");
-        await ana.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        await IdleAsync(ana);
-        await ana.Locator("[title*='tap to share'], [aria-label*='tap to share']").First
-            .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
-
         var carlos = await carlosContext.NewPageAsync();
-        await GotoWebChatAsync(carlos, fixture.WebChatUrl);
-        await SelectAgentAsync(carlos);
-        await carlos.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
-            .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
-        await Assertions.Expect(UserMessage(carlos, $"{topic}: answer only OK."))
-            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
 
         try
         {
@@ -57,6 +44,18 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
                     await IdleAsync(ana);
                 }
             }
+
+            // Shared while its reply waits on the approval, whose overlay covers the header: the press is
+            // dispatched on the toggle itself.
+            var share = ana.Locator("[title*='tap to share']").First;
+            await share.DispatchEventAsync("click");
+            await Assertions.Expect(ana.Locator("[title*='tap to make it yours alone']"))
+                .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+
+            await GotoWebChatAsync(carlos, fixture.WebChatUrl);
+            await SelectAgentAsync(carlos);
+            await carlos.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
+                .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
             // Carlos's page has heard the reply start, so his send queues rather than opening a turn.
             await Assertions.Expect(carlos.Locator("[data-testid=composer-cancel]"))
@@ -97,8 +96,7 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             await SelectAgentAsync(fresh);
             await fresh.Locator(".topic-item", new PageLocatorOptions { HasText = topic })
                 .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
-            await Assertions.Expect(UserMessage(fresh, $"{topic}: answer only OK."))
-                .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
         }
