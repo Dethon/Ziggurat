@@ -27,6 +27,10 @@ public sealed class StreamService(
     // streams, and the stream ends only once nothing is pending or queued.
     private readonly Dictionary<string, List<QueuedMessage>> _queues = new();
     private readonly Dictionary<string, long> _streamIds = new();
+
+    // A queue's head taken as the turn before it ended, until the dispatcher writes it on the stream:
+    // not started yet, so a stop meanwhile returns it with the rest.
+    private readonly Dictionary<string, QueuedMessage> _dispatching = new();
     private long _lastStreamId;
 
     // What a stop handed back to each sender and no page of theirs has taken yet, in the order it was
@@ -244,6 +248,20 @@ public sealed class StreamService(
 
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
 
+    // A dispatched head's turn starting: true while nothing stopped its stream since it was taken, and
+    // from then on a stop leaves it to run as the stream's current turn.
+    public bool Start(QueuedTurn turn)
+    {
+        lock (_streamLock)
+        {
+            var topicId = turn.Message.Sender.TopicId;
+            return IsRunning(topicId, turn.Stream)
+                   && _dispatching.TryGetValue(topicId, out var dispatching)
+                   && dispatching.Id == turn.Message.Id
+                   && _dispatching.Remove(topicId);
+        }
+    }
+
     // Whether the stream a queued turn was taken from is still the topic's: a stop, or a stop and a
     // new send, while its sender was being vouched for leaves it nothing to be written on.
     public bool IsRunning(string topicId, long stream)
@@ -410,6 +428,7 @@ public sealed class StreamService(
 
         var head = queue[0];
         queue.RemoveAt(0);
+        _dispatching[topicId] = head;
         _queueRevision++;
         return new QueuedTurn(head, stream);
     }
@@ -463,7 +482,11 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
-            IReadOnlyList<QueuedMessage> stopped = _queues.TryGetValue(topicId, out var queue) ? [.. queue] : [];
+            IReadOnlyList<QueuedMessage> stopped =
+            [
+                .. _dispatching.TryGetValue(topicId, out var dispatching) ? [dispatching] : Array.Empty<QueuedMessage>(),
+                .. _queues.GetValueOrDefault(topicId) ?? []
+            ];
             stopped
                 .GroupBy(m => m.Sender.Principal.Account)
                 .ToList()
@@ -563,6 +586,7 @@ public sealed class StreamService(
         _pendingPromptCounts.TryRemove(topicId, out _);
         _audiences.TryRemove(topicId, out _);
         _streamIds.Remove(topicId);
+        _dispatching.Remove(topicId);
         if (_queues.Remove(topicId, out var queue) && queue.Count > 0)
         {
             _queueRevision++;

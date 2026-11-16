@@ -46,7 +46,7 @@ public sealed class QueueDispatcher(
         await _news.TellOrLogAsync(sender, logger);
         try
         {
-            if (!streamService.IsRunning(sender.TopicId, stream))
+            if (!streamService.Start(turn))
             {
                 return;
             }

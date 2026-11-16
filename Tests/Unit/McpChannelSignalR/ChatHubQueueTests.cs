@@ -457,6 +457,31 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         Sent().ShouldBe(["first", "next"]);
     }
 
+    // Taken as the turn before it ended but not yet written on the stream, a message has not started:
+    // a stop then returns it to its sender like any still queued, ahead of them, and never runs it.
+    [Fact]
+    public async Task AStopBeforeTheNextMessagesTurnStarts_ReturnsItToo_AheadOfTheRest()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+        var dispatching = HoldTheNextQueuePush();
+
+        await FinishTurnAsync("answer one");
+        await dispatching.Asked;
+        await fran.CancelTopic(TopicId);
+        dispatching.Answer();
+        await wire.Ended;
+        await Eventually.Settle();
+
+        Sent().ShouldBe(["first"]);
+        wire.Said().ShouldBe(["user: first", "agent: answer one"]);
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second", "third"]);
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {
@@ -828,6 +853,17 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             })
             .Returns(Task.CompletedTask);
         return told;
+    }
+
+    // The next push of the queue waits for the test to answer it; the ones after it go through.
+    private HeldAnswer HoldTheNextQueuePush()
+    {
+        var held = new HeldAnswer();
+        var first = 0;
+        _sender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), "OnQueueChanged", It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Interlocked.Exchange(ref first, 1) == 0 ? held.WaitAsync() : Task.CompletedTask);
+        return held;
     }
 
     private List<(string Group, QueueReturnedNotification Notification)> TellsOfReturns()
