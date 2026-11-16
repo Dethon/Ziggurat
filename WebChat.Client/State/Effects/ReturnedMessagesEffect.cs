@@ -20,8 +20,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly ILogger<ReturnedMessagesEffect> _logger;
     private readonly Dictionary<string, IReadOnlyList<ReturnedMessage>> _held = new();
     private readonly IDisposable _returned;
-    private readonly IDisposable _opened;
-    private readonly IDisposable _live;
+    private readonly IDisposable _shown;
 
     public ReturnedMessagesEffect(
         Dispatcher dispatcher, TopicsStore topics, ConnectionStore connection, IChatMessagingService messagingService,
@@ -39,23 +38,10 @@ public sealed class ReturnedMessagesEffect : IDisposable
             }
         });
 
-        // A page that was not showing the topic when told, or had none open, finds them as it opens it.
-        _opened = dispatcher.RegisterHandler<SelectTopic>(a =>
-        {
-            if (a.TopicId is { } topicId)
-            {
-                TakeAsync(topicId).LogFaults(_logger, nameof(SelectTopic));
-            }
-        });
-
-        // A page not live when told (a phone asleep) wakes on the topic it already shows, opening nothing.
-        _live = connection.BecameLiveAgain.Subscribe(_ =>
-        {
-            if (_topics.State.SelectedTopicId is { } topicId)
-            {
-                TakeAsync(topicId).LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain));
-            }
-        });
+        // A page that was not showing the topic when told, or not live then, finds them as it opens it or
+        // comes back.
+        _shown = ShownTopicCatchUp.Subscribe(dispatcher, topics, connection,
+            (topicId, moment) => TakeAsync(topicId).LogFaults(_logger, moment));
     }
 
     // Quiet when nothing could be taken: the hub keeps them, and the next open of the topic asks again.
@@ -100,7 +86,6 @@ public sealed class ReturnedMessagesEffect : IDisposable
     public void Dispose()
     {
         _returned.Dispose();
-        _opened.Dispose();
-        _live.Dispose();
+        _shown.Dispose();
     }
 }

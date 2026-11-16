@@ -30,23 +30,8 @@ public sealed class QueueEffect : IDisposable
         _logger = logger;
         _registrations =
         [
-            // The pushes reach every page the topic's audience has open, but only from when it arrived.
-            dispatcher.RegisterHandler<SelectTopic>(a =>
-            {
-                if (a.TopicId is { } topicId)
-                {
-                    CatchUpAsync(topicId).LogFaults(logger, nameof(SelectTopic));
-                }
-            }),
-
-            // A page not live while the queue changed (a phone asleep) wakes on the topic it already shows.
-            connection.BecameLiveAgain.Subscribe(_ =>
-            {
-                if (topics.State.SelectedTopicId is { } topicId)
-                {
-                    CatchUpAsync(topicId).LogFaults(logger, nameof(ConnectionStore.BecameLiveAgain));
-                }
-            }),
+            ShownTopicCatchUp.Subscribe(dispatcher, topics, connection,
+                (topicId, moment) => CatchUpAsync(topicId).LogFaults(logger, moment)),
             dispatcher.RegisterHandler<EditQueuedMessage>(a =>
                 HandleEditAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(EditQueuedMessage))),
             dispatcher.RegisterHandler<RemoveQueuedMessage>(a =>
