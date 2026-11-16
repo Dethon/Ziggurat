@@ -8,6 +8,7 @@
 <div class="tokens-page">
     <MetricControls TStore="TokensStore" TState="TokensState"
                     Title="Token Usage"
+                    Description="What each person, model and agent spent."
                     Family="Families.Tokens"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions">
@@ -48,6 +49,10 @@
                             <span>@evt.OutputTokens.ToString("N0")</span>
                             <span>@($"${evt.Cost:F4}")</span>
                         </div>
+                    }
+                    @if (!state.Events.Any())
+                    {
+                        <EmptyState Message="No model calls in this range" />
                     }
                 </div>
             </section>

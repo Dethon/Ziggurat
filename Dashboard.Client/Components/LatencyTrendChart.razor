@@ -2,7 +2,7 @@
 <div class="@(HasData ? "chart-container" : "")">
 @if (!HasData)
 {
-    <p class="no-data">No data available</p>
+    <EmptyState Message="No data available" />
 }
 else
 {
@@ -59,7 +59,8 @@ else
         Xaxis = new XAxis
         {
             Type = XAxisType.Datetime,
-            Labels = new XAxisLabels { Formatter = "function(val) { return new Date(val).toLocaleDateString([], {month: 'short', day: 'numeric'}); }" }
+            // Apex picks hours for a day and dates for a month; read in the browser's own zone.
+            Labels = new XAxisLabels { DatetimeUTC = false }
         }
     };
 

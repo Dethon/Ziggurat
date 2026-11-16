@@ -8,6 +8,7 @@
 <div class="schedules-page">
     <MetricControls TStore="SchedulesStore" TState="SchedulesState"
                     Title="Schedule Executions"
+                    Description="Scheduled runs, how long they took and how they ended."
                     Family="Families.Schedules"
                     DimensionOptions="DimensionOptions">
         <ChildContent Context="state">
@@ -45,7 +46,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No schedule executions recorded</p>
+                        <EmptyState Message="No schedule executions recorded" />
                     }
                 </div>
             </section>

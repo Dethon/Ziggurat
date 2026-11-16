@@ -1,0 +1,9 @@
+@* What a chart, list or table says when its range holds nothing. *@
+<div class="no-data">
+    <Icon Glyph="Icons.Inbox" Class="no-data-icon" />
+    <span>@Message</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Message { get; set; } = "";
+}

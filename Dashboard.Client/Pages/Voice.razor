@@ -9,6 +9,7 @@
 <div class="voice-page">
     <MetricControls TStore="VoiceStore" TState="VoiceState"
                     Title="Voice"
+                    Description="Satellites, transcription and how soon a spoken answer starts."
                     Family="Families.Voice"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -69,7 +70,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No voice events recorded</p>
+                        <EmptyState Message="No voice events recorded" />
                     }
                 </div>
             </section>

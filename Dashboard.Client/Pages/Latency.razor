@@ -8,6 +8,7 @@
 <div class="latency-page">
     <MetricControls TStore="LatencyStore" TState="LatencyState"
                     Title="Latency"
+                    Description="Where a turn spends its time, stage by stage."
                     Family="Families.Latency"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions">
@@ -53,6 +54,10 @@
                             <span class="mono tone-muted" title="@evt.ConversationId">@(evt.ConversationId ?? "—")</span>
                         </div>
                     }
+                    @if (!state.Events.Any())
+                    {
+                        <EmptyState Message="No spans in this range" />
+                    }
                 </div>
             </section>
         </ChildContent>
@@ -87,7 +92,7 @@
             .Select(g => (Stage: g.Key, P95: Percentile(g.Select(e => (decimal)e.DurationMs).ToArray(), 95)))
             .OrderByDescending(x => x.P95)
             .Select(x => x.Stage.ToString())
-            .FirstOrDefault() ?? "-";
+            .FirstOrDefault() ?? "—";
 
     private static decimal Percentile(decimal[] values, int q)
     {

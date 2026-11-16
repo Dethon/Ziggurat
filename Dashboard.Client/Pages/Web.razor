@@ -9,6 +9,7 @@
 <div class="web-page">
     <MetricControls TStore="WebStore" TState="WebState"
                     Title="Web"
+                    Description="Overlays the browser met on its way to a page, and how each was closed."
                     Family="Families.Web"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -66,7 +67,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No overlays recorded</p>
+                        <EmptyState Message="No overlays recorded" />
                     }
                 </div>
             </section>

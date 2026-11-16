@@ -14,6 +14,7 @@
 <div class="memory-page">
     <MetricControls TStore="MemoryStore" TState="MemoryState"
                     Title="Memory"
+                    Description="What was recalled, extracted, merged and judged for each person."
                     Family="Families.Memory"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -54,7 +55,7 @@
                             <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                             <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories Found <SortArrow Column="Memories" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories <SortArrow Column="Memories" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                         </div>
                         @foreach (var evt in GetSortedRecalls(state))
                         {
@@ -64,6 +65,10 @@
                                 <span>@evt.DurationMs ms</span>
                                 <span>@evt.MemoryCount</span>
                             </div>
+                        }
+                        @if (!state.RecallEvents.Any())
+                        {
+                            <EmptyState Message="No recalls in this range" />
                         }
                     </div>
                 }
@@ -90,6 +95,10 @@
                                 <span class="stored-count">@evt.StoredCount</span>
                                 <span class="@OutcomeClass(evt.Outcome)">@(evt.Outcome ?? "")</span>
                             </div>
+                        }
+                        @if (!state.ExtractionEvents.Any())
+                        {
+                            <EmptyState Message="No extractions in this range" />
                         }
                     </div>
                 }
@@ -128,6 +137,10 @@
                                 <span class="refused-ids">@string.Join(" | ", evt.RefusedMerges.Select(ids => string.Join(", ", ids)))</span>
                             </div>
                         }
+                        @if (!state.DreamingEvents.Any())
+                        {
+                            <EmptyState Message="No dreaming runs in this range" />
+                        }
                     </div>
                 }
                 else
@@ -156,7 +169,7 @@
                         }
                         @if (!state.JudgmentEvents.Any())
                         {
-                            <p class="no-data">No judgments recorded</p>
+                            <EmptyState Message="No judgments recorded" />
                         }
                     </div>
                 }

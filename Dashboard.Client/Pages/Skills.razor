@@ -9,6 +9,7 @@
 <div class="skills-page">
     <MetricControls TStore="SkillsStore" TState="SkillsState"
                     Title="Skills"
+                    Description="Which skills were loaded ahead of a turn's first model call."
                     Family="Families.Skills"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -66,7 +67,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No judgments recorded</p>
+                        <EmptyState Message="No judgments recorded" />
                     }
                 </div>
             </section>

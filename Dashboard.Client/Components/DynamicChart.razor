@@ -1,7 +1,7 @@
 <div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")" style="@_containerStyle">
 @if (Data is null || Data.Count == 0)
 {
-    <p class="no-data">No data available</p>
+    <EmptyState Message="No data available" />
 }
 else if (ChartType == ChartMode.Donut)
 {
@@ -106,6 +106,7 @@ else
             Enabled = true,
             Style = new DataLabelsStyle { FontSize = "11px", Colors = [ChartTheme.Label], FontWeight = "500" },
             TextAnchor = TextAnchor.Start,
+            OffsetX = 8,
             Formatter = "function(val, opts) { return opts.w.globals.labels[opts.dataPointIndex]; }"
         },
         Yaxis =

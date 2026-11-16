@@ -131,7 +131,7 @@
             }
             @if (_state.Loaded && _state.Households.Count == 0)
             {
-                <p class="no-data">No households</p>
+                <EmptyState Message="No households" />
             }
         </div>
     </section>

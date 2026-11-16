@@ -9,6 +9,7 @@
 <div class="errors-page">
     <MetricControls TStore="ErrorsStore" TState="ErrorsState"
                     Title="Errors"
+                    Description="Failures reported by every service and household server."
                     Family="Families.Errors"
                     DimensionOptions="DimensionOptions">
         <ChildContent Context="state">
@@ -49,7 +50,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No errors recorded</p>
+                        <EmptyState Message="No errors recorded" />
                     }
                 </div>
             </section>

@@ -8,6 +8,7 @@
 <div class="tools-page">
     <MetricControls TStore="ToolsStore" TState="ToolsState"
                     Title="Tool Calls"
+                    Description="The tools agents called, how long they took and how often they failed."
                     Family="Families.Tools"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -55,6 +56,10 @@
                                 </span>
                             }
                         </div>
+                    }
+                    @if (!state.Events.Any())
+                    {
+                        <EmptyState Message="No tool calls in this range" />
                     }
                 </div>
             </section>
