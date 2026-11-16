@@ -7,16 +7,17 @@ namespace Tests.Integration.Fixtures;
 
 // Short clips made the way a phone's would be, in the containers and codecs phones record, by the
 // ffmpeg on this machine — the same tool the Sugary server reads them with, so a test needs nothing
-// else. Each is made once per test run and shared. Where ffmpeg is not installed `Missing` says so,
-// and a test skips with that reason rather than failing on a machine that cannot make a clip.
+// else. Each is made once on this machine and kept for later runs (ClipCache), named by this ffmpeg's
+// version and the clip's recipe. Where ffmpeg is not installed `Missing` says so, and a test skips with
+// that reason rather than failing on a machine that cannot make a clip.
 public static class TestClips
 {
-    private static readonly string _directory =
-        Path.Combine(Path.GetTempPath(), "sugary-test-clips", Guid.NewGuid().ToString("N"));
+    private static readonly string _directory = Path.Combine(Path.GetTempPath(), "sugary-test-clips");
 
     private static readonly ConcurrentDictionary<string, Lazy<Task<byte[]>>> _made = new();
 
-    private static readonly Lazy<string?> _missing = new(() =>
+    // ffmpeg's first line names its build, so another ffmpeg makes its clips afresh.
+    private static readonly Lazy<(string? Version, string? Missing)> _ffmpeg = new(() =>
     {
         try
         {
@@ -25,16 +26,18 @@ public static class TestClips
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             })!;
+            var version = probe.StandardOutput.ReadLine();
+            probe.StandardOutput.ReadToEnd();
             probe.WaitForExit();
-            return probe.ExitCode == 0 ? null : "ffmpeg -version failed on this machine";
+            return probe.ExitCode == 0 ? (version, null) : (null, "ffmpeg -version failed on this machine");
         }
         catch (Exception e)
         {
-            return $"ffmpeg is not installed on this machine ({e.Message}); the Sugary server reads clips with it";
+            return (null, $"ffmpeg is not installed on this machine ({e.Message}); the Sugary server reads clips with it");
         }
     });
 
-    public static string? Missing => _missing.Value;
+    public static string? Missing => _ffmpeg.Value.Missing;
 
     private const string Picture = "testsrc2=size=1280x720:rate=30";
 
@@ -71,11 +74,8 @@ public static class TestClips
         "-c:v", "libvpx-vp9", "-b:v", "300k", "-deadline", "realtime", "-live", "1", "-f", "webm");
 
     // A phone held upright stores its picture sideways and a flag saying how to turn it.
-    public static async Task<byte[]> Rotated()
-    {
-        var landscape = await File(await Silent(), "rotated-source.mp4");
-        return await Make("rotated.mp4", "-display_rotation", "90", "-i", landscape, "-c", "copy");
-    }
+    public static async Task<byte[]> Rotated() =>
+        await MakeFrom(await Silent(), "rotated.mp4", "-display_rotation", "90", "-i", Input, "-c", "copy");
 
     // Small and quick to make, since only its length is under test.
     public static Task<byte[]> Long(double seconds) => Make(
@@ -95,34 +95,50 @@ public static class TestClips
     // What ffprobe says of a file's streams and length, for asserting on what the server made.
     public static async Task<JsonNode> ProbeAsync(byte[] bytes)
     {
-        var path = await File(bytes, $"probe-{Guid.NewGuid():N}");
-        var (output, error, exit) = await RunAsync("ffprobe",
-            "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height:format=duration,format_name",
-            "-of", "json", path);
-        System.IO.File.Delete(path);
-        return exit == 0
-            ? JsonNode.Parse(output)!
-            : throw new InvalidOperationException($"ffprobe could not read the file: {error}");
-    }
-
-    private static Task<byte[]> Make(string name, params string[] arguments) =>
-        _made.GetOrAdd(name, _ => new Lazy<Task<byte[]>>(async () =>
+        var path = Path.Combine(Path.GetTempPath(), $"sugary-probe-{Guid.NewGuid():N}");
+        await File.WriteAllBytesAsync(path, bytes);
+        try
         {
-            Directory.CreateDirectory(_directory);
-            var path = Path.Combine(_directory, name);
-            var (_, error, exit) = await RunAsync("ffmpeg", ["-v", "error", "-y", .. arguments, path]);
+            var (output, error, exit) = await RunAsync("ffprobe",
+                "-v", "error", "-show_entries", "stream=codec_type,codec_name,width,height:format=duration,format_name",
+                "-of", "json", path);
             return exit == 0
-                ? await System.IO.File.ReadAllBytesAsync(path)
-                : throw new InvalidOperationException($"making the test clip {name} failed: {error}");
-        })).Value;
-
-    private static async Task<string> File(byte[] bytes, string name)
-    {
-        Directory.CreateDirectory(_directory);
-        var path = Path.Combine(_directory, name);
-        await System.IO.File.WriteAllBytesAsync(path, bytes);
-        return path;
+                ? JsonNode.Parse(output)!
+                : throw new InvalidOperationException($"ffprobe could not read the file: {error}");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
+
+    // Stands for the clip a recipe is made from, written beside the clip being made.
+    private const string Input = "{input}";
+
+    private static Task<byte[]> Make(string name, params string[] arguments) => MakeFrom(null, name, arguments);
+
+    private static Task<byte[]> MakeFrom(byte[]? input, string name, params string[] arguments) =>
+        _made.GetOrAdd(name, _ => new Lazy<Task<byte[]>>(() =>
+        {
+            var recipe = string.Join('\n', [
+                _ffmpeg.Value.Version ?? "", .. arguments,
+                input is null ? "" : Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(input))]);
+            return ClipCache.GetAsync(_directory, recipe, name, async path =>
+            {
+                var source = Path.Combine(Path.GetDirectoryName(path)!, "input" + Path.GetExtension(name));
+                if (input is not null)
+                {
+                    await File.WriteAllBytesAsync(source, input);
+                }
+
+                var (_, error, exit) = await RunAsync("ffmpeg",
+                    ["-v", "error", "-y", .. arguments.Select(a => a == Input ? source : a), path]);
+                if (exit != 0)
+                {
+                    throw new InvalidOperationException($"making the test clip {name} failed: {error}");
+                }
+            });
+        })).Value;
 
     private static async Task<(string Output, string Error, int Exit)> RunAsync(string tool, params string[] arguments)
     {
