@@ -96,6 +96,39 @@ public sealed class ReturnedMessagesTests
         ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued while asleep");
     }
 
+    // The hub hands them over once, so an answer that lands after the person moved to another topic is
+    // kept on the page for the topic they came from rather than dropped or put in the wrong composer.
+    [Fact]
+    public async Task TakenJustAsThePersonMovedToAnotherTopic_WaitForThemToComeBack()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeReturned"));
+        var handedOver = 0;
+        transport.Answer("TakeReturned", args =>
+        {
+            if (args[0] as string != "topic-1" || Interlocked.Exchange(ref handedOver, 1) == 1)
+            {
+                return (IReadOnlyList<ReturnedMessage>)[];
+            }
+
+            client.Dispatcher.Dispatch(new SelectTopic("topic-2"));
+            return (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on one", [], null)];
+        });
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+        await TestChat.Eventually(() => Volatile.Read(ref handedOver) == 1);
+        await Eventually.Settle();
+        client.Topics.State.SelectedTopicId.ShouldBe("topic-2");
+        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued on one");
+    }
+
     private static void Seed(ScriptedChatClient client, string open)
     {
         client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));

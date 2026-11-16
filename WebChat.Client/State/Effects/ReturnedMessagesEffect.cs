@@ -18,6 +18,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly TopicsStore _topics;
     private readonly IChatMessagingService _messagingService;
     private readonly ILogger<ReturnedMessagesEffect> _logger;
+    private readonly Dictionary<string, IReadOnlyList<ReturnedMessage>> _held = new();
     private readonly IDisposable _returned;
     private readonly IDisposable _opened;
     private readonly IDisposable _live;
@@ -58,23 +59,42 @@ public sealed class ReturnedMessagesEffect : IDisposable
     }
 
     // Quiet when nothing could be taken: the hub keeps them, and the next open of the topic asks again.
+    // The hub forgets what it handed over, so what lands after the person moved to another topic is kept
+    // here for theirs, never placed in the composer of the topic now on screen.
     private async Task TakeAsync(string topicId)
     {
-        HubResult<IReadOnlyList<ReturnedMessage>> taken;
+        IReadOnlyList<ReturnedMessage> taken = [];
         try
         {
-            taken = await _messagingService.TakeReturnedAsync(topicId);
+            if (await _messagingService.TakeReturnedAsync(topicId) is { IsLive: true, Value: { } answered })
+            {
+                taken = answered;
+            }
         }
         catch (HubException refused)
         {
             _logger.LogInformation("Returned messages of topic {TopicId} not taken: {Reason}", topicId, refused.Message);
-            return;
         }
 
-        if (taken is { IsLive: true, Value: { Count: > 0 } messages })
+        IReadOnlyList<ReturnedMessage> waiting;
+        lock (_held)
         {
-            _dispatcher.Dispatch(new ReturnToComposer(topicId, messages));
+            waiting = [.. _held.GetValueOrDefault(topicId) ?? [], .. taken];
+            if (waiting.Count == 0)
+            {
+                return;
+            }
+
+            if (_topics.State.SelectedTopicId != topicId)
+            {
+                _held[topicId] = waiting;
+                return;
+            }
+
+            _held.Remove(topicId);
         }
+
+        _dispatcher.Dispatch(new ReturnToComposer(topicId, waiting));
     }
 
     public void Dispose()
