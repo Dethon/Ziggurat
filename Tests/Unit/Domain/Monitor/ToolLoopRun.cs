@@ -50,17 +50,43 @@ internal sealed class ToolLoopRun : IAsyncDisposable
 
     public FakeChannelConnection Channel { get; }
 
-    public IReadOnlyList<SendReplyParams> Replies => Channel.SentReplies;
+    // The turns' replies, without the probes' refusals (AdmittedSoFarAsync).
+    public IReadOnlyList<SendReplyParams> Replies =>
+        [.. Channel.SentReplies.Where(r => r.TurnKey?.StartsWith(ProbePrefix, StringComparison.Ordinal) != true)];
 
-    public void Send(string text) => Channel.WriteMessage(new ChannelMessage
+    public void Send(string text, bool steer = false) => Channel.WriteMessage(new ChannelMessage
     {
         ConversationId = ConversationId,
         Content = text,
         Sender = "Fran",
         ChannelId = ChatChannel,
         AgentId = AgentId,
-        Principal = new Principal(ChatChannel, Person.UserId, Person)
+        Principal = new Principal(ChatChannel, Person.UserId, Person),
+        Steer = steer
     });
+
+    // Every message sent so far has been admitted, or refused: the group admits its messages one at a
+    // time in the order they came, so once a message sent after them is refused, they are through. The
+    // probe is that message, unsigned, and its refusal is left out of Replies.
+    public async Task AdmittedSoFarAsync()
+    {
+        var probe = $"{ProbePrefix}{Interlocked.Increment(ref _probes)}";
+        Channel.WriteUnsigned(new ChannelMessage
+        {
+            ConversationId = ConversationId,
+            Content = "probe",
+            Sender = "probe",
+            ChannelId = ChatChannel,
+            AgentId = AgentId,
+            TurnKey = probe
+        });
+        await Eventually.Until(
+            () => Channel.SentReplies.Any(r => r.TurnKey == probe && r.ContentType == ReplyContentType.StreamComplete),
+            "the messages sent before the probe to be admitted");
+    }
+
+    private const string ProbePrefix = "probe-";
+    private int _probes;
 
     // Ends the channel's stream; the monitor returns once every turn it holds has run to its end.
     public async Task FinishAsync()

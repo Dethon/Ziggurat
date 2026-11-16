@@ -84,7 +84,19 @@ internal sealed class ConversationGroup(
     // The household this conversation is, once a turn naming one arrived or its topic said.
     private string? _household;
 
-    private sealed record AdmittedTurn(IChannelConnection Channel, ChannelMessage Message, IdentityClaims? Identity);
+    private sealed record AdmittedTurn(IChannelConnection Channel, ChannelMessage Message, IdentityClaims? Identity)
+    {
+        // The account a person's own turn acts for; none for a fire, whoever its delegation names, and
+        // none for the guest, who is nobody to compare with.
+        public Account? Person => Message.Origin is null ? Identity?.Account : null;
+    }
+
+    // The turn running now and its steering handle, read by the message pump as a steer arrives. Set
+    // before the turn starts setting up, so a steer arriving during its recall or warmup still cuts it
+    // at its first tool boundary.
+    private sealed record RunningTurn(Account? Person, TurnSteering Steering);
+
+    private volatile RunningTurn? _running;
 
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
@@ -236,10 +248,12 @@ internal sealed class ConversationGroup(
                     break;
                 }
 
+                var steering = new TurnSteering();
+                _running = new RunningTurn(x.Person, steering);
                 IAsyncEnumerable<TurnUpdate> turn;
                 try
                 {
-                    turn = await RunTurnAsync(x);
+                    turn = await RunTurnAsync(x, steering);
                 }
                 catch (OperationCanceledException) when (_turnCt.IsCancellationRequested)
                 {
@@ -295,10 +309,13 @@ internal sealed class ConversationGroup(
                 {
                     yield return update;
                 }
+
+                _running = null;
             }
         }
         finally
         {
+            _running = null;
             await queue.DisposeAsync();
             await pumpCts.CancelAsync();
             await reader;
@@ -391,6 +408,13 @@ internal sealed class ConversationGroup(
                         if (await AdmitAsync(x) is { } admitted
                             && !await RefusedForAnotherHouseholdsConversationAsync(admitted))
                         {
+                            // Before it is queued: once queued it may already be the running turn, and
+                            // a steer must never cut its own turn.
+                            if (admitted.Message.Steer)
+                            {
+                                SteerRunningTurn(admitted);
+                            }
+
                             writer.TryWrite(admitted);
                         }
 
@@ -407,6 +431,17 @@ internal sealed class ConversationGroup(
         catch (Exception ex)
         {
             writer.TryComplete(ex);
+        }
+    }
+
+    // A steer cuts only the running turn of the person it is from, by the account each was verified for:
+    // never another person's turn, a fire, a guest's, nor a worker's loop, whose run has a handle of its
+    // own nobody signals. Otherwise it is just the next turn, which it is anyway.
+    private void SteerRunningTurn(AdmittedTurn steer)
+    {
+        if (_running is { Person: { } person } running && steer.Person == person)
+        {
+            running.Steering.Steer();
         }
     }
 
@@ -937,7 +972,7 @@ internal sealed class ConversationGroup(
         return _state = state with { Agent = agent, Thread = thread, Warmup = agent.WarmupSessionAsync(thread, _turnCt) };
     }
 
-    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x)
+    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x, TurnSteering steering)
     {
         var state = _state is { } established ? await RebuildIfStaleAsync(established) : await EnsureEstablishedAsync(x);
         var targets = await ResolveTurnTargetsAsync(x, state);
@@ -976,7 +1011,7 @@ internal sealed class ConversationGroup(
         // agent with no sandbox lands nothing and keeps the attachment as model context, which is
         // the whole feature for that agent.
         await LandAttachmentsAsync(x.Channel, turn, state, userMessage);
-        return StreamAgentTurn(state, userMessage, turn, extraction);
+        return StreamAgentTurn(state, userMessage, turn, extraction, steering);
     }
 
     private async Task LandAttachmentsAsync(
@@ -1162,12 +1197,12 @@ internal sealed class ConversationGroup(
         };
 
     private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(
-        GroupState state, ChatMessage userMessage, Turn turn, MemoryExtraction? extraction)
+        GroupState state, ChatMessage userMessage, Turn turn, MemoryExtraction? extraction, TurnSteering steering)
     {
         var stopwatch = Stopwatch.StartNew();
         var ct = _turnCt;
         return state.Agent
-            .RunStreamingAsync([userMessage], state.Thread, cancellationToken: ct)
+            .RunStreamingAsync([userMessage], state.Thread, new TurnRunOptions { Steering = steering }, ct)
             .WithErrorHandling(ct)
             .ToUpdateAiResponsePairs()
             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))

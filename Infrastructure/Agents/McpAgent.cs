@@ -338,7 +338,9 @@ public sealed class McpAgent : DisposableAgent
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
-        options ??= CreateRunOptions(session, conversationContext, turnConfig);
+        options = options is null or TurnRunOptions
+            ? CreateRunOptions(session, conversationContext, turnConfig, (options as TurnRunOptions)?.Steering)
+            : options;
 
         // What the reply streams goes to the history as it passes, so a reply the person stops is kept
         // as far as it got.
@@ -359,7 +361,7 @@ public sealed class McpAgent : DisposableAgent
         // instructions, tools, reasoning effort and the config patch. Non-channel callers
         // (harnesses, benchmarks) legitimately do this, so it stays possible — but an agent
         // running stripped of what makes it that agent must not look like a normal turn.
-        if (suppliedOptions is not null)
+        if (suppliedOptions is not null and not TurnRunOptions)
         {
             _logger?.LogWarning(
                 "Agent '{AgentName}' ran with caller-supplied AgentRunOptions; this turn uses none of " +
@@ -444,7 +446,7 @@ public sealed class McpAgent : DisposableAgent
     }
 
     private ChatClientAgentRunOptions CreateRunOptions(
-        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig)
+        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig, TurnSteering? steering)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
@@ -466,14 +468,20 @@ public sealed class McpAgent : DisposableAgent
             ResponseFormat = turnConfig.ResponseFormat is { } format
                 ? ChatResponseFormat.ForJsonSchema(format.Schema, format.Name)
                 : null,
-            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat)
+            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat, steering)
         });
     }
 
     private AdditionalPropertiesDictionary BuildTurnProperties(
-        ConversationContext? conversationContext, ResponseFormat? format)
+        ConversationContext? conversationContext, ResponseFormat? format, TurnSteering? steering)
     {
         var properties = BuildConversationContextProperties(conversationContext);
+        // Where the tool loop reads it after each call, on this turn's options alone.
+        if (steering is not null)
+        {
+            properties[TurnSteering.OptionsKey] = steering;
+        }
+
         // The format a channel asks for is always strict: it parses the answer, so a hint is not
         // enough. The chat client reads this to send the schema strict and as written.
         if (format is not null)
