@@ -604,6 +604,37 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // The sender's other devices and everyone else on the topic lose the chip too.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithdrawal_IsToldToTheTopicsAudience(bool takingBack)
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var told = TellsOfTheQueue();
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+        var second = (await fran.GetQueue(TopicId))[0];
+
+        if (takingBack)
+        {
+            await fran.TakeBackQueued(TopicId, second.Id);
+        }
+        else
+        {
+            await fran.RemoveQueued(TopicId, second.Id);
+        }
+
+        Latest(told).Items.Select(item => item.Content).ShouldBe(["third"]);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("third");
+        await FinishTurnAsync("answer three");
+        await wire.Ended;
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
