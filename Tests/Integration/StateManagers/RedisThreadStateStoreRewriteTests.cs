@@ -186,8 +186,8 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         history.Select(h => h.ToolsCalled).ShouldBe([null, ["timer_set"], null, null]);
     }
 
-    // A reply cut at a tool boundary by its person's steer said nothing, and is still a reply: it is
-    // drawn as one naming the tools it ran, and counted as one.
+    // A reply cut at a tool boundary by its person's steer, or stopped between its calls, said nothing,
+    // and is still a reply: it is drawn as one naming the tools it ran, and counted as one.
     [Fact]
     public async Task GetHistoryAsync_AReplyThatRanToolsAndSaidNothing_IsDrawnNamingThem()
     {
@@ -197,7 +197,10 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         await store.AppendMessagesAsync(Key,
         [
             Message("u1", "user", "look it up"),
-            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("c1", "mcp__websearch__web_search")]),
+            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("c1", "mcp__websearch__web_search")])
+            {
+                MessageId = "calling"
+            },
             new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "found")]),
             Message("u2", "user", "no, the other one"),
             Message("a2", "assistant", "the other one")
@@ -213,6 +216,8 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         ]);
         history.Select(h => h.ToolsCalled).ShouldBe([null, ["web_search"], null, null]);
         history[1].IsInterrupted.ShouldBeFalse();
+        // By the id its calls streamed under, so the page that drew them names its bubble from this one.
+        history[1].MessageId.ShouldBe("calling");
         (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(4);
     }
 

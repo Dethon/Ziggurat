@@ -688,12 +688,18 @@ public sealed class RedisThreadStateStore(
         // their results when it stands for a reply that said nothing.
         var tools = new Dictionary<ChatMessage, IReadOnlyList<string>>(ReferenceEqualityComparer.Instance);
         List<string> calling = [];
+
+        // Such a reply goes by the id its calls streamed under, so the page that drew them as they ran
+        // names its bubble from this one (EntryIdNaming) and rewrites from it are not taken for stale.
+        var wordlessIds = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
+        string? callingId = null;
         bool SaysSomething(ChatMessage m) => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(TextOf(m));
         bool StandsForAWordlessReply(ChatMessage m) =>
             m.Role == ChatRole.Tool && drawn.Contains(m) && string.IsNullOrWhiteSpace(TextOf(m));
         foreach (var message in messages)
         {
             calling.AddRange(message.Contents.OfType<FunctionCallContent>().Select(c => BareToolName(c.Name)));
+            callingId = message.Contents.OfType<FunctionCallContent>().Any() ? message.MessageId : callingId;
             if (message.Role == ChatRole.User)
             {
                 calling.Clear();
@@ -702,6 +708,10 @@ public sealed class RedisThreadStateStore(
             {
                 tools[message] = [.. calling.Distinct()];
                 calling.Clear();
+                if (message.Role == ChatRole.Tool)
+                {
+                    wordlessIds[message] = callingId;
+                }
             }
         }
 
@@ -714,7 +724,7 @@ public sealed class RedisThreadStateStore(
 
         var projected = readable
             .Select(m => new ChatHistoryMessage(
-                m.MessageId,
+                wordlessIds.GetValueOrDefault(m) ?? m.MessageId,
                 m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
                 TextOf(m),
                 m.GetAuthorId(),
