@@ -1,5 +1,6 @@
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
@@ -15,7 +16,8 @@ public sealed class StreamResumeService(
     IStreamingService streamingService,
     IDispatcher dispatcher,
     IMessagePipeline pipeline,
-    TopicStreams topicStreams) : IStreamResumeService
+    TopicStreams topicStreams,
+    ILogger<StreamResumeService> logger) : IStreamResumeService
 {
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
@@ -80,12 +82,9 @@ public sealed class StreamResumeService(
             dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
         }
 
-        // So is what waits behind the reply, which this page may have been away for; pushes on their
-        // way meanwhile are kept or not by revision.
-        if (await messagingService.GetQueueAsync(topic.TopicId) is { IsLive: true, Value: { } queue })
-        {
-            dispatcher.Dispatch(new QueueChanged(queue));
-        }
+        // So is what waits behind the reply, which this page may have been away for. Not awaited: the
+        // reply is shown first, and chips that cannot be read stay as they were.
+        CatchUpQueueAsync(topic.TopicId).LogFaults(logger, "queue catch-up");
 
         // Single rebuild: buffer + history → merged result
         var existingHistory = pipeline.MessagesFor(topic.TopicId) ?? [];
@@ -108,5 +107,14 @@ public sealed class StreamResumeService(
         // The wire starts with whatever the stream carried after the state just drawn: opening it
         // took round trips, and a page opening a topic mid-reply lost what was written meanwhile.
         return await streamingService.TryReadResumedStreamAsync(lease, topic, StreamSeen.Of(state.BufferedMessages));
+    }
+
+    // Pushes on their way meanwhile are kept or not by revision.
+    private async Task CatchUpQueueAsync(string topicId)
+    {
+        if (await messagingService.GetQueueAsync(topicId) is { IsLive: true, Value: { } queue })
+        {
+            dispatcher.Dispatch(new QueueChanged(queue));
+        }
     }
 }

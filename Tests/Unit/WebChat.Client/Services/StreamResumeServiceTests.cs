@@ -61,7 +61,8 @@ public sealed class StreamResumeServiceTests : IDisposable
             streamingService,
             _dispatcher,
             pipeline,
-            _topicStreams);
+            _topicStreams,
+            NullLogger<StreamResumeService>.Instance);
     }
 
     public void Dispose()
