@@ -21,5 +21,6 @@
 - `QueuedMessageItem` is unchanged: the take-back's answer carries the references, so the push never hands other people's file ids to every page.
 - Remove deletes only files kept under the topic's own conversation: `EnqueueMessage` does not check that a reference is the conversation's.
 - The composer merge is `ReturnToComposer(topicId, messages)` (`ComposerStore`), for ticket 06's returned items too. The client ignores the config patch; the picker stays as the person left it.
+- A withdrawal that won is answered even if the queue's push fails afterwards (`QueueNews.TellOrLogAsync`), and a Remove whose conversation cannot be read deletes no file.
 - Until ticket 06, a stop empties the queue, so a Remove or Edit after a stop answers "already sent".
 
