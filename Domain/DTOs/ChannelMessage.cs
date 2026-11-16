@@ -43,6 +43,10 @@ public record ChannelMessage
 
     // Continue's hidden ask (Domain.Conversations.Continuation).
     public bool Continuation { get; init; }
+
+    // Steer now: a turn like any other, which also cuts its own person's running turn at its next tool
+    // boundary (ChannelMessageNotification.Steer).
+    public bool Steer { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
 
     // The channel asks for this conversation to be shown on the review host too (ADR 0046).

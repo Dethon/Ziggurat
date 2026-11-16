@@ -60,6 +60,10 @@ public record ChannelMessageNotification
     public string? RerunOf { get; init; }
     // Continue: the turn asks the model to carry on a reply that was cut off, its message hidden.
     public bool Continuation { get; init; }
+    // Steer now: the person asks for this turn to come in at the running turn's next tool boundary. It is
+    // a turn and admitted like one; it also ends their own running turn once its tool calls return, and
+    // is just the next turn otherwise. Set by the SignalR channel alone.
+    public bool Steer { get; init; }
     // Optional structured-output request for this turn's final answer, beside the config patch and
     // like it honoured for this message only. Part of the shared protocol; populated by a channel
     // that parses the reply (Sugary), left null by every other.

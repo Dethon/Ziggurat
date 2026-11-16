@@ -483,6 +483,7 @@ public sealed class McpChannelConnection(
             ConfigPatch = notification.ConfigPatch,
             RerunOf = notification.RerunOf,
             Continuation = notification.Continuation,
+            Steer = notification.Steer,
             ResponseFormat = notification.ResponseFormat,
             ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,
