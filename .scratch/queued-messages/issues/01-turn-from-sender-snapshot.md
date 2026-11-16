@@ -10,9 +10,9 @@ Building the channel notification and vouching through the session accounts serv
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+Status: done
 
-- [ ] Every existing send path builds its notification and vouches from a sender snapshot.
-- [ ] A snapshot sends the same notification as the live send it was taken from: same sender, principal, assertion, agent, patch and attachments.
-- [ ] A session revoked after the snapshot was taken is refused "signed out" when the snapshot is sent, and an unreachable accounts service answers "could not be checked", both on the stream as today.
-- [ ] The existing chat hub tests stay green unchanged.
+- [x] Every existing send path builds its notification and vouches from a sender snapshot.
+- [x] A snapshot sends the same notification as the live send it was taken from: same sender, principal, assertion, agent, patch and attachments.
+- [x] A session revoked after the snapshot was taken is refused "signed out" when the snapshot is sent, and an unreachable accounts service answers "could not be checked", both on the stream as today.
+- [x] The existing chat hub tests stay green unchanged.

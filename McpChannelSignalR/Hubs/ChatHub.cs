@@ -38,19 +38,9 @@ public sealed class ChatHub(
     // The connection's household's agents, as the household runs them on the deployment's models.
     private readonly HouseholdAgentCatalogue _agents = new(households, catalog);
 
-    // What the browser is told when the emit reached nobody. The message may still be sitting in a
-    // buffer for an agent that comes back, so this says the turn cannot be answered now rather
-    // than claiming it was thrown away.
-    private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
-
-    // What the browser is told when the accounts service could not vouch for the person just now, so
-    // no turn could carry its word; nothing was sent, and sending again later may work.
-    private const string UnvouchedError = "Who you are could not be checked right now, so this message has not been answered.";
-
-    // What it is told once the session it signed in with is no longer live — revoked from the account
-    // page, or a connection that came with no session to ask about: nothing is sent until it signs in
-    // again, and sending again will not help.
-    internal const string SignedOutError = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
+    // Built here from what the hub is already given rather than injected, so the hub's dependencies
+    // stay what every hub test constructs it with; it holds no state, so one per hub costs nothing.
+    private readonly PersonTurns _turns = new(streamService, notificationEmitter, sessions, logger);
 
     // What the browser is told when its household's spaces could not be asked for its person: signed
     // out since, or the accounts service unreachable just now.
@@ -111,13 +101,15 @@ public sealed class ChatHub(
 
     private TopicViewer Viewer => SignedIn.Viewer;
 
-    // Who a turn sent from here acts for: the account itself, never the name, which only labels it.
-    private Principal TurnPrincipal => SignedIn.PrincipalOn(ChannelIds.SignalR);
-
     // What a turn's sender shows the agent: the account's name, or its id when no name was learned.
     private string TurnSender => Context.Items.TryGetValue(DisplayNameItem, out var name) && name is string { Length: > 0 } shown
         ? shown
         : SignedIn.UserId;
+
+    // Who a turn sent from here is, as of now: what a turn needs to be sent and vouched for once this
+    // call is over.
+    private SenderSnapshot SenderOf(string topicId, ChannelSession session) =>
+        SenderSnapshot.Of(SignedIn, TurnSender, topicId, session);
 
     // The connection's household's agents, as its configuration names them, on the deployment's models
     // as the agent registered them (AgentCatalogBuilder.ForHousehold): never another household's.
@@ -231,7 +223,7 @@ public sealed class ChatHub(
     private async Task<T> HouseholdViewAsync<T>(
         Func<string, HouseholdProof, CancellationToken, Task<T>> view, string what, string refusal, CancellationToken ct)
     {
-        if ((await VouchedAsync(ct)).Account is not { } vouched)
+        if ((await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, ct)).Account is not { } vouched)
         {
             throw new HubException(refusal);
         }
@@ -497,10 +489,10 @@ public sealed class ChatHub(
 
         // Refused the same way, and as early: a turn the accounts service has not vouched for would
         // only be refused by the agent, after the browser had shown the message as sent.
-        var vouching = await VouchedAsync(cancellationToken);
-        if (vouching.Account is not { } vouched)
+        var sender = SenderOf(topicId, session);
+        var turn = new TurnMessage(message, correlationId, configPatch, attachments, rerunOf, continuation);
+        if (await _turns.VouchAsync(sender, cancellationToken) is not { } vouched)
         {
-            await AnswerUnvouchedAsync(topicId, conversationId, vouching.Refusal);
             await ForgetIfNeverUsedAsync(session.AgentId, session.Identity.ChatId, topicId);
             await foreach (var unvouchedChunk in
                 subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
@@ -511,54 +503,18 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Write user message to buffer for other browsers; Continue's ask is nobody's message to draw.
-        if (!continuation)
-        {
-            var timestamp = DateTimeOffset.UtcNow;
-            var userMessage = new ChatStreamMessage
-            {
-                Content = message,
-                UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
-                Attachments = attachments
-            };
-            await streamService.WriteMessageAsync(topicId, userMessage);
-        }
+        await _turns.WriteMessageAsync(sender, turn);
 
         // The other browsers on the topic - a member reading a shared one, the same person's phone -
         // follow a stream they are told started, replaying the message just buffered; the one sending
         // is streaming already and ignores it. Told as an agent-initiated turn's start is, to those
         // who may see the topic. A message enqueued behind a running reply needs no telling: whoever
         // follows the stream receives it on it.
-        var spaceSlug = session.SpaceSlug ?? SpaceConfig.DefaultSlug;
         await hubSender.SendToTopicAsync(
-            await threadStore.TopicOfAsync(session), spaceSlug, "OnStreamStarted",
-            new StreamStartedNotification(topicId, spaceSlug));
+            await threadStore.TopicOfAsync(session), sender.SpaceSlug, "OnStreamStarted",
+            new StreamStartedNotification(topicId, sender.SpaceSlug));
 
-        var delivered = await notificationEmitter.EmitAsync(
-            new ChannelMessageNotification
-            {
-                ConversationId = conversationId,
-                Sender = TurnSender,
-                Principal = TurnPrincipal,
-                Assertion = vouched.Assertion,
-                Content = message,
-                AgentId = session.AgentId,
-                ConfigPatch = configPatch,
-                RerunOf = rerunOf,
-                Continuation = continuation,
-                Attachments = attachments,
-                Timestamp = DateTimeOffset.UtcNow
-            },
-            cancellationToken);
-
-        if (!delivered)
-        {
-            // Nobody is polling, so no reply is coming and the loop below would hold the browser
-            // open forever. The error goes through the stream rather than straight back to this
-            // caller so every browser on the topic sees the same end, and it ends the turn: one
-            // pending prompt finished, in error.
-            await AnswerNotLiveAsync(topicId, conversationId);
-        }
+        await _turns.EmitAsync(vouched, turn, cancellationToken);
 
         // An approval it carried is the other person's, shown to them where it was asked.
         foreach (var earlier in carried.Where(m => m.ApprovalRequest is null))
@@ -592,48 +548,21 @@ public sealed class ChatHub(
             return false;
         }
 
-        var userId = SignedIn.UserId;
-        var conversationId = session.Identity.ConversationId;
-
         if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, Context.ConnectionAborted) is { } refused)
         {
-            await AnswerRefusedAsync(topicId, conversationId, refused);
+            await AnswerRefusedAsync(topicId, session.Identity.ConversationId, refused);
             return true;
         }
 
-        var vouching = await VouchedAsync(Context.ConnectionAborted);
-        if (vouching.Account is not { } vouched)
+        var sender = SenderOf(topicId, session);
+        var turn = new TurnMessage(message, correlationId, configPatch, attachments);
+        if (await _turns.VouchAsync(sender, Context.ConnectionAborted) is not { } vouched)
         {
-            await AnswerUnvouchedAsync(topicId, conversationId, vouching.Refusal);
             return true;
         }
 
-        var timestamp = DateTimeOffset.UtcNow;
-        var userMessage = new ChatStreamMessage
-        {
-            Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
-            Attachments = attachments
-        };
-        await streamService.WriteMessageAsync(topicId, userMessage);
-
-        var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
-        {
-            ConversationId = conversationId,
-            Sender = TurnSender,
-            Principal = TurnPrincipal,
-            Assertion = vouched.Assertion,
-            Content = message,
-            AgentId = session.AgentId,
-            ConfigPatch = configPatch,
-            Attachments = attachments,
-            Timestamp = DateTimeOffset.UtcNow
-        });
-
-        if (!delivered)
-        {
-            await AnswerNotLiveAsync(topicId, conversationId);
-        }
+        await _turns.WriteMessageAsync(sender, turn);
+        await _turns.EmitAsync(vouched, turn, CancellationToken.None);
 
         // True either way, and deliberately: false is the client's signal that there was no stream
         // to enqueue onto, which makes it open a second one and send the same prompt again. The
@@ -681,36 +610,6 @@ public sealed class ChatHub(
         });
     }
 
-    // The accounts service's word for this connection's person, asked afresh for every turn, which
-    // the turn carries to the agent: the connection's own assertion was checked as it arrived and
-    // lives ten minutes, while a chat client stays connected for hours. Asked for the session that
-    // assertion named, never for the account by its id, so a session revoked since starts no turn
-    // (SignedOutError); one the service could not answer now — unreachable — is UnvouchedError. Either
-    // way no turn leaves.
-    private async Task<Vouching> VouchedAsync(CancellationToken ct)
-    {
-        if (SignedIn.SessionId is not { } sessionId)
-        {
-            return new Vouching(null, SignedOutError);
-        }
-
-        try
-        {
-            return await sessions.SessionAsync(SignedIn.UserId, sessionId, ct) is { } vouched
-                ? new Vouching(vouched, "")
-                : new Vouching(null, SignedOutError);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "The accounts service could not vouch for account {UserId}; its turn is not sent",
-                SignedIn.UserId);
-            return new Vouching(null, UnvouchedError);
-        }
-    }
-
-    // The person a turn may carry, or what the browser is told instead.
-    private sealed record Vouching(ResolvedAccount? Account, string Refusal);
-
     // A conversation is kept for what was said in it. A first message refused because its person was
     // signed out or disabled since leaves one that never held a message and that nobody can carry on in
     // as them, so it is forgotten rather than left in the list empty. Its browser keeps showing the
@@ -721,40 +620,6 @@ public sealed class ChatHub(
         {
             await threadStore.DeleteTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
         }
-    }
-
-    private async Task AnswerUnvouchedAsync(string topicId, string conversationId, string refusal)
-    {
-        logger.LogWarning(
-            "No assertion for conversation {ConversationId} (topic {TopicId}): {Refusal}; answering instead of sending a turn",
-            conversationId, topicId, refusal);
-
-        await streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = conversationId,
-            Content = refusal,
-            ContentType = ReplyContentType.Error,
-            IsComplete = true
-        });
-    }
-
-    // The not-live answer, in the shape a turn already ends in: an error reply on the topic's
-    // stream. That is what releases the pending prompt this call added, so a topic is not left
-    // showing "processing" for a reply that is never coming.
-    private async Task AnswerNotLiveAsync(string topicId, string conversationId)
-    {
-        logger.LogWarning(
-            "Nothing is polling for conversation {ConversationId} (topic {TopicId}); " +
-            "answering not live instead of streaming a reply that cannot arrive",
-            conversationId, topicId);
-
-        await streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = conversationId,
-            Content = NotLiveError,
-            ContentType = ReplyContentType.Error,
-            IsComplete = true
-        });
     }
 
     public async Task CancelTopic(string topicId)
