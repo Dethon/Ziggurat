@@ -1192,10 +1192,13 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
     }
 
-    // Vouched for afresh as it leaves the queue, as any turn is: a device signed out since steers
-    // nothing, and the message keeps its place, to be refused again when its turn comes.
-    [Fact]
-    public async Task ASteerFromASessionSignedOutSince_IsRefused_AndTheMessageKeepsItsPlace()
+    // Vouched for afresh as it leaves the queue, as any turn is, for the session that queued it: a device
+    // signed out since steers nothing, nor does its message steer from another device, which would send
+    // what it left behind; the message keeps its place, to be refused again when its turn comes.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASteerOfAMessageFromASessionSignedOutSince_IsRefused_AndTheMessageKeepsItsPlace(bool fromTheLaptop)
     {
         var fran = HubFor(new SignedInCaller());
         var franOnThePhone = HubFor(CallerAs("fran", "session-phone"));
@@ -1206,7 +1209,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var queued = IdOf(await fran.GetQueue(TopicId), "steer me");
 
         _accounts.SignOut("session-phone");
-        var refused = await Should.ThrowAsync<HubException>(() => franOnThePhone.SteerQueued(TopicId, queued));
+        var refused = await Should.ThrowAsync<HubException>(() => (fromTheLaptop ? fran : franOnThePhone).SteerQueued(TopicId, queued));
 
         refused.Message.ShouldContain("signed out");
         (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["steer me"]);

@@ -638,15 +638,20 @@ public sealed class ChatHub(
         (await WithdrawAsync(topicId, queuedId)).Message!.ToReturned();
 
     // Steer now: the caller's queued message sent into the running turn, which must be their own, to come
-    // in at its next tool boundary. Vouched for afresh before it leaves the queue, so a session signed
-    // out meanwhile is refused and the message keeps its place. Taken out of the queue and sent in one
-    // step, in the order the agent hears of turns, so no stop or queued turn's start falls between them.
-    // Its message is written on the stream when the running turn ends (StreamService.Finish).
+    // in at its next tool boundary. Vouched for afresh before it leaves the queue, for the session that
+    // queued it, as its dispatch would be: a device signed out meanwhile neither sends what it left behind
+    // nor has it sent from another, and the message keeps its place. Taken out of the queue and sent in
+    // one step, in the order the agent hears of turns, so no stop or queued turn's start falls between
+    // them. Its message is written on the stream when the running turn ends (StreamService.Finish).
     public async Task SteerQueued(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
-        var vouching = await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, Context.ConnectionAborted);
-        if (vouching.Account is not { } vouched)
+        var queued = streamService.QueueOf(topicId).Messages
+            .FirstOrDefault(m => m.Id == queuedId && m.Sender.Principal.Account == SignedIn.Account);
+        var vouching = queued is null
+            ? null
+            : await _turns.VouchingAsync(queued.Sender.UserId, queued.Sender.SessionId, Context.ConnectionAborted);
+        if (vouching is { Account: null })
         {
             throw new HubException(vouching.Refusal);
         }
@@ -657,6 +662,14 @@ public sealed class ChatHub(
             if (steering.Message is not { } steer)
             {
                 return steering;
+            }
+
+            // Not vouched for only when it was not in the queue as the caller's a moment ago, and a message
+            // leaves the queue for good.
+            if (vouching?.Account is not { } vouched)
+            {
+                streamService.Unsteer(topicId, steer);
+                return Withdrawal.AlreadySent;
             }
 
             if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer.Message, CancellationToken.None))
