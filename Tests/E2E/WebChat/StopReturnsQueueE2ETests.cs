@@ -83,10 +83,12 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(carlos.Locator("textarea.chat-input")).Not.ToHaveValueAsync(new Regex($"ALPHA{tag}"));
 
             // Nothing ran after the stop: no further turn starts, neither message is drawn, and a fresh
-            // load of the conversation holds neither.
+            // load of the conversation holds neither. A queued turn starting would be written on the
+            // stream, so drawn and Stop shown on both pages, the moment it was dispatched; the absence
+            // is bought with the suite's settle, as every other "and nothing further" is.
             await IdleAsync(ana);
             await IdleAsync(carlos);
-            await ana.WaitForTimeoutAsync(10_000);
+            await Eventually.Settle();
             foreach (var page in new[] { ana, carlos })
             {
                 await Assertions.Expect(page.Locator("[data-testid=queue-chip]")).ToHaveCountAsync(0);
