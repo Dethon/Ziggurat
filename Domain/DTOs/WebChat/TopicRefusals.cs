@@ -28,6 +28,10 @@ public static class TopicRefusals
     // A queued message whose turn started before the person removed or took it back.
     public const string AlreadySent = "This message was already sent.";
 
+    // A queued message a stop handed back before the person removed or took it back: it is not lost and
+    // was not sent, and it is in their message box, or will be when they next open the conversation.
+    public const string ReturnedToComposer = "The reply was stopped, so this message went back to your message box.";
+
     // A queued message is withdrawn by the person who sent it alone, whoever else sees the queue.
     public const string NotTheSenders = "Only the person who sent this message can remove or edit it.";
 }

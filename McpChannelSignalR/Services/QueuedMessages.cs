@@ -45,6 +45,8 @@ public sealed record Withdrawal(QueuedMessage? Message, IReadOnlyList<QueuedMess
 
     public static Withdrawal NotTheSenders { get; } = new(null, [], TopicRefusals.NotTheSenders);
 
+    public static Withdrawal ReturnedToComposer { get; } = new(null, [], TopicRefusals.ReturnedToComposer);
+
     // The files the queue still names once this message has left it.
     public IEnumerable<string> StillQueuedAttachments() =>
         StillQueued.SelectMany(m => m.Message.Attachments ?? []).Select(a => a.Id);

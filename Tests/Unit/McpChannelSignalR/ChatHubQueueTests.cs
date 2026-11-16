@@ -562,6 +562,35 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         next.Said().ShouldBe(["user: new", "agent: answer new"]);
     }
 
+    // A stop handed the message back before its sender's remove or edit arrived: they are told it went
+    // back to their message box, whether or not a page of theirs has taken it from the hub yet.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task AWithdrawalAfterAStop_IsToldTheMessageWentBackToTheComposer(bool takingBack, bool takenAlready)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "from marta", "c-2", null)).ShouldBeTrue();
+        var queuedId = (await marta.GetQueue(TopicId)).ShouldHaveSingleItem().Id;
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        if (takenAlready)
+        {
+            (await marta.TakeReturned(TopicId)).ShouldHaveSingleItem();
+        }
+
+        var refused = await Should.ThrowAsync<HubException>(() => takingBack
+            ? marta.TakeBackQueued(TopicId, queuedId)
+            : marta.RemoveQueued(TopicId, queuedId));
+
+        refused.Message.ShouldBe(TopicRefusals.ReturnedToComposer);
+    }
+
     // A deleted conversation keeps nothing of what was said or queued in it, returned messages included.
     [Fact]
     public async Task DeletingTheTopic_DropsWhatAStopReturned()

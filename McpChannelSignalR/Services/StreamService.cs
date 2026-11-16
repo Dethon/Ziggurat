@@ -39,10 +39,17 @@ public sealed class StreamService(
     // deleted: a sender with no page open finds it the next time they open the topic.
     private readonly Dictionary<(string TopicId, Account? Sender), List<QueuedMessage>> _returned = new();
 
-    // Each topic's last stopped stream, under _streamLock until the topic is deleted: a message still
-    // being admitted to that stream's queue as it stopped goes back to its sender with the rest, rather
-    // than be answered "nothing runs" and sent by its page as a new turn behind the cancel.
-    private readonly Dictionary<string, long> _stopped = new();
+    // Each topic's last stopped stream and whose messages it handed back, under _streamLock until the
+    // topic is deleted: a message still being admitted to that stream's queue as it stopped goes back to
+    // its sender with the rest, rather than be answered "nothing runs" and sent by its page as a new turn
+    // behind the cancel, and a remove or an edit arriving after the stop is told where the message went
+    // even once a page has taken it.
+    private readonly Dictionary<string, Stopped> _stopped = new();
+
+    private sealed record Stopped(long Stream, Dictionary<string, Account?> Returned)
+    {
+        public void Add(QueuedMessage message) => Returned[message.Id] = message.Sender.Principal.Account;
+    }
 
     // Numbered from the clock rather than from one, so a page that heard this process's predecessor
     // does not take a restarted hub's changes for older ones.
@@ -244,7 +251,9 @@ public sealed class StreamService(
             var at = queue.FindIndex(m => m.Id == queuedId);
             if (at < 0)
             {
-                return Withdrawal.AlreadySent;
+                return _stopped.TryGetValue(topicId, out var stopped) && stopped.Returned.TryGetValue(queuedId, out var sender)
+                    ? sender == by ? Withdrawal.ReturnedToComposer : Withdrawal.NotTheSenders
+                    : Withdrawal.AlreadySent;
             }
 
             var message = queue[at];
@@ -382,12 +391,13 @@ public sealed class StreamService(
         {
             if (heldOn is { } held && !(_streamIds.TryGetValue(topicId, out var running) && running == held))
             {
-                if (queueing is null || !(_stopped.TryGetValue(topicId, out var stopped) && stopped == held))
+                if (queueing is null || !(_stopped.TryGetValue(topicId, out var stopped) && stopped.Stream == held))
                 {
                     return Queueing.NotRunning;
                 }
 
                 ReturnedTo(topicId, queueing.Sender.Principal.Account).Add(queueing);
+                stopped.Add(queueing);
                 return Queueing.Returned;
             }
 
@@ -553,7 +563,7 @@ public sealed class StreamService(
                 .ForEach(sender => ReturnedTo(topicId, sender.Key).AddRange(sender));
             if (_streamIds.TryGetValue(topicId, out var stream))
             {
-                _stopped[topicId] = stream;
+                _stopped[topicId] = new Stopped(stream, stopped.ToDictionary(m => m.Id, m => m.Sender.Principal.Account));
             }
 
             CancelStream(topicId);
