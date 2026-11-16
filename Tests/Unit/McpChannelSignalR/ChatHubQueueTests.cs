@@ -1238,6 +1238,28 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // A steer nobody is listening for comes back to the head of the queue, its sender told so, and the
+    // running turn is left alone: ending it on the stream would end the reply the person is reading.
+    [Fact]
+    public async Task ASteerTheAgentDoesNotHear_GoesBackToTheHeadOfTheQueue_AndTheRunningTurnIsLeftAlone()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        var queued = IdOf(await fran.GetQueue(TopicId), "steer me");
+
+        _inboxClock.Advance(ChannelInbox._liveSubscriberFreshness + TimeSpan.FromSeconds(1));
+        var refused = await Should.ThrowAsync<HubException>(() => fran.SteerQueued(TopicId, queued));
+
+        refused.Message.ShouldBe(PersonTurns.NotLiveError);
+        (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["steer me", "older"]);
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+        wire.Said().ShouldBe(["user: first"]);
+        SentAsSteers().ShouldBeEmpty();
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
 
@@ -1466,6 +1488,8 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         private Action? _next;
 
         public void WhenNextPutInTheInbox(Action act) => Volatile.Write(ref _next, act);
+
+        public void Advance(TimeSpan by) => _time.Advance(by);
 
         // Bounded, since the put it waits for is one the code must not make.
         public void WaitForAnotherPut(TimeSpan atMost)
