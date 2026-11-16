@@ -182,6 +182,39 @@ public sealed class QueuedSendTests
         Chips(client).ShouldBeEmpty();
     }
 
+    // A stop as the queued message's turn was about to start hands it back: the page shows its words in
+    // the composer, ready to send again, and never as a message that was sent.
+    [Fact]
+    public async Task AQueuedMessageAStopHandsBack_IsInTheComposer_AndNeverDrawnAsSent()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        transport.Answer("EnqueueMessage", true);
+        transport.Answer("CancelTopic", (object?)null);
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "EnqueueMessage"));
+        var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "second", [], null)]);
+
+        client.Dispatcher.Dispatch(new CancelStreaming("topic-1"));
+        reply.Release();
+        await replyEnding;
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
+
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!)
+            .ShouldBe("second");
+        await Eventually.Settle();
+        Shown(client).ShouldNotContain("user: second");
+        transport.Calls.Count(call => call.MethodName == "SendMessage").ShouldBe(1);
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 
