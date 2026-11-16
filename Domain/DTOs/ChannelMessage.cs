@@ -58,6 +58,10 @@ public record ChannelMessage
     // group mints one as it builds the turn.
     public string? TurnKey { get; init; }
 
+    // On a cancel: the turn keys of the messages the stop handed back to their senders, of which the
+    // agent keeps no turn (ChannelCancelNotification.ReturnedTurnKeys).
+    public IReadOnlyList<string>? ReturnedTurnKeys { get; init; }
+
     // Files sent with this message, as references rather than bytes. Where the bytes rest is the
     // channel's own business — an upload store, or the transport that already keeps them — and
     // they are fetched back only on the way to the model (ADR 0020).

@@ -61,7 +61,7 @@ public sealed class StreamServiceSteerCheckTests : IDisposable
                 _streams.Unsteer(Topic, steer).ShouldBeTrue();
                 break;
             default:
-                await _streams.StopAsync(Topic, () => Task.CompletedTask);
+                await _streams.StopAsync(Topic, _ => Task.CompletedTask);
                 break;
         }
 

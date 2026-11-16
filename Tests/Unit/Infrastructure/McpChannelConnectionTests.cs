@@ -110,6 +110,32 @@ public class McpChannelConnectionTests
             msg.Content.ShouldBe("/cancel");
             msg.ChannelId.ShouldBe("ch-3");
             msg.AgentId.ShouldBe("agent-9");
+            msg.ReturnedTurnKeys.ShouldBeNull();
+            break;
+        }
+    }
+
+    // A stop that handed messages back to their senders names their turn keys, so the agent keeps no
+    // turn of theirs; a field a later hub adds is ignored rather than failing the cancel.
+    [Fact]
+    public async Task HandleCancelNotification_CarriesTheTurnKeysTheStopReturned_AndIgnoresWhatItDoesNotKnow()
+    {
+        var sut = new McpChannelConnection("ch-3");
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            conversationId = "conv-77",
+            agentId = "agent-9",
+            returnedTurnKeys = new[] { "steer-1", "queued-2" },
+            somethingLater = 1
+        });
+
+        sut.HandleChannelCancelNotification(payload);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
+        {
+            msg.Content.ShouldBe("/cancel");
+            msg.ReturnedTurnKeys.ShouldBe(["steer-1", "queued-2"]);
             break;
         }
     }

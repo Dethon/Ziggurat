@@ -517,7 +517,8 @@ public sealed class McpChannelConnection(
             Content = CancelCommandContent,
             Sender = ChannelProtocol.SystemSender,
             ChannelId = ChannelId,
-            AgentId = notification.AgentId
+            AgentId = notification.AgentId,
+            ReturnedTurnKeys = notification.ReturnedTurnKeys
         };
 
         _messageChannel.Writer.TryWrite(message);

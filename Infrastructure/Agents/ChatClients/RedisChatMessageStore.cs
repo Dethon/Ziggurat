@@ -63,7 +63,22 @@ public sealed class RedisChatMessageStore(
     // cancelled turn's history provider nothing of it.
     private readonly ConditionalWeakTable<AgentSession, List<AgentResponseUpdate>> _streamed = [];
 
-    public void BeginCollecting(AgentSession session) => _streamed.AddOrUpdate(session, []);
+    // The turn's handle from its conversation group, by session, which says whether a stopped turn's
+    // message was handed back to its sender, so nothing of it is kept.
+    private readonly ConditionalWeakTable<AgentSession, TurnSteering> _turns = [];
+
+    public void BeginCollecting(AgentSession session, TurnSteering? turn = null)
+    {
+        _streamed.AddOrUpdate(session, []);
+        if (turn is null)
+        {
+            _turns.Remove(session);
+        }
+        else
+        {
+            _turns.AddOrUpdate(session, turn);
+        }
+    }
 
     public void Collect(AgentSession session, AgentResponseUpdate update)
     {
@@ -240,7 +255,8 @@ public sealed class RedisChatMessageStore(
     private async ValueTask KeepStoppedAsync(InvokedContext context, AgentSession session)
     {
         var said = Said(session);
-        if (!await StillTheLineReadAsync(session))
+        // A turn whose message the channel handed back to its sender is theirs to send again, not kept.
+        if ((_turns.TryGetValue(session, out var turn) && turn.IsReturned) || !await StillTheLineReadAsync(session))
         {
             await ClearTurnInFlightAsync(session);
             return;

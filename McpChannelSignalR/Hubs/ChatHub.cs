@@ -820,7 +820,8 @@ public sealed class ChatHub(
         // Nothing queued for a reply somebody abandoned runs after it: each message goes back to the
         // person who queued it. Starting the next one instead would race the agent's teardown, which
         // drops whatever arrives behind a cancel.
-        var returned = await streamService.StopAsync(topicId, async () =>
+        // The cancel names what was handed back: a steer's turn may have started at the agent already.
+        var returned = await streamService.StopAsync(topicId, async handedBack =>
         {
             if (session is not null)
             {
@@ -828,7 +829,8 @@ public sealed class ChatHub(
                 {
                     ConversationId = session.Identity.ConversationId,
                     AgentId = session.AgentId,
-                    Timestamp = DateTimeOffset.UtcNow
+                    Timestamp = DateTimeOffset.UtcNow,
+                    ReturnedTurnKeys = [.. handedBack.Select(m => m.Id)]
                 });
             }
         });

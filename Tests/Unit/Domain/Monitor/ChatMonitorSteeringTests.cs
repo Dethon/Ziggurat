@@ -201,4 +201,32 @@ public class ChatMonitorSteeringTests
         run.StoredLine().ShouldNotContain("user: the other one");
         run.StoredLine().First().ShouldBe("user: look it up");
     }
+
+    // A stop landing just as the steered turn ended: the agent has started the steer's turn, but the hub
+    // had not heard the steered one end, so it handed the steer back to its sender's composer and says so
+    // on the cancel. The agent keeps nothing of that turn, or the person would have the steer twice, once
+    // in their composer and once in the conversation; a stopped turn the hub did not hand back is kept
+    // as far as it got, as any stopped turn is.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AStopAfterTheSteersTurnStarted_KeepsNothingOfIt_WhenTheHubHandedItBack(bool handedBack)
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        model.Hold(1);
+        await using var run = new ToolLoopRun(model, [lookUp]);
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("the other one", steer: true, turnKey: "steer-1");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await Eventually.Until(() => model.Requests.Count == 2, "the steer's turn to be under way");
+        run.Stop(returned: handedBack ? ["steer-1", "queued-2"] : ["queued-2"]);
+        await run.FinishAsync();
+
+        var cut = new[] { "user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42" };
+        run.StoredLine().ShouldBe(handedBack ? cut : [.. cut, "user: the other one"]);
+    }
 }

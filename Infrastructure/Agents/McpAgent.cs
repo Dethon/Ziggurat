@@ -338,13 +338,14 @@ public sealed class McpAgent : DisposableAgent
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
+        var steering = (options as TurnRunOptions)?.Steering;
         options = AreTheAgentsToBuild(options)
-            ? CreateRunOptions(session, conversationContext, turnConfig, (options as TurnRunOptions)?.Steering)
+            ? CreateRunOptions(session, conversationContext, turnConfig, steering)
             : options;
 
         // What the reply streams goes to the history as it passes, so a reply the person stops is kept
-        // as far as it got.
-        _history.BeginCollecting(thread);
+        // as far as it got — unless the channel handed the turn's message back as it stopped it.
+        _history.BeginCollecting(thread, steering);
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
             _history.Collect(thread, update);

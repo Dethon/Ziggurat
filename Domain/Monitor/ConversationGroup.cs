@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -97,6 +98,11 @@ internal sealed class ConversationGroup(
     private sealed record RunningTurn(Account? Person, TurnSteering Steering);
 
     private volatile RunningTurn? _running;
+
+    // The turn keys a channel's stop handed back to their senders, for the group's life (a stop ends it):
+    // asked by key when a stopped turn is kept, so a turn that started from one keeps nothing, whether it
+    // was running when the cancel arrived or only about to.
+    private readonly ConcurrentDictionary<string, byte> _returnedTurnKeys = new();
 
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
@@ -248,7 +254,7 @@ internal sealed class ConversationGroup(
                     break;
                 }
 
-                var steering = new TurnSteering();
+                var steering = new TurnSteering(x.Message.TurnKey, _returnedTurnKeys.ContainsKey);
                 _running = new RunningTurn(x.Person, steering);
                 IAsyncEnumerable<TurnUpdate> turn;
                 try
@@ -398,6 +404,12 @@ internal sealed class ConversationGroup(
                         await ClearThreadAsync();
                         break;
                     case ChatCommand.Cancel:
+                        // Before the cancel, which ends the turn that may be one of them.
+                        foreach (var key in x.Message.ReturnedTurnKeys ?? [])
+                        {
+                            _returnedTurnKeys[key] = 0;
+                        }
+
                         CancelOwnContext();
                         break;
                     default:

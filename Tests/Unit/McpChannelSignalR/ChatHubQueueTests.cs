@@ -51,6 +51,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     private readonly HouseholdSpacesAccounts _households = new();
     private readonly Lock _receivedLock = new();
     private readonly List<ChannelMessageNotification> _received = [];
+    private readonly List<ChannelCancelNotification> _cancels = [];
     private readonly List<string> _arrived = [];
     private readonly string _uploads = Path.Combine(Path.GetTempPath(), $"queue-uploads-{Guid.NewGuid():N}");
     private readonly AttachmentStore _attachmentStore;
@@ -1198,6 +1199,33 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
     }
 
+    // The agent may have started a steer's turn already (the steered turn ended, and the hub has not heard
+    // it yet): the stop's cancel names every turn key it handed back, so the agent keeps no turn of one.
+    [Fact]
+    public async Task AStopsCancel_NamesTheTurnKeysItHandedBack_TheSteersAmongThem()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        var older = IdOf(await fran.GetQueue(TopicId), "older");
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        await DrainInboxAsync();
+
+        ChannelCancelNotification cancel;
+        lock (_receivedLock)
+        {
+            cancel = _cancels.ShouldHaveSingleItem();
+        }
+
+        cancel.ReturnedTurnKeys.ShouldBe([TurnKeyOf("steer me"), older]);
+    }
+
     // Vouched for afresh as it leaves the queue, as any turn is, for the session that queued it: a device
     // signed out since steers nothing, nor does its message steer from another device, which would send
     // what it left behind; the message keeps its place, to be refused again when its turn comes.
@@ -1667,6 +1695,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         lock (_receivedLock)
         {
             _received.AddRange(items.Select(i => i.Message).OfType<ChannelMessageNotification>());
+            _cancels.AddRange(items.Select(i => i.Cancel).OfType<ChannelCancelNotification>());
             _arrived.AddRange(items.Select(i => i.Message?.Content ?? (i.Cancel is not null ? "cancel" : i.Kind.ToString())));
         }
     }

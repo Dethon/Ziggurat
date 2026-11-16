@@ -74,7 +74,8 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     public IReadOnlyList<SendReplyParams> Replies =>
         [.. Channel.SentReplies.Where(r => r.TurnKey?.StartsWith(ProbePrefix, StringComparison.Ordinal) != true)];
 
-    public void Send(string text, bool steer = false, Account? from = null)
+    // A steer goes under the turn key the chat hub gives it, its queued id.
+    public void Send(string text, bool steer = false, Account? from = null, string? turnKey = null)
     {
         var person = from ?? Person;
         Channel.WriteMessage(new ChannelMessage
@@ -85,18 +86,21 @@ internal sealed class ToolLoopRun : IAsyncDisposable
             ChannelId = ChatChannel,
             AgentId = AgentId,
             Principal = new Principal(ChatChannel, person.UserId, person),
-            Steer = steer
+            Steer = steer,
+            TurnKey = turnKey
         });
     }
 
-    // Stop, as a channel's cancel reaches the monitor.
-    public void Stop() => Channel.WriteUnsigned(new ChannelMessage
+    // Stop, as a channel's cancel reaches the monitor, naming the turn keys of the messages the stop
+    // handed back to their senders.
+    public void Stop(IReadOnlyList<string>? returned = null) => Channel.WriteUnsigned(new ChannelMessage
     {
         ConversationId = ConversationId,
         Content = "/cancel",
         Sender = ChannelProtocol.SystemSender,
         ChannelId = ChatChannel,
-        AgentId = AgentId
+        AgentId = AgentId,
+        ReturnedTurnKeys = returned
     });
 
     // A schedule Fran wrote, firing in this conversation: its delegation holds, so it acts for her, and it

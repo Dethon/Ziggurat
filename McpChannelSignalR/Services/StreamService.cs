@@ -694,13 +694,15 @@ public sealed class StreamService(
 
     // A person's stop: the turn and the stream cancelled as any cancel, and what waited behind it
     // handed back to whoever queued it rather than run after a reply somebody abandoned, before the
-    // agent is told to cancel (cancelTurn), so no turn ending meanwhile can start the next one behind
-    // the cancel. Answers the messages handed back, in queue order.
-    public Task<IReadOnlyList<QueuedMessage>> StopAsync(string topicId, Func<Task> cancelTurn) =>
+    // agent is told to cancel (cancelTurn, handed what went back, which the agent then keeps no turn
+    // of), so no turn ending meanwhile can start the next one behind the cancel. Answers the messages
+    // handed back, in queue order.
+    public Task<IReadOnlyList<QueuedMessage>> StopAsync(
+        string topicId, Func<IReadOnlyList<QueuedMessage>, Task> cancelTurn) =>
         InAgentOrderAsync(async () =>
         {
             var stopped = Stop(topicId);
-            await cancelTurn();
+            await cancelTurn(stopped);
             return stopped;
         });
 
