@@ -53,6 +53,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
     }
 

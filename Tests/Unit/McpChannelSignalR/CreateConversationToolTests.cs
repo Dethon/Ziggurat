@@ -27,6 +27,7 @@ public class CreateConversationToolTests
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             new Mock<ILogger<StreamService>>().Object);
         _services = new ServiceCollection()
             .AddSingleton(_sessionService)
@@ -156,7 +157,7 @@ public class CreateConversationToolTests
             new ConversationIdentity(11, 22), "sugary", "default");
 
         var stream = _streamService.Hold(topicId).ShouldNotBeNull();
-        _streamService.Enqueue(stream, QueuedMessage.Of(sender, new TurnMessage("and dessert", null, null, null)))
+        _streamService.Enqueue(stream, sender, new TurnMessage("and dessert", null, null, null))
             .ShouldBe(Queueing.Queued);
 
         _streamService.Dispatches.TryRead(out _).ShouldBeFalse();

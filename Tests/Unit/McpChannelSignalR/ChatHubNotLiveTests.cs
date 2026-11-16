@@ -35,6 +35,7 @@ public class ChatHubNotLiveTests
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         // Nobody ever polls this inbox, so every emit reports "not live" — the cold-restart shape.

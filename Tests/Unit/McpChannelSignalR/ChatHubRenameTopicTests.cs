@@ -30,6 +30,7 @@ public class ChatHubRenameTopicTests
     {
         var sessions = new SessionService();
         var streams = new StreamService(sessions, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         var emitter = new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast);
         _hub = new ChatHub(

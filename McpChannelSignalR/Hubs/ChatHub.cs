@@ -743,8 +743,7 @@ public sealed class ChatHub(
             return (false, refusal);
         }
 
-        var message = QueuedMessage.Of(sender, turn);
-        switch (streamService.Enqueue(stream, message))
+        switch (streamService.Enqueue(stream, sender, turn))
         {
             case Queueing.NotRunning:
                 return (false, null);

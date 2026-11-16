@@ -58,6 +58,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     {
         _streamService = new StreamService(
             _sessionService, _store.Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         _inbox = new ChannelInbox(_inboxClock);
         _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast);

@@ -50,6 +50,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         var approvals = new ApprovalService(

@@ -25,6 +25,7 @@ public class ApprovalServiceTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             _streamLogger.Object);
 
         _sut = new ApprovalService(

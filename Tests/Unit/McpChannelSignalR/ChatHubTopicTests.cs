@@ -51,6 +51,7 @@ public sealed class ChatHubTopicTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         var approvals = new ApprovalService(

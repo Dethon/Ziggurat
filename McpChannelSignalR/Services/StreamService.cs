@@ -13,6 +13,7 @@ public sealed class StreamService(
     SessionService sessionService,
     IThreadStateStore threadStore,
     IPushNotificationService pushNotificationService,
+    TimeProvider time,
     ILogger<StreamService> logger) : IStreamService, IDisposable
 {
     private readonly ConcurrentDictionary<string, BroadcastChannel<ChatStreamMessage>> _responseChannels = new();
@@ -32,7 +33,7 @@ public sealed class StreamService(
 
     // Numbered from the clock rather than from one, so a page that heard this process's predecessor
     // does not take a restarted hub's changes for older ones.
-    private long _queueRevision = DateTimeOffset.UtcNow.UtcTicks;
+    private long _queueRevision = time.GetUtcNow().UtcTicks;
 
     // A queue's head, taken as the turn before it ended, for the dispatcher to send. A channel rather
     // than a call, so the turn completing (send_reply's call) waits on nothing the head's sending does,
@@ -245,11 +246,12 @@ public sealed class StreamService(
     // A place held on the running stream (OpenOrHold, Hold), turned into a message waiting at the back
     // of its queue, or, when a stop took that stream meanwhile, handed back to its sender with the rest
     // of it. The place went with the stream either way, and a stream opened since is no part of it.
-    public Queueing Enqueue(StreamKey held, QueuedMessage message)
+    public Queueing Enqueue(StreamKey held, SenderSnapshot sender, TurnMessage turn)
     {
         EndedStream? ended;
         lock (_streamLock)
         {
+            var message = QueuedMessage.Of(sender, turn, time.GetUtcNow());
             if (RunningOn(held) is not { } running)
             {
                 return HandBackIfStopped(held, message);
@@ -581,7 +583,7 @@ public sealed class StreamService(
             var steer = running.Steers[0];
             running.Steers.RemoveAt(0);
             var sender = steer.Message.Sender;
-            Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message, DateTimeOffset.UtcNow));
+            Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message, time.GetUtcNow()));
             steer.Held.ForEach(chunk => Write(topicId, chunk));
             _currentPrompts[topicId] = steer.Message.Message.Content;
             _currentSenderIds[topicId] = sender.UserId;

@@ -23,6 +23,7 @@ public class StreamServiceTests : IDisposable
             _sessionService,
             _threadStore.Object,
             _pushNotification.Object,
+            TimeProvider.System,
             _logger.Object);
     }
 

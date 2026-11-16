@@ -1,8 +1,6 @@
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using Mcp.Hosting;
 
 namespace McpChannelSignalR.Services;
 

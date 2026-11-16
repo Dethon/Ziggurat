@@ -44,6 +44,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _catalog.Replace([

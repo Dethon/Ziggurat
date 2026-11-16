@@ -33,6 +33,7 @@ public class ChatHubUnsharedStreamTests
     public ChatHubUnsharedStreamTests()
     {
         _streams = new StreamService(_sessions, _store.Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         _store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jonas", ChatId, ThreadId)).ReturnsAsync(() => _topic);
         _store.Setup(s => s.GetTopicAsync("home", "jonas", ChatId, TopicId)).ReturnsAsync(() => _topic);

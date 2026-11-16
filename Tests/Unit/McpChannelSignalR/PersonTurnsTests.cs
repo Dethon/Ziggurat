@@ -50,6 +50,7 @@ public sealed class PersonTurnsTests : IDisposable
     {
         _streamService = new StreamService(
             _sessionService, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast);
 

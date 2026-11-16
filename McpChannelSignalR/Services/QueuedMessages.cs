@@ -6,8 +6,8 @@ namespace McpChannelSignalR.Services;
 // it once nobody's hub call is in hand, and the id the hub gave it, by which its sender names it.
 public sealed record QueuedMessage(string Id, SenderSnapshot Sender, TurnMessage Message, DateTimeOffset QueuedAt)
 {
-    public static QueuedMessage Of(SenderSnapshot sender, TurnMessage message) =>
-        new(Guid.NewGuid().ToString("N"), sender, message, DateTimeOffset.UtcNow);
+    public static QueuedMessage Of(SenderSnapshot sender, TurnMessage message, DateTimeOffset queuedAt) =>
+        new(Guid.NewGuid().ToString("N"), sender, message, queuedAt);
 
     public ReturnedMessage ToReturned() =>
         new(Id, Message.Content, Message.Attachments ?? [], Message.ConfigPatch);

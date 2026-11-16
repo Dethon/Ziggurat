@@ -47,6 +47,7 @@ public sealed class ChatHubHistoryEditTests : IDisposable
             attachmentSettings, new AttachmentTickets(attachmentSettings, time), _attachments, NullLogger<AttachmentService>.Instance);
         _streamService = new StreamService(
             _sessionService, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         var approvals = new ApprovalService(
             _streamService, _sessionService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object,

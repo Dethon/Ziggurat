@@ -33,6 +33,7 @@ public class ChatHubCancelTopicTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _approvalService = new ApprovalService(

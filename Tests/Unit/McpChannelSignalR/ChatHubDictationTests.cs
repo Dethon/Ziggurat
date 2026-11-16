@@ -39,6 +39,7 @@ public sealed class ChatHubDictationTests : IDisposable
             sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _hub = new ChatHub(
