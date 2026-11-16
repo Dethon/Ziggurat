@@ -43,7 +43,7 @@
 - **The E2E's absence.**
   - A regression that started a queued turn after the stop would have the hub write its message on the stream at dispatch, drawn at once, with Stop shown on both pages. So the settle after both pages go idle is the window that matters.
   - The fresh load after it still checks the stored line.
-  - Run alone after the hub and client changes, images rebuilt by the fixture's staleness check.
+  - Run alone after the hub and client changes, the images rebuilt by the fixture's staleness check (192 s build phase). `SteerNowE2ETests` was run as well, since every steer now goes out under a turn key, and it passes on the real model.
 - **`Transcript.Shown` stopped between calls.**
   - The test drives the real `RedisChatMessageStore` stop path over the real `RedisThreadStateStore`: a call, its result, then a second model call stopped after its reasoning. The second call is dropped, and the line ends on the first call's result.
   - It passed on its first run, pinning existing behaviour.
@@ -54,6 +54,9 @@
   - Now a refusal off the losing wire is drawn under the send's own message (`AddMessageUnder`, by correlation id; the end, as before, when the page shows none). The other member's bubble was never touched in either case.
   - The race test first flaked under two concurrent processes: it waited for the refusal's toast, which is dispatched just before the message, and let the reply finish meanwhile. The client's `Store.Dispatch` is an unlocked read-modify-write, safe on the browser's one thread but able to lose an update between two test threads. The test now waits for the refusal to be drawn; three concurrent rounds were green after that.
 
+- A refusal drawn under its send is not the topic's last message once the other member's reply follows, so no Retry is offered on it (`MessageList` shows Retry only on the last). The same was true before, once that reply finalised.
+
 **Still open:**
+- `HeldForSteer` now runs on every `send_reply` chunk the hub writes: it takes the stream lock and scans the topic's waiting steers (usually none) whenever the reply carries a key, which the agent's always do. Not measured; `send_reply` is the hot path `channels.md` already treats with care.
 - In that race the refused message itself is drawn before the other member's message, since the page drew it as sent before the stream was known. Its words do not go back to the composer, as they do for a queued send refused by `EnqueueMessage`. Ticket 08 noted the same for a stop.
 - A fire attaching mid-turn still clears `RunningFor` without a push (ticket 07's open edge), and the steered person's Steer now is refused `NotYourTurn` until the next queue change.
