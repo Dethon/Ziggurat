@@ -233,7 +233,7 @@ public sealed class StreamService(
 
             queue.RemoveAt(at);
             _queueRevision++;
-            return new Withdrawal(message);
+            return new Withdrawal(message, [.. queue]);
         }
     }
 

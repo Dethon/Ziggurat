@@ -24,14 +24,7 @@ public abstract record RewriteOutcome;
 public sealed record Rewritten(ConversationHistory Before, ConversationHistory After) : RewriteOutcome
 {
     // The files the conversation held before and holds nowhere now, on its line or in a version.
-    public IReadOnlyList<string> AttachmentsNoLongerHeld() => [.. AttachmentsOf(Before).Except(AttachmentsOf(After))];
-
-    private static IEnumerable<string> AttachmentsOf(ConversationHistory history) =>
-        history.Messages
-            .Concat(history.Versions.Values.SelectMany(slot => slot.Inactive).SelectMany(v => v.Messages))
-            .SelectMany(m => m.GetAttachments() ?? [])
-            .Select(a => a.Id)
-            .Distinct();
+    public IReadOnlyList<string> AttachmentsNoLongerHeld() => [.. Before.HeldAttachments().Except(After.HeldAttachments())];
 }
 
 public sealed record RewriteRefused(RewriteRefusal Reason) : RewriteOutcome;

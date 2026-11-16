@@ -600,19 +600,25 @@ public sealed class ChatHub(
         return [.. streamService.QueueOf(topicId).Messages.Select(m => m.ToItem())];
     }
 
-    // A queued message its sender withdraws before its turn starts, and the files uploaded for it.
+    // A queued message its sender withdraws before its turn starts, and the files uploaded for it that
+    // nothing else names: neither the conversation (a message re-run with its files) nor the queue.
     public async Task RemoveQueued(string topicId, string queuedId)
     {
-        var removed = await WithdrawAsync(topicId, queuedId);
-        attachmentService.Delete((removed.Message.Attachments ?? []).Select(a => a.Id));
+        var withdrawal = await WithdrawAsync(topicId, queuedId);
+        var removed = withdrawal.Message!;
+        var conversation = await threadStore.GetConversationAsync(
+            new AgentKey(removed.Sender.Conversation.ConversationId, removed.Sender.AgentId).ToString());
+        attachmentService.Delete((removed.Message.Attachments ?? []).Select(a => a.Id)
+            .Except(conversation.HeldAttachments())
+            .Except(withdrawal.StillQueuedAttachments()));
     }
 
     // A queued message its sender takes back into their composer, to rework and send again; its files
     // are kept, since the composer holds them now.
     public async Task<ReturnedMessage> TakeBackQueued(string topicId, string queuedId) =>
-        (await WithdrawAsync(topicId, queuedId)).ToReturned();
+        (await WithdrawAsync(topicId, queuedId)).Message!.ToReturned();
 
-    private async Task<QueuedMessage> WithdrawAsync(string topicId, string queuedId)
+    private async Task<Withdrawal> WithdrawAsync(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
         var withdrawal = streamService.Withdraw(topicId, queuedId, SignedIn.Account);
@@ -622,7 +628,7 @@ public sealed class ChatHub(
         }
 
         await _queueNews.TellAsync(withdrawn.Sender);
-        return withdrawn;
+        return withdrawal;
     }
 
     // Admitted as any send is — the capability guard, then the accounts service's word for the

@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Domain.Security;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -75,6 +76,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             } }]
         };
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
+
+        _store.Setup(s => s.GetConversationAsync(It.IsAny<string>()))
+            .ReturnsAsync(new ConversationHistory([], new Dictionary<string, SlotVersions>()));
 
         var attachmentSettings = new AttachmentSettings { StoragePath = _uploads };
         var time = new FakeTimeProvider();
@@ -518,6 +522,40 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         (_attachmentStore.Find(photo.Id) is not null).ShouldBe(kept);
         await FinishTurnAsync("answer one");
+        await wire.Ended;
+    }
+
+    // The same file may be named by the conversation (a message re-run with its files, which a rewrite
+    // put aside) or by another queued message: removing one message leaves it to them.
+    [Theory]
+    [InlineData("conversation")]
+    [InlineData("queue")]
+    public async Task ARemovedMessagesUpload_IsKept_WhileSomethingElseHoldsIt(string holder)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var photo = await UploadAsync();
+        var earlier = new Microsoft.Extensions.AI.ChatMessage(Microsoft.Extensions.AI.ChatRole.User, "look");
+        earlier.SetAttachments([photo]);
+        _store.Setup(s => s.GetConversationAsync(new AgentKey(ConversationId, "jack").ToString()))
+            .ReturnsAsync(new ConversationHistory(holder == "conversation" ? [earlier] : [], new Dictionary<string, SlotVersions>()));
+        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
+        if (holder == "queue")
+        {
+            (await fran.EnqueueMessage(TopicId, "look again", "c-3", null, [photo])).ShouldBeTrue();
+        }
+
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId))[0].Id);
+
+        _attachmentStore.Find(photo.Id).ShouldNotBeNull();
+        await FinishTurnAsync("answer one");
+        if (holder == "queue")
+        {
+            await AgentWasSentAsync("look again");
+            await FinishTurnAsync("answer two");
+        }
+
         await wire.Ended;
     }
 
