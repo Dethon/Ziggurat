@@ -27,6 +27,12 @@ public sealed class StreamService(
     private readonly Dictionary<string, TopicQueue> _topics = new();
     private long _lastStreamId;
 
+    // The keys of the steers sent and not drawn yet, every topic's, written under _streamLock and read
+    // without it: every reply chunk asks whether it is a waiting steer's, and almost none is, so that
+    // question takes the lock only for a chunk whose key is here. A steer's answer can only arrive
+    // after Steer added its key, since it is sent to the agent after that.
+    private readonly ConcurrentDictionary<string, byte> _waitingSteerKeys = new();
+
     // What a stream that ended tells its people's phones, sent once _streamLock is let go.
     private sealed record EndedStream(
         ChannelSession Session, string TopicId, string SpaceSlug, string? TopicName, IReadOnlyList<ChatStreamMessage> Carried);
@@ -127,7 +133,7 @@ public sealed class StreamService(
     // it was sent into ended: kept on the steer rather than written into the reply still streaming.
     private bool HeldForSteer(string topicId, string? turnKey, ChatStreamMessage message, bool isComplete)
     {
-        if (turnKey is null)
+        if (turnKey is null || !_waitingSteerKeys.ContainsKey(turnKey))
         {
             return false;
         }
@@ -383,6 +389,7 @@ public sealed class StreamService(
 
             var message = TakeOut(running, queuedId);
             running.Steers.Add(new WaitingSteer(message));
+            _waitingSteerKeys[message.Id] = 0;
             running.AddPending();
             return new Steered(message);
         }
@@ -399,6 +406,7 @@ public sealed class StreamService(
                 return false;
             }
 
+            _waitingSteerKeys.TryRemove(steer.Id, out _);
             running.Waiting.Insert(0, steer);
             running.RemovePending();
             _queueRevision++;
@@ -606,6 +614,7 @@ public sealed class StreamService(
         {
             var steer = running.Steers[0];
             running.Steers.RemoveAt(0);
+            _waitingSteerKeys.TryRemove(steer.Message.Id, out _);
             _queueRevision++;
             QueueChanged(topicId);
             var sender = steer.Message.Sender;
@@ -833,6 +842,8 @@ public sealed class StreamService(
             {
                 _queueRevision++;
             }
+
+            topic.Running?.Steers.ForEach(steer => _waitingSteerKeys.TryRemove(steer.Message.Id, out _));
 
             topic.Running = null;
             DropIfEmpty(topicId, topic);
