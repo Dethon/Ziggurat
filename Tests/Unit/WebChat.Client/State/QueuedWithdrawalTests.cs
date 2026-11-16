@@ -6,6 +6,7 @@ using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Queue;
+using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -128,13 +129,76 @@ public sealed class QueuedWithdrawalTests
         client.Composer.State.For("topic-1").ShouldAllBe(file => file.Status == AttachmentStatus.Ready);
     }
 
+    // A message taken back to be reworked was queued on a model of its sender's choosing: the composer's
+    // next send goes on it, whatever the picker shows now, and the send after that on the picker's.
+    [Fact]
+    public async Task ATakenBackMessage_IsSentAgainOnTheModelItWasQueuedWith_ThenThePickersChoiceResumes()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
+        var queuedWith = new AgentConfigPatch { Model = "picked/then" };
+        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], queuedWith));
+        var replies = AnswerEverySend(transport);
+        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
+        await TestChat.Eventually(() => Sends(transport).Count == 1);
+        replies.ReleaseAll();
+        await TestChat.Eventually(() => !client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "and then"));
+        await TestChat.Eventually(() => Sends(transport).Count == 2);
+        replies.ReleaseAll();
+
+        Sends(transport).ShouldBe([("the queued words", queuedWith), ("and then", null)]);
+    }
+
+    private static IReadOnlyList<(string Message, AgentConfigPatch? Patch)> Sends(FakeHubConnection transport) =>
+    [
+        .. transport.Calls
+            .Where(call => call.MethodName == "SendMessage")
+            .Select(call => ((string)call.Arguments[1]!, (AgentConfigPatch?)call.Arguments[3]))
+    ];
+
+    // Each send's reply stays open until the test releases every reply so far.
+    private static Replies AnswerEverySend(FakeHubConnection transport)
+    {
+        var replies = new Replies();
+        transport.Answer("SendMessage", _ => replies.Next().Chunks());
+        return replies;
+    }
+
+    private sealed class Replies
+    {
+        private readonly List<GatedChatStream> _opened = [];
+
+        public GatedChatStream Next()
+        {
+            lock (_opened)
+            {
+                var reply = new GatedChatStream();
+                _opened.Add(reply);
+                return reply;
+            }
+        }
+
+        public void ReleaseAll()
+        {
+            lock (_opened)
+            {
+                _opened.ForEach(reply => reply.Release());
+            }
+        }
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 
-    private static void Seed(ScriptedChatClient client)
+    private static void Seed(ScriptedChatClient client, AgentCatalogEntry? agent = null)
     {
         client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
-        client.Dispatcher.Dispatch(new SetAgents([new AgentCatalogEntry("agent-1", "Agent One", null)]));
+        client.Dispatcher.Dispatch(new SetAgents([agent ?? new AgentCatalogEntry("agent-1", "Agent One", null)]));
         client.Dispatcher.Dispatch(new SelectAgent("agent-1"));
         client.Dispatcher.Dispatch(new TopicsLoaded([StoredTopic.FromMetadata(TestChat.Topic("topic-1"))]));
         client.Dispatcher.Dispatch(new SelectTopic("topic-1"));

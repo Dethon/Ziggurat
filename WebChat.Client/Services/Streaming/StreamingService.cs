@@ -46,10 +46,14 @@ public sealed class StreamingService(
             var sending = attachments is null
                 ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
                 : [];
+            var returned = attachments is null ? ReturnedPatchOf(topic) : null;
             var outgoing = new Outgoing(
-                topic, message, correlationId, GetConfigPatch(topic),
+                topic, message, correlationId, returned?.Patch ?? GetConfigPatch(topic),
                 attachments ?? ComposerSelectors.References(sending),
-                sending);
+                sending)
+            {
+                Returned = returned
+            };
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -86,7 +90,11 @@ public sealed class StreamingService(
                 ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
                 : [];
             var references = attachments ?? ComposerSelectors.References(sending);
-            var outgoing = new Outgoing(topic, message, null, GetConfigPatch(topic), references, sending);
+            var returned = attachments is null ? ReturnedPatchOf(topic) : null;
+            var outgoing = new Outgoing(topic, message, null, returned?.Patch ?? GetConfigPatch(topic), references, sending)
+            {
+                Returned = returned
+            };
 
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (seen.HasStream)
@@ -102,7 +110,7 @@ public sealed class StreamingService(
 
                 if (queued.Value)
                 {
-                    ClearSent(topic.TopicId, sending);
+                    ClearSent(outgoing);
                     return;
                 }
             }
@@ -196,6 +204,7 @@ public sealed class StreamingService(
     // One message on its way out: what to say, where it goes, and the composer entries the send
     // empties when it lands. Six arguments travelled together through four methods before this.
     // RerunOf: the message the conversation ends on, answered again (a reroll).
+    // Returned: the patch of words handed back to the composer that this send carries, spent once it lands.
     private sealed record Outgoing(
         StoredTopic Topic,
         string Message,
@@ -204,7 +213,10 @@ public sealed class StreamingService(
         IReadOnlyList<AttachmentReference>? Attachments,
         IReadOnlyList<ComposerAttachment> Sending,
         string? RerunOf = null,
-        bool Continuation = false);
+        bool Continuation = false)
+    {
+        public ReturnedPatch? Returned { get; init; }
+    }
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
@@ -222,20 +234,30 @@ public sealed class StreamingService(
             return;
         }
 
-        ClearSent(outgoing.Topic.TopicId, outgoing.Sending);
+        ClearSent(outgoing);
     }
 
     private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
         AgentSettingsSelectors.GetConfigPatch(
             agentSettingsStore.State, topicsStore.State.Agents, topic.AgentId);
 
+    // A send from the composer takes the patch its returned words were queued with, if any, in place of
+    // the picker's; a retry brings its own files and is not the composer's.
+    private ReturnedPatch? ReturnedPatchOf(StoredTopic topic) =>
+        composerStore.State.ReturnedPatches.GetValueOrDefault(topic.TopicId);
+
     // By local id, so a file picked during the send's round trip stays in the composer instead of
     // being swept away with the ones that travelled.
-    private void ClearSent(string topicId, IReadOnlyList<ComposerAttachment> sent)
+    private void ClearSent(Outgoing sent)
     {
-        if (sent.Count > 0)
+        if (sent.Sending.Count > 0)
         {
-            dispatcher.Dispatch(new ClearAttachments(topicId, sent.Select(a => a.LocalId).ToList()));
+            dispatcher.Dispatch(new ClearAttachments(sent.Topic.TopicId, sent.Sending.Select(a => a.LocalId).ToList()));
+        }
+
+        if (sent.Returned is { } returned)
+        {
+            dispatcher.Dispatch(new ReturnedPatchSent(sent.Topic.TopicId, returned));
         }
     }
 
@@ -272,7 +294,7 @@ public sealed class StreamingService(
             return;
         }
 
-        ClearSent(topic.TopicId, outgoing.Sending);
+        ClearSent(outgoing);
 
         // Reached either on an idle topic, where there was nothing to end, or after the server
         // said there was nothing to enqueue onto — which means the reply we saw is over. Ending

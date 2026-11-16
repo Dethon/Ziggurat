@@ -46,6 +46,9 @@ public record OfferComposerText(string Text) : IAction;
 // line, and their files back as ready attachments, already uploaded.
 public record ReturnToComposer(string TopicId, IReadOnlyList<ReturnedMessage> Messages) : IAction;
 
+// The composer's send that carried a returned message's patch went out: the picker's choice is next.
+public record ReturnedPatchSent(string TopicId, ReturnedPatch Sent) : IAction;
+
 // Thrown away: slid to discard, the trash button, Escape, a topic change, or a hidden tab. No
 // request was made and nothing reaches the composer.
 public record DictationDiscarded : IAction;
@@ -111,6 +114,11 @@ public sealed class ComposerStore : IDisposable
         },
 
         ReturnToComposer a => Returned(state, a),
+
+        ReturnedPatchSent a when state.ReturnedPatches.GetValueOrDefault(a.TopicId) == a.Sent => state with
+        {
+            ReturnedPatches = state.ReturnedPatches.Without(a.TopicId)
+        },
 
         DictationDiscarded => state with
         {
@@ -198,8 +206,15 @@ public sealed class ComposerStore : IDisposable
             })
         ];
 
+        // The words merge into one message, which opens with the earliest returned, so that one's
+        // patch is the one it goes out on, as is any still waiting from an earlier return.
+        var patches = state.ReturnedPatches.ContainsKey(returned.TopicId) || returned.Messages.Count == 0
+            ? state.ReturnedPatches
+            : state.ReturnedPatches.With(returned.TopicId, new ReturnedPatch(returned.Messages[0].ConfigPatch));
+
         return state with
         {
+            ReturnedPatches = patches,
             AttachmentsByTopic = state.AttachmentsByTopic.With(returned.TopicId, files),
             Dictation = text.Length == 0
                 ? state.Dictation
