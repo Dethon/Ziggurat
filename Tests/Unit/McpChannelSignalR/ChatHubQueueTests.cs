@@ -660,6 +660,37 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // The message has left the queue once it is taken: a push about it that fails must not lose the
+    // words on their way back to the composer, nor fail a removal that happened.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithdrawalThatWon_IsAnswered_EvenWhenTellingTheTopicFails(bool takingBack)
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        _sender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), "OnQueueChanged", It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("the backplane is down"));
+
+        if (takingBack)
+        {
+            (await fran.TakeBackQueued(TopicId, second.Id)).Content.ShouldBe("second");
+        }
+        else
+        {
+            await fran.RemoveQueued(TopicId, second.Id);
+        }
+
+        (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),

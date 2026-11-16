@@ -16,4 +16,18 @@ internal sealed class QueueNews(StreamService streamService, IThreadStateStore t
         await hubSender.SendToTopicAsync(
             topic, of.SpaceSlug, "OnQueueChanged", queue.ToNotification(of.TopicId, of.SpaceSlug));
     }
+
+    // For a change already made, which a failed telling must not undo or fail: a turn dispatched, a
+    // message withdrawn. The pages catch up on the queue as they open the topic.
+    public async Task TellOrLogAsync(SenderSnapshot of, ILogger logger)
+    {
+        try
+        {
+            await TellAsync(of);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", of.TopicId);
+        }
+    }
 }

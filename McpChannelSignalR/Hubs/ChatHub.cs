@@ -632,7 +632,7 @@ public sealed class ChatHub(
             throw new HubException(withdrawal.Refusal);
         }
 
-        await _queueNews.TellAsync(withdrawn.Sender);
+        await _queueNews.TellOrLogAsync(withdrawn.Sender, logger);
         return withdrawal;
     }
 
