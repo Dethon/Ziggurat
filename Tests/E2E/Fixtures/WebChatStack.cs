@@ -222,7 +222,7 @@ internal sealed partial class WebChatStack
 
     // The key households' secrets are sealed under, made for this stack: the second household's own
     // OpenRouter key is sealed with it in the seeded store, and the service opens it with the same.
-    private static readonly string MasterKey = Convert.ToBase64String(SealingKey.Generate().Export());
+    private static readonly string _masterKey = Convert.ToBase64String(SealingKey.Generate().Export());
     private readonly ConcurrentDictionary<(bool Elsewhere, Role Role), ConcurrentQueue<Seeded>> _pool = new();
     private Seeded? _probe;
 
@@ -240,7 +240,7 @@ internal sealed partial class WebChatStack
             var settings = new AccountsSettings
             {
                 DatabasePath = path,
-                HouseholdConfig = new HouseholdConfigSettings { MasterKey = MasterKey }
+                HouseholdConfig = new HouseholdConfigSettings { MasterKey = _masterKey }
             };
             var clock = new AccountsClock(TimeProvider.System);
             await using (var services = new ServiceCollection().AddAccountsCore(settings, clock).BuildServiceProvider())
@@ -250,7 +250,7 @@ internal sealed partial class WebChatStack
                 var people = services.GetRequiredService<PersonStore>();
                 var sessions = services.GetRequiredService<SessionStore>();
 
-                async Task<Seeded> MakeAsync(string name, Role role)
+                async Task<Seeded> makeAsync(string name, Role role)
                 {
                     var person = await people.CreateAsync(name, role, ct);
                     var session = await sessions.IssueAsync(person.Id, credentialId: null, device: "mint-session", ct)
@@ -261,12 +261,12 @@ internal sealed partial class WebChatStack
                 foreach (var index in Enumerable.Range(0, CollectionSlices)
                              .SelectMany(slice => Enumerable.Range(slice * UsersPerCollection, SeededPerCollection)))
                 {
-                    var seeded = await MakeAsync(NameOf(index), Role.Member);
+                    var seeded = await makeAsync(NameOf(index), Role.Member);
                     _sessions[index] = new Lazy<Task<Seeded>>(Task.FromResult(seeded));
                 }
 
                 // The person the stack signs in as to know it is up, end to end.
-                _probe = await MakeAsync("Probe", Role.Member);
+                _probe = await makeAsync("Probe", Role.Member);
 
                 // The home's agents and spaces, saved as set-household-config saves them. Nobody is
                 // listening yet to be told, and every reader starts after this.
@@ -285,7 +285,7 @@ internal sealed partial class WebChatStack
                     var queue = _pool.GetOrAdd((false, role), _ => new ConcurrentQueue<Seeded>());
                     foreach (var n in Enumerable.Range(0, PooledPerRole))
                     {
-                        queue.Enqueue(await MakeAsync($"Pooled {role} {n}", role));
+                        queue.Enqueue(await makeAsync($"Pooled {role} {n}", role));
                     }
                 }
 
@@ -301,7 +301,7 @@ internal sealed partial class WebChatStack
                     await db.SaveChangesAsync(ct);
                 }
 
-                async Task<Seeded> MakeElsewhereAsync(string name, Role role)
+                async Task<Seeded> makeElsewhereAsync(string name, Role role)
                 {
                     var id = Tokens.NewId();
                     await using (var db = await contexts.CreateDbContextAsync(ct))
@@ -335,7 +335,7 @@ internal sealed partial class WebChatStack
                     var queue = _pool.GetOrAdd((true, role), _ => new ConcurrentQueue<Seeded>());
                     foreach (var n in Enumerable.Range(0, PooledElsewhere))
                     {
-                        queue.Enqueue(await MakeElsewhereAsync($"Pooled {role} {n}", role));
+                        queue.Enqueue(await makeElsewhereAsync($"Pooled {role} {n}", role));
                     }
                 }
             }
@@ -712,7 +712,7 @@ internal sealed partial class WebChatStack
             .WithResourceMapping(seededStore, SeededStorePath, AppUid, AppUid,
                 UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.GroupRead | UnixFileModes.OtherRead)
             .WithEnvironment("DATABASEPATH", SeededStorePath)
-            .WithEnvironment("HOUSEHOLDCONFIG__MASTERKEY", MasterKey)
+            .WithEnvironment("HOUSEHOLDCONFIG__MASTERKEY", _masterKey)
             .WithNetwork(_network)
             .WithNetworkAliases("accounts")
             .WithExtraHost("host.docker.internal", "host-gateway")
@@ -814,7 +814,7 @@ internal sealed partial class WebChatStack
         // DockerCompose/caddy/Caddyfile's main host, minus TLS: the chat client, its hub and the
         // hub's upload and dictation endpoints ask the accounts service's session check first and
         // carry the person on in its headers; sign-in and the agent API do not.
-        static string Checked(string matcher, string upstream, string channel = ChannelIds.SignalR) =>
+        static string @checked(string matcher, string upstream, string channel = ChannelIds.SignalR) =>
             $"    handle {matcher}{{\n" +
             "        forward_auth accounts:8080 {\n" +
             $"            uri /accounts/verify?channel={channel}\n" +
@@ -825,13 +825,13 @@ internal sealed partial class WebChatStack
 
         var testCaddyfile =
             ":80 {\n" +
-            Checked("/hubs/* ", "mcp-channel-signalr:8080") +
+            @checked("/hubs/* ", "mcp-channel-signalr:8080") +
             // The upload store lives beside the hub; without this route an upload POST lands on
             // the static webui and comes back 405, mirroring DockerCompose/caddy/Caddyfile.
-            Checked("/api/attachments* ", "mcp-channel-signalr:8080") +
+            @checked("/api/attachments* ", "mcp-channel-signalr:8080") +
             // Without this route a dictation POST lands on the static webui and comes back 405,
             // mirroring DockerCompose/caddy/Caddyfile.
-            Checked("/api/dictation* ", "mcp-channel-signalr:8080") +
+            @checked("/api/dictation* ", "mcp-channel-signalr:8080") +
             "    handle /api/agents* {\n" +
             "        reverse_proxy agent:8080\n" +
             "    }\n" +
@@ -844,7 +844,7 @@ internal sealed partial class WebChatStack
             "    }\n" +
             // The admin area's API, behind the session check for the admin channel and before the
             // accounts service's unchecked pages, mirroring DockerCompose/caddy/Caddyfile.
-            Checked("/accounts/admin/* ", "accounts:8080", AppChannels.Admin) +
+            @checked("/accounts/admin/* ", "accounts:8080", AppChannels.Admin) +
             "    handle /accounts/* {\n" +
             "        reverse_proxy accounts:8080\n" +
             "    }\n" +
@@ -858,7 +858,7 @@ internal sealed partial class WebChatStack
             "    handle @shell {\n" +
             "        reverse_proxy webui:8080\n" +
             "    }\n" +
-            Checked("", "webui:8080") +
+            @checked("", "webui:8080") +
             "}\n";
 
         var caddyfileBytes = Encoding.UTF8.GetBytes(testCaddyfile);
