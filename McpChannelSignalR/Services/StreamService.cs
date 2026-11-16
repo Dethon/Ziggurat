@@ -150,9 +150,9 @@ public sealed class StreamService(
 
     // A person's send: the topic's stream opened for it, or, when one is running already, a place held
     // on that one — counted as pending, so the stream cannot end while the send is being admitted —
-    // which the send gives up by queueing (Enqueue) or by being refused (Release). The running stream's
-    // prompt and sender stay those of the turn it is on.
-    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened) OpenOrHold(
+    // which the send gives up by queueing (Enqueue) or by being refused (Release), naming the stream it
+    // was held on. The running stream's prompt and sender stay those of the turn it is on.
+    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened, long Stream) OpenOrHold(
         string topicId, string prompt, string senderId, CancellationToken parentToken)
     {
         lock (_streamLock)
@@ -162,7 +162,23 @@ public sealed class StreamService(
                 ? GetOrCreateStream(topicId, prompt, senderId, parentToken)
                 : (_responseChannels[topicId], TokenOf(topicId, parentToken));
             _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
-            return (channel, token, opened);
+            return (channel, token, opened, _streamIds[topicId]);
+        }
+    }
+
+    // A place held on the running stream for a message being admitted to its queue; null when nothing
+    // runs to queue behind.
+    public long? Hold(string topicId)
+    {
+        lock (_streamLock)
+        {
+            if (!_streamIds.TryGetValue(topicId, out var stream))
+            {
+                return null;
+            }
+
+            _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
+            return stream;
         }
     }
 
@@ -178,23 +194,13 @@ public sealed class StreamService(
         return linked.Token;
     }
 
-    // A place held on the running stream (OpenOrHold, TryIncrementPending), turned into a message
-    // waiting at the back of its queue.
-    public void Enqueue(string topicId, QueuedMessage message)
-    {
-        lock (_streamLock)
-        {
-            if (!_queues.TryGetValue(topicId, out var queue))
-            {
-                _queues[topicId] = queue = [];
-            }
+    // A place held on the running stream (OpenOrHold, Hold), turned into a message waiting at the back
+    // of its queue. False when that stream was stopped meanwhile: the place went with it, and a
+    // stream opened since is no part of it.
+    public bool Enqueue(string topicId, long stream, QueuedMessage message) => Finish(topicId, stream, message);
 
-            queue.Add(message);
-            _queueRevision++;
-        }
-
-        Release(topicId);
-    }
+    // A place held on the running stream given up, the message it was held for refused.
+    public void Release(string topicId, long stream) => Finish(topicId, stream, null);
 
     // The topic's queue now, in the order it will run.
     public QueueSnapshot QueueOf(string topicId)
@@ -286,11 +292,13 @@ public sealed class StreamService(
     public const int PushExcerptLength = 140;
     private const string NoExcerpt = "The agent has finished responding";
 
-    // A turn on the stream is over (or a place held on it given up): the next queued message's turn
-    // starts on the same stream, and only once nothing is pending or queued does the stream end.
-    public void Release(string topicId) => CompleteStream(topicId);
+    private void CompleteStream(string topicId) => Finish(topicId, heldOn: null, queueing: null);
 
-    private void CompleteStream(string topicId)
+    // A turn on the stream is over, or a place held on it given up (queueing its message, or not): the
+    // next queued message's turn starts on the same stream, and only once nothing is pending or queued
+    // does the stream end. A place is given up only on the stream it was held on, in the same step as
+    // its message is queued, so a stop in between can neither lose the message nor end another stream.
+    private bool Finish(string topicId, long? heldOn, QueuedMessage? queueing)
     {
         ChannelSession? finished = null;
         string? spaceSlug = null;
@@ -299,11 +307,27 @@ public sealed class StreamService(
 
         lock (_streamLock)
         {
+            if (heldOn is { } held && !(_streamIds.TryGetValue(topicId, out var running) && running == held))
+            {
+                return false;
+            }
+
+            if (queueing is not null)
+            {
+                if (!_queues.TryGetValue(topicId, out var queue))
+                {
+                    _queues[topicId] = queue = [];
+                }
+
+                queue.Add(queueing);
+                _queueRevision++;
+            }
+
             // Decrement pending count — only tear down when the last agent finishes
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
             if (remaining > 0)
             {
-                return;
+                return true;
             }
 
             if (TakeHead(topicId) is { } head)
@@ -312,7 +336,7 @@ public sealed class StreamService(
                 _currentPrompts[topicId] = head.Message.Message.Content;
                 _currentSenderIds[topicId] = head.Message.Sender.UserId;
                 _dispatches.Writer.TryWrite(head);
-                return;
+                return true;
             }
 
             // Resolve space slug and topic name before cleanup
@@ -342,6 +366,8 @@ public sealed class StreamService(
         {
             _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, LastSaid(carried));
         }
+
+        return true;
     }
 
     private QueuedTurn? TakeHead(string topicId)

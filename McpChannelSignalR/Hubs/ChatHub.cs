@@ -466,7 +466,7 @@ public sealed class ChatHub(
         var conversationId = session.Identity.ConversationId;
 
         // The stream's prompt is what a page joining it draws as the person's message: Continue's ask is none.
-        var (broadcastChannel, linkedToken, opened) =
+        var (broadcastChannel, linkedToken, opened, stream) =
             streamService.OpenOrHold(topicId, continuation ? "" : message, userId, cancellationToken);
 
         // Subscribe before emitting so no early reply chunks are lost
@@ -477,9 +477,10 @@ public sealed class ChatHub(
         // follows the stream, which carries the message once its turn starts.
         if (!opened && rerunOf is null && !continuation)
         {
-            if (await QueueAsync(
-                    session, SenderOf(topicId, session), new TurnMessage(message, correlationId, configPatch, attachments),
-                    cancellationToken) is { } refusal)
+            var (_, refusal) = await QueueAsync(
+                session, SenderOf(topicId, session), new TurnMessage(message, correlationId, configPatch, attachments),
+                stream, cancellationToken);
+            if (refusal is not null)
             {
                 yield return new ChatStreamMessage { Error = refusal };
             }
@@ -583,18 +584,14 @@ public sealed class ChatHub(
             return false;
         }
 
-        if (!streamService.TryIncrementPending(topicId))
+        if (streamService.Hold(topicId) is not { } stream)
         {
             return false;
         }
 
         var turn = new TurnMessage(message, correlationId, configPatch, attachments);
-        if (await QueueAsync(session, SenderOf(topicId, session), turn, Context.ConnectionAborted) is { } refusal)
-        {
-            throw new HubException(refusal);
-        }
-
-        return true;
+        var (queued, refusal) = await QueueAsync(session, SenderOf(topicId, session), turn, stream, Context.ConnectionAborted);
+        return refusal is null ? queued : throw new HubException(refusal);
     }
 
     public async Task<IReadOnlyList<QueuedMessageItem>> GetQueue(string topicId)
@@ -606,9 +603,10 @@ public sealed class ChatHub(
     // Admitted as any send is — the capability guard, then the accounts service's word for the
     // session — before it waits, so an obvious refusal shows at once; it is vouched for again as it
     // leaves. Either way the place the caller held on the running stream is given up: by queueing,
-    // or, refused, by releasing it, since ending a turn on the stream would end the one running.
-    private async Task<string?> QueueAsync(
-        ChannelSession session, SenderSnapshot sender, TurnMessage turn, CancellationToken ct)
+    // or, refused, by releasing it, since ending a turn on the stream would end the one running. Not
+    // queued, and not refused, when that stream was stopped meanwhile: there is nothing to queue behind.
+    private async Task<(bool Queued, string? Refusal)> QueueAsync(
+        ChannelSession session, SenderSnapshot sender, TurnMessage turn, long stream, CancellationToken ct)
     {
         string? refusal;
         try
@@ -621,19 +619,23 @@ public sealed class ChatHub(
         }
         catch
         {
-            streamService.Release(sender.TopicId);
+            streamService.Release(sender.TopicId, stream);
             throw;
         }
 
         if (refusal is not null)
         {
-            streamService.Release(sender.TopicId);
-            return refusal;
+            streamService.Release(sender.TopicId, stream);
+            return (false, refusal);
         }
 
-        streamService.Enqueue(sender.TopicId, QueuedMessage.Of(sender, turn));
+        if (!streamService.Enqueue(sender.TopicId, stream, QueuedMessage.Of(sender, turn)))
+        {
+            return (false, null);
+        }
+
         await _queueNews.TellAsync(sender);
-        return null;
+        return (true, null);
     }
 
     // The composer already blocks this case; this is the guard for the race where the model

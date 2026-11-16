@@ -272,6 +272,35 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         wire.Said().ShouldBe(["user: first", "agent: answer one", "user: second", "agent: answer two"]);
     }
 
+    // A stop while a message is being admitted takes the place it held with the stream it was held on:
+    // a stream another send opened meanwhile is no part of it, and the page is told there was nothing
+    // to queue behind.
+    [Fact]
+    public async Task AStopWhileAMessageIsBeingQueued_LeavesTheNextStreamAlone()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var stopped = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+
+        var vouching = _accounts.HoldNext();
+        var queueing = fran.EnqueueMessage(TopicId, "second", "c-2", null);
+        await vouching.Asked;
+        await fran.CancelTopic(TopicId);
+        await stopped.Ended;
+        var next = Read(marta.SendMessage(TopicId, "new", "c-3", null, null, CancellationToken.None));
+        await AgentWasSentAsync("new");
+
+        vouching.Answer();
+        (await queueing).ShouldBeFalse();
+        await FinishTurnAsync("answer new");
+        await next.Ended;
+        await Eventually.Settle();
+
+        next.Said().ShouldBe(["user: new", "agent: answer new"]);
+        Sent().ShouldBe(["first", "new"]);
+    }
+
     // Two people queueing at once: each one's messages run in the order they sent them, and all of
     // them in the order the queue showed.
     [Fact]
