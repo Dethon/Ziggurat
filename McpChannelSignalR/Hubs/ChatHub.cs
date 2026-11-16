@@ -32,18 +32,13 @@ public sealed class ChatHub(
     IHubNotificationSender hubSender,
     RetentionSettings retention,
     DictationSettings dictationSettings,
-    ISessionAccounts sessions,
+    PersonTurns turns,
+    QueueNews queueNews,
     IHouseholdConfiguration households,
     ILogger<ChatHub> logger) : Hub
 {
     // The connection's household's agents, as the household runs them on the deployment's models.
     private readonly HouseholdAgentCatalogue _agents = new(households, catalog);
-
-    // Built here from what the hub is already given rather than injected, so the hub's dependencies
-    // stay what every hub test constructs it with; it holds no state, so one per hub costs nothing.
-    private readonly PersonTurns _turns = new(streamService, notificationEmitter, sessions, logger);
-
-    private readonly QueueNews _queueNews = new(streamService, threadStore, hubSender);
 
     // What the browser is told when its household's spaces could not be asked for its person: signed
     // out since, or the accounts service unreachable just now.
@@ -226,7 +221,7 @@ public sealed class ChatHub(
     private async Task<T> HouseholdViewAsync<T>(
         Func<string, HouseholdProof, CancellationToken, Task<T>> view, string what, string refusal, CancellationToken ct)
     {
-        if (await _turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, ct) is not Vouched { Account: var vouched })
+        if (await turns.VouchingAsync(SignedIn.UserId, SignedIn.SessionId, ct) is not Vouched { Account: var vouched })
         {
             throw new HubException(refusal);
         }
@@ -514,7 +509,7 @@ public sealed class ChatHub(
         // only be refused by the agent, after the browser had shown the message as sent.
         var sender = SenderOf(topicId, session);
         var turn = new TurnMessage(message, correlationId, configPatch, attachments, rerunOf, continuation);
-        if (await _turns.VouchAsync(sender, cancellationToken) is not { } vouched)
+        if (await turns.VouchAsync(sender, cancellationToken) is not { } vouched)
         {
             await ForgetIfNeverUsedAsync(session.AgentId, session.Identity.ChatId, topicId);
             await foreach (var unvouchedChunk in
@@ -526,7 +521,7 @@ public sealed class ChatHub(
             yield break;
         }
 
-        await _turns.WriteMessageAsync(sender, turn);
+        await turns.WriteMessageAsync(sender, turn);
 
         // The other browsers on the topic - a member reading a shared one, the same person's phone -
         // follow a stream they are told started, replaying the message just buffered; the one sending
@@ -537,7 +532,7 @@ public sealed class ChatHub(
             await threadStore.TopicOfAsync(session), sender.SpaceSlug, "OnStreamStarted",
             new StreamStartedNotification(topicId, sender.SpaceSlug));
 
-        await streamService.InAgentOrderAsync(() => _turns.EmitAsync(vouched, turn, cancellationToken));
+        await streamService.InAgentOrderAsync(() => turns.EmitAsync(vouched, turn, cancellationToken));
 
         await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
         {
@@ -651,7 +646,7 @@ public sealed class ChatHub(
             .FirstOrDefault(m => m.Id == queuedId && m.Sender.Principal.Account == SignedIn.Account);
         var vouching = queued is null
             ? null
-            : await _turns.VouchingAsync(queued.Sender.UserId, queued.Sender.SessionId, Context.ConnectionAborted);
+            : await turns.VouchingAsync(queued.Sender.UserId, queued.Sender.SessionId, Context.ConnectionAborted);
         if (vouching is NotVouched unvouched)
         {
             throw new HubException(unvouched.Refusal);
@@ -673,14 +668,14 @@ public sealed class ChatHub(
                 return new SteerRefused(TopicRefusals.AlreadySent);
             }
 
-            if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer, CancellationToken.None))
+            if (!await turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer, CancellationToken.None))
             {
                 if (streamService.Unsteer(topicId, steer))
                 {
                     return new SteerRefused(TopicRefusals.NotLive);
                 }
 
-                await _turns.EndUnheardAsync(steer.Sender);
+                await turns.EndUnheardAsync(steer.Sender);
             }
 
             return steering;
@@ -690,7 +685,7 @@ public sealed class ChatHub(
             case SteerRefused refused:
                 throw new HubException(refused.Refusal);
             case Steered steered:
-                await _queueNews.TellOrLogAsync(steered.Message.Sender, logger);
+                await queueNews.TellOrLogAsync(steered.Message.Sender);
                 break;
         }
     }
@@ -714,7 +709,7 @@ public sealed class ChatHub(
             WithdrawalRefused refused => throw new HubException(refused.Refusal),
             _ => throw new UnreachableException()
         };
-        await _queueNews.TellOrLogAsync(withdrawn.Message.Sender, logger);
+        await queueNews.TellOrLogAsync(withdrawn.Message.Sender);
         return withdrawn;
     }
 
@@ -731,7 +726,7 @@ public sealed class ChatHub(
         try
         {
             refusal = await CapabilityRefusalAsync(session.AgentId, turn.ConfigPatch, turn.Attachments, ct);
-            if (refusal is null && await _turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is NotVouched unvouched)
+            if (refusal is null && await turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is NotVouched unvouched)
             {
                 refusal = unvouched.Refusal;
             }
@@ -754,10 +749,10 @@ public sealed class ChatHub(
             case Queueing.NotRunning:
                 return (false, null);
             case Queueing.Returned:
-                await _queueNews.TellReturnedOrLogAsync([message], logger);
+                await queueNews.TellReturnedOrLogAsync([sender]);
                 return (true, null);
             default:
-                await _queueNews.TellAsync(sender);
+                await queueNews.TellAsync(sender);
                 return (true, null);
         }
     }
@@ -834,8 +829,8 @@ public sealed class ChatHub(
         });
         if (returned.Count > 0)
         {
-            await _queueNews.TellOrLogAsync(returned[0].Sender, logger);
-            await _queueNews.TellReturnedOrLogAsync(returned, logger);
+            await queueNews.TellOrLogAsync(returned[0].Sender);
+            await queueNews.TellReturnedOrLogAsync(returned.Select(m => m.Sender));
         }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it

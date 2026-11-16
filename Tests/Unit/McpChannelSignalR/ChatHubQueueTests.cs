@@ -41,6 +41,8 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     private readonly Mock<IThreadStateStore> _store = new();
     private readonly Mock<IHubNotificationSender> _sender = new();
     private readonly SwitchableAccounts _accounts = new();
+    private readonly PersonTurns _turns;
+    private readonly QueueNews _news;
     private readonly QueueDispatcher _dispatcher;
     private readonly ApprovalService _approvals;
     private readonly MutableAgentCatalog _catalog = new();
@@ -59,9 +61,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             NullLogger<StreamService>.Instance);
         _inbox = new ChannelInbox(_inboxClock);
         _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast);
-        _dispatcher = new QueueDispatcher(
-            _streamService, _emitter, _accounts, _store.Object, _sender.Object,
-            NullLogger<QueueDispatcher>.Instance);
+        _turns = HubParts.Turns(_streamService, _emitter, _accounts);
+        _news = HubParts.News(_streamService, _store.Object, _sender.Object);
+        _dispatcher = new QueueDispatcher(_streamService, _turns, _news, NullLogger<QueueDispatcher>.Instance);
         _approvals = new ApprovalService(
             _streamService, _sessionService, _store.Object, _sender.Object,
             new Mock<IPushNotificationService>().Object, new AccountConnections(), NullLogger<ApprovalService>.Instance);
@@ -114,7 +116,8 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var hub = new ChatHub(
             _sessionService, _streamService, _approvals, _emitter, _catalog,
             _store.Object, pushSubscriptionStore: null!, _attachments, _sender.Object,
-            new RetentionSettings(), new DictationSettings(), _accounts, _households,
+            new RetentionSettings(), new DictationSettings(),
+            _turns, _news, _households,
             NullLogger<ChatHub>.Instance)
         {
             Context = caller

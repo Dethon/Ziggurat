@@ -74,7 +74,8 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, _threads, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

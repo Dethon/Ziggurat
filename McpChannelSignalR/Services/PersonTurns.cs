@@ -56,7 +56,8 @@ public sealed class PersonTurns(
     StreamService streamService,
     ChannelNotificationEmitter notificationEmitter,
     ISessionAccounts sessions,
-    ILogger logger)
+    TimeProvider time,
+    ILogger<PersonTurns> logger)
 {
     // Null once refused, the refusal having ended the turn on the stream.
     public async Task<VouchedSender?> VouchAsync(SenderSnapshot sender, CancellationToken ct)
@@ -111,12 +112,14 @@ public sealed class PersonTurns(
     public Task WriteMessageAsync(SenderSnapshot sender, TurnMessage message) =>
         message.Continuation
             ? Task.CompletedTask
-            : streamService.WriteMessageAsync(sender.TopicId, MessageOf(sender, message));
+            : streamService.WriteMessageAsync(sender.TopicId, MessageOf(sender, message, time.GetUtcNow()));
 
-    public static ChatStreamMessage MessageOf(SenderSnapshot sender, TurnMessage message) => new()
+    // Static, with the time handed in, since the stream service draws a steer's message too and cannot
+    // depend on this, which writes on it.
+    public static ChatStreamMessage MessageOf(SenderSnapshot sender, TurnMessage message, DateTimeOffset at) => new()
     {
         Content = message.Content,
-        UserMessage = new UserMessageInfo(sender.UserId, DateTimeOffset.UtcNow, sender.DisplayName, message.CorrelationId),
+        UserMessage = new UserMessageInfo(sender.UserId, at, sender.DisplayName, message.CorrelationId),
         Attachments = message.Attachments
     };
 
@@ -171,7 +174,7 @@ public sealed class PersonTurns(
                 Steer = steer,
                 TurnKey = turnKey,
                 Attachments = message.Attachments,
-                Timestamp = DateTimeOffset.UtcNow
+                Timestamp = time.GetUtcNow()
             },
             ct);
     }

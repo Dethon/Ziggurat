@@ -57,7 +57,9 @@ public sealed class ChatHubRerunTests : IDisposable
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), catalog,
             _store.Object, pushSubscriptionStore: null!, attachmentService: null!,
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
-            new VouchingAccounts(), households, NullLogger<ChatHub>.Instance)
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, _store.Object, new Mock<IHubNotificationSender>().Object),
+            households, NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()
         };

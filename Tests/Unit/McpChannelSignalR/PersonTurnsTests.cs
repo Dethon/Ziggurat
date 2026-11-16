@@ -72,7 +72,9 @@ public sealed class PersonTurnsTests : IDisposable
             _sessionService, _streamService, approvalService: null!, _emitter, catalog,
             new Mock<IThreadStateStore>().Object, pushSubscriptionStore: null!, attachmentService: null!,
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
-            _accounts, households, NullLogger<ChatHub>.Instance)
+            HubParts.Turns(_streamService, _emitter, _accounts),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
+            households, NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()
         };
@@ -83,7 +85,7 @@ public sealed class PersonTurnsTests : IDisposable
 
     public void Dispose() => _streamService.Dispose();
 
-    private PersonTurns Turns => new(_streamService, _emitter, _accounts, NullLogger.Instance);
+    private PersonTurns Turns => HubParts.Turns(_streamService, _emitter, _accounts);
 
     private SenderSnapshot Snapshot()
     {

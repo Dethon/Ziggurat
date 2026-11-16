@@ -50,7 +50,8 @@ public class ChatHubNotLiveTests
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
@@ -81,8 +82,9 @@ public class ChatHubNotLiveTests
     public async Task EnqueueMessage_TheEmitAtDispatchReachedNobody_TellsTheStreamInsteadOfLeavingItPending()
     {
         using var dispatcher = new QueueDispatcher(
-            _streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts(),
-            new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object,
+            _streamService,
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             NullLogger<QueueDispatcher>.Instance);
         await dispatcher.StartAsync(CancellationToken.None);
         var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
@@ -132,7 +134,10 @@ public class ChatHubNotLiveTests
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(
+                _streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts(),
+                factory.CreateLogger<PersonTurns>()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             factory.CreateLogger<ChatHub>())
         {

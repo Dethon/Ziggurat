@@ -581,7 +581,7 @@ public sealed class StreamService(
             var steer = running.Steers[0];
             running.Steers.RemoveAt(0);
             var sender = steer.Message.Sender;
-            Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message));
+            Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message, DateTimeOffset.UtcNow));
             steer.Held.ForEach(chunk => Write(topicId, chunk));
             _currentPrompts[topicId] = steer.Message.Message.Content;
             _currentSenderIds[topicId] = sender.UserId;

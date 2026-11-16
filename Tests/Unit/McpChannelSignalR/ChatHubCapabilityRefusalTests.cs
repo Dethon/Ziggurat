@@ -76,7 +76,8 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             households,
             NullLogger<ChatHub>.Instance)
         {

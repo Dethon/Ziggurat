@@ -13,15 +13,10 @@ namespace McpChannelSignalR.Services;
 // and never the other way round, so the two are not a cycle.
 public sealed class QueueDispatcher(
     StreamService streamService,
-    ChannelNotificationEmitter notificationEmitter,
-    ISessionAccounts sessions,
-    IThreadStateStore threadStore,
-    IHubNotificationSender hubSender,
+    PersonTurns turns,
+    QueueNews news,
     ILogger<QueueDispatcher> logger) : BackgroundService
 {
-    private readonly PersonTurns _turns = new(streamService, notificationEmitter, sessions, logger);
-    private readonly QueueNews _news = new(streamService, threadStore, hubSender);
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
@@ -46,20 +41,20 @@ public sealed class QueueDispatcher(
     {
         var (queued, stream) = turn;
         var sender = queued.Sender;
-        await _news.TellOrLogAsync(sender, logger);
+        await news.TellOrLogAsync(sender);
         try
         {
-            var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
+            var vouching = await turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
             var started = await streamService.StartAsync(turn, async () =>
             {
-                await _turns.WriteMessageAsync(sender, queued.Message);
+                await turns.WriteMessageAsync(sender, queued.Message);
                 switch (vouching)
                 {
                     case NotVouched refused:
-                        await _turns.RefuseAsync(sender, refused.Refusal);
+                        await turns.RefuseAsync(sender, refused.Refusal);
                         break;
                     case Vouched vouched:
-                        await _turns.EmitAsync(new VouchedSender(sender, vouched.Account), queued.Message, CancellationToken.None);
+                        await turns.EmitAsync(new VouchedSender(sender, vouched.Account), queued.Message, CancellationToken.None);
                         break;
                 }
             });
@@ -67,7 +62,7 @@ public sealed class QueueDispatcher(
             // Its sender's turn is running now, which the pages are told so its sender may steer it.
             if (started)
             {
-                await _news.TellOrLogAsync(sender, logger);
+                await news.TellOrLogAsync(sender);
             }
         }
         catch (Exception ex) when (streamService.IsRunning(stream))

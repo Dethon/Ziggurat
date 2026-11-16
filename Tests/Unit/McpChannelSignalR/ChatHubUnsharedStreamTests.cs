@@ -52,7 +52,9 @@ public class ChatHubUnsharedStreamTests
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object, _store.Object, pushSubscriptionStore: null!, attachmentService: null!,
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
-            new VouchingAccounts(), new HouseholdSpacesAccounts(), NullLogger<ChatHub>.Instance)
+            HubParts.Turns(_streams, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streams, _store.Object, new Mock<IHubNotificationSender>().Object),
+            new HouseholdSpacesAccounts(), NullLogger<ChatHub>.Instance)
         {
             Context = caller
         };

@@ -7,7 +7,11 @@ namespace McpChannelSignalR.Services;
 // topic, any other topic's space (TopicAudience), as its stream's start is. Told whole, with the
 // revision it was read at, by whichever side changed it — the hub as a message is queued, the
 // dispatcher as one leaves — so the two may arrive the other way round and a page keeps the later.
-internal sealed class QueueNews(StreamService streamService, IThreadStateStore threadStore, IHubNotificationSender hubSender)
+public sealed class QueueNews(
+    StreamService streamService,
+    IThreadStateStore threadStore,
+    IHubNotificationSender hubSender,
+    ILogger<QueueNews> logger)
 {
     public async Task TellAsync(SenderSnapshot of)
     {
@@ -20,7 +24,7 @@ internal sealed class QueueNews(StreamService streamService, IThreadStateStore t
 
     // For a change already made, which a failed telling must not undo or fail: a turn dispatched, a
     // message withdrawn. The pages catch up on the queue as they open the topic.
-    public async Task TellOrLogAsync(SenderSnapshot of, ILogger logger)
+    public async Task TellOrLogAsync(SenderSnapshot of)
     {
         try
         {
@@ -35,12 +39,12 @@ internal sealed class QueueNews(StreamService streamService, IThreadStateStore t
     // Messages a stop handed back, told to each of their senders on every page they have open, whatever
     // space it shows: only the sender's own pages may take them. Told after the stop, which a failed
     // telling must not fail: a page finds them anyway as it next opens the topic.
-    public Task TellReturnedOrLogAsync(IReadOnlyList<QueuedMessage> returned, ILogger logger) =>
-        Task.WhenAll(returned
-            .DistinctBy(m => m.Sender.UserId)
-            .Select(m => TellReturnedOrLogAsync(m.Sender, logger)));
+    public Task TellReturnedOrLogAsync(IEnumerable<SenderSnapshot> senders) =>
+        Task.WhenAll(senders
+            .DistinctBy(s => s.UserId)
+            .Select(TellReturnedOrLogAsync));
 
-    private async Task TellReturnedOrLogAsync(SenderSnapshot to, ILogger logger)
+    private async Task TellReturnedOrLogAsync(SenderSnapshot to)
     {
         try
         {

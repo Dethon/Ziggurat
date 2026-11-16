@@ -74,7 +74,8 @@ public sealed class ChatHubTopicTests : IDisposable
             _hubSender.Object,
             new RetentionSettings { PageSize = 2 },
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, _store.Object, _hubSender.Object),
             _households,
             NullLogger<ChatHub>.Instance)
         {

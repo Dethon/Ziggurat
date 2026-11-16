@@ -56,7 +56,8 @@ public class ChatHubCancelTopicTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

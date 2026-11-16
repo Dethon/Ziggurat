@@ -65,6 +65,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.Services
             .AddChatSignalR()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(new ApprovalService(

@@ -50,7 +50,8 @@ public class ChatHubStreamStartedTests
             _sender.Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(streamService, _store.Object, _sender.Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

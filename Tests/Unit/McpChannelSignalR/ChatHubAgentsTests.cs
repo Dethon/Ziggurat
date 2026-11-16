@@ -199,6 +199,7 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.Services
             .AddChatSignalR()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(sessions)
             .AddSingleton(streams)
             .AddSingleton(new ApprovalService(

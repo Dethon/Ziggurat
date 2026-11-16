@@ -74,6 +74,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         builder.WebHost.UseTestServer();
         builder.Services
             .AddChatSignalR()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(_sessions)
             .AddSingleton(_streams)
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
