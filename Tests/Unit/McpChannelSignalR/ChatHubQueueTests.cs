@@ -1169,6 +1169,29 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         SentAsSteers().ShouldBeEmpty();
     }
 
+    // A steer sent but not started when its sender's reply is stopped goes back to them with the rest,
+    // ahead of what was queued: the agent drops it in the cancel's teardown, so it never runs.
+    [Fact]
+    public async Task AStopWithASteerPending_ReturnsTheSteerToItsSender_AheadOfTheRest()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        await FinishTurnAsync("answer one, too late");
+        await Eventually.Settle();
+
+        (await ArrivedSoFarAsync()).ShouldBe(["first", "steer me", "cancel"]);
+        wire.Said().ShouldBe(["user: first"]);
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
 
