@@ -9,14 +9,19 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Two messages queued behind a running reply run one after the other, each written on the stream only when its turn starts (hub seam).
-- [ ] The stream stays open across the hand-offs and ends after the last queued turn (hub seam).
-- [ ] A session signed out while its message waits is refused "signed out" at dispatch, and the next queued message still runs (hub seam).
-- [ ] A queued message runs after its sender's connection has closed (hub seam).
-- [ ] A `SendMessage` racing a running stream is queued, not emitted ahead of the queue (hub seam).
-- [ ] Concurrent enqueues from two connections keep their order under two concurrent test processes (hub seam).
-- [ ] The composer sends while streaming and shows Stop beside Send. A queued send draws nothing and leaves the reply bubble open, and the dispatched message is drawn once, after the reply it followed (client seam).
-- [ ] Chips show the queue in order and disappear as messages are dispatched (client seam).
-- [ ] E2E: behind a tool-using reply, queue two messages, see two chips, and see both run in order.
+- [x] Two messages queued behind a running reply run one after the other, each written on the stream only when its turn starts (hub seam).
+- [x] The stream stays open across the hand-offs and ends after the last queued turn (hub seam).
+- [x] A session signed out while its message waits is refused "signed out" at dispatch, and the next queued message still runs (hub seam).
+- [x] A queued message runs after its sender's connection has closed (hub seam).
+- [x] A `SendMessage` racing a running stream is queued, not emitted ahead of the queue (hub seam).
+- [x] Concurrent enqueues from two connections keep their order under two concurrent test processes (hub seam).
+- [x] The composer sends while streaming and shows Stop beside Send. A queued send draws nothing and leaves the reply bubble open, and the dispatched message is drawn once, after the reply it followed (client seam).
+- [x] Chips show the queue in order and disappear as messages are dispatched (client seam).
+- [x] E2E: behind a tool-using reply, queue two messages, see two chips, and see both run in order.
+
+**Notes from the implementation:**
+- Stop (`CancelTopic`) empties the queue for now, so nothing queued is sent into a stopped stream. Ticket 06 replaces this by returning the items to their senders.
+- `OnQueueChanged` carries one record, `QueueChangedNotification(TopicId, Items, Revision, SpaceSlug)`, as every hub push here does, not two arguments. `Revision` orders pushes from the hub and the dispatcher that may cross. `GetQueue(topicId)` exists; using it in catch-up is ticket 04.
+- A message refused as it is queued (`EnqueueMessage`: the capability guard or the session check) is thrown to its sender as a `HubException` and shown as a toast, because ending a turn on the stream would end the one running.
