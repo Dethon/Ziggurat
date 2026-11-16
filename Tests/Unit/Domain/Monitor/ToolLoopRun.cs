@@ -137,7 +137,10 @@ internal sealed class ToolLoopRun : IAsyncDisposable
         await _monitor.WaitAsync(TimeSpan.FromSeconds(60));
     }
 
-    public IReadOnlyList<string> StoredLine() => Render(_lines.Line(new AgentKey(ConversationId, AgentId).ToString()));
+    public IReadOnlyList<string> StoredLine() => Render(Line());
+
+    // The conversation as the store keeps it, marks and all.
+    public IReadOnlyList<ChatMessage> Line() => _lines.Line(new AgentKey(ConversationId, AgentId).ToString());
 
     public static IReadOnlyList<string> Render(IEnumerable<ChatMessage> line) =>
     [

@@ -1,4 +1,6 @@
+using Domain.Conversations;
 using Domain.DTOs;
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using Shouldly;
 
@@ -151,5 +153,31 @@ public class ChatMonitorSteeringTests
         line[2].ShouldContain("The hole is dug");
         line.Skip(3).ShouldBe(["user: never mind", "assistant: Steered"]);
         model.Requests.Count.ShouldBe(2);
+    }
+
+    // A turn cut by a steer is a whole turn: kept as any other, never marked stopped or failed, and read
+    // back as a reply showing the tools it ran though it said nothing.
+    [Fact]
+    public async Task ACutTurn_IsNeitherInterruptedNorFailed_AndIsShownAsAReplyThatSaidNothing()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [lookUp]);
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("the other one", steer: true);
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        var line = run.Line();
+        line.ShouldAllBe(m => !m.IsInterrupted() && !m.IsFailedTurn());
+        ToolLoopRun.Render(Transcript.Shown(line)).ShouldBe([
+            "user: look it up",
+            "tool: result call-1 = 42",
+            "user: the other one",
+            "assistant: Steered"
+        ]);
     }
 }

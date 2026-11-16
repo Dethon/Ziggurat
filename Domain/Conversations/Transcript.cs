@@ -18,6 +18,17 @@ public static class Transcript
         && !message.IsContinuation()
         && (!string.IsNullOrWhiteSpace(TextOf(message)) || message.GetAttachments() is { Count: > 0 });
 
+    // The messages of a line a reader is shown, in order. A reply that ran tools and ended on their
+    // results without a word — cut by its person's steer, or stopped between calls — is still a reply:
+    // the last of its results stands for it, so the tools it ran are drawn where it would have spoken.
+    public static IReadOnlyList<ChatMessage> Shown(IReadOnlyList<ChatMessage> line) =>
+        [.. line.Where((message, at) => IsShown(message) || EndsAReplyWithoutWords(line, at))];
+
+    private static bool EndsAReplyWithoutWords(IReadOnlyList<ChatMessage> line, int at) =>
+        line[at].Role == ChatRole.Tool
+        && (at == line.Count - 1 || line[at + 1].Role == ChatRole.User)
+        && line.Take(at).Reverse().TakeWhile(m => m.Role != ChatRole.User).All(m => !IsShown(m));
+
     public static string TextOf(ChatMessage message) =>
         message.Role == ChatRole.Tool
             ? string.Join("\n", message.Contents.OfType<FunctionResultContent>()
