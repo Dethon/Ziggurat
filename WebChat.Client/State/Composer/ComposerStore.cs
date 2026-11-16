@@ -1,6 +1,7 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
+using WebChat.Client.State.AgentSettings;
 
 namespace WebChat.Client.State.Composer;
 
@@ -114,6 +115,9 @@ public sealed class ComposerStore : IDisposable
         },
 
         ReturnToComposer a => Returned(state, a),
+
+        // A pick is the person's choice for whatever they send next, returned words included.
+        SetAgentModel or SetAgentReasoningEffort => state with { ReturnedPatches = new Dictionary<string, ReturnedPatch>() },
 
         ReturnedPatchSent a when state.ReturnedPatches.GetValueOrDefault(a.TopicId) == a.Sent => state with
         {

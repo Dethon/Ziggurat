@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
+using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Queue;
 using WebChat.Client.State.Streaming;
@@ -152,6 +153,46 @@ public sealed class QueuedWithdrawalTests
         replies.ReleaseAll();
 
         Sends(transport).ShouldBe([("the queued words", queuedWith), ("and then", null)]);
+    }
+
+    // Queued on the agent's own model, it goes out on that one, though the person has picked another since.
+    [Fact]
+    public async Task AMessageAStopReturnedQueuedOnTheAgentsOwnModel_IsSentOnIt_ThoughThePickerShowsAnother()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on default", [], null)]);
+        var replies = AnswerEverySend(transport);
+        client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/since"));
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "queued on default"));
+        await TestChat.Eventually(() => Sends(transport).Count == 1);
+        replies.ReleaseAll();
+
+        Sends(transport).ShouldBe([("queued on default", null)]);
+    }
+
+    // Picking a model after the words came back is the person's choice for them, and the send goes on it.
+    [Fact]
+    public async Task PickingAModelAfterTheWordsCameBack_SendsThemOnThePick()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, new AgentCatalogEntry("agent-1", "Agent One", null, DefaultModel: "agent/default"));
+        transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], new AgentConfigPatch { Model = "picked/then" }));
+        var replies = AnswerEverySend(transport);
+        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+
+        client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/now"));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
+        await TestChat.Eventually(() => Sends(transport).Count == 1);
+        replies.ReleaseAll();
+
+        Sends(transport).ShouldBe([("the queued words", new AgentConfigPatch { Model = "picked/now" })]);
     }
 
     private static IReadOnlyList<(string Message, AgentConfigPatch? Patch)> Sends(FakeHubConnection transport) =>
