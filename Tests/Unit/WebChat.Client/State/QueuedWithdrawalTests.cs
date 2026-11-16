@@ -42,7 +42,7 @@ public sealed class QueuedWithdrawalTests
         var file = client.Composer.State.For("topic-1").ShouldHaveSingleItem();
         (file.Status, file.Reference, file.FileName, file.MediaType).ShouldBe(
             (AttachmentStatus.Ready, Photo, "photo.png", "image/png"));
-        var returned = client.Composer.State.Dictation.Transcript.ShouldNotBeNull();
+        var returned = client.Composer.State.Handed.ShouldNotBeNull();
         ComposerSelectors.Place("half a thought", returned).ShouldBe("the queued words\n\nhalf a thought");
         ComposerSelectors.Place("", returned).ShouldBe("the queued words");
         Chips(client).ShouldBeEmpty();
@@ -64,7 +64,7 @@ public sealed class QueuedWithdrawalTests
         transport.Calls.ShouldContain(call =>
             call.MethodName == "RemoveQueued" && call.Arguments.SequenceEqual(new object?[] { "topic-1", "q1" }));
         client.Composer.State.For("topic-1").ShouldBeEmpty();
-        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+        client.Composer.State.Handed.ShouldBeNull();
     }
 
     // Its turn started first: the person is told, and is not shown a withdrawal that did not happen.
@@ -83,7 +83,7 @@ public sealed class QueuedWithdrawalTests
 
         await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message == TopicRefusals.AlreadySent));
         client.Composer.State.For("topic-1").ShouldBeEmpty();
-        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+        client.Composer.State.Handed.ShouldBeNull();
     }
 
     // Everyone on a shared topic sees its queue; only a message's sender may withdraw it.
@@ -124,7 +124,7 @@ public sealed class QueuedWithdrawalTests
             new ReturnedMessage("q2", "second queued", [second], null)
         ]));
 
-        var returned = client.Composer.State.Dictation.Transcript.ShouldNotBeNull();
+        var returned = client.Composer.State.Handed.ShouldNotBeNull();
         ComposerSelectors.Place("typed", returned).ShouldBe("first queued\n\nsecond queued\n\ntyped");
         client.Composer.State.For("topic-1").Select(file => file.Reference!.Id).ShouldBe(
             ["7-42/held", Photo.Id, "7-42/second"]);
@@ -142,7 +142,7 @@ public sealed class QueuedWithdrawalTests
         transport.Answer("TakeBackQueued", new ReturnedMessage("q1", "the queued words", [], new AgentConfigPatch { Model = "picked/then" }));
         var replies = AnswerEverySend(transport);
         client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
 
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
         await TestChat.Eventually(() => Sends(transport).Count == 1);
@@ -165,7 +165,7 @@ public sealed class QueuedWithdrawalTests
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
         client.Dispatcher.Dispatch(new SetAgentModel("agent-1", "picked/now"));
         client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
 
         client.Dispatcher.Dispatch(new SendMessage("topic-1", "the queued words"));
         await TestChat.Eventually(() => Queued(transport).Count == 1);

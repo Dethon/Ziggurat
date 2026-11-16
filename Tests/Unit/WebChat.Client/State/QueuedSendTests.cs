@@ -144,7 +144,7 @@ public sealed class QueuedSendTests
 
         await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message.Contains("signed out")));
         Shown(client).ShouldBe(["user: first"]);
-        client.Composer.State.Dictation.Transcript.ShouldNotBeNull().Text.ShouldBe("second");
+        client.Composer.State.Handed.ShouldNotBeNull().Text.ShouldBe("second");
         reply.Release();
     }
 
@@ -207,8 +207,8 @@ public sealed class QueuedSendTests
         await replyEnding;
         transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
 
-        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
-        global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!)
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Handed!)
             .ShouldBe("second");
         await Eventually.Settle();
         Shown(client).ShouldNotContain("user: second");

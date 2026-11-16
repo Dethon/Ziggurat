@@ -32,6 +32,7 @@
     private ElementReference _micRef;
     private DictationState _dictation = new();
     private long _lastTranscriptStamp;
+    private long _lastHandedStamp;
     private string? _readOnlyNote;
 
     protected override void OnInitialized()
@@ -69,10 +70,22 @@
             if (dictation.Transcript is { } transcript && transcript.Stamp != _lastTranscriptStamp)
             {
                 _lastTranscriptStamp = transcript.Stamp;
-                _inputText = ComposerSelectors.Place(_inputText, transcript);
+                _inputText = ComposerSelectors.Append(_inputText, transcript.Text);
             }
 
             StateHasChanged();
+        });
+
+        // Words handed over from elsewhere — a fork's, a send that went nowhere, messages given back from
+        // the queue — land the same way, each where it belongs in what is typed.
+        Subscribe(ComposerStore.StateObservable, state => state.Handed, handed =>
+        {
+            if (handed is not null && handed.Stamp != _lastHandedStamp)
+            {
+                _lastHandedStamp = handed.Stamp;
+                _inputText = ComposerSelectors.Place(_inputText, handed);
+                StateHasChanged();
+            }
         });
 
         // Whether this viewer may write in the open topic: the topic, its sharing and who is signed in

@@ -106,10 +106,7 @@ public sealed class ComposerStore : IDisposable
             }
         },
 
-        OfferComposerText a => state with
-        {
-            Dictation = state.Dictation with { Transcript = new PendingTranscript(a.Text, Stamp()) }
-        },
+        OfferComposerText a => state with { Handed = new HandedWords(a.Text, Stamp(), TextPlacement.After) },
 
         ReturnToComposer a => Returned(state, a),
 
@@ -202,9 +199,7 @@ public sealed class ComposerStore : IDisposable
         return state with
         {
             AttachmentsByTopic = state.AttachmentsByTopic.With(returned.TopicId, files),
-            Dictation = text.Length == 0
-                ? state.Dictation
-                : state.Dictation with { Transcript = new PendingTranscript(text, Stamp(), TextPlacement.Before) }
+            Handed = text.Length == 0 ? state.Handed : new HandedWords(text, Stamp(), TextPlacement.Before)
         };
     }
 
@@ -213,8 +208,8 @@ public sealed class ComposerStore : IDisposable
         Dictation = state.Dictation with { Status = status, Refusal = null, Hint = null }
     };
 
-    // Monotonic within the session, which is all the composer needs to tell one transcript from
-    // the next one carrying the same words.
+    // Monotonic within the session, which is all the composer needs to tell one transcript, or one
+    // handing, from the next carrying the same words.
     private static long Stamp() => Interlocked.Increment(ref _stamp);
 
     private static long _stamp;
