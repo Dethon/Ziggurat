@@ -636,9 +636,13 @@ public sealed class ChatHub(
 
     // The caller's messages a stop handed back on this topic, in the order they were queued, for their
     // composer: taken once, so they land on whichever of the person's pages asks first.
-    public Task<IReadOnlyList<ReturnedMessage>> TakeReturned(string topicId) =>
-        Task.FromResult<IReadOnlyList<ReturnedMessage>>(
-            [.. streamService.TakeReturned(topicId, SignedIn.Account).Select(m => m.ToReturned())]);
+    // Asked whether the caller still sees the topic before anything is taken, so a refusal leaves
+    // their words held rather than lost.
+    public async Task<IReadOnlyList<ReturnedMessage>> TakeReturned(string topicId)
+    {
+        await SessionToReadAsync(topicId);
+        return [.. streamService.TakeReturned(topicId, SignedIn.Account).Select(m => m.ToReturned())];
+    }
 
     private async Task<Withdrawal> WithdrawAsync(string topicId, string queuedId)
     {

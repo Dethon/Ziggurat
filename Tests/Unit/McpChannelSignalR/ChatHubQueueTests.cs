@@ -410,6 +410,27 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await marta.TakeReturned(TopicId)).ShouldBeEmpty();
     }
 
+    // Made private after the stop, the topic is no longer the member's to read, their words in it included.
+    [Fact]
+    public async Task TakingReturnedMessagesOnATopicTheCallerMayNoLongerSee_IsAnsweredAsForNoSuchConversation()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        GivenTheTopic(owner: "fran", shared: false);
+        var refused = await Should.ThrowAsync<HubException>(() => marta.TakeReturned(TopicId));
+
+        refused.Message.ShouldBe(TopicRefusals.NoSuchConversation);
+        GivenTheTopic(owner: "fran", shared: true);
+        (await marta.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["marta one"]);
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {
