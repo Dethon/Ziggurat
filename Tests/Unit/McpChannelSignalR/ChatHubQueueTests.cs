@@ -579,6 +579,31 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Naming a private topic's queued message tells someone who may not see the topic nothing about it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithdrawalOnATopicTheCallerMayNotSee_IsAnsweredAsForNoSuchConversation(bool takingBack)
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        var second = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+
+        var refused = await Should.ThrowAsync<HubException>(() => takingBack
+            ? marta.TakeBackQueued(TopicId, second.Id)
+            : marta.RemoveQueued(TopicId, second.Id));
+
+        refused.Message.ShouldBe(TopicRefusals.NoSuchConversation);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
