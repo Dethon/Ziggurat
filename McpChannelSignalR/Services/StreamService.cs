@@ -54,6 +54,12 @@ public sealed class StreamService(
     private readonly ConcurrentDictionary<string, int> _audiences = new();
     private readonly Lock _streamLock = new();
 
+    // What tells the agent a turn starts or stops goes out in the order the stream's state changed: a
+    // stop takes the queue back before its cancel goes out, and a queued turn starts wholly before
+    // that cancel (it is the turn cancelled) or not at all, never just behind it, where the agent
+    // would take it for a turn of its own. One for every topic, since each step under it is in memory.
+    private readonly SemaphoreSlim _agentOrder = new(1, 1);
+
     // A chunk is added to the buffer and written to the readers as one step, and a reader joining
     // takes the buffer and subscribes as one, so it misses nothing written meanwhile and sees nothing
     // twice.
@@ -250,9 +256,22 @@ public sealed class StreamService(
 
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
 
-    // A dispatched head's turn starting: true while nothing stopped its stream since it was taken, and
-    // from then on a stop leaves it to run as the stream's current turn.
-    public bool Start(QueuedTurn turn)
+    // A dispatched head's turn starting, sent by start while nothing stopped its stream since it was
+    // taken: from then on a stop cancels it as the stream's current turn. False, with nothing sent,
+    // when a stop came first.
+    public Task<bool> StartAsync(QueuedTurn turn, Func<Task> start) =>
+        InAgentOrderAsync(async () =>
+        {
+            if (!Start(turn))
+            {
+                return false;
+            }
+
+            await start();
+            return true;
+        });
+
+    private bool Start(QueuedTurn turn)
     {
         lock (_streamLock)
         {
@@ -482,9 +501,31 @@ public sealed class StreamService(
     }
 
     // A person's stop: the turn and the stream cancelled as any cancel, and what waited behind it
-    // handed back to whoever queued it rather than run after a reply somebody abandoned. Answers the
-    // messages handed back, in queue order.
-    public IReadOnlyList<QueuedMessage> Stop(string topicId)
+    // handed back to whoever queued it rather than run after a reply somebody abandoned, before the
+    // agent is told to cancel (cancelTurn), so no turn ending meanwhile can start the next one behind
+    // the cancel. Answers the messages handed back, in queue order.
+    public Task<IReadOnlyList<QueuedMessage>> StopAsync(string topicId, Func<Task> cancelTurn) =>
+        InAgentOrderAsync(async () =>
+        {
+            var stopped = Stop(topicId);
+            await cancelTurn();
+            return stopped;
+        });
+
+    private async Task<T> InAgentOrderAsync<T>(Func<Task<T>> step)
+    {
+        await _agentOrder.WaitAsync();
+        try
+        {
+            return await step();
+        }
+        finally
+        {
+            _agentOrder.Release();
+        }
+    }
+
+    private IReadOnlyList<QueuedMessage> Stop(string topicId)
     {
         lock (_streamLock)
         {
@@ -624,6 +665,7 @@ public sealed class StreamService(
 
         _disposed = true;
         _dispatches.Writer.TryComplete();
+        _agentOrder.Dispose();
 
         foreach (var channel in _responseChannels.Values)
         {

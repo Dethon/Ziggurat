@@ -749,20 +749,22 @@ public sealed class ChatHub(
     public async Task CancelTopic(string topicId)
     {
         var session = await SessionToContinueAsync(topicId);
-        if (session is not null)
-        {
-            await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
-            {
-                ConversationId = session.Identity.ConversationId,
-                AgentId = session.AgentId,
-                Timestamp = DateTimeOffset.UtcNow
-            });
-        }
 
         // Nothing queued for a reply somebody abandoned runs after it: each message goes back to the
         // person who queued it. Starting the next one instead would race the agent's teardown, which
         // drops whatever arrives behind a cancel.
-        var returned = streamService.Stop(topicId);
+        var returned = await streamService.StopAsync(topicId, async () =>
+        {
+            if (session is not null)
+            {
+                await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
+                {
+                    ConversationId = session.Identity.ConversationId,
+                    AgentId = session.AgentId,
+                    Timestamp = DateTimeOffset.UtcNow
+                });
+            }
+        });
         if (returned.Count > 0)
         {
             await _queueNews.TellOrLogAsync(returned[0].Sender, logger);

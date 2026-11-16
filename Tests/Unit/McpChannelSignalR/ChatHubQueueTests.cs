@@ -35,7 +35,8 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
-    private readonly ChannelInbox _inbox = new(new FakeTimeProvider());
+    private readonly InboxClock _inboxClock = new();
+    private readonly ChannelInbox _inbox;
     private readonly ChannelNotificationEmitter _emitter;
     private readonly Mock<IThreadStateStore> _store = new();
     private readonly Mock<IHubNotificationSender> _sender = new();
@@ -55,6 +56,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         _streamService = new StreamService(
             _sessionService, _store.Object, new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
+        _inbox = new ChannelInbox(_inboxClock);
         _emitter = new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast);
         _dispatcher = new QueueDispatcher(
             _streamService, _emitter, _accounts, _store.Object, _sender.Object,
@@ -503,6 +505,30 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await SentSoFarAsync()).ShouldBe(["first"]);
         wire.Said().ShouldBe(["user: first", "agent: answer one"]);
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second"]);
+    }
+
+    // The agent may end the running turn just as the stop's cancel reaches it: by then the queue has gone
+    // back to its senders, so that turn's end starts nothing after the cancel.
+    [Fact]
+    public async Task ATurnEndingAsTheStopReachesTheAgent_StartsNothing_AndTheWholeQueueIsReturned()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+
+        _inboxClock.WhenNextPutInTheInbox(() =>
+        {
+            FinishTurnAsync("answer one").GetAwaiter().GetResult();
+            _inboxClock.WaitForAnotherPut(TimeSpan.FromSeconds(2));
+        });
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        await Eventually.Settle();
+
+        (await SentSoFarAsync()).ShouldBe(["first"]);
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second", "third"]);
     }
 
     // A deleted conversation keeps nothing of what was said or queued in it, returned messages included.
@@ -1093,6 +1119,35 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
                     _chunks.Add(chunk);
                 }
             }
+        }
+    }
+
+    // The inbox's clock, read as an item is put in the agent's inbox: a test acts at the moment something
+    // reaches the agent, on the thread putting it there, before the caller goes on.
+    private sealed class InboxClock : TimeProvider
+    {
+        private readonly FakeTimeProvider _time = new();
+        private readonly SemaphoreSlim _reads = new(0);
+        private Action? _next;
+
+        public void WhenNextPutInTheInbox(Action act) => Volatile.Write(ref _next, act);
+
+        // Bounded, since the put it waits for is one the code must not make.
+        public void WaitForAnotherPut(TimeSpan atMost)
+        {
+            while (_reads.CurrentCount > 0)
+            {
+                _reads.Wait(0);
+            }
+
+            _reads.Wait(atMost);
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            _reads.Release();
+            Interlocked.Exchange(ref _next, null)?.Invoke();
+            return _time.GetUtcNow();
         }
     }
 

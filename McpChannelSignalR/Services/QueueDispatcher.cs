@@ -49,19 +49,17 @@ public sealed class QueueDispatcher(
         try
         {
             var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
-            if (!streamService.Start(turn))
+            await streamService.StartAsync(turn, async () =>
             {
-                return;
-            }
+                await _turns.WriteMessageAsync(sender, queued.Message);
+                if (vouching.Account is not { } account)
+                {
+                    await _turns.RefuseAsync(sender, vouching.Refusal);
+                    return;
+                }
 
-            await _turns.WriteMessageAsync(sender, queued.Message);
-            if (vouching.Account is not { } account)
-            {
-                await _turns.RefuseAsync(sender, vouching.Refusal);
-                return;
-            }
-
-            await _turns.EmitAsync(new VouchedSender(sender, account), queued.Message, CancellationToken.None);
+                await _turns.EmitAsync(new VouchedSender(sender, account), queued.Message, CancellationToken.None);
+            });
         }
         catch (Exception ex) when (streamService.IsRunning(sender.TopicId, stream))
         {
