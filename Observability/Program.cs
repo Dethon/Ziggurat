@@ -52,7 +52,7 @@ app.MapGet("/manifest.webmanifest", () =>
         prefer_related_applications = false,
         icons = new[]
         {
-            new { src = "favicon.svg", sizes = "any", type = "image/svg+xml" }
+            new { src = "icon.svg", sizes = "any", type = "image/svg+xml" }
         }
     };
     return Results.Json(manifest, contentType: "application/manifest+json");
