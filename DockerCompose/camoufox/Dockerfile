@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/playwright:v1.63.0-noble
+FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 WORKDIR /app
 
@@ -21,7 +21,7 @@ ENV NPM_CONFIG_FETCH_RETRIES=5 \
 # hence --legacy-peer-deps.
 RUN set -eu; \
     for attempt in 1 2 3; do \
-        if npm install --legacy-peer-deps @camoufox/camoufox@0.5.7-beta.6 playwright-core@1.63.0 && npx camoufox fetch; then \
+        if npm install --legacy-peer-deps @camoufox/camoufox@0.5.7-beta.6 playwright-core@1.64.1 && npx camoufox fetch; then \
             exit 0; \
         fi; \
         echo "camoufox fetch attempt ${attempt} failed; retrying in 15s"; \
@@ -39,6 +39,11 @@ RUN node patch-playwright.js
 # Camoufox's Firefox build does not describe (see patch-viewport.js).
 COPY patch-viewport.js .
 RUN node patch-viewport.js
+
+# Since 1.64 it also sends a request-interception field Camoufox's build does not describe, which
+# failed every route and every context restored from storage state (see patch-interception.js).
+COPY patch-interception.js .
+RUN node patch-interception.js
 
 # The .NET client never acks a screencast frame, and 1.63's server waits for that ack before the
 # next one, so a login handoff's live view froze on its first frame (see patch-screencast-ack.js).

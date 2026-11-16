@@ -301,7 +301,7 @@ Agent routing:
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download)
 - [Docker](https://www.docker.com/) and Docker Compose
 - [OpenRouter API Key](https://openrouter.ai/)
 - [Telegram Bot Token](https://core.telegram.org/bots#creating-a-new-bot) (one per agent)

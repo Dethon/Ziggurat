@@ -230,7 +230,7 @@ public class TelegramBotServiceSharedBotTests : IDisposable
         }, services, CancellationToken.None);
 
         await Eventually.Until(() => _harness.Sent.Count == 1, "the alert to be sent");
-        _harness.Sent.ShouldHaveSingleItem().ChatId.Identifier.ShouldBe(TelegramPollingHarness.AliceId);
+        _harness.Sent.ShouldHaveSingleItem().ChatId.ShouldNotBeNull().Identifier.ShouldBe(TelegramPollingHarness.AliceId);
     }
 
     public void Dispose() => _harness.Dispose();

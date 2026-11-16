@@ -79,7 +79,7 @@ Two Domain rules bend for it, on purpose and no further:
 ## The token
 
 Compact JWS, **ES256** (ECDSA P-256, SHA-256, signature as raw R||S). The spec asks for Ed25519
-where the platform has it; .NET 10's BCL has none (no `Ed25519`/`EdDsa` type in
+where the platform has it; .NET's BCL has none, 11 included (no `Ed25519`/`EdDsa` type in
 `System.Security.Cryptography`), so ES256 throughout. A header other than `alg: ES256` with a `kid`
 is malformed — `none` and HMAC never reach a key.
 

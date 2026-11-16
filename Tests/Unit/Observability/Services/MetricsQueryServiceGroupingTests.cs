@@ -11,6 +11,10 @@ namespace Tests.Unit.Observability.Services;
 
 public class MetricsQueryServiceGroupingTests
 {
+    // An attribute cannot hold a decimal, and from .NET 11 a double converts to the decimal nearest
+    // its exact binary value (0.3 is 0.29999…), so expectations written as doubles are compared within this.
+    private const decimal Tolerance = 0.000001m;
+
     private readonly Mock<IDatabase> _db = new();
     private readonly Mock<IConnectionMultiplexer> _redis = new();
     private readonly MetricsQueryService _sut;
@@ -56,8 +60,8 @@ public class MetricsQueryServiceGroupingTests
 
         var result = await _sut.GetTokenGroupedAsync(dimension, metric, date, date);
 
-        result[keyA].ShouldBe((decimal)expectedA);
-        result[keyB].ShouldBe((decimal)expectedB);
+        result[keyA].ShouldBe((decimal)expectedA, Tolerance);
+        result[keyB].ShouldBe((decimal)expectedB, Tolerance);
     }
 
     // An agent's figures are keyed by its id, so a household's rename does not split them, and shown
@@ -363,8 +367,8 @@ public class MetricsQueryServiceGroupingTests
 
         var result = await _sut.GetLatencyGroupedAsync(dimension, metric, date, date);
 
-        result[keyA].ShouldBe((decimal)expectedA);
-        result[keyB].ShouldBe((decimal)expectedB);
+        result[keyA].ShouldBe((decimal)expectedA, Tolerance);
+        result[keyB].ShouldBe((decimal)expectedB, Tolerance);
     }
 
     [Theory]

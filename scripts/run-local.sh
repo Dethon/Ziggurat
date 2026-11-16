@@ -20,7 +20,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${CONFIG:-Debug}"
-TFM="${TFM:-net10.0}"
+TFM="${TFM:-net11.0}"
 ENV_FILE="$ROOT/DockerCompose/.env"
 
 # Every MCP server's /mcp asks for its credential and the agent presents it by host; here every

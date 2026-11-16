@@ -1,6 +1,6 @@
 # Ziggurat
 
-AI agent via Telegram/WebChat/MessageBus using .NET 10 LTS, MCP, and OpenRouter LLMs.
+AI agent via Telegram/WebChat/MessageBus using .NET 11, MCP, and OpenRouter LLMs.
 
 Three standalone Rust crates sit outside the .NET solution and share no build with each other or with it — read each one's `CLAUDE.md` before touching it. `satellite/` is `nabu-satellite`, the Wyoming voice satellite. `speech-typist/` is the Windows speech typist: a person holds a key and their words are typed into whatever window was already in front, posting at Lemonade directly rather than through this stack (`docs/adr/0026`). Its `cargo test` must keep passing with no .NET project built and no Lemonade reachable. `sandbox-runtime/` is the sandbox container's privileged half — the root launcher that is its entrypoint — built inside `McpServerSandbox/Dockerfile`; its `cargo test` must pass with no root and no Docker.
 

@@ -92,7 +92,7 @@ public class TelegramApprovalOfferTests : IDisposable
             Group, ApprovalMode.Request, _buy, TurnIn(Group, _alice), _services);
 
         await Eventually.Until(() => _harness.Sent.Count(s => s.ReplyMarkup is not null) == 2, "both keyboards to be sent");
-        _harness.Sent.Select(s => s.ChatId.Identifier).ShouldBe(
+        _harness.Sent.Select(s => s.ChatId?.Identifier).ShouldBe(
             [TelegramPollingHarness.FamilyGroup, TelegramPollingHarness.AliceId], ignoreOrder: true);
         await _harness.TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
@@ -107,7 +107,7 @@ public class TelegramApprovalOfferTests : IDisposable
         var offered = OfferAsync(approvalId, _alice);
 
         await Eventually.Until(() => _harness.Sent.Count == 1, "the offer to be sent");
-        _harness.Sent.ShouldHaveSingleItem().ChatId.Identifier.ShouldBe(TelegramPollingHarness.AliceId);
+        _harness.Sent.ShouldHaveSingleItem().ChatId.ShouldNotBeNull().Identifier.ShouldBe(TelegramPollingHarness.AliceId);
         await _harness.TapAsync(TelegramPollingHarness.BobId, "tool_approve");
         await Eventually.Settle();
         offered.IsCompleted.ShouldBeFalse();

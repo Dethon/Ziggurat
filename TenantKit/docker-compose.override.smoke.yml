@@ -71,7 +71,7 @@ services:
   # server's, so it never reaches the deployment's own host — which is what that name resolves to on a
   # machine run from the host's resolver. It publishes /machine alone, jailed.
   smoke-machine:
-    image: mcr.microsoft.com/dotnet/runtime-deps:10.0
+    image: mcr.microsoft.com/dotnet/runtime-deps:11.0
     user: ${PUID:-1654}:${PGID:-1654}
     <<: *hub-here
     command: ["/outpost/McpServerOutpost", "--name", "smoke-machine", "--dir", "/machine", "--jailed",

@@ -40,7 +40,6 @@
         StateHasChanged();
         await Task.Delay(1500);
         _copied = false;
-        StateHasChanged();
     }
 
     private static string RenderMarkdown(string? content) => ChatMarkdown.ToHtml(content);

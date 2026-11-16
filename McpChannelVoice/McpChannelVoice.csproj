@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
-    <LangVersion>14</LangVersion>
+    <LangVersion>15</LangVersion>
     <UserSecretsId>b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07</UserSecretsId>
   </PropertyGroup>
 
@@ -17,9 +17,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
-    <PackageReference Include="StackExchange.Redis" Version="3.4.5" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.32.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
+    <PackageReference Include="StackExchange.Redis" Version="3.4.35" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-      <TargetFramework>net10.0</TargetFramework>
+      <TargetFramework>net11.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-      <LangVersion>14</LangVersion>
+      <LangVersion>15</LangVersion>
     </PropertyGroup>
 
     <ItemGroup>
@@ -45,19 +45,15 @@
         <_SectionDocument Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.md' And $([System.String]::Copy('%(LogicalName)').StartsWith('Domain.Prompts.Sections.'))" />
         <_SkillDocument Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.md' And $([System.String]::Copy('%(LogicalName)').StartsWith('Domain.Prompts.Skills.'))" />
       </ItemGroup>
-      <Error Condition="'@(_SectionDocument)' == ''"
-             Text="No prompt document was found under Domain/Prompts/Sections. A build context that drops *.md (see .dockerignore) leaves every section without its words." />
-      <Error Condition="'@(_SkillDocument)' == ''"
-             Text="No prompt document was found under Domain/Prompts/Skills. A build context that drops *.md (see .dockerignore) leaves every server without its skills." />
+      <Error Condition="'@(_SectionDocument)' == ''" Text="No prompt document was found under Domain/Prompts/Sections. A build context that drops *.md (see .dockerignore) leaves every section without its words." />
+      <Error Condition="'@(_SkillDocument)' == ''" Text="No prompt document was found under Domain/Prompts/Skills. A build context that drops *.md (see .dockerignore) leaves every server without its skills." />
     </Target>
 
     <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />
       <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
-      <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.25.0" />
-      <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="10.11.0" />
-      <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.13" />
-      <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
+      <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.28.0" />
+      <PackageReference Include="Microsoft.Extensions.AI.Abstractions" Version="11.0.0" />
     </ItemGroup>
 
 </Project>

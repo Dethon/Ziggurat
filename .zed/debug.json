@@ -3,7 +3,7 @@
     "label": "Local: Agent",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/Agent/bin/Debug/net10.0/Agent.dll",
+    "program": "$ZED_WORKTREE_ROOT/Agent/bin/Debug/net11.0/Agent.dll",
     "args": ["--chat", "Web", "--reasoning"],
     "cwd": "$ZED_WORKTREE_ROOT/Agent",
     "env": {
@@ -24,7 +24,7 @@
     "label": "Local: WebUI",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/WebChat/bin/Debug/net10.0/WebChat.dll",
+    "program": "$ZED_WORKTREE_ROOT/WebChat/bin/Debug/net11.0/WebChat.dll",
     "cwd": "$ZED_WORKTREE_ROOT/WebChat",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -40,7 +40,7 @@
     "label": "Local: Observability",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/Observability/bin/Debug/net10.0/Observability.dll",
+    "program": "$ZED_WORKTREE_ROOT/Observability/bin/Debug/net11.0/Observability.dll",
     "cwd": "$ZED_WORKTREE_ROOT/Observability",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -56,7 +56,7 @@
     "label": "Local: Accounts",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/Accounts/bin/Debug/net10.0/Accounts.dll",
+    "program": "$ZED_WORKTREE_ROOT/Accounts/bin/Debug/net11.0/Accounts.dll",
     "cwd": "$ZED_WORKTREE_ROOT/Accounts",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -72,7 +72,7 @@
     "label": "Local: MCP Library",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerLibrary/bin/Debug/net10.0/McpServerLibrary.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerLibrary/bin/Debug/net11.0/McpServerLibrary.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerLibrary",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -91,7 +91,7 @@
     "label": "Local: MCP Vault",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerVault/bin/Debug/net10.0/McpServerVault.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerVault/bin/Debug/net11.0/McpServerVault.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerVault",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -110,7 +110,7 @@
     "label": "Local: MCP WebSearch",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerWebSearch/bin/Debug/net10.0/McpServerWebSearch.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerWebSearch/bin/Debug/net11.0/McpServerWebSearch.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerWebSearch",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -128,7 +128,7 @@
     "label": "Local: MCP Idealista",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerIdealista/bin/Debug/net10.0/McpServerIdealista.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerIdealista/bin/Debug/net11.0/McpServerIdealista.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerIdealista",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -147,7 +147,7 @@
     "label": "Local: MCP HomeAssistant",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant/bin/Debug/net10.0/McpServerHomeAssistant.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant/bin/Debug/net11.0/McpServerHomeAssistant.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerHomeAssistant",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -166,7 +166,7 @@
     "label": "Local: MCP Sandbox",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerSandbox/bin/Debug/net10.0/McpServerSandbox.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerSandbox/bin/Debug/net11.0/McpServerSandbox.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerSandbox",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -185,7 +185,7 @@
     "label": "Local: MCP Channel SignalR",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelSignalR/bin/Debug/net10.0/McpChannelSignalR.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelSignalR/bin/Debug/net11.0/McpChannelSignalR.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelSignalR",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -205,7 +205,7 @@
     "label": "Local: MCP Channel Telegram",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelTelegram/bin/Debug/net10.0/McpChannelTelegram.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelTelegram/bin/Debug/net11.0/McpChannelTelegram.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelTelegram",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -224,7 +224,7 @@
     "label": "Local: MCP Channel Voice",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelVoice/bin/Debug/net10.0/McpChannelVoice.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpChannelVoice/bin/Debug/net11.0/McpChannelVoice.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpChannelVoice",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -249,7 +249,7 @@
     "label": "Local: MCP Scheduling",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerScheduling/bin/Debug/net10.0/McpServerScheduling.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerScheduling/bin/Debug/net11.0/McpServerScheduling.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerScheduling",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -269,7 +269,7 @@
     "label": "Local: MCP Printer",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerPrinter/bin/Debug/net10.0/McpServerPrinter.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerPrinter/bin/Debug/net11.0/McpServerPrinter.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerPrinter",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
@@ -289,7 +289,7 @@
     "label": "Local: MCP Timers",
     "adapter": "netcoredbg",
     "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpServerTimers/bin/Debug/net10.0/McpServerTimers.dll",
+    "program": "$ZED_WORKTREE_ROOT/McpServerTimers/bin/Debug/net11.0/McpServerTimers.dll",
     "cwd": "$ZED_WORKTREE_ROOT/McpServerTimers",
     "env": {
       "DOTNET_ENVIRONMENT": "Local",

@@ -165,8 +165,8 @@ public class RequestApprovalToolTests : IDisposable
 
         var asked = RequestApprovalTool.RunAsync(group, ApprovalMode.Request, requests, turn, _services);
 
-        await Eventually.Until(() => _harness.Sent.Any(m => m.ChatId.Identifier == TelegramPollingHarness.FamilyGroup), "the group is asked");
-        _harness.Sent.Single(m => m.ChatId.Identifier == TelegramPollingHarness.FamilyGroup).Text
+        await Eventually.Until(() => _harness.Sent.Any(m => m.ChatId?.Identifier == TelegramPollingHarness.FamilyGroup), "the group is asked");
+        _harness.Sent.Single(m => m.ChatId?.Identifier == TelegramPollingHarness.FamilyGroup).Text
             .ShouldEndWith("<i>Why you're asked: It would browse this site logged in as the person who asked.</i>");
         asked.IsCompleted.ShouldBeFalse();
     }

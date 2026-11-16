@@ -13,7 +13,7 @@ WORKDIR "/src/McpServerWebSearch"
 RUN dotnet publish "./McpServerWebSearch.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
 
 # Stage 3: Final runtime image (browser runs in Camoufox sidecar)
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
 RUN chmod -R +x .playwright/

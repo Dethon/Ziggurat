@@ -42,7 +42,7 @@ public class TelegramFireDeliveryTests : IDisposable
                 .AddSingleton(_harness.BotRegistry)
                 .AddSingleton(new global::McpChannelTelegram.Services.MessageAccumulator())
                 .BuildServiceProvider());
-        _harness.Sent.ShouldHaveSingleItem().ChatId.Identifier.ShouldBe(TelegramPollingHarness.AliceId);
+        _harness.Sent.ShouldHaveSingleItem().ChatId.ShouldNotBeNull().Identifier.ShouldBe(TelegramPollingHarness.AliceId);
     }
 
     // A bot can write first only in a chat the person opened with it, so each is tried in the order

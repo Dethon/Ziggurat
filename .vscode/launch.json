@@ -217,7 +217,7 @@
       "name": "Local: Agent",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/Agent/bin/Debug/net10.0/Agent.dll",
+      "program": "${workspaceFolder}/Agent/bin/Debug/net11.0/Agent.dll",
       "args": ["--chat", "Web", "--reasoning"],
       "cwd": "${workspaceFolder}/Agent",
       "env": {
@@ -234,7 +234,7 @@
       "name": "Local: WebUI",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/WebChat/bin/Debug/net10.0/WebChat.dll",
+      "program": "${workspaceFolder}/WebChat/bin/Debug/net11.0/WebChat.dll",
       "cwd": "${workspaceFolder}/WebChat",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -246,7 +246,7 @@
       "name": "Local: Observability",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/Observability/bin/Debug/net10.0/Observability.dll",
+      "program": "${workspaceFolder}/Observability/bin/Debug/net11.0/Observability.dll",
       "cwd": "${workspaceFolder}/Observability",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -258,7 +258,7 @@
       "name": "Local: Accounts",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/Accounts/bin/Debug/net10.0/Accounts.dll",
+      "program": "${workspaceFolder}/Accounts/bin/Debug/net11.0/Accounts.dll",
       "cwd": "${workspaceFolder}/Accounts",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -274,7 +274,7 @@
       "name": "Local: MCP Library",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerLibrary/bin/Debug/net10.0/McpServerLibrary.dll",
+      "program": "${workspaceFolder}/McpServerLibrary/bin/Debug/net11.0/McpServerLibrary.dll",
       "cwd": "${workspaceFolder}/McpServerLibrary",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -289,7 +289,7 @@
       "name": "Local: MCP Vault",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerVault/bin/Debug/net10.0/McpServerVault.dll",
+      "program": "${workspaceFolder}/McpServerVault/bin/Debug/net11.0/McpServerVault.dll",
       "cwd": "${workspaceFolder}/McpServerVault",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -304,7 +304,7 @@
       "name": "Local: MCP WebSearch",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerWebSearch/bin/Debug/net10.0/McpServerWebSearch.dll",
+      "program": "${workspaceFolder}/McpServerWebSearch/bin/Debug/net11.0/McpServerWebSearch.dll",
       "cwd": "${workspaceFolder}/McpServerWebSearch",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -318,7 +318,7 @@
       "name": "Local: MCP Idealista",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerIdealista/bin/Debug/net10.0/McpServerIdealista.dll",
+      "program": "${workspaceFolder}/McpServerIdealista/bin/Debug/net11.0/McpServerIdealista.dll",
       "cwd": "${workspaceFolder}/McpServerIdealista",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -333,7 +333,7 @@
       "name": "Local: MCP HomeAssistant",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerHomeAssistant/bin/Debug/net10.0/McpServerHomeAssistant.dll",
+      "program": "${workspaceFolder}/McpServerHomeAssistant/bin/Debug/net11.0/McpServerHomeAssistant.dll",
       "cwd": "${workspaceFolder}/McpServerHomeAssistant",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -348,7 +348,7 @@
       "name": "Local: MCP Sandbox",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerSandbox/bin/Debug/net10.0/McpServerSandbox.dll",
+      "program": "${workspaceFolder}/McpServerSandbox/bin/Debug/net11.0/McpServerSandbox.dll",
       "cwd": "${workspaceFolder}/McpServerSandbox",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -363,7 +363,7 @@
       "name": "Local: MCP Channel SignalR",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpChannelSignalR/bin/Debug/net10.0/McpChannelSignalR.dll",
+      "program": "${workspaceFolder}/McpChannelSignalR/bin/Debug/net11.0/McpChannelSignalR.dll",
       "cwd": "${workspaceFolder}/McpChannelSignalR",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -379,7 +379,7 @@
       "name": "Local: MCP Channel Telegram",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpChannelTelegram/bin/Debug/net10.0/McpChannelTelegram.dll",
+      "program": "${workspaceFolder}/McpChannelTelegram/bin/Debug/net11.0/McpChannelTelegram.dll",
       "cwd": "${workspaceFolder}/McpChannelTelegram",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -394,7 +394,7 @@
       "name": "Local: MCP Channel Voice",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpChannelVoice/bin/Debug/net10.0/McpChannelVoice.dll",
+      "program": "${workspaceFolder}/McpChannelVoice/bin/Debug/net11.0/McpChannelVoice.dll",
       "cwd": "${workspaceFolder}/McpChannelVoice",
       "envFile": "${workspaceFolder}/DockerCompose/.env",
       "env": {
@@ -416,7 +416,7 @@
       "name": "Local: MCP Scheduling",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerScheduling/bin/Debug/net10.0/McpServerScheduling.dll",
+      "program": "${workspaceFolder}/McpServerScheduling/bin/Debug/net11.0/McpServerScheduling.dll",
       "cwd": "${workspaceFolder}/McpServerScheduling",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -432,7 +432,7 @@
       "name": "Local: MCP Printer",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerPrinter/bin/Debug/net10.0/McpServerPrinter.dll",
+      "program": "${workspaceFolder}/McpServerPrinter/bin/Debug/net11.0/McpServerPrinter.dll",
       "cwd": "${workspaceFolder}/McpServerPrinter",
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
@@ -448,7 +448,7 @@
       "name": "Local: MCP Timers",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/McpServerTimers/bin/Debug/net10.0/McpServerTimers.dll",
+      "program": "${workspaceFolder}/McpServerTimers/bin/Debug/net11.0/McpServerTimers.dll",
       "cwd": "${workspaceFolder}/McpServerTimers",
       "envFile": "${workspaceFolder}/DockerCompose/.env",
       "env": {

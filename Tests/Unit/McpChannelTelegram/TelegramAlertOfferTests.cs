@@ -37,7 +37,7 @@ public class TelegramAlertOfferTests : IDisposable
 
         await Eventually.Until(() => _harness.Sent.Count == 1, "the alert to be sent");
         var sent = _harness.Sent.ShouldHaveSingleItem();
-        sent.ChatId.Identifier.ShouldBe(TelegramPollingHarness.AliceId);
+        sent.ChatId.ShouldNotBeNull().Identifier.ShouldBe(TelegramPollingHarness.AliceId);
         sent.Text.ShouldContain("pasta is ready");
         await _harness.TapAsync(TelegramPollingHarness.BobId, "alert_dismiss");
         await Eventually.Settle();
@@ -92,7 +92,7 @@ public class TelegramAlertOfferTests : IDisposable
         _ = OfferAsync(Guid.NewGuid().ToString("N"), _alice, agentId: "nabu");
 
         await Eventually.Until(() => _harness.Sent.Count == 1, "the alert to be sent");
-        _harness.Sent.ShouldHaveSingleItem().ChatId.Identifier.ShouldBe(TelegramPollingHarness.AliceId);
+        _harness.Sent.ShouldHaveSingleItem().ChatId.ShouldNotBeNull().Identifier.ShouldBe(TelegramPollingHarness.AliceId);
     }
 
     public void Dispose() => _harness.Dispose();
