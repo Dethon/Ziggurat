@@ -64,4 +64,64 @@ public class ChatMonitorSteeringTests
         ]);
         model.Requests.Count.ShouldBe(2);
     }
+
+    // A reply that never reaches a tool call has no boundary to stop at: it is said whole, and the steer
+    // is simply the next turn.
+    [Fact]
+    public async Task ASteerDuringATextOnlyReply_LeavesItWhole_AndRunsNext()
+    {
+        var model = new ScriptedModel([new TextContent("The whole answer")], [new TextContent("And the steer's")]);
+        var release = model.Hold(0);
+        await using var run = new ToolLoopRun(model, []);
+
+        run.Send("tell me");
+        await Eventually.Until(() => model.Requests.Count == 1, "the reply to be under way");
+        run.Send("shorter", steer: true);
+        await run.AdmittedSoFarAsync();
+        release();
+        await run.FinishAsync();
+
+        run.StoredLine().ShouldBe([
+            "user: tell me",
+            "assistant: The whole answer",
+            "user: shorter",
+            "assistant: And the steer's"
+        ]);
+    }
+
+    // Only the running turn's own person steers it: another member's steer, or a steer of the person
+    // whose schedule is firing, waits for the turn to end and is then answered as the next turn.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASteerFromAnotherAccount_OrDuringAFire_RunsNextWithoutCutting(bool duringAFire)
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel(
+            [lookUp.Call("call-1")], [new TextContent("It is 42")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [lookUp]);
+
+        if (duringAFire)
+        {
+            run.Fire("look it up");
+        }
+        else
+        {
+            run.Send("look it up");
+        }
+
+        await lookUp.Started;
+        run.Send("the other one", steer: true, from: duringAFire ? ToolLoopRun.Person : ToolLoopRun.OtherPerson);
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(1).ShouldBe([
+            "assistant: call look_up#call-1",
+            "tool: result call-1 = 42",
+            "assistant: It is 42",
+            "user: the other one",
+            "assistant: Steered"
+        ]);
+    }
 }
