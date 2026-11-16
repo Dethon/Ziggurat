@@ -1,12 +1,14 @@
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Security;
 using Mcp.Hosting;
+using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
@@ -43,6 +45,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     private readonly HouseholdSpacesAccounts _households = new();
     private readonly Lock _receivedLock = new();
     private readonly List<ChannelMessageNotification> _received = [];
+    private readonly string _uploads = Path.Combine(Path.GetTempPath(), $"queue-uploads-{Guid.NewGuid():N}");
+    private readonly AttachmentStore _attachmentStore;
+    private readonly AttachmentService _attachments;
 
     public ChatHubQueueTests()
     {
@@ -70,6 +75,14 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             } }]
         };
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
+
+        var attachmentSettings = new AttachmentSettings { StoragePath = _uploads };
+        var time = new FakeTimeProvider();
+        _attachmentStore = new AttachmentStore(
+            attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance);
+        _attachments = new AttachmentService(
+            attachmentSettings, new AttachmentTickets(attachmentSettings, time), _attachmentStore,
+            NullLogger<AttachmentService>.Instance);
     }
 
     public async Task InitializeAsync()
@@ -83,13 +96,17 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await _dispatcher.StopAsync(CancellationToken.None);
         _dispatcher.Dispose();
         _streamService.Dispose();
+        if (Directory.Exists(_uploads))
+        {
+            Directory.Delete(_uploads, recursive: true);
+        }
     }
 
     private ChatHub HubFor(HubCallerContext caller, string displayName = "Fran")
     {
         var hub = new ChatHub(
             _sessionService, _streamService, _approvals, _emitter, _catalog,
-            _store.Object, pushSubscriptionStore: null!, attachmentService: null!, _sender.Object,
+            _store.Object, pushSubscriptionStore: null!, _attachments, _sender.Object,
             new RetentionSettings(), new DictationSettings(), _accounts, _households,
             NullLogger<ChatHub>.Instance)
         {
@@ -475,6 +492,39 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             }
         }
     }
+
+    // A file uploaded for a message withdrawn from the queue lingers nowhere; one taken back stays,
+    // since the composer it went back to holds it now.
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task AWithdrawnMessagesUpload_IsDeletedWhenRemoved_AndKeptWhenTakenBack(bool takingBack, bool kept)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var photo = await UploadAsync();
+        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
+        var queued = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+
+        if (takingBack)
+        {
+            await fran.TakeBackQueued(TopicId, queued.Id);
+        }
+        else
+        {
+            await fran.RemoveQueued(TopicId, queued.Id);
+        }
+
+        (_attachmentStore.Find(photo.Id) is not null).ShouldBe(kept);
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+    }
+
+    private Task<AttachmentReference> UploadAsync() =>
+        _attachmentStore.SaveAsync(
+            new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
+            CancellationToken.None);
 
     private static readonly AttachmentReference Photo = new()
     {

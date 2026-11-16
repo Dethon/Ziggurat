@@ -600,9 +600,12 @@ public sealed class ChatHub(
         return [.. streamService.QueueOf(topicId).Messages.Select(m => m.ToItem())];
     }
 
-    // A queued message its sender withdraws before its turn starts.
-    public async Task RemoveQueued(string topicId, string queuedId) =>
-        await WithdrawAsync(topicId, queuedId);
+    // A queued message its sender withdraws before its turn starts, and the files uploaded for it.
+    public async Task RemoveQueued(string topicId, string queuedId)
+    {
+        var removed = await WithdrawAsync(topicId, queuedId);
+        attachmentService.Delete((removed.Message.Attachments ?? []).Select(a => a.Id));
+    }
 
     // A queued message its sender takes back into their composer, to rework and send again; its files
     // are kept, since the composer holds them now.
