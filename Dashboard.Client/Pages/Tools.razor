@@ -17,7 +17,7 @@
             <section class="kpi-row">
                 <KpiCard Label="Total Calls" Value="@state.Events.Count.ToString("N0")" Color="var(--accent-yellow)" />
                 <KpiCard Label="Success Rate" Value="@($"{SuccessRate(state):F1}%")" Color="var(--accent-green)" />
-                <KpiCard Label="Avg Duration" Value="@($"{AvgDuration(state):F0}ms")" Color="var(--accent-blue)" />
+                <KpiCard Label="Avg Duration" Value="@($"{AvgDuration(state):N0} ms")" Color="var(--accent-blue)" />
             </section>
 
             <section class="section">
@@ -31,10 +31,10 @@
                 <h3>Recent calls</h3>
                 <div class="events-table tbl-tools">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Tool")' @onclick='() => SortBy("Tool")'>Tool <SortArrow Column="Tool" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status <SortArrow Column="Status" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Tool")' @onclick='() => SortBy("Tool")'>Tool <SortArrow Column="Tool" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status <SortArrow Column="Status" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {

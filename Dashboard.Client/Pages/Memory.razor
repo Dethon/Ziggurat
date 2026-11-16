@@ -23,7 +23,7 @@
             <section class="kpi-row">
                 <KpiCard Label="Total Recalls" Value="@_metrics.TotalRecalls.ToString("N0")" Color="var(--accent-blue)" />
                 <KpiCard Label="Total Extractions" Value="@_metrics.TotalExtractions.ToString("N0")" Color="var(--accent-green)" />
-                <KpiCard Label="Avg Latency" Value="@($"{AvgLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Avg Latency" Value="@($"{AvgLatency(state):N0} ms")" Color="var(--accent-yellow)" />
                 <KpiCard Label="Memories Stored" Value="@_metrics.MemoriesStored.ToString("N0")" Color="var(--accent-purple)" />
                 <KpiCard Label="Merged" Value="@_metrics.MemoriesMerged.ToString("N0")" Color="var(--accent-pink)" />
                 <KpiCard Label="Decayed" Value="@_metrics.MemoriesDecayed.ToString("N0")" Color="var(--accent-red)" />
@@ -52,10 +52,10 @@
                 {
                     <div class="events-table tbl-recall">
                         <div class="table-header">
-                            <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories <SortArrow Column="Memories" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Memories")' @onclick='() => SortBy("Memories")'>Memories <SortArrow Column="Memories" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                         </div>
                         @foreach (var evt in GetSortedRecalls(state))
                         {
@@ -76,13 +76,13 @@
                 {
                     <div class="events-table tbl-extraction">
                         <div class="table-header">
-                            <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates <SortArrow Column="Candidates" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Dropped")' @onclick='() => SortBy("Dropped")'>Dropped <SortArrow Column="Dropped" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored <SortArrow Column="Stored" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Candidates")' @onclick='() => SortBy("Candidates")'>Candidates <SortArrow Column="Candidates" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Dropped")' @onclick='() => SortBy("Dropped")'>Dropped <SortArrow Column="Dropped" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Stored")' @onclick='() => SortBy("Stored")'>Stored <SortArrow Column="Stored" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                         </div>
                         @foreach (var evt in GetSortedExtractions(state))
                         {
@@ -106,11 +106,11 @@
                 {
                     <div class="events-table tbl-dreaming">
                         <div class="table-header">
-                            <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged <SortArrow Column="Merged" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Refused")' @onclick='() => SortBy("Refused")'>Refused <SortArrow Column="Refused" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed <SortArrow Column="Decayed" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Merged")' @onclick='() => SortBy("Merged")'>Merged <SortArrow Column="Merged" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Refused")' @onclick='() => SortBy("Refused")'>Refused <SortArrow Column="Refused" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Decayed")' @onclick='() => SortBy("Decayed")'>Decayed <SortArrow Column="Decayed" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                             <span>Profile Regen</span>
                             <span>Refused merges</span>
                         </div>
@@ -147,13 +147,13 @@
                 {
                     <div class="events-table tbl-judgments">
                         <div class="table-header">
-                            <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                            <span class='sortable @SortClass("Kind")' @onclick='() => SortBy("Kind")'>Kind <SortArrow Column="Kind" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("User")' @onclick='() => SortBy("User")'>User <SortArrow Column="User" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                            <button type="button" class='sortable @SortClass("Kind")' @onclick='() => SortBy("Kind")'>Kind <SortArrow Column="Kind" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                             <span>Verdict</span>
                             <span>Candidate</span>
                             <span>Scores</span>
-                            <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Latency <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                            <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Latency <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                         </div>
                         @foreach (var evt in GetSortedJudgments(state))
                         {

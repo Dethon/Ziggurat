@@ -24,7 +24,7 @@
                 <KpiCard Label="Preloaded" Value="@Share(state, SkillPreloadOutcomes.Preloaded)" Color="var(--accent-green)" />
                 <KpiCard Label="Deadline misses" Value="@Share(state, SkillPreloadOutcomes.Deadline)" Color="var(--accent-yellow)" />
                 <KpiCard Label="Errors" Value="@Share(state, SkillPreloadOutcomes.Error)" Color="var(--accent-red)" />
-                <KpiCard Label="Median latency" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Median latency" Value="@($"{MedianLatency(state):N0} ms")" Color="var(--accent-yellow)" />
             </section>
 
             <section class="section">

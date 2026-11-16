@@ -26,7 +26,7 @@
                 <KpiCard Label="Closed by pattern" Value="@Share(state, ModalDismissalOutcomes.Selector, ModalDismissalOutcomes.Text)" Color="var(--accent-green)" />
                 <KpiCard Label="Closed by judgment" Value="@Share(state, ModalDismissalOutcomes.Judgment)" Color="var(--accent-green)" />
                 <KpiCard Label="Left standing" Value="@Share(state, ModalDismissalOutcomes.LeftStanding)" Color="var(--accent-red)" />
-                <KpiCard Label="Median judgment" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Median judgment" Value="@($"{MedianLatency(state):N0} ms")" Color="var(--accent-yellow)" />
             </section>
 
             <section class="section">

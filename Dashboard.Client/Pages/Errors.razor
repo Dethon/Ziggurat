@@ -28,10 +28,10 @@
                 <h3>Recent errors</h3>
                 <div class="events-table tbl-errors">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Service")' @onclick='() => SortBy("Service")'>Service <SortArrow Column="Service" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Type")' @onclick='() => SortBy("Type")'>Type <SortArrow Column="Type" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Message")' @onclick='() => SortBy("Message")'>Message <SortArrow Column="Message" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Service")' @onclick='() => SortBy("Service")'>Service <SortArrow Column="Service" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Type")' @onclick='() => SortBy("Type")'>Type <SortArrow Column="Type" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Message")' @onclick='() => SortBy("Message")'>Message <SortArrow Column="Message" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {

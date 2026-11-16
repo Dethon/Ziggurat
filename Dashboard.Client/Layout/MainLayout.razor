@@ -6,7 +6,8 @@
 <div class="layout">
     @* One nav for every width, so each page has exactly one link to it. On a phone the first group is
        the bottom bar and the rest open as a sheet behind More; on a desktop every group is listed. *@
-    <nav class="sidebar @(_moreOpen ? "more-open" : "")" aria-label="Pages">
+    <nav class="sidebar @(_moreOpen ? "more-open" : "")" aria-label="Pages"
+         @onkeydown="@(e => { if (e.Key == "Escape") _moreOpen = false; })">
         <a href="/" class="brand" aria-label="Ziggurat dashboard">
             <span class="brand-mark"><Icon Glyph="Icons.Ziggurat" Size="18" /></span>
             <span class="brand-text">
