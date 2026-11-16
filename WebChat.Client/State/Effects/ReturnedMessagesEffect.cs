@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.State.Composer;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Queue;
 using WebChat.Client.State.Topics;
 
@@ -19,9 +20,10 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly ILogger<ReturnedMessagesEffect> _logger;
     private readonly IDisposable _returned;
     private readonly IDisposable _opened;
+    private readonly IDisposable _live;
 
     public ReturnedMessagesEffect(
-        Dispatcher dispatcher, TopicsStore topics, IChatMessagingService messagingService,
+        Dispatcher dispatcher, TopicsStore topics, ConnectionStore connection, IChatMessagingService messagingService,
         ILogger<ReturnedMessagesEffect> logger)
     {
         _dispatcher = dispatcher;
@@ -42,6 +44,15 @@ public sealed class ReturnedMessagesEffect : IDisposable
             if (a.TopicId is { } topicId)
             {
                 TakeAsync(topicId).LogFaults(_logger, nameof(SelectTopic));
+            }
+        });
+
+        // A page not live when told (a phone asleep) wakes on the topic it already shows, opening nothing.
+        _live = connection.BecameLiveAgain.Subscribe(_ =>
+        {
+            if (_topics.State.SelectedTopicId is { } topicId)
+            {
+                TakeAsync(topicId).LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain));
             }
         });
     }
@@ -70,5 +81,6 @@ public sealed class ReturnedMessagesEffect : IDisposable
     {
         _returned.Dispose();
         _opened.Dispose();
+        _live.Dispose();
     }
 }

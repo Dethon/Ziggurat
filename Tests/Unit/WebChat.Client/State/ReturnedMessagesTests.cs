@@ -79,6 +79,23 @@ public sealed class ReturnedMessagesTests
         ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued on one");
     }
 
+    // A phone asleep through the stop missed the telling, and wakes on the topic it already shows.
+    [Fact]
+    public async Task BecomingLiveAgainOnTheTopic_TakesWhatWasReturnedMeanwhile()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeReturned"));
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued while asleep", [], null)]);
+
+        await transport.RaiseReconnectingAsync(null);
+        await transport.RaiseReconnectedAsync("connection-2");
+
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued while asleep");
+    }
+
     private static void Seed(ScriptedChatClient client, string open)
     {
         client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
