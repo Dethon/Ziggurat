@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.WebChat;
 
 namespace McpChannelSignalR.Services;
 
@@ -30,4 +31,13 @@ internal sealed class QueueNews(StreamService streamService, IThreadStateStore t
             logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", of.TopicId);
         }
     }
+
+    // Messages a stop handed back, told to each of their senders on every page they have open, whatever
+    // space it shows: only the sender's own pages may take them.
+    public Task TellReturnedAsync(IReadOnlyList<QueuedMessage> returned) =>
+        Task.WhenAll(returned
+            .DistinctBy(m => m.Sender.UserId)
+            .Select(m => hubSender.SendToGroupAsync(
+                TopicAudience.Account(m.Sender.UserId), "OnQueueReturned",
+                new QueueReturnedNotification(m.Sender.TopicId, m.Sender.SpaceSlug))));
 }

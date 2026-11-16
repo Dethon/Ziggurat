@@ -103,3 +103,6 @@ public record QueueChangedNotification(
     IReadOnlyList<QueuedMessageItem> Items,
     long Revision,
     string? SpaceSlug = null);
+// A stop handed back messages this person queued on a topic: a page showing it takes them
+// (ChatHub.TakeReturned) into its composer; any other finds them when the topic is next opened.
+public record QueueReturnedNotification(string TopicId, string? SpaceSlug = null);

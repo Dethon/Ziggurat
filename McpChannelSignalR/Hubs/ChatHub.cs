@@ -762,6 +762,7 @@ public sealed class ChatHub(
         if (returned.Count > 0)
         {
             await _queueNews.TellAsync(returned[0].Sender);
+            await _queueNews.TellReturnedAsync(returned);
         }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it

@@ -382,6 +382,34 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await marta.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["marta one", "marta two"]);
     }
 
+    // Each sender hears, on every page of theirs, that their messages are waiting; whichever page takes
+    // them first has them, so they are never sent twice from two devices.
+    [Fact]
+    public async Task EachSenderIsToldTheirMessagesWait_AndATakeHandsThemOverOnce_WhicheverDeviceAsks()
+    {
+        var told = TellsOfReturns();
+        var fran = HubFor(new SignedInCaller());
+        var franOnThePhone = HubFor(CallerAs("fran", "session-phone"));
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await franOnThePhone.EnqueueMessage(TopicId, "fran one", "c-2", null)).ShouldBeTrue();
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-3", null)).ShouldBeTrue();
+
+        await marta.CancelTopic(TopicId);
+        await wire.Ended;
+
+        Snapshot(told).OrderBy(t => t.Group).ShouldBe([
+            ("account:fran", new QueueReturnedNotification(TopicId, "default")),
+            ("account:marta", new QueueReturnedNotification(TopicId, "default"))
+        ]);
+        var taken = await Task.WhenAll(fran.TakeReturned(TopicId), franOnThePhone.TakeReturned(TopicId));
+        taken.SelectMany(t => t).Select(m => m.Content).ShouldBe(["fran one"]);
+        (await fran.TakeReturned(TopicId)).ShouldBeEmpty();
+        (await marta.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["marta one"]);
+        (await marta.TakeReturned(TopicId)).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {
@@ -753,6 +781,30 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             })
             .Returns(Task.CompletedTask);
         return told;
+    }
+
+    private List<(string Group, QueueReturnedNotification Notification)> TellsOfReturns()
+    {
+        var told = new List<(string, QueueReturnedNotification)>();
+        _sender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), "OnQueueReturned", It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Callback((string group, string _, object notification, CancellationToken _) =>
+            {
+                lock (told)
+                {
+                    told.Add((group, (QueueReturnedNotification)notification));
+                }
+            })
+            .Returns(Task.CompletedTask);
+        return told;
+    }
+
+    private static List<T> Snapshot<T>(List<T> told)
+    {
+        lock (told)
+        {
+            return [.. told];
+        }
     }
 
     private static QueueChangedNotification Latest(List<(string Group, QueueChangedNotification Notification)> told)
