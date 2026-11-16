@@ -276,6 +276,29 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // A private topic's queue is read by whoever sees the topic, and to anyone else there is no such
+    // conversation: not even that something waits in it.
+    [Fact]
+    public async Task ThePrivateTopicsQueue_IsAnsweredToWhoeverSeesTheTopic_AndAsNoSuchConversationToAnyoneElse()
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var ana = HubFor(Caller(new ForwardedAccount("ana", "home", ["member", ForwardedAccount.SeesAllRole], SessionId: "session-3")), "Ana");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+
+        var refused = await Should.ThrowAsync<HubException>(() => marta.GetQueue(TopicId));
+
+        refused.Message.ShouldBe(TopicRefusals.NoSuchConversation);
+        (await ana.GetQueue(TopicId)).Items.Select(item => item.Content).ShouldBe(["second"]);
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     // A message refused as it is queued is told to its sender; the turn running is no part of it.
     [Fact]
     public async Task AMessageRefusedAsItIsQueued_IsAnsweredToItsSender_AndLeavesTheRunningTurnAlone()
@@ -1100,10 +1123,13 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         }
     }
 
-    private static SignedInCaller CallerAs(string userId, string sessionId)
+    private static SignedInCaller CallerAs(string userId, string sessionId) =>
+        Caller(new ForwardedAccount(userId, "home", ["member"], SessionId: sessionId));
+
+    private static SignedInCaller Caller(ForwardedAccount account)
     {
         var caller = new SignedInCaller();
-        caller.Items[ChatHub.AccountItem] = new ForwardedAccount(userId, "home", ["member"], SessionId: sessionId);
+        caller.Items[ChatHub.AccountItem] = account;
         return caller;
     }
 
