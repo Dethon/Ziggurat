@@ -10,6 +10,9 @@ public record QueueChanged(QueueChangedNotification Notification) : IAction;
 // The reader takes their own queued message back into the composer, to rework and send again.
 public record EditQueuedMessage(string TopicId, string QueuedId) : IAction;
 
+// The reader removes their own queued message, and the files uploaded for it, before it runs.
+public record RemoveQueuedMessage(string TopicId, string QueuedId) : IAction;
+
 // The hub let go of a message this page withdrew: its chip goes now, ahead of the hub's own telling,
 // so a second press does not ask again about a message already withdrawn.
 public record QueuedMessageWithdrawn(string TopicId, string QueuedId) : IAction;

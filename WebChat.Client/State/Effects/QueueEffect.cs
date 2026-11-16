@@ -25,7 +25,9 @@ public sealed class QueueEffect : IDisposable
         _registrations =
         [
             dispatcher.RegisterHandler<EditQueuedMessage>(a =>
-                HandleEditAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(EditQueuedMessage)))
+                HandleEditAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(EditQueuedMessage))),
+            dispatcher.RegisterHandler<RemoveQueuedMessage>(a =>
+                HandleRemoveAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(RemoveQueuedMessage)))
         ];
     }
 
@@ -38,6 +40,9 @@ public sealed class QueueEffect : IDisposable
             _dispatcher.Dispatch(new ReturnToComposer(topicId, [returned]));
         }
     }
+
+    public Task HandleRemoveAsync(string topicId, string queuedId) =>
+        WithdrawAsync(topicId, queuedId, () => _messagingService.RemoveQueuedAsync(topicId, queuedId));
 
     private async Task<T?> WithdrawAsync<T>(string topicId, string queuedId, Func<Task<HubResult<T>>> call)
     {

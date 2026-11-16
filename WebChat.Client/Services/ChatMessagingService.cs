@@ -37,6 +37,9 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         liveConnection.InvokeAsync<bool>(
             "EnqueueMessage", topicId, message, correlationId, configPatch, attachments);
 
+    public Task<HubResult<Nothing>> RemoveQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync("RemoveQueued", topicId, queuedId);
+
     public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
         liveConnection.InvokeAsync<ReturnedMessage>("TakeBackQueued", topicId, queuedId);
 }

@@ -44,6 +44,25 @@ public sealed class QueuedWithdrawalTests
         Chips(client).ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task Remove_AsksTheHubToRemoveIt_AndTheChipGoes_LeavingTheComposerAlone()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client);
+        transport.Raise("OnQueueChanged", new QueueChangedNotification("topic-1",
+            [new QueuedMessageItem("q1", "the queued words", 1, "fran", "Fran", DateTimeOffset.UnixEpoch)], Revision: 5));
+        transport.Answer("RemoveQueued", (object?)null);
+
+        client.Dispatcher.Dispatch(new RemoveQueuedMessage("topic-1", "q1"));
+
+        await TestChat.Eventually(() => Chips(client).Count == 0);
+        transport.Calls.ShouldContain(call =>
+            call.MethodName == "RemoveQueued" && call.Arguments.SequenceEqual(new object?[] { "topic-1", "q1" }));
+        client.Composer.State.For("topic-1").ShouldBeEmpty();
+        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 
