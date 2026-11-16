@@ -1,5 +1,6 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
@@ -59,6 +60,25 @@ public sealed class QueuedWithdrawalTests
         await TestChat.Eventually(() => Chips(client).Count == 0);
         transport.Calls.ShouldContain(call =>
             call.MethodName == "RemoveQueued" && call.Arguments.SequenceEqual(new object?[] { "topic-1", "q1" }));
+        client.Composer.State.For("topic-1").ShouldBeEmpty();
+        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+    }
+
+    // Its turn started first: the person is told, and is not shown a withdrawal that did not happen.
+    [Fact]
+    public async Task EditingAMessageAlreadySent_IsToldSo_AndPutsNothingInTheComposer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client);
+        transport.Raise("OnQueueChanged", new QueueChangedNotification("topic-1",
+            [new QueuedMessageItem("q1", "the queued words", 1, "fran", "Fran", DateTimeOffset.UnixEpoch)], Revision: 5));
+        transport.Answer("TakeBackQueued", (Func<object?[], object?>)(_ => throw new HubException(
+            $"An unexpected error occurred invoking 'TakeBackQueued' on the server. HubException: {TopicRefusals.AlreadySent}")));
+
+        client.Dispatcher.Dispatch(new EditQueuedMessage("topic-1", "q1"));
+
+        await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message == TopicRefusals.AlreadySent));
         client.Composer.State.For("topic-1").ShouldBeEmpty();
         client.Composer.State.Dictation.Transcript.ShouldBeNull();
     }
