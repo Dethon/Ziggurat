@@ -36,7 +36,20 @@ public sealed class StreamService(
     // Steers sent to the agent whose turns have not started, in the order they were sent: each counts as
     // pending, so the running turn's end starts the first of them (writing its message there) rather than
     // the queue's head, and a stop meanwhile returns them to their senders.
-    private readonly Dictionary<string, List<QueuedMessage>> _steers = new();
+    private readonly Dictionary<string, List<WaitingSteer>> _steers = new();
+
+    // A steer sent and not started, with whatever the agent answered under its turn's key meanwhile: the
+    // agent refuses a steer as it arrives (its sender disabled since) with an error and then the stream's
+    // end while the turn it was meant to cut still runs. That answer is the steer's, held until the
+    // running turn ends and drawn after the steer's message there, where its turn would have run; the
+    // running turn is not ended by it. Read and written under _streamLock.
+    private sealed record WaitingSteer(QueuedMessage Message)
+    {
+        public List<ChatStreamMessage> Held { get; } = [];
+
+        // Its turn ended already (the reply that said IsComplete came under its key).
+        public bool Answered { get; set; }
+    }
 
     // The account whose own turn the topic's stream is running: none for a turn an agent started (a
     // schedule's, a watch's), and none for a queued turn taken but not started yet. Only that person may
@@ -119,6 +132,11 @@ public sealed class StreamService(
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
         };
 
+        if (HeldForSteer(topicId, p.TurnKey, message, isComplete))
+        {
+            return;
+        }
+
         await WriteMessageAsync(topicId, message);
 
         // A turn ends on the one reply that says it is complete, never on its kind: the agent ends a
@@ -137,6 +155,28 @@ public sealed class StreamService(
         }
 
         CompleteStream(topicId);
+    }
+
+    // A reply under the key of a steer that has not started is that steer's answer, given before the turn
+    // it was sent into ended: kept on the steer rather than written into the reply still streaming.
+    private bool HeldForSteer(string topicId, string? turnKey, ChatStreamMessage message, bool isComplete)
+    {
+        if (turnKey is null)
+        {
+            return false;
+        }
+
+        lock (_streamLock)
+        {
+            if ((_steers.GetValueOrDefault(topicId) ?? []).FirstOrDefault(s => s.Message.Id == turnKey) is not { } steer)
+            {
+                return false;
+            }
+
+            steer.Held.Add(message);
+            steer.Answered |= isComplete;
+            return true;
+        }
     }
 
     // Lock protects the compound check-then-act: without it, a concurrent CompleteStream
@@ -316,7 +356,7 @@ public sealed class StreamService(
             var queue = _queues[topicId];
             var message = queue[at];
             queue.RemoveAt(at);
-            SteersOf(topicId).Add(message);
+            SteersOf(topicId).Add(new WaitingSteer(message));
             _pendingPromptCounts.AddOrUpdate(topicId, 1, (_, count) => count + 1);
             _queueRevision++;
             return new Withdrawal(message, [.. queue]);
@@ -329,7 +369,7 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
-            if (!_steers.TryGetValue(topicId, out var steers) || !steers.Remove(steer))
+            if (!_steers.TryGetValue(topicId, out var steers) || steers.RemoveAll(s => s.Message.Id == steer.Id) == 0)
             {
                 return false;
             }
@@ -346,7 +386,7 @@ public sealed class StreamService(
         }
     }
 
-    private List<QueuedMessage> SteersOf(string topicId)
+    private List<WaitingSteer> SteersOf(string topicId)
     {
         if (!_steers.TryGetValue(topicId, out var steers))
         {
@@ -513,20 +553,13 @@ public sealed class StreamService(
 
             // Decrement pending count — only tear down when the last agent finishes
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
+            if (heldOn is null)
+            {
+                remaining = StartSteers(topicId, remaining);
+            }
+
             if (remaining > 0)
             {
-                // A turn ending with a steer waiting: the steer's turn is the next, already sent, and the
-                // reply splits here, so its message is written now, before anything of its answer.
-                if (heldOn is null && _steers.TryGetValue(topicId, out var steers) && steers.Count > 0)
-                {
-                    var steer = steers[0];
-                    steers.RemoveAt(0);
-                    Write(topicId, PersonTurns.MessageOf(steer.Sender, steer.Message));
-                    _currentPrompts[topicId] = steer.Message.Content;
-                    _currentSenderIds[topicId] = steer.Sender.UserId;
-                    _runningFor[topicId] = steer.Sender.Principal.Account!;
-                }
-
                 return Queueing.Queued;
             }
 
@@ -568,6 +601,34 @@ public sealed class StreamService(
         }
 
         return Queueing.Queued;
+    }
+
+    // A turn ending with a steer waiting: the steer's turn is the next, already sent, and the reply splits
+    // here, so its message is written now, before anything of its answer. A steer the agent already
+    // answered (refused as it arrived) is drawn with that answer, and its turn is over too, so the one
+    // after it starts. Answers how many turns are still pending.
+    private int StartSteers(string topicId, int remaining)
+    {
+        while (remaining > 0 && _steers.TryGetValue(topicId, out var steers) && steers.Count > 0)
+        {
+            var steer = steers[0];
+            steers.RemoveAt(0);
+            var sender = steer.Message.Sender;
+            Write(topicId, PersonTurns.MessageOf(sender, steer.Message.Message));
+            steer.Held.ForEach(chunk => Write(topicId, chunk));
+            _currentPrompts[topicId] = steer.Message.Message.Content;
+            _currentSenderIds[topicId] = sender.UserId;
+            if (!steer.Answered)
+            {
+                _runningFor[topicId] = sender.Principal.Account!;
+                return remaining;
+            }
+
+            _runningFor.Remove(topicId);
+            remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
+        }
+
+        return remaining;
     }
 
     private QueuedTurn? TakeHead(string topicId)
@@ -666,7 +727,7 @@ public sealed class StreamService(
         {
             IReadOnlyList<QueuedMessage> stopped =
             [
-                .. _steers.GetValueOrDefault(topicId) ?? [],
+                .. (_steers.GetValueOrDefault(topicId) ?? []).Select(s => s.Message),
                 .. _dispatching.GetValueOrDefault(topicId) ?? [],
                 .. _queues.GetValueOrDefault(topicId) ?? []
             ];

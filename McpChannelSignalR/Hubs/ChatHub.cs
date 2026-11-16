@@ -672,7 +672,7 @@ public sealed class ChatHub(
                 return Withdrawal.AlreadySent;
             }
 
-            if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer.Message, CancellationToken.None))
+            if (!await _turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer, CancellationToken.None))
             {
                 if (streamService.Unsteer(topicId, steer))
                 {

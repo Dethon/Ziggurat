@@ -133,7 +133,7 @@ public sealed class PersonTurns(
     // releases the pending prompt the send added.
     public async Task<bool> EmitAsync(VouchedSender vouched, TurnMessage message, CancellationToken ct)
     {
-        var delivered = await SendAsync(vouched, message, steer: false, ct);
+        var delivered = await SendAsync(vouched, message, steer: false, ct, turnKey: null);
         if (!delivered)
         {
             await EndUnheardAsync(vouched.Sender);
@@ -143,9 +143,11 @@ public sealed class PersonTurns(
     }
 
     // A steer, sent to come in at the running turn's next tool boundary. Nobody listening ends nothing
-    // here: the turn on the stream is still the running one, which the caller decides about.
-    public Task<bool> SteerAsync(VouchedSender vouched, TurnMessage message, CancellationToken ct) =>
-        SendAsync(vouched, message, steer: true, ct);
+    // here: the turn on the stream is still the running one, which the caller decides about. It goes
+    // under its queued id as its turn's key, which the agent answers every reply of that turn under, so
+    // the stream can tell the steer's answer (a refusal as it arrived) from the running turn's.
+    public Task<bool> SteerAsync(VouchedSender vouched, QueuedMessage steer, CancellationToken ct) =>
+        SendAsync(vouched, steer.Message, steer: true, ct, turnKey: steer.Id);
 
     // A turn sent to nobody: no reply is coming, so it is ended on the stream in error rather than left
     // holding the topic open.
@@ -158,7 +160,8 @@ public sealed class PersonTurns(
         return EndTurnAsync(sender, NotLiveError);
     }
 
-    private Task<bool> SendAsync(VouchedSender vouched, TurnMessage message, bool steer, CancellationToken ct)
+    private Task<bool> SendAsync(
+        VouchedSender vouched, TurnMessage message, bool steer, CancellationToken ct, string? turnKey)
     {
         var sender = vouched.Sender;
         return notificationEmitter.EmitAsync(
@@ -174,6 +177,7 @@ public sealed class PersonTurns(
                 RerunOf = message.RerunOf,
                 Continuation = message.Continuation,
                 Steer = steer,
+                TurnKey = turnKey,
                 Attachments = message.Attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },

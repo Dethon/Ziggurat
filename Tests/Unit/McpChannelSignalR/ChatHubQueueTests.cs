@@ -1263,8 +1263,135 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         SentAsSteers().ShouldBeEmpty();
     }
 
+    // The agent refuses a steer as it arrives (its sender disabled meanwhile) while the turn it was meant
+    // to cut still runs, and answers it as a refused turn ends, under the steer's own turn. That is the
+    // steer's turn over, not the running one: the reply keeps streaming, and the steer is drawn where it
+    // would have run, after that reply, answered with its refusal; then the queue goes on.
+    [Fact]
+    public async Task ASteerTheAgentRefusesAsItArrives_LeavesTheRunningReplyStreaming_AndIsAnsweredAfterIt()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        await RefuseTurnAsync("you were disabled", TurnKeyOf("steer me"));
+        await StreamAsync("still going");
+        await Eventually.Settle();
+
+        wire.Said().ShouldBe(["user: first", "agent: still going"]);
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+        (await SentSoFarAsync()).ShouldBe(["first", "steer me"]);
+
+        await FinishTurnAsync("done");
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first", "agent: still going", "agent: done",
+            "user: steer me", "error: you were disabled",
+            "user: older", "agent: answer to older"
+        ]);
+    }
+
+    // The refusal's error and its stream's end are two replies, and the running turn can end between them:
+    // the steer is drawn with its error then, and its turn ends on its own stream's end, once, so exactly
+    // one queued message runs after it.
+    [Fact]
+    public async Task ASteersRefusalSplitByTheRunningTurnsEnd_EndsTheSteersTurnOnce_AndRunsOneQueuedMessage()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-4", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        await RefuseWithErrorAsync("you were disabled", TurnKeyOf("steer me"));
+        await FinishTurnAsync("done");
+        await Eventually.Until(() => wire.Said().Contains("error: you were disabled"), "the steer is drawn with its error");
+        await Eventually.Settle();
+        (await SentSoFarAsync()).ShouldBe(["first", "steer me"]);
+
+        await EndRefusedTurnAsync(TurnKeyOf("steer me"));
+        await AgentWasSentAsync("second");
+        await Eventually.Settle();
+        (await SentSoFarAsync()).ShouldBe(["first", "steer me", "second"]);
+
+        await FinishTurnAsync("answer two");
+        await AgentWasSentAsync("third");
+        await FinishTurnAsync("answer three");
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first", "agent: done",
+            "user: steer me", "error: you were disabled",
+            "user: second", "agent: answer two",
+            "user: third", "agent: answer three"
+        ]);
+    }
+
+    // The running turn itself failing, with a steer waiting, is still that turn's end: the reply splits
+    // there and the steer's turn starts, answered as any other.
+    [Fact]
+    public async Task TheRunningTurnFailingWithASteerWaiting_SplitsThere_AndTheSteerRuns()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        await RefuseTurnAsync("the model failed");
+        await Eventually.Until(() => wire.Said().Contains("user: steer me"), "the steer is written once the turn ends");
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+        await StreamAsync("answer to the steer, ", TurnKeyOf("steer me"));
+        await FinishTurnAsync("done");
+
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first", "error: the model failed",
+            "user: steer me", "agent: answer to the steer, ", "agent: done"
+        ]);
+    }
+
+    // A stop before the running turn ends returns a steer the agent already refused with the rest of what
+    // waited, to its sender's composer, its refusal never drawn: nothing after a stop is.
+    [Fact]
+    public async Task AStopWithARefusedSteerHeld_ReturnsTheSteerToItsSender_ItsRefusalNeverDrawn()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-3", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+        await RefuseTurnAsync("you were disabled", TurnKeyOf("steer me"));
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        wire.Said().ShouldBe(["user: first"]);
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
+
+    // The key the agent answers a message's turn under: the one the channel sent it with, else one of its own.
+    private string TurnKeyOf(string content)
+    {
+        lock (_receivedLock)
+        {
+            return _received.Single(m => m.Content == content).TurnKey ?? TurnKey.Mint();
+        }
+    }
 
     private IReadOnlyList<string> SentAsSteers()
     {
@@ -1426,18 +1553,39 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             MessageId = answer
         });
 
+    // As send_reply streams a turn's words, the turn not over yet.
+    private Task StreamAsync(string words, string? turnKey = null, bool? agentInitiated = null) =>
+        _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId,
+            Content = words,
+            ContentType = ReplyContentType.Text,
+            IsComplete = false,
+            MessageId = words,
+            TurnKey = turnKey,
+            AgentInitiated = agentInitiated
+        });
+
     // As the agent ends a turn it refused or that failed: the error, then the stream's end, one turn.
-    private async Task RefuseTurnAsync(string error)
+    private async Task RefuseTurnAsync(string error, string? turnKey = null)
     {
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = ConversationId, Content = error, ContentType = ReplyContentType.Error, IsComplete = false
-        });
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true
-        });
+        await RefuseWithErrorAsync(error, turnKey);
+        await EndRefusedTurnAsync(turnKey);
     }
+
+    private Task RefuseWithErrorAsync(string error, string? turnKey = null) =>
+        _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = error, ContentType = ReplyContentType.Error, IsComplete = false,
+            TurnKey = turnKey
+        });
+
+    private Task EndRefusedTurnAsync(string? turnKey = null) =>
+        _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true,
+            TurnKey = turnKey
+        });
 
     private static Wire Read(IAsyncEnumerable<ChatStreamMessage> chunks) => new(chunks);
 

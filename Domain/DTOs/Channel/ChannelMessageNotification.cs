@@ -74,8 +74,8 @@ public record ChannelMessageNotification
     // null by every other.
     public ReviewCopy? ReviewCopy { get; init; }
     // Optional key naming the turn this message opens, for a channel that has to recognise the
-    // answer to it later. Voice-only today; every other channel leaves it null and the conversation
-    // group mints one.
+    // answer to it later. Voice sets it, and the chat hub on a steer (its queued id); every other
+    // message leaves it null and the conversation group mints one.
     public string? TurnKey { get; init; }
 
     // Files sent with this message, as references rather than bytes. Part of the shared protocol
