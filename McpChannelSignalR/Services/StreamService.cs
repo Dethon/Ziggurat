@@ -28,9 +28,8 @@ public sealed class StreamService(
     private readonly Dictionary<string, List<QueuedMessage>> _queues = new();
     private readonly Dictionary<string, long> _streamIds = new();
 
-    // Queue heads taken as the turn before them ended, until the dispatcher writes each on the stream:
-    // not started yet, so a stop meanwhile returns them with the rest. Several at once when one turn's
-    // end is reported twice (an error, then the stream's end).
+    // Queue heads taken as the turn before them ended, until the dispatcher starts each (StartAsync):
+    // not started yet, so a stop meanwhile returns them with the rest.
     private readonly Dictionary<string, List<QueuedMessage>> _dispatching = new();
     private long _lastStreamId;
 
@@ -694,7 +693,6 @@ public sealed class StreamService(
 
         _disposed = true;
         _dispatches.Writer.TryComplete();
-        _agentOrder.Dispose();
 
         foreach (var channel in _responseChannels.Values)
         {
