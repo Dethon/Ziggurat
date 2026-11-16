@@ -504,9 +504,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     }
 
     // A refused turn is ended by the agent as an error and then a stream's end: one turn over, not two,
-    // so each queued message still runs, one after the other.
+    // so the next queued message runs alone, and the one after it waits for that one's turn to end.
     [Fact]
-    public async Task ATurnEndedByAnErrorThenAStreamEnd_StillRunsEachQueuedMessage()
+    public async Task ATurnEndedByAnErrorThenAStreamEnd_RunsOneQueuedMessage_AndTheNextWaitsItsTurn()
     {
         var fran = HubFor(new SignedInCaller());
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
@@ -514,21 +514,42 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
         (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
 
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = ConversationId, Content = "refused", ContentType = ReplyContentType.Error, IsComplete = true
-        });
-        await _streamService.WriteReplyAsync(new SendReplyParams
-        {
-            ConversationId = ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true
-        });
+        await RefuseTurnAsync("refused");
         await AgentWasSentAsync("second");
+        await Eventually.Settle();
+
+        (await SentSoFarAsync()).ShouldBe(["first", "second"]);
         await FinishTurnAsync("answer two");
         await AgentWasSentAsync("third");
         await FinishTurnAsync("answer three");
-
         await wire.Ended;
         Sent().ShouldBe(["first", "second", "third"]);
+        wire.Said().ShouldBe([
+            "user: first", "error: refused",
+            "user: second", "agent: answer two",
+            "user: third", "agent: answer three"
+        ]);
+    }
+
+    // The stream's end that follows the error is the same turn ending, so it must not end the stream
+    // under the message that just started on it.
+    [Fact]
+    public async Task ATurnEndedByAnErrorThenAStreamEnd_KeepsTheStreamOpen_UntilTheQueuedMessagesTurnEnds()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+
+        await RefuseTurnAsync("refused");
+        await AgentWasSentAsync("second");
+        await Eventually.Settle();
+
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+        wire.Ended.IsCompleted.ShouldBeFalse();
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+        wire.Said().ShouldBe(["user: first", "error: refused", "user: second", "agent: answer two"]);
     }
 
     [Fact]
@@ -962,6 +983,18 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         }
     }
 
+    // Everything the agent was sent until now, the inbox drained first.
+    private async Task<IReadOnlyList<string>> SentSoFarAsync()
+    {
+        var items = await _inbox.ReceiveAsync(Subscriber, TimeSpan.Zero, CancellationToken.None);
+        lock (_receivedLock)
+        {
+            _received.AddRange(items.Select(i => i.Message).OfType<ChannelMessageNotification>());
+        }
+
+        return Sent();
+    }
+
     private async Task AgentWasSentAsync(string content) =>
         await Eventually.Until(async () =>
         {
@@ -983,6 +1016,19 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             IsComplete = true,
             MessageId = answer
         });
+
+    // As the agent ends a turn it refused or that failed: the error, then the stream's end, one turn.
+    private async Task RefuseTurnAsync(string error)
+    {
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = error, ContentType = ReplyContentType.Error, IsComplete = false
+        });
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true
+        });
+    }
 
     private static Wire Read(IAsyncEnumerable<ChatStreamMessage> chunks) => new(chunks);
 

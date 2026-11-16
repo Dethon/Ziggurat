@@ -92,23 +92,24 @@ public sealed class StreamService(
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
         };
 
-        if (isComplete && contentType != ReplyContentType.Error && contentType != ReplyContentType.StreamComplete)
-        {
-            await WriteMessageAsync(topicId, message);
-            var completeMessage = new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId };
-            await WriteMessageAsync(topicId, completeMessage);
-            CompleteStream(topicId);
-            return;
-        }
-
-        if (contentType is ReplyContentType.Error or ReplyContentType.StreamComplete)
-        {
-            await WriteMessageAsync(topicId, message);
-            CompleteStream(topicId);
-            return;
-        }
-
         await WriteMessageAsync(topicId, message);
+
+        // A turn ends on the one reply that says it is complete, never on its kind: the agent ends a
+        // refused or failed turn with an error and then the stream's end, both under the same turn, and
+        // counting the error too would start two queued turns at once, or end the stream under the one
+        // that started. The hub's own errors (a refusal, nobody listening) are the turn's last word and
+        // say so.
+        if (!isComplete)
+        {
+            return;
+        }
+
+        if (contentType is not (ReplyContentType.Error or ReplyContentType.StreamComplete))
+        {
+            await WriteMessageAsync(topicId, new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId });
+        }
+
+        CompleteStream(topicId);
     }
 
     // Lock protects the compound check-then-act: without it, a concurrent CompleteStream
