@@ -29,9 +29,42 @@
                 document.documentElement.setAttribute('data-theme', theme);
             }
 
+            // An installed app's browser reads the manifest a launch links first, before the hub has
+            // named the space, and swaps the app's icon and name for whatever that one says. So the
+            // page links the space as it was last named here, and manifestHelper relinks it once the
+            // hub has spoken.
+            window.spaceManifest = {
+                href: function (slug, name, color) {
+                    var query = [];
+                    if (slug && slug !== 'default') query.push('slug=' + encodeURIComponent(slug));
+                    if (name) query.push('name=' + encodeURIComponent(name));
+                    if (color && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(color)) {
+                        query.push('color=' + encodeURIComponent(color));
+                    }
+                    return '/manifest.webmanifest' + (query.length ? '?' + query.join('&') : '');
+                },
+                remember: function (slug, name, color) {
+                    try {
+                        localStorage.setItem('space-manifest:' + (slug || 'default'),
+                            JSON.stringify({ name: name, color: color }));
+                    } catch (e) { }
+                },
+                recall: function (slug) {
+                    try {
+                        var known = JSON.parse(localStorage.getItem('space-manifest:' + (slug || 'default')));
+                        return known && typeof known === 'object' ? known : {};
+                    } catch (e) {
+                        return {};
+                    }
+                }
+            };
+
             var slug = location.pathname.split('/')[1] || '';
-            var manifestUrl = '/manifest.webmanifest' + (slug ? '?slug=' + encodeURIComponent(slug) : '');
-            document.querySelector('link[rel="manifest"]').href = manifestUrl;
+            var known = window.spaceManifest.recall(slug);
+            document.querySelector('link[rel="manifest"]').href = window.spaceManifest.href(
+                slug,
+                typeof known.name === 'string' ? known.name : null,
+                typeof known.color === 'string' ? known.color : null);
         })();
     </script>
 </head>

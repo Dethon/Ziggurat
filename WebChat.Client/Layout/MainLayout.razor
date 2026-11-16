@@ -47,6 +47,7 @@
     private string _accentColor = SpaceConfig.DefaultAccentColor;
     private string _spaceName = "Main";
     private string _spaceSlug = SpaceConfig.DefaultSlug;
+    private (string Slug, string Name, string Color)? _manifestSpace;
     private ConnectionStatus _status;
     private IDisposable? _spaceSubscription;
     private IDisposable? _connectionSubscription;
@@ -98,7 +99,15 @@
                 _spaceSlug = state.CurrentSlug;
                 changed = true;
             }
-            if (changed)
+            // The manifest is told only what the hub said: an installed app's browser takes its icon and
+            // name from whichever manifest the page links when it looks, and the placeholders before the
+            // hub's answer would make it the default space's.
+            (string, string, string)? manifestSpace = state.Named
+                ? (state.CurrentSlug, state.SpaceName, state.AccentColor)
+                : _manifestSpace;
+            var relinkManifest = manifestSpace != _manifestSpace;
+            _manifestSpace = manifestSpace;
+            if (changed || relinkManifest)
             {
                 InvokeAsync(async () =>
                 {
@@ -107,7 +116,10 @@
                     await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
                     // The page's host knows no household, so the manifest an install reads is told
                     // the space's name and colour by the page that learned them from the hub.
-                    await Js.InvokeVoidAsync("manifestHelper.setSpace", _spaceSlug, _spaceName, _accentColor);
+                    if (relinkManifest && manifestSpace is (var slug, var name, var color))
+                    {
+                        await Js.InvokeVoidAsync("manifestHelper.setSpace", slug, name, color);
+                    }
                     await Js.InvokeVoidAsync("accentHelper.setVar", _accentColor);
                     await Js.InvokeVoidAsync("faviconHelper.setSpaceTitle", displayName);
                     StateHasChanged();

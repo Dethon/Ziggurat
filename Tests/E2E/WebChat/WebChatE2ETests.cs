@@ -325,6 +325,48 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         installed["theme_color"]!.GetValue<string>().ShouldBe(kitchen.AccentColor);
     }
 
+    // An installed app's browser reads the manifest a launch links, as early as the page's first, and
+    // swaps the app's icon and name for whatever it says: a default-coloured one linked before the hub
+    // had named the space turned the space's installed app into the default space's. A page that has
+    // heard from the hub once links the space's own from the start and never another on the way.
+    [SkippableFact]
+    public async Task ASpaceOpenedAgain_LinksOnlyItsOwnManifest_FromTheFirst()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var kitchen = WebChatStack.Kitchen;
+        const string accentApplied =
+            "color => getComputedStyle(document.documentElement).getPropertyValue('--space-accent').trim() === color";
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.DefaultSpaceUrl + kitchen.Slug);
+        await page.WaitForFunctionAsync(accentApplied, kitchen.AccentColor);
+
+        await page.AddInitScriptAsync("""
+            window.__manifestHrefs = [];
+            document.addEventListener('DOMContentLoaded', () => {
+                const link = document.querySelector('link[rel=manifest]');
+                window.__manifestHrefs.push(link.getAttribute('href'));
+                new MutationObserver(() => window.__manifestHrefs.push(link.getAttribute('href')))
+                    .observe(link, { attributes: true, attributeFilter: ['href'] });
+            });
+            """);
+        await page.ReloadAsync();
+        await page.WaitForFunctionAsync(accentApplied, kitchen.AccentColor);
+        await page.WaitForFunctionAsync("name => document.title.endsWith(name)", kitchen.Name);
+
+        var hrefs = await page.EvaluateAsync<string[]>("() => window.__manifestHrefs");
+        hrefs.ShouldNotBeEmpty();
+        foreach (var href in hrefs)
+        {
+            var manifest = await page.APIRequest.GetAsync(new Uri(new Uri(fixture.WebChatUrl), href).ToString());
+            var linked = JsonNode.Parse(await manifest.TextAsync())!.AsObject();
+            linked["short_name"]!.GetValue<string>().ShouldBe(kitchen.Name, href);
+            linked["theme_color"]!.GetValue<string>().ShouldBe(kitchen.AccentColor, href);
+            linked["icons"]![0]!["src"]!.GetValue<string>()
+                .ShouldBe($"/icon.svg?color={Uri.EscapeDataString(kitchen.AccentColor)}", href);
+        }
+    }
+
     // The picker is the household's agents, in its configuration's order and under the names it gives
     // them: the home's, for the people of the home this stack signs in.
     [SkippableFact]
