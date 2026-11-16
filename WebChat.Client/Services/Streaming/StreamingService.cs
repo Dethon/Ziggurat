@@ -40,16 +40,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            // Read before the send and cleared after it, so an attachment cannot ride a second
-            // message. A retry brings its own references and leaves the composer alone;
-            // everything else sends what the composer holds and empties exactly that.
-            var sending = attachments is null
-                ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
-                : [];
-            var outgoing = new Outgoing(
-                topic, message, correlationId, GetConfigPatch(topic),
-                attachments ?? ComposerSelectors.References(sending),
-                sending);
+            var outgoing = Compose(topic, message, correlationId, attachments);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -82,11 +73,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            var sending = attachments is null
-                ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
-                : [];
-            var references = attachments ?? ComposerSelectors.References(sending);
-            var outgoing = new Outgoing(topic, message, null, GetConfigPatch(topic), references, sending);
+            var outgoing = Compose(topic, message, correlationId: null, attachments);
 
             var seen = topicStreams.Snapshot(topic.TopicId);
             if (seen.HasStream)
@@ -111,7 +98,7 @@ public sealed class StreamingService(
             // the message is drawn under it.
             topicStreams.FinalizeCurrent(topic.TopicId);
             var correlationId = pipeline.SubmitUserMessage(
-                topic.TopicId, message, senderId, references is { Count: > 0 } ? references : null);
+                topic.TopicId, message, senderId, outgoing.Attachments is { Count: > 0 } references ? references : null);
             await StartNewStreamAsync(outgoing with { CorrelationId = correlationId }, seen);
         }
         finally
@@ -223,6 +210,21 @@ public sealed class StreamingService(
         }
 
         ClearSent(outgoing);
+    }
+
+    // Read before the send and cleared after it, so an attachment cannot ride a second message. A retry
+    // brings its own references and leaves the composer alone; everything else sends what the composer
+    // holds and empties exactly that.
+    private Outgoing Compose(
+        StoredTopic topic, string message, string? correlationId, IReadOnlyList<AttachmentReference>? attachments)
+    {
+        IReadOnlyList<ComposerAttachment> sending = attachments is null
+            ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
+            : [];
+        return new Outgoing(
+            topic, message, correlationId, GetConfigPatch(topic),
+            attachments ?? ComposerSelectors.References(sending),
+            sending);
     }
 
     private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
