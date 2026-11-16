@@ -4,6 +4,7 @@ using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Queue;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -77,6 +78,13 @@ public sealed class StreamResumeService(
         if (pendingApproval.IsLive)
         {
             dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
+        }
+
+        // So is what waits behind the reply, which this page may have been away for; pushes on their
+        // way meanwhile are kept or not by revision.
+        if (await messagingService.GetQueueAsync(topic.TopicId) is { IsLive: true, Value: { } queue })
+        {
+            dispatcher.Dispatch(new QueueChanged(queue));
         }
 
         // Single rebuild: buffer + history → merged result

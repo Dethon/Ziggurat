@@ -53,6 +53,29 @@ public sealed class QueueCatchUpTests
         await TestChat.Eventually(() => Chips(client).Count == 0);
     }
 
+    // A stream resumed in the background, its topic not open, is caught up whole: the reply so far and
+    // what waits behind it, so the topic opens on both.
+    [Fact]
+    public async Task AResumedStream_CatchesUpOnItsTopicsQueue()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetQueue"));
+        var resumed = new GatedChatStream();
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null));
+        transport.Answer("ResumeStreamFrom", _ => resumed.Chunks());
+        transport.Answer("GetQueue", Queue(revision: 5, Item("q1", "marta's words", "marta", "Marta")));
+
+        transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
+
+        await TestChat.Eventually(() => Chips(client).Count == 1);
+        Chips(client).ShouldHaveSingleItem().SenderName.ShouldBe("Marta");
+        client.Topics.State.SelectedTopicId.ShouldBe("topic-2");
+        resumed.Release();
+    }
+
     private static QueueChangedNotification Queue(long revision, params QueuedMessageItem[] items) =>
         new("topic-1", items, revision, "default");
 
