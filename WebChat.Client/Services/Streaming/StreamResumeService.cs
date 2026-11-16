@@ -6,6 +6,7 @@ using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Queue;
+using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -17,6 +18,7 @@ public sealed class StreamResumeService(
     IDispatcher dispatcher,
     IMessagePipeline pipeline,
     TopicStreams topicStreams,
+    TopicsStore topicsStore,
     ILogger<StreamResumeService> logger) : IStreamResumeService
 {
     public async Task TryResumeStreamAsync(StoredTopic topic)
@@ -83,8 +85,13 @@ public sealed class StreamResumeService(
         }
 
         // So is what waits behind the reply, which this page may have been away for. Not awaited: the
-        // reply is shown first, and chips that cannot be read stay as they were.
-        CatchUpQueueAsync(topic.TopicId).LogFaults(logger, "queue catch-up");
+        // reply is shown first, and chips that cannot be read stay as they were. The topic on screen is
+        // left to the open and the return to live, which ask already, so it is asked once; a topic
+        // resumed behind it has nobody else to ask.
+        if (topicsStore.State.SelectedTopicId != topic.TopicId)
+        {
+            CatchUpQueueAsync(topic.TopicId).LogFaults(logger, "queue catch-up");
+        }
 
         // Single rebuild: buffer + history → merged result
         var existingHistory = pipeline.MessagesFor(topic.TopicId) ?? [];

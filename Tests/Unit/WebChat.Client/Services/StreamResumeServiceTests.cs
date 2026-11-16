@@ -62,6 +62,7 @@ public sealed class StreamResumeServiceTests : IDisposable
             _dispatcher,
             pipeline,
             _topicStreams,
+            _topicsStore,
             NullLogger<StreamResumeService>.Instance);
     }
 
