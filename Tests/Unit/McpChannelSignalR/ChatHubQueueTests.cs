@@ -434,6 +434,48 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // The running turn ending takes the queue's head as the person withdraws it: either the withdrawal
+    // wins and the message never runs, or its turn started and the person is told it was already sent.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithdrawalRacingTheDispatch_EitherWinsOrIsAlreadySent_NeverBoth(bool takingBack)
+    {
+        var fran = HubFor(new SignedInCaller());
+        foreach (var round in Enumerable.Range(1, 10))
+        {
+            var wire = Read(fran.SendMessage(TopicId, $"first {round}", null, null, null, CancellationToken.None));
+            await AgentWasSentAsync($"first {round}");
+            (await fran.EnqueueMessage(TopicId, $"raced {round}", null, null)).ShouldBeTrue();
+            (await fran.EnqueueMessage(TopicId, $"after {round}", null, null)).ShouldBeTrue();
+            var raced = (await fran.GetQueue(TopicId))[0];
+
+            var withdrawing = Task.Run(() => takingBack
+                ? fran.TakeBackQueued(TopicId, raced.Id)
+                : fran.RemoveQueued(TopicId, raced.Id));
+            await Task.WhenAll(withdrawing.ContinueWith(_ => { }), Task.Run(() => FinishTurnAsync($"answer {round}")));
+
+            if (withdrawing.IsCompletedSuccessfully)
+            {
+                await AgentWasSentAsync($"after {round}");
+                await FinishTurnAsync($"answer after {round}");
+                await wire.Ended;
+                Sent().ShouldNotContain($"raced {round}");
+                wire.Said().ShouldNotContain($"user: raced {round}");
+            }
+            else
+            {
+                (await Should.ThrowAsync<HubException>(() => withdrawing)).Message.ShouldBe(TopicRefusals.AlreadySent);
+                await AgentWasSentAsync($"raced {round}");
+                await FinishTurnAsync($"answer raced {round}");
+                await AgentWasSentAsync($"after {round}");
+                await FinishTurnAsync($"answer after {round}");
+                await wire.Ended;
+                Sent().Count(sent => sent == $"raced {round}").ShouldBe(1);
+            }
+        }
+    }
+
     private static readonly AttachmentReference Photo = new()
     {
         Id = "7-42/abc",
