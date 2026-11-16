@@ -1854,6 +1854,25 @@ h1, h2, h3 {
     gap: 0.2rem;
 }
 
+.queue-chip-action {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0;
+}
+
+.queue-chip-action:hover {
+    color: var(--text-primary);
+}
+
 .composer-attachment {
     display: flex;
     align-items: center;

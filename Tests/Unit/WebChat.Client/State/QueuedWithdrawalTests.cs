@@ -83,6 +83,26 @@ public sealed class QueuedWithdrawalTests
         client.Composer.State.Dictation.Transcript.ShouldBeNull();
     }
 
+    // Everyone on a shared topic sees its queue; only a message's sender may withdraw it.
+    [Fact]
+    public async Task OnlyTheReadersOwnChips_OfferEditAndRemove()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client);
+
+        transport.Raise("OnQueueChanged", new QueueChangedNotification("topic-1",
+        [
+            new QueuedMessageItem("q1", "mine", 0, "fran", "Fran", DateTimeOffset.UnixEpoch),
+            new QueuedMessageItem("q2", "marta's", 0, "marta", "Marta", DateTimeOffset.UnixEpoch)
+        ], Revision: 5));
+
+        Chips(client).Select(chip => (chip.Id, chip.Actions)).ShouldBe([
+            ("q1", QueueChipActions.Edit | QueueChipActions.Remove),
+            ("q2", QueueChipActions.None)
+        ]);
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 

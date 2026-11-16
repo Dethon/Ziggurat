@@ -2,6 +2,7 @@
 
 @inject QueueStore QueueStore
 @inject UserIdentityStore UserIdentityStore
+@inject IDispatcher Dispatcher
 
 @code {
     [Parameter] public string? TopicId { get; set; }
@@ -18,6 +19,22 @@
 
     private void Update() =>
         _chips = QueueSelectors.Chips(QueueStore.State, TopicId, UserIdentityStore.State.SignedIn?.UserId);
+
+    private void Edit(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new EditQueuedMessage(TopicId, chip.Id));
+        }
+    }
+
+    private void Remove(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new RemoveQueuedMessage(TopicId, chip.Id));
+        }
+    }
 }
 
 @* The messages waiting for the running reply to end, in the order they will run. Each is a chip
@@ -40,6 +57,20 @@
                         <Icon Glyph="Icons.Paperclip" Size="12" />
                         @chip.FileCount
                     </span>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Edit))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-edit"
+                            title="Edit" aria-label="Edit this queued message" @onclick="() => Edit(chip)">
+                        <Icon Glyph="Icons.Pencil" Size="14" />
+                    </button>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Remove))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-remove"
+                            title="Remove" aria-label="Remove this queued message" @onclick="() => Remove(chip)">
+                        <Icon Glyph="Icons.CloseStroked" Size="14" />
+                    </button>
                 }
             </li>
         }

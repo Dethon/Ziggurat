@@ -163,7 +163,7 @@ public sealed class QueuedSendTests
         ], Revision: 5));
 
         Chips(client).ShouldBe([
-            new QueueChip("q1", "second", 2, null, Mine: true),
+            new QueueChip("q1", "second", 2, null, Mine: true, QueueChipActions.Edit | QueueChipActions.Remove),
             new QueueChip("q2", "third, from Marta", 0, "Marta", Mine: false)
         ]);
 

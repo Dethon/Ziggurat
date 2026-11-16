@@ -25,9 +25,19 @@ public sealed record QueueState(ImmutableDictionary<string, TopicQueue> ByTopic)
     public static QueueState Initial => new(ImmutableDictionary<string, TopicQueue>.Empty);
 }
 
+// What a chip offers the reader: a message is withdrawn by its sender alone.
+[Flags]
+public enum QueueChipActions
+{
+    None = 0,
+    Edit = 1,
+    Remove = 2
+}
+
 // One queued message as the composer shows it. SenderName only for somebody else's: a page labels
 // other people's messages, and offers its own person theirs.
-public sealed record QueueChip(string Id, string Excerpt, int FileCount, string? SenderName, bool Mine);
+public sealed record QueueChip(
+    string Id, string Excerpt, int FileCount, string? SenderName, bool Mine, QueueChipActions Actions = QueueChipActions.None);
 
 public static class QueueSelectors
 {
@@ -41,7 +51,8 @@ public static class QueueSelectors
                 item.Content.Excerpt(ExcerptLength),
                 item.FileCount,
                 item.SenderId == readerId ? null : item.SenderName,
-                item.SenderId == readerId))]
+                item.SenderId == readerId,
+                item.SenderId == readerId ? QueueChipActions.Edit | QueueChipActions.Remove : QueueChipActions.None))]
             : [];
 }
 
