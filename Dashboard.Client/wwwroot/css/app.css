@@ -964,13 +964,14 @@ button { cursor: pointer; }
     .page-header > .pill-selector .pill-group { width: 100%; }
     .page-header > .pill-selector .pill { flex: 1; }
 
-    /* Dropdowns side by side, a segmented control across the whole row. */
-    .toolbar { padding: 0.75rem; gap: 0.75rem; }
-    .toolbar > .pill-selector { flex: 1 1 140px; }
-    .toolbar > .pill-selector:has(.pill-group) { flex-basis: 100%; }
-    .toolbar .pill-group { width: 100%; }
+    /* One row per control, its name beside it: four stacked label-over-control pairs took most
+       of a phone's first screen before a single figure. */
+    .toolbar { padding: 0.6rem 0.75rem; gap: 0.5rem; flex-direction: column; align-items: stretch; }
+    .toolbar > .pill-selector { flex-direction: row; align-items: center; gap: 0.75rem; }
+    .toolbar .pill-label { flex: 0 0 5.75rem; }
+    .toolbar .pill-group, .toolbar .select-wrap { flex: 1; min-width: 0; }
     .toolbar .pill { flex: 1 0 auto; }
-    .toolbar .select-wrap, .toolbar .select-wrap select { width: 100%; }
+    .toolbar .select-wrap select { width: 100%; }
 
     .section { padding: 0.9rem 1rem 1rem; border-radius: var(--radius); }
     .events-table, .activity-feed { margin: 0 -1rem -1rem; }
