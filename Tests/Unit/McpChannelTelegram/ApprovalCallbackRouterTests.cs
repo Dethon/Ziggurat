@@ -57,7 +57,7 @@ public class ApprovalCallbackRouterTests
         {
             _botClient.Verify(b => b.SendRequest(
                 It.Is<Telegram.Bot.Requests.EditMessageTextRequest>(r =>
-                    r.ChatId.Identifier == chat && r.MessageId == message && r.Text.Contains("Not answered in time")),
+                    r.ChatId.Identifier == chat && r.MessageId == message && r.Text!.Contains("Not answered in time")),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
     }
@@ -74,7 +74,7 @@ public class ApprovalCallbackRouterTests
 
         (await resultTask).ShouldBe("denied");
         _botClient.Verify(b => b.SendRequest(
-            It.Is<Telegram.Bot.Requests.EditMessageTextRequest>(r => r.MessageId == 7 && r.Text.Contains("no longer asked")),
+            It.Is<Telegram.Bot.Requests.EditMessageTextRequest>(r => r.MessageId == 7 && r.Text!.Contains("no longer asked")),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

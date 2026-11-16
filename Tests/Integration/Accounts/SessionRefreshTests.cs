@@ -84,7 +84,7 @@ public class SessionRefreshTests
         live.StatusCode.ShouldBe(HttpStatusCode.OK);
         var assertion = await server.VerifyAssertionAsync(
             (await live.Content.ReadFromJsonAsync<JsonObject>())!["assertion"]!.GetValue<string>());
-        assertion.Claims.ChannelId.ShouldBe(ChannelIds.Sugary);
+        assertion.Claims.ShouldNotBeNull().ChannelId.ShouldBe(ChannelIds.Sugary);
         (await RefreshAsync(server, laura, lauras.Id, SugaryCredential)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 

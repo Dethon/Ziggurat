@@ -251,7 +251,7 @@ public class StreamServiceTests : IDisposable
         { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
 
         await Eventually.Until(() => _pushNotification.Invocations.Count > 0, "the push to go out");
-        var notice = (PushNotice)_pushNotification.Invocations.Single().Arguments[2];
+        var notice = _pushNotification.Invocations.Single().Arguments[2].ShouldBeOfType<PushNotice>();
         notice.Body.ShouldEndWith("flat…");
         notice.Body.Length.ShouldBeLessThanOrEqualTo(StreamService.PushExcerptLength + 1);
     }

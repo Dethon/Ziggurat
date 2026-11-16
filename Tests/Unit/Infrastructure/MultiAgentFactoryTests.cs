@@ -208,6 +208,6 @@ public sealed class MultiAgentFactoryTests
 
         await client.GetResponseAsync([message]);
 
-        handler.CapturedBody.ShouldContain("[Current time: 2026-11-01 17:05:00 -05:00]");
+        handler.CapturedBody.ShouldNotBeNull().ShouldContain("[Current time: 2026-11-01 17:05:00 -05:00]");
     }
 }

@@ -51,7 +51,7 @@ public sealed class InitializationEffectTests : IDisposable
         _liveConnection = new FakeChatLiveConnection(_calls);
         _agentService = new FakeAgentService(_calls);
         _topicService = new FakeTopicService(_calls);
-        _configService = new FakeConfigService(_calls);
+        _configService = new FakeConfigService();
         _localStorage = new FakeLocalStorageService(_calls);
         _streamResumeService = new FakeStreamResumeService();
         _pushService = new FakePushSubscriptionService();

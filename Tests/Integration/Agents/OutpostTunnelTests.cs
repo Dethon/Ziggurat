@@ -228,7 +228,7 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
 
         var answer = _requests.Last().Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>()
             .ShouldHaveSingleItem();
-        answer.Result?.ToString().ShouldNotContain("went offline");
+        answer.Result.ShouldNotBeNull().ToString().ShouldNotBeNull().ShouldNotContain("went offline");
     }
 
     // Only the home household exists in this phase, so a second one is written straight into the store.

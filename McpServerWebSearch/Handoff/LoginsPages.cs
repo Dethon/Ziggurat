@@ -56,13 +56,13 @@ public sealed class LoginsPages(OneTimeLinks links, HandoffConfiguration setting
         // Both spent at once, whatever either answers: a refused claim leaves nothing to retry.
         var mintedHere = _minted.TryRemove(token, out var minted);
         var ticket = await links.ClaimAsync(token, TicketKind);
-        if (!mintedHere || ticket is null || ticket.Id != minted.Person || minted.Until <= time.GetUtcNow())
+        if (!mintedHere || minted is null || ticket is null || ticket.Id != minted.Person || minted.Until <= time.GetUtcNow())
         {
             return null;
         }
 
         var viewKey = BrowseLinks.NewViewKey();
-        _views[viewKey] = new Grant(minted!.Person, time.GetUtcNow() + Lifetime);
+        _views[viewKey] = new Grant(minted.Person, time.GetUtcNow() + Lifetime);
         return viewKey;
     }
 

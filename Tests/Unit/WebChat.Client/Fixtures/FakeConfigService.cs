@@ -3,7 +3,7 @@ using WebChat.Client.Models;
 
 namespace Tests.Unit.WebChat.Client.Fixtures;
 
-public sealed class FakeConfigService(CallRecorder? recorder = null) : IConfigService
+public sealed class FakeConfigService : IConfigService
 {
     public AppConfig Config { get; set; } = new(null);
 

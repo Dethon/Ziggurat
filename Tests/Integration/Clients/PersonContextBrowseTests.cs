@@ -54,9 +54,9 @@ public class PersonContextBrowseTests(IsolatedSessionBrowserFixture fixture)
         {
             await BrowseAsync(sessionId, "/login", fran);
 
-            (await BrowseAsync(sessionId, "/whoami", fran)).Content.ShouldContain("session=signed-in");
-            (await BrowseAsync(sessionId, "/whoami?anon", null)).Content.ShouldNotContain("session=signed-in");
-            (await BrowseAsync(sessionId, "/whoami?ana", ana)).Content.ShouldNotContain("session=signed-in");
+            (await BrowseAsync(sessionId, "/whoami", fran)).Content.ShouldNotBeNull().ShouldContain("session=signed-in");
+            (await BrowseAsync(sessionId, "/whoami?anon", null)).Content.ShouldNotBeNull().ShouldNotContain("session=signed-in");
+            (await BrowseAsync(sessionId, "/whoami?ana", ana)).Content.ShouldNotBeNull().ShouldNotContain("session=signed-in");
         }
         finally
         {

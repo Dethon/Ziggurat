@@ -6,7 +6,6 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
-using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Security;
 using Infrastructure.Agents;
@@ -387,7 +386,7 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
     {
         var check = await server.VerifyAsync(session);
         var assertion = await server.VerifyAssertionAsync(check.Headers.GetValues(ForwardedAccount.AssertionHeader).Single());
-        return assertion.Claims.SessionId!;
+        return assertion.Claims.ShouldNotBeNull().SessionId!;
     }
 
     private static async Task<IReadOnlyList<string>> RolesOfNextTurnAsync(AccountsServer server, string userId, string sessionId)
@@ -395,7 +394,7 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         var refreshed = await RefreshAsync(server, userId, sessionId);
         refreshed.StatusCode.ShouldBe(HttpStatusCode.OK);
         var answer = (await refreshed.Content.ReadFromJsonAsync<JsonObject>())!;
-        return (await server.VerifyAssertionAsync(answer["assertion"]!.GetValue<string>())).Claims.Roles;
+        return (await server.VerifyAssertionAsync(answer["assertion"]!.GetValue<string>())).Claims.ShouldNotBeNull().Roles;
     }
 
     private static Task<HttpResponseMessage> RefreshAsync(AccountsServer server, string userId, string sessionId) =>

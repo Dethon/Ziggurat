@@ -700,8 +700,8 @@ public sealed class RedisThreadStateStore(
         // continues (ContinuesPrevious), which is cut off only if the last of it was.
         var continues = Continued(messages);
         var rest = continues
-            .GroupBy(x => x.Value, x => x.Key, ReferenceEqualityComparer.Instance)
-            .ToDictionary(g => (ChatMessage)g.Key!, g => g.ToList(), ReferenceEqualityComparer.Instance);
+            .GroupBy(x => x.Value, x => x.Key, _byReference)
+            .ToDictionary(g => g.Key, g => g.ToList(), _byReference);
 
         // Projected from the same set a badge counts, so unread never says more than the
         // transcript shows.
@@ -745,6 +745,8 @@ public sealed class RedisThreadStateStore(
     }
 
     // Each reply read after a Continue, to the reply it continues (the first of a chain of continues).
+    private static readonly IEqualityComparer<ChatMessage> _byReference = ReferenceEqualityComparer.Instance;
+
     private static Dictionary<ChatMessage, ChatMessage> Continued(IReadOnlyList<ChatMessage> messages)
     {
         var continued = new Dictionary<ChatMessage, ChatMessage>(ReferenceEqualityComparer.Instance);
@@ -793,7 +795,7 @@ public sealed class RedisThreadStateStore(
         ConversationHistory conversation, IReadOnlyList<ChatMessage> readable, List<ChatHistoryMessage> projected)
     {
         var messages = conversation.Messages;
-        var shown = readable.Index().ToDictionary(x => x.Item, x => x.Index, ReferenceEqualityComparer.Instance);
+        var shown = readable.Index().ToDictionary(x => x.Item, x => x.Index, _byReference);
         ChatHistoryMessage? noReply = null;
         foreach (var slot in conversation.Versions.Keys)
         {

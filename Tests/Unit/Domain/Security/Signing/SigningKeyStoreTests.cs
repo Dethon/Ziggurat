@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using Domain.Security.Signing;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -84,6 +85,7 @@ public sealed class SigningKeyStoreTests : IDisposable
 
     // The file is the private key.
     [SkippableFact]
+    [UnsupportedOSPlatform("windows")]
     public void TheKeyFile_IsReadableByTheIssuersUserAlone()
     {
         Skip.If(OperatingSystem.IsWindows());

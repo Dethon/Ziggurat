@@ -136,7 +136,7 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         await _relay.Registry.Find(_household, "vault")!.CloseAsync(
             System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable, "gone");
 
-        var error = ToolErrorResult.FromEnvelope(JsonNode.Parse((await answer.WaitAsync(TimeSpan.FromSeconds(10)))!.ToString()));
+        var error = ToolErrorResult.FromEnvelope(JsonNode.Parse((await answer.WaitAsync(TimeSpan.FromSeconds(10)))!.ToString()!));
         error.ShouldNotBeNull().ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         error.Message.ShouldContain("vault went offline");
     }

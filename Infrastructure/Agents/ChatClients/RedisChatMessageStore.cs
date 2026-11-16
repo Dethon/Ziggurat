@@ -46,7 +46,7 @@ public sealed class RedisChatMessageStore(
 
     // The failed turn the conversation ended on when this turn read it, by session, so the turn that
     // retries it can take its place without reading the conversation again.
-    private readonly ConditionalWeakTable<AgentSession, FailedTail> _failedTail = [];
+    private readonly ConditionalWeakTable<AgentSession, FailedTail?> _failedTail = [];
 
     // What this turn's request said of the line it was read against, by session: a reroll's message is
     // the one the line ends on, and a message whose name the line already holds elsewhere is a new one.

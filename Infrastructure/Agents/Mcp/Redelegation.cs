@@ -86,7 +86,7 @@ public sealed class Redelegation(
             var (dialled, dialFailure) = await DialAsync(server, ct);
             await using var _ = dialled;
             var (stored, listFailure) = dialled is null ? (null, null) : await ListAsync(dialled, ct);
-            if (stored is null)
+            if (dialled is null || stored is null)
             {
                 failed |= await UnreachableAsync(server.Name, dialFailure ?? listFailure);
                 continue;
