@@ -124,4 +124,32 @@ public class ChatMonitorSteeringTests
             "assistant: Steered"
         ]);
     }
+
+    // A worker runs inside its parent's tool call on options of its own, so the parent's steer never
+    // cuts the worker's loop: the worker finishes its task, and the parent's turn ends once the call
+    // that ran it returns.
+    [Fact]
+    public async Task AParentsSteer_LetsItsWorkerFinish_AndCutsTheParentAfterTheWorkersCall()
+    {
+        var dig = LocalTool.Held("dig", "dug");
+        var workerModel = new ScriptedModel([dig.Call("dig-1")], [new TextContent("The hole is dug")]);
+        var worker = new ToolLoopRun.Worker(workerModel, [dig]);
+        var model = new ScriptedModel([worker.Call("call-1", "dig a hole")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [], worker: worker);
+
+        run.Send("get it dug");
+        await dig.Started;
+        run.Send("never mind", steer: true);
+        await run.AdmittedSoFarAsync();
+        dig.Finish();
+        await run.FinishAsync();
+
+        workerModel.Requests.Count.ShouldBe(2);
+        var line = run.StoredLine();
+        line.Take(2).ShouldBe(["user: get it dug", $"assistant: call {worker.Call("call-1", "").Name}#call-1"]);
+        line[2].ShouldStartWith("tool: result call-1 = ");
+        line[2].ShouldContain("The hole is dug");
+        line.Skip(3).ShouldBe(["user: never mind", "assistant: Steered"]);
+        model.Requests.Count.ShouldBe(2);
+    }
 }
