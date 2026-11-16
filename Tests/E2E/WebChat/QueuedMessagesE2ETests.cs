@@ -101,7 +101,7 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
 
         await GotoWebChatAsync(ana, fixture.WebChatUrl);
         await SelectAgentAsync(ana);
-        var topic = $"Shared queue {tag}";
+        var topic = $"Shared {tag}";
         var bea = await beaContext.NewPageAsync();
 
         try

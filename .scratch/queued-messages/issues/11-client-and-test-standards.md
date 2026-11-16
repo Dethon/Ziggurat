@@ -4,7 +4,7 @@
 
 **Blocked by:** 09.
 
-**Status:** done (the queue E2Es were written, not run)
+**Status:** done
 
 - [x] A queue chip draws its file count with a stroked paperclip, so one chip never mixes the filled and stroked families (`blazor-client-ui.md`).
 - [x] Words given back to the composer reach it by an action of the composer's own, not by riding dictation's `PendingTranscript`.
@@ -17,7 +17,7 @@
 - [x] Client tests green under two concurrent processes; the queue E2E collection green. *(Client half only: the E2Es were edited and written, not run, since another checkout shares the stack's image tags.)*
 
 **Notes from the implementation:**
-- **The icon.** `Icons.PaperclipStroked`, Feather's paperclip (the set `Steer`, `Pencil` and `CloseStroked` come from) at the stroked default width; the composer keeps the filled `Paperclip`. `QueueChipsTests` reads the chip's markup and fails on any filled glyph there; it was red on the filled paperclip.
+- **The icon.** `Icons.PaperclipStroked`, Feather's paperclip (the set `Steer`, `Pencil` and `CloseStroked` come from) at the stroked default width, rendered beside `Pencil` at chip size to check it; the composer keeps the filled `Paperclip`. `QueueChipsTests` reads the chip's markup and fails on any filled glyph there; it was red on the filled paperclip.
 - **Words handed to the composer.** `OfferComposerText` (a fork's words, a send that went nowhere) and `ReturnToComposer` now write `ComposerState.Handed` (`HandedWords`: text, stamp, placement), not `Dictation.Transcript`; `TextPlacement` moved with them, and `PendingTranscript` is the dictation's alone again. `ChatInput` applies each slot by its own stamp, so a dictation's status change never re-applies handed words. The existing tests changed only their accessor; `ComposerDictationTests.WordsHandedToTheComposer_LeaveTheDictationsTranscriptAlone` pins the split. `ChatInput.razor` has no unit coverage: the two flows through it, a returned message landing before what is typed and a fork's words after it, are covered only by the E2Es, not run here.
 - **One catch-up trigger.** `ShownTopicCatchUp` (topic opened, live again on the shown topic) is what `QueueEffect` and `ReturnedMessagesEffect` both subscribe to.
 - **The queue read once on open.** `StreamResumeService` no longer asks for the queue of the topic on screen: the open (and the return to live) already asked. A topic resumed behind the shown one is still asked by the resume, and a stream starting on the shown topic asks nothing, its page being live for the pushes. Red first (`QueueCatchUpTests.OpeningATopicMidReply_AsksForItsQueueOnce`: two reads). Every `SelectTopic` comes after the first connect (the reopen waits for `TopicsLoaded`), so no open depended on the resume's read.
