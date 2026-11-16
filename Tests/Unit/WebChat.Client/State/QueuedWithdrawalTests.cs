@@ -103,6 +103,31 @@ public sealed class QueuedWithdrawalTests
         ]);
     }
 
+    // Several messages given back at once (a stop returns every one a person queued) land in the order
+    // they were queued, all before what is typed, beside the files the composer already held.
+    [Fact]
+    public async Task SeveralReturnedMessages_LandInTheOrderTheyWereQueued_BesideTheFilesAlreadyThere()
+    {
+        await using var client = new ScriptedChatClient();
+        await client.ConnectAsync();
+        Seed(client);
+        var held = Photo with { Id = "7-42/held", FileName = "held.png" };
+        var second = Photo with { Id = "7-42/second", FileName = "second.png" };
+        client.Dispatcher.Dispatch(new ReturnToComposer("topic-1", [new ReturnedMessage("q0", "", [held], null)]));
+
+        client.Dispatcher.Dispatch(new ReturnToComposer("topic-1",
+        [
+            new ReturnedMessage("q1", "first queued", [Photo], null),
+            new ReturnedMessage("q2", "second queued", [second], null)
+        ]));
+
+        var returned = client.Composer.State.Dictation.Transcript.ShouldNotBeNull();
+        ComposerSelectors.Place("typed", returned).ShouldBe("first queued\n\nsecond queued\n\ntyped");
+        client.Composer.State.For("topic-1").Select(file => file.Reference!.Id).ShouldBe(
+            ["7-42/held", Photo.Id, "7-42/second"]);
+        client.Composer.State.For("topic-1").ShouldAllBe(file => file.Status == AttachmentStatus.Ready);
+    }
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 
