@@ -18,7 +18,7 @@ public sealed class SessionConnections(ISessionAccounts sessions, ILogger<Sessio
     private readonly ConcurrentDictionary<string, Held> _held = new(StringComparer.Ordinal);
 
     // A connection that came with no session to ask about is never vouched for again anyway: its
-    // turns are answered signed out (ChatHub.VouchedAsync), so there is nothing here to end.
+    // turns are answered signed out (PersonTurns.VouchingAsync), so there is nothing here to end.
     public void Opened(HubCallerContext connection, ForwardedAccount account)
     {
         if (account.SessionId is { } sessionId)
