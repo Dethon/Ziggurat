@@ -5,9 +5,12 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Domain.Tools;
+using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -36,17 +39,34 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     // Every tool offered is whitelisted but those `refused`, which the channel turns down when asked —
     // the hook through which the approval client already ends a loop (FunctionInvocationContext.Terminate).
     // `sequential` runs a batch of calls one after another, as the library does with concurrency off.
+    // A `worker` is offered to the agent as the run_subagent tool, and runs as production spawns one: an
+    // agent of its own over its own approval client, sent the parent's context.
     public ToolLoopRun(
         ScriptedModel model, IReadOnlyList<LocalTool> tools, IReadOnlyList<LocalTool>? refused = null,
-        bool sequential = false)
+        bool sequential = false, Worker? worker = null)
     {
-        Channel = new FakeChannelConnection { ChannelId = ChatChannel, ApprovalAnswer = ToolApprovalResult.Rejected };
-        var agents = new ToolLoopAgents(model, tools, refused ?? [], sequential, _lines);
+        Channel = new FakeChannelConnection
+        {
+            ChannelId = ChatChannel, ApprovalAnswer = ToolApprovalResult.Rejected, ConversationIdToReturn = ConversationId
+        };
+        var agents = new ToolLoopAgents(model, tools, refused ?? [], sequential, worker, _lines);
         var monitor = new ChatMonitor(
             [Channel], agents, new ChatThreadResolver(_lines.Store), NoOpMetricsPublisher.Instance, null,
-            NullLogger<ChatMonitor>.Instance, MonitorTestMocks.Assertions);
+            NullLogger<ChatMonitor>.Instance, MonitorTestMocks.Assertions, delegations: TestDelegations.Verifier());
         _monitor = Task.Run(() => monitor.Monitor(_stop.Token));
     }
+
+    public sealed record Worker(ScriptedModel Model, IReadOnlyList<LocalTool> Tools)
+    {
+        public const string Id = "helper";
+
+        public FunctionCallContent Call(string callId, string task) => new(
+            callId, $"domain__subagents__{SubAgentRunTool.Name}",
+            new Dictionary<string, object?> { ["subAgentId"] = Id, ["prompt"] = task });
+    }
+
+    // Somebody else of the household, whose own messages are signed for them.
+    public static readonly Account OtherPerson = new(Person.TenantId, "abcdefabcdefabcdefabcdefabcdef12");
 
     public FakeChannelConnection Channel { get; }
 
@@ -54,16 +74,38 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     public IReadOnlyList<SendReplyParams> Replies =>
         [.. Channel.SentReplies.Where(r => r.TurnKey?.StartsWith(ProbePrefix, StringComparison.Ordinal) != true)];
 
-    public void Send(string text, bool steer = false) => Channel.WriteMessage(new ChannelMessage
+    public void Send(string text, bool steer = false, Account? from = null)
     {
-        ConversationId = ConversationId,
-        Content = text,
-        Sender = "Fran",
-        ChannelId = ChatChannel,
-        AgentId = AgentId,
-        Principal = new Principal(ChatChannel, Person.UserId, Person),
-        Steer = steer
-    });
+        var person = from ?? Person;
+        Channel.WriteMessage(new ChannelMessage
+        {
+            ConversationId = ConversationId,
+            Content = text,
+            Sender = person == Person ? "Fran" : "Nuria",
+            ChannelId = ChatChannel,
+            AgentId = AgentId,
+            Principal = new Principal(ChatChannel, person.UserId, person),
+            Steer = steer
+        });
+    }
+
+    // A schedule Fran wrote, firing in this conversation: its delegation holds, so it acts for her, and it
+    // is still a fire, not her turn.
+    public void Fire(string prompt)
+    {
+        var schedule = new Schedule { Id = "s-1", AgentId = AgentId, Prompt = prompt, CronExpression = "0 8 * * *" };
+        Channel.WriteUnsigned(new ChannelMessage
+        {
+            ConversationId = ConversationId,
+            Content = prompt,
+            Sender = ServiceSenders.Scheduler,
+            ChannelId = ChatChannel,
+            AgentId = AgentId,
+            ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
+            Delegation = TestDelegations.OfSchedule(Person, ChannelIds.SignalR, schedule)
+        });
+    }
 
     // Every message sent so far has been admitted, or refused: the group admits its messages one at a
     // time in the order they came, so once a message sent after them is refused, they are through. The
@@ -125,26 +167,49 @@ internal sealed class ToolLoopRun : IAsyncDisposable
 
     private sealed class ToolLoopAgents(
         IChatClient model, IReadOnlyList<LocalTool> tools, IReadOnlyList<LocalTool> refused, bool sequential,
-        InMemoryLines lines) : IAgentFactory
+        Worker? worker, InMemoryLines lines) : IAgentFactory
     {
         public Task<DisposableAgent> CreateAsync(
             AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler,
             Account? account = null, string? tenantId = null, CancellationToken ct = default, string? channelId = null)
         {
+            var workers = worker is null
+                ? []
+                : new SubAgentToolFeature(new SubAgentRegistryOptions
+                {
+                    SubAgents = [new SubAgentDefinition { Id = Worker.Id, Name = Worker.Id, McpServerEndpoints = [] }]
+                })
+                    .GetTools(new FeatureConfig(
+                        SubAgentFactory: definition => BuildWorker(definition, approvalHandler),
+                        ConversationContextProvider: () => ConversationContextMeta.Current))
+                    .ToList();
             var loop = new ToolApprovalChatClient(
-                model, approvalHandler, agentKey.ConversationId, [.. tools.Select(t => t.Tool.Name)])
+                model, approvalHandler, agentKey.ConversationId,
+                [.. tools.Select(t => t.Tool.Name).Concat(workers.Select(w => w.Name))])
             {
                 AllowConcurrentInvocation = !sequential
             };
             return Task.FromResult<DisposableAgent>(new McpAgent(
                 TestAgentSpec.Named(agentKey.ConversationId) with { AgentId = agentId ?? AgentId },
                 loop, lines.Store, NoOpMetricsPublisher.Instance, TimeProvider.System,
-                [.. tools.Concat(refused).Select(t => t.Tool)], []));
+                [.. tools.Concat(refused).Select(t => t.Tool), .. workers], []));
         }
 
+        // As production builds a worker: its own approval client over its own model, keeping no history.
         public DisposableAgent CreateSubAgent(
             SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn) =>
-            throw new NotSupportedException("no worker runs in this seam yet");
+            BuildWorker(definition, approvalHandler);
+
+        private DisposableAgent BuildWorker(SubAgentDefinition definition, IToolApprovalHandler approvalHandler)
+        {
+            var own = worker ?? throw new NotSupportedException("this run offers no worker");
+            var loop = new ToolApprovalChatClient(
+                own.Model, approvalHandler, ConversationId, [.. own.Tools.Select(t => t.Tool.Name)]);
+            return new McpAgent(
+                TestAgentSpec.Named(ConversationId) with { AgentId = definition.Id, KeepsHistory = false },
+                loop, new NullThreadStateStore(), NoOpMetricsPublisher.Instance, TimeProvider.System,
+                [.. own.Tools.Select(t => t.Tool)], []);
+        }
     }
 
     // The thread store as the history provider uses it, one list per key, read under a lock because
@@ -207,6 +272,20 @@ internal sealed class ToolLoopRun : IAsyncDisposable
 internal sealed class ScriptedModel(params IReadOnlyList<AIContent>[] steps) : IChatClient
 {
     private readonly List<IReadOnlyList<ChatMessage>> _requests = [];
+    private readonly Dictionary<int, TaskCompletionSource> _holds = [];
+
+    // The answer to call `step` is held back once the call is made, until the action returned is run:
+    // a turn still being written, with no tool boundary ahead of it.
+    public Action Hold(int step)
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_requests)
+        {
+            _holds[step] = held;
+        }
+
+        return () => held.TrySetResult();
+    }
 
     public IReadOnlyList<IReadOnlyList<ChatMessage>> Requests
     {
@@ -229,10 +308,17 @@ internal sealed class ScriptedModel(params IReadOnlyList<AIContent>[] steps) : I
     {
         await Task.Yield();
         int step;
+        TaskCompletionSource? held;
         lock (_requests)
         {
             step = _requests.Count;
             _requests.Add([.. messages]);
+            held = _holds.GetValueOrDefault(step);
+        }
+
+        if (held is not null)
+        {
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(60), cancellationToken);
         }
 
         IReadOnlyList<AIContent> said = step < steps.Length ? steps[step] : [new TextContent("Done")];

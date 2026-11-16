@@ -34,4 +34,34 @@ public class ChatMonitorSteeringTests
         ToolLoopRun.Render(model.Requests[1]).TakeLast(2)
             .ShouldBe(["tool: result call-1 = 42", "user: no, the other one"]);
     }
+
+    // The calls of one message run together, so the steer lands while some are done and some are not:
+    // the turn still ends only once every one of them has its result, or the next request is refused.
+    [Fact]
+    public async Task ASteerDuringConcurrentCalls_LeavesEveryCallItsResult()
+    {
+        var slow = LocalTool.Held("slow", "slow done");
+        var quick = LocalTool.Answering("quick", "quick done");
+        var model = new ScriptedModel(
+            [quick.Call("call-quick"), slow.Call("call-slow")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [slow, quick]);
+
+        run.Send("both");
+        await slow.Started;
+        run.Send("stop there", steer: true);
+        await run.AdmittedSoFarAsync();
+        slow.Finish();
+        await run.FinishAsync();
+
+        run.StoredLine().ShouldBe([
+            "user: both",
+            "assistant: call quick#call-quick",
+            "assistant: call slow#call-slow",
+            "tool: result call-quick = quick done",
+            "tool: result call-slow = slow done",
+            "user: stop there",
+            "assistant: Steered"
+        ]);
+        model.Requests.Count.ShouldBe(2);
+    }
 }
