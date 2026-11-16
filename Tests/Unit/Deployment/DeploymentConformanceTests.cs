@@ -987,11 +987,11 @@ public class DeploymentConformanceTests
         var compose = DeploymentFiles.Compose();
         var migration = compose.Service("household-migration");
         var defaults = new global::HouseholdMigration.MigrationSettings();
-        string Source(ComposeService service, string target) =>
+        string source(ComposeService service, string target) =>
             service.Volumes.Single(v => v.EndsWith($":{target}", StringComparison.Ordinal)).Split(':')[0];
 
-        Source(migration, "/sugary").ShouldBe(Source(compose.Service("mcp-sugary"), "/data"));
-        Source(migration, "/voices").ShouldBe(Source(DeploymentFiles.KitCompose().Service("mcp-channel-voice"), "/voices"));
+        source(migration, "/sugary").ShouldBe(source(compose.Service("mcp-sugary"), "/data"));
+        source(migration, "/voices").ShouldBe(source(DeploymentFiles.KitCompose().Service("mcp-channel-voice"), "/voices"));
         migration.Volumes.ShouldContain("./volumes/household-migration:/input:ro");
         Path.GetDirectoryName(defaults.SugaryDatabasePath).ShouldBe("/sugary");
         Path.GetFileName(defaults.SugaryDatabasePath)
