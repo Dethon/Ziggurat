@@ -49,14 +49,14 @@ public abstract record Withdrawal;
 public sealed record Withdrawn(QueuedMessage Message, IReadOnlyList<QueuedMessage> StillQueued) : Withdrawal
 {
     // The files the queue still names once this message has left it.
-    public IEnumerable<string> StillQueuedAttachments() =>
-        StillQueued.SelectMany(m => m.Message.Attachments ?? []).Select(a => a.Id);
+    public IReadOnlyList<string> StillQueuedAttachments() =>
+        [.. StillQueued.SelectMany(m => m.Message.Attachments ?? []).Select(a => a.Id)];
 }
 
 public sealed record WithdrawalRefused(string Refusal) : Withdrawal;
 
-// What steering with a queued message came to: taken out of the queue to wait for the running turn's
-// end, or why not — a withdrawal's refusals, someone else's turn, or nobody there to send it to.
+// A type apart from Withdrawal, since a steer answers nothing about what stays queued, and it can be
+// refused for more than a withdrawal: someone else's turn, or nobody there to send it to.
 public abstract record Steering;
 
 public sealed record Steered(QueuedMessage Message) : Steering;

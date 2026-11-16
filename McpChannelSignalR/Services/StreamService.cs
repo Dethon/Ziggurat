@@ -353,7 +353,7 @@ public sealed class StreamService(
 
     // A queued message its sender steers the running turn with, taken out of the queue in the same step a
     // turn's end would take it, while that turn is still their own: it waits as pending, ahead of the
-    // queue, for the running turn to end (Finish), and the caller sends it to the agent now.
+    // queue, for the running turn to end (StartSteers), and the caller sends it to the agent now.
     public Steering Steer(string topicId, string queuedId, Account by)
     {
         lock (_streamLock)

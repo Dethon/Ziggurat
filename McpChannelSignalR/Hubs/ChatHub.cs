@@ -638,7 +638,7 @@ public sealed class ChatHub(
     // queued it, as its dispatch would be: a device signed out meanwhile neither sends what it left behind
     // nor has it sent from another, and the message keeps its place. Taken out of the queue and sent in
     // one step, in the order the agent hears of turns, so no stop or queued turn's start falls between
-    // them. Its message is written on the stream when the running turn ends (StreamService.Finish).
+    // them. Its message is written on the stream when the running turn ends (StreamService.StartSteers).
     public async Task SteerQueued(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);

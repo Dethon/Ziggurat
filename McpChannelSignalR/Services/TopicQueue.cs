@@ -11,7 +11,8 @@ internal sealed class TopicQueue
 {
     public RunningQueue? Running { get; set; }
 
-    // In the order it was handed back; each sender takes only their own.
+    // One list for every sender rather than one each: a sender takes theirs out by account, in the order
+    // they were handed back, and a null account (nobody's) needs no key of its own.
     public List<QueuedMessage> Returned { get; } = [];
 
     // Kept until the topic is deleted: a message still being admitted to that stream's queue as it
