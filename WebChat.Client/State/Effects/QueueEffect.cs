@@ -50,7 +50,9 @@ public sealed class QueueEffect : IDisposable
             dispatcher.RegisterHandler<EditQueuedMessage>(a =>
                 HandleEditAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(EditQueuedMessage))),
             dispatcher.RegisterHandler<RemoveQueuedMessage>(a =>
-                HandleRemoveAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(RemoveQueuedMessage)))
+                HandleRemoveAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(RemoveQueuedMessage))),
+            dispatcher.RegisterHandler<SteerQueuedMessage>(a =>
+                HandleSteerAsync(a.TopicId, a.QueuedId).LogFaults(logger, nameof(SteerQueuedMessage)))
         ];
     }
 
@@ -83,6 +85,11 @@ public sealed class QueueEffect : IDisposable
 
     public Task HandleRemoveAsync(string topicId, string queuedId) =>
         WithdrawAsync(topicId, queuedId, () => _messagingService.RemoveQueuedAsync(topicId, queuedId));
+
+    // Sent into the running turn: the chip goes as for any message leaving the queue, and the page draws
+    // it where the hub writes it on the stream, once that turn has ended.
+    public Task HandleSteerAsync(string topicId, string queuedId) =>
+        WithdrawAsync(topicId, queuedId, () => _messagingService.SteerQueuedAsync(topicId, queuedId));
 
     private async Task<T?> WithdrawAsync<T>(string topicId, string queuedId, Func<Task<HubResult<T>>> call)
     {

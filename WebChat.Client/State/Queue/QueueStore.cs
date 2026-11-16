@@ -16,25 +16,31 @@ public record EditQueuedMessage(string TopicId, string QueuedId) : IAction;
 // The reader removes their own queued message, and the files uploaded for it, before it runs.
 public record RemoveQueuedMessage(string TopicId, string QueuedId) : IAction;
 
+// The reader steers their own running turn with their queued message: sent into it at its next tool boundary.
+public record SteerQueuedMessage(string TopicId, string QueuedId) : IAction;
+
 // The hub let go of a message this page withdrew: its chip goes now, ahead of the hub's own telling,
 // so a second press does not ask again about a message already withdrawn.
 public record QueuedMessageWithdrawn(string TopicId, string QueuedId) : IAction;
 
-// A topic's queue as the hub last told it, with the revision it was read at.
-public sealed record TopicQueue(IReadOnlyList<QueuedMessageItem> Items, long Revision);
+// A topic's queue as the hub last told it, with the revision it was read at, and whose own turn was
+// running then (by user id): the one person Steer now is offered to.
+public sealed record TopicQueue(IReadOnlyList<QueuedMessageItem> Items, long Revision, string? RunningFor = null);
 
 public sealed record QueueState(ImmutableDictionary<string, TopicQueue> ByTopic)
 {
     public static QueueState Initial => new(ImmutableDictionary<string, TopicQueue>.Empty);
 }
 
-// What a chip offers the reader: a message is withdrawn by its sender alone.
+// What a chip offers the reader: a message is withdrawn by its sender alone, and steered with only into
+// a running turn of their own.
 [Flags]
 public enum QueueChipActions
 {
     None = 0,
     Edit = 1,
-    Remove = 2
+    Remove = 2,
+    Steer = 4
 }
 
 // One queued message as the composer shows it. SenderName only for somebody else's: a page labels
@@ -55,8 +61,13 @@ public static class QueueSelectors
                 item.FileCount,
                 item.SenderId == readerId ? null : item.SenderName,
                 item.SenderId == readerId,
-                item.SenderId == readerId ? QueueChipActions.Edit | QueueChipActions.Remove : QueueChipActions.None))]
+                ActionsOn(item, queue, readerId)))]
             : [];
+
+    private static QueueChipActions ActionsOn(QueuedMessageItem item, TopicQueue queue, string? readerId) =>
+        item.SenderId != readerId ? QueueChipActions.None
+        : queue.RunningFor == readerId ? QueueChipActions.Edit | QueueChipActions.Remove | QueueChipActions.Steer
+        : QueueChipActions.Edit | QueueChipActions.Remove;
 }
 
 public sealed class QueueStore : IDisposable
@@ -79,7 +90,10 @@ public sealed class QueueStore : IDisposable
     {
         QueueChanged { Notification: var told }
             when !state.ByTopic.TryGetValue(told.TopicId, out var shown) || told.Revision > shown.Revision =>
-            state with { ByTopic = state.ByTopic.SetItem(told.TopicId, new TopicQueue(told.Items, told.Revision)) },
+            state with
+            {
+                ByTopic = state.ByTopic.SetItem(told.TopicId, new TopicQueue(told.Items, told.Revision, told.RunningFor))
+            },
         QueuedMessageWithdrawn { TopicId: var topicId, QueuedId: var queuedId }
             when state.ByTopic.TryGetValue(topicId, out var shown) =>
             state with

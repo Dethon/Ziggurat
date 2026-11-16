@@ -29,5 +29,6 @@ public interface IChatMessagingService
     Task<HubResult<QueueChangedNotification>> GetQueueAsync(string topicId);
     Task<HubResult<Nothing>> RemoveQueuedAsync(string topicId, string queuedId);
     Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId);
+    Task<HubResult<Nothing>> SteerQueuedAsync(string topicId, string queuedId);
     Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId);
 }

@@ -46,6 +46,9 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
     public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
         liveConnection.InvokeAsync<ReturnedMessage>("TakeBackQueued", topicId, queuedId);
 
+    public Task<HubResult<Nothing>> SteerQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync("SteerQueued", topicId, queuedId);
+
     public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId) =>
         liveConnection.InvokeAsync<IReadOnlyList<ReturnedMessage>>("TakeReturned", topicId);
 }

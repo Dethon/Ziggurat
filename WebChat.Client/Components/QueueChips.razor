@@ -28,6 +28,14 @@
         }
     }
 
+    private void Steer(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new SteerQueuedMessage(TopicId, chip.Id));
+        }
+    }
+
     private void Remove(QueueChip chip)
     {
         if (TopicId is not null)
@@ -57,6 +65,14 @@
                         <Icon Glyph="Icons.Paperclip" Size="12" />
                         @chip.FileCount
                     </span>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Steer))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-steer"
+                            title="Steer now" aria-label="Send this message into the running reply now"
+                            @onclick="() => Steer(chip)">
+                        <Icon Glyph="Icons.Steer" Size="14" />
+                    </button>
                 }
                 @if (chip.Actions.HasFlag(QueueChipActions.Edit))
                 {
