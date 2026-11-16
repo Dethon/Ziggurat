@@ -503,6 +503,34 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await marta.TakeReturned(TopicId)).ShouldBeEmpty();
     }
 
+    // A refused turn is ended by the agent as an error and then a stream's end: one turn over, not two,
+    // so each queued message still runs, one after the other.
+    [Fact]
+    public async Task ATurnEndedByAnErrorThenAStreamEnd_StillRunsEachQueuedMessage()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = "refused", ContentType = ReplyContentType.Error, IsComplete = true
+        });
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true
+        });
+        await AgentWasSentAsync("second");
+        await FinishTurnAsync("answer two");
+        await AgentWasSentAsync("third");
+        await FinishTurnAsync("answer three");
+
+        await wire.Ended;
+        Sent().ShouldBe(["first", "second", "third"]);
+    }
+
     [Fact]
     public async Task ARemovedMessage_LeavesTheQueue_AndNeverRuns()
     {

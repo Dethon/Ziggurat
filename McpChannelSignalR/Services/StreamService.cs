@@ -28,9 +28,10 @@ public sealed class StreamService(
     private readonly Dictionary<string, List<QueuedMessage>> _queues = new();
     private readonly Dictionary<string, long> _streamIds = new();
 
-    // A queue's head taken as the turn before it ended, until the dispatcher writes it on the stream:
-    // not started yet, so a stop meanwhile returns it with the rest.
-    private readonly Dictionary<string, QueuedMessage> _dispatching = new();
+    // Queue heads taken as the turn before them ended, until the dispatcher writes each on the stream:
+    // not started yet, so a stop meanwhile returns them with the rest. Several at once when one turn's
+    // end is reported twice (an error, then the stream's end).
+    private readonly Dictionary<string, List<QueuedMessage>> _dispatching = new();
     private long _lastStreamId;
 
     // What a stop handed back to each sender and no page of theirs has taken yet, in the order it was
@@ -257,8 +258,7 @@ public sealed class StreamService(
             var topicId = turn.Message.Sender.TopicId;
             return IsRunning(topicId, turn.Stream)
                    && _dispatching.TryGetValue(topicId, out var dispatching)
-                   && dispatching.Id == turn.Message.Id
-                   && _dispatching.Remove(topicId);
+                   && dispatching.RemoveAll(m => m.Id == turn.Message.Id) > 0;
         }
     }
 
@@ -428,7 +428,12 @@ public sealed class StreamService(
 
         var head = queue[0];
         queue.RemoveAt(0);
-        _dispatching[topicId] = head;
+        if (!_dispatching.TryGetValue(topicId, out var dispatching))
+        {
+            _dispatching[topicId] = dispatching = [];
+        }
+
+        dispatching.Add(head);
         _queueRevision++;
         return new QueuedTurn(head, stream);
     }
@@ -484,7 +489,7 @@ public sealed class StreamService(
         {
             IReadOnlyList<QueuedMessage> stopped =
             [
-                .. _dispatching.TryGetValue(topicId, out var dispatching) ? [dispatching] : Array.Empty<QueuedMessage>(),
+                .. _dispatching.GetValueOrDefault(topicId) ?? [],
                 .. _queues.GetValueOrDefault(topicId) ?? []
             ];
             stopped
