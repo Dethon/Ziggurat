@@ -44,6 +44,41 @@ public sealed class ReturnedMessagesTests
             call.MethodName == "TakeReturned" && call.Arguments.SequenceEqual(new object?[] { "topic-1" }));
     }
 
+    // Another topic's composer is no place for them, and taking them there would hand them to the wrong
+    // conversation: they wait at the hub until the topic is opened, here or on another device.
+    [Fact]
+    public async Task ToldWhileShowingAnotherTopic_TakesNothing_UntilThatTopicIsOpened()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetHistory"));
+        var asked = new List<object?>();
+        transport.Answer("TakeReturned", args =>
+        {
+            lock (asked)
+            {
+                asked.Add(args[0]);
+            }
+
+            return (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on one", [], null)];
+        });
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
+        await Eventually.Settle();
+        lock (asked)
+        {
+            asked.ShouldNotContain("topic-1");
+        }
+
+        client.Composer.State.Dictation.Transcript.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await TestChat.Eventually(() => client.Composer.State.Dictation.Transcript is not null);
+        ComposerSelectors.Place("", client.Composer.State.Dictation.Transcript!).ShouldBe("queued on one");
+    }
+
     private static void Seed(ScriptedChatClient client, string open)
     {
         client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));

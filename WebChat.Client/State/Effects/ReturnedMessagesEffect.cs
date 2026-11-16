@@ -18,6 +18,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly IChatMessagingService _messagingService;
     private readonly ILogger<ReturnedMessagesEffect> _logger;
     private readonly IDisposable _returned;
+    private readonly IDisposable _opened;
 
     public ReturnedMessagesEffect(
         Dispatcher dispatcher, TopicsStore topics, IChatMessagingService messagingService,
@@ -32,6 +33,15 @@ public sealed class ReturnedMessagesEffect : IDisposable
             if (_topics.State.SelectedTopicId == a.TopicId)
             {
                 TakeAsync(a.TopicId).LogFaults(_logger, nameof(QueueReturned));
+            }
+        });
+
+        // A page that was not showing the topic when told, or had none open, finds them as it opens it.
+        _opened = dispatcher.RegisterHandler<SelectTopic>(a =>
+        {
+            if (a.TopicId is { } topicId)
+            {
+                TakeAsync(topicId).LogFaults(_logger, nameof(SelectTopic));
             }
         });
     }
@@ -56,5 +66,9 @@ public sealed class ReturnedMessagesEffect : IDisposable
         }
     }
 
-    public void Dispose() => _returned.Dispose();
+    public void Dispose()
+    {
+        _returned.Dispose();
+        _opened.Dispose();
+    }
 }
