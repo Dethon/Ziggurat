@@ -634,6 +634,12 @@ public sealed class ChatHub(
     public async Task<ReturnedMessage> TakeBackQueued(string topicId, string queuedId) =>
         (await WithdrawAsync(topicId, queuedId)).Message!.ToReturned();
 
+    // The caller's messages a stop handed back on this topic, in the order they were queued, for their
+    // composer: taken once, so they land on whichever of the person's pages asks first.
+    public Task<IReadOnlyList<ReturnedMessage>> TakeReturned(string topicId) =>
+        Task.FromResult<IReadOnlyList<ReturnedMessage>>(
+            [.. streamService.TakeReturned(topicId, SignedIn.Account).Select(m => m.ToReturned())]);
+
     private async Task<Withdrawal> WithdrawAsync(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
@@ -749,13 +755,13 @@ public sealed class ChatHub(
             });
         }
 
-        // Stopping the stream empties its queue, so nothing queued is later sent into a stream that
-        // was stopped. Ticket 06 gives those messages back to their senders instead.
-        var queued = streamService.QueueOf(topicId).Messages.Count > 0;
-        streamService.CancelStream(topicId);
-        if (queued && session is not null)
+        // Nothing queued for a reply somebody abandoned runs after it: each message goes back to the
+        // person who queued it. Starting the next one instead would race the agent's teardown, which
+        // drops whatever arrives behind a cancel.
+        var returned = streamService.Stop(topicId);
+        if (returned.Count > 0)
         {
-            await _queueNews.TellAsync(SenderOf(topicId, session));
+            await _queueNews.TellAsync(returned[0].Sender);
         }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it

@@ -356,13 +356,18 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         shown.Where(s => s.StartsWith("marta")).ShouldBe(Enumerable.Range(1, 5).Select(n => $"marta {n}"));
     }
 
+    // Stop empties the queue: nothing queued for a reply someone abandoned runs, and each message goes
+    // back to the person who queued it, theirs alone, in the order they queued them.
     [Fact]
-    public async Task Stopping_EmptiesTheQueue_SoNothingQueuedIsSentAfterwards()
+    public async Task Stopping_HoldsEachSendersQueuedMessagesForThem_InQueueOrder_AndRunsNothingFurther()
     {
         var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
         var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
         await AgentWasSentAsync("first");
-        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "fran one", "c-3", null, [Photo])).ShouldBeTrue();
+        (await marta.EnqueueMessage(TopicId, "marta two", "c-4", null)).ShouldBeTrue();
 
         await fran.CancelTopic(TopicId);
         await wire.Ended;
@@ -371,6 +376,10 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         Sent().ShouldBe(["first"]);
         (await fran.GetQueue(TopicId)).ShouldBeEmpty();
+        var frans = await fran.TakeReturned(TopicId);
+        frans.Select(m => m.Content).ShouldBe(["fran one"]);
+        frans[0].Attachments.ShouldBe([Photo]);
+        (await marta.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["marta one", "marta two"]);
     }
 
     [Fact]

@@ -29,6 +29,11 @@ public sealed class StreamService(
     private readonly Dictionary<string, long> _streamIds = new();
     private long _lastStreamId;
 
+    // What a stop handed back to each sender and no page of theirs has taken yet, in the order it was
+    // queued. Kept past the stream it was queued on, under _streamLock, until taken or the topic is
+    // deleted: a sender with no page open finds it the next time they open the topic.
+    private readonly Dictionary<(string TopicId, Account? Sender), List<QueuedMessage>> _returned = new();
+
     // Numbered from the clock rather than from one, so a page that heard this process's predecessor
     // does not take a restarted hub's changes for older ones.
     private long _queueRevision = DateTimeOffset.UtcNow.UtcTicks;
@@ -448,6 +453,42 @@ public sealed class StreamService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Failed to send push notification for space {SpaceSlug}", spaceSlug);
+        }
+    }
+
+    // A person's stop: the turn and the stream cancelled as any cancel, and what waited behind it
+    // handed back to whoever queued it rather than run after a reply somebody abandoned. Answers the
+    // messages handed back, in queue order.
+    public IReadOnlyList<QueuedMessage> Stop(string topicId)
+    {
+        lock (_streamLock)
+        {
+            IReadOnlyList<QueuedMessage> stopped = _queues.TryGetValue(topicId, out var queue) ? [.. queue] : [];
+            stopped
+                .GroupBy(m => m.Sender.Principal.Account)
+                .ToList()
+                .ForEach(sender => ReturnedTo(topicId, sender.Key).AddRange(sender));
+            CancelStream(topicId);
+            return stopped;
+        }
+    }
+
+    private List<QueuedMessage> ReturnedTo(string topicId, Account? sender)
+    {
+        if (!_returned.TryGetValue((topicId, sender), out var returned))
+        {
+            _returned[(topicId, sender)] = returned = [];
+        }
+
+        return returned;
+    }
+
+    // A sender's returned messages on a topic, handed over once: whichever of their pages asks first.
+    public IReadOnlyList<QueuedMessage> TakeReturned(string topicId, Account by)
+    {
+        lock (_streamLock)
+        {
+            return _returned.Remove((topicId, by), out var returned) ? returned : [];
         }
     }
 
