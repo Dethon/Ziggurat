@@ -1,4 +1,5 @@
 using Domain.DTOs.WebChat;
+using McpChannelSignalR.Internal;
 
 namespace McpChannelSignalR.Services;
 
@@ -29,6 +30,9 @@ public enum Queueing
 // The head of a queue, taken as the turn before it ended, on the stream it was taken from: a stream
 // stopped or replaced while its dispatch was being vouched for is not the one to write it on.
 public sealed record QueuedTurn(QueuedMessage Message, StreamKey Stream);
+
+// A topic whose queue changed with no hub call in hand, with the session its pages are found by.
+public sealed record QueueChange(string TopicId, ChannelSession Session);
 
 // One stream of a topic's, as opposed to the one opened after it: a place held, a head taken or a stop
 // names the stream it happened on, so nothing it leaves behind lands on another.

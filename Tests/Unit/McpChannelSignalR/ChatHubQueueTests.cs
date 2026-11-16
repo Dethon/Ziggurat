@@ -11,10 +11,12 @@ using Domain.Security;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
+using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -1419,6 +1421,41 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             "user: steer me", "agent: answer to the steer"
         ]);
     }
+
+    // A schedule's turn attaching to the topic while the person's own turn runs makes the running turn
+    // nobody's to steer, and every page is told at once: a page still offering Steer now would only be
+    // refused for it.
+    [Fact]
+    public async Task AFireAttachingMidTurn_TellsThePagesTheRunningTurnIsNobodysToSteer()
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        var before = await fran.GetQueue(TopicId);
+        before.RunningFor.ShouldBe("fran");
+        var told = TellsOfTheQueue();
+
+        await CreateConversationTool.McpRun(
+            "jack", "", "scheduler", ToolServices(), initialPrompt: "summarize my mail",
+            existingConversationId: ConversationId);
+
+        await Eventually.Until(
+            () => Snapshot(told).Any(t => t.Notification.Revision > before.Revision && t.Notification.RunningFor is null),
+            "the pages are told nobody's own turn runs");
+        Latest(told).Items.Select(i => i.Content).ShouldBe(["steer me"]);
+        await FinishTurnAsync("done");
+    }
+
+    // What create_conversation reads off the server's services, over this hub's own.
+    private ServiceProvider ToolServices() =>
+        new ServiceCollection()
+            .AddSingleton(_sessionService)
+            .AddSingleton(_streamService)
+            .AddSingleton(_store.Object)
+            .AddSingleton(_sender.Object)
+            .BuildServiceProvider();
 
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;

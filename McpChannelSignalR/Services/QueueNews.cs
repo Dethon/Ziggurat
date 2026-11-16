@@ -13,26 +13,34 @@ public sealed class QueueNews(
     IHubNotificationSender hubSender,
     ILogger<QueueNews> logger)
 {
-    public async Task TellAsync(SenderSnapshot of)
-    {
-        var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
-            of.AgentId, of.Conversation.ChatId, of.Conversation.ThreadId);
-        var queue = streamService.QueueOf(of.TopicId);
-        await hubSender.SendToTopicAsync(
-            topic, of.SpaceSlug, "OnQueueChanged", queue.ToNotification(of.TopicId, of.SpaceSlug));
-    }
+    public Task TellAsync(SenderSnapshot of) =>
+        TellAsync(of.TopicId, of.AgentId, of.Conversation.ChatId, of.Conversation.ThreadId, of.SpaceSlug);
 
     // For a change already made, which a failed telling must not undo or fail: a turn dispatched, a
     // message withdrawn. The pages catch up on the queue as they open the topic.
-    public async Task TellOrLogAsync(SenderSnapshot of)
+    public Task TellOrLogAsync(SenderSnapshot of) => OrLogAsync(of.TopicId, () => TellAsync(of));
+
+    public Task TellOrLogAsync(QueueChange change) =>
+        OrLogAsync(change.TopicId, () => TellAsync(
+            change.TopicId, change.Session.AgentId, change.Session.ChatId, change.Session.ThreadId,
+            change.Session.SpaceSlug ?? SpaceConfig.DefaultSlug));
+
+    private async Task TellAsync(string topicId, string agentId, long chatId, long threadId, string spaceSlug)
+    {
+        var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
+        var queue = streamService.QueueOf(topicId);
+        await hubSender.SendToTopicAsync(topic, spaceSlug, "OnQueueChanged", queue.ToNotification(topicId, spaceSlug));
+    }
+
+    private async Task OrLogAsync(string topicId, Func<Task> tell)
     {
         try
         {
-            await TellAsync(of);
+            await tell();
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", of.TopicId);
+            logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", topicId);
         }
     }
 

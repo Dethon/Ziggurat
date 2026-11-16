@@ -15,7 +15,10 @@ public sealed class QueueDispatcher(
     QueueNews news,
     ILogger<QueueDispatcher> logger) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        Task.WhenAll(DispatchAllAsync(stoppingToken), TellAllAsync(stoppingToken));
+
+    private async Task DispatchAllAsync(CancellationToken stoppingToken)
     {
         try
         {
@@ -23,6 +26,22 @@ public sealed class QueueDispatcher(
             {
                 // Each on its own: one topic's sender being vouched for holds up no other topic's.
                 _ = DispatchAsync(turn);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    // A queue the stream service changed with no hub call in hand, told to the topic's pages. Each on its
+    // own, as a dispatch is: the pages keep the later revision whichever lands last.
+    private async Task TellAllAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await foreach (var change in streamService.QueueChanges.ReadAllAsync(stoppingToken))
+            {
+                _ = news.TellOrLogAsync(change);
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

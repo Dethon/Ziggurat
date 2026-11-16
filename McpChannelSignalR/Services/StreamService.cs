@@ -41,6 +41,12 @@ public sealed class StreamService(
     private readonly Channel<QueuedTurn> _dispatches = Channel.CreateUnbounded<QueuedTurn>(
         new UnboundedChannelOptions { SingleReader = true });
 
+    // A queue changed where no hub call is in hand — a fire attaching to the topic mid-turn — for the
+    // dispatcher to tell the topic's pages, as it tells a head's start, and for the same reason: the
+    // stream service writes, it never tells.
+    private readonly Channel<QueueChange> _queueChanges = Channel.CreateUnbounded<QueueChange>(
+        new UnboundedChannelOptions { SingleReader = true });
+
     // Bumped whenever who may see a topic changes (its owner shares it or stops), so a reply streaming
     // to a page asks again whether that page's person still may, and only then.
     private readonly ConcurrentDictionary<string, int> _audiences = new();
@@ -149,9 +155,13 @@ public sealed class StreamService(
     {
         lock (_streamLock)
         {
-            if (RunningOf(topicId) is { } running)
+            // A turn an agent started (a fire attaching mid-turn) is nobody's to steer, and a page still
+            // offering Steer now would only be refused.
+            if (RunningOf(topicId) is { RunningFor: not null } running)
             {
                 running.RunningFor = null;
+                _queueRevision++;
+                QueueChanged(topicId);
             }
 
             if (_responseChannels.TryGetValue(topicId, out var existingChannel))
@@ -395,6 +405,17 @@ public sealed class StreamService(
     }
 
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
+
+    public ChannelReader<QueueChange> QueueChanges => _queueChanges.Reader;
+
+    // A topic with no live session has no page to tell.
+    private void QueueChanged(string topicId)
+    {
+        if (sessionService.TryGetSession(topicId, out var session) && session is not null)
+        {
+            _queueChanges.Writer.TryWrite(new QueueChange(topicId, session));
+        }
+    }
 
     // A dispatched head's turn starting, sent by start while nothing stopped its stream since it was
     // taken: from then on a stop cancels it as the stream's current turn. False, with nothing sent,
@@ -850,6 +871,7 @@ public sealed class StreamService(
 
         _disposed = true;
         _dispatches.Writer.TryComplete();
+        _queueChanges.Writer.TryComplete();
 
         foreach (var channel in _responseChannels.Values)
         {

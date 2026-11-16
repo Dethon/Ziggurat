@@ -4,7 +4,7 @@
 
 **Blocked by:** 10, 11.
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 - [ ] **Stop just after the agent started a steer.** The steer must be either returned or stored, never both: the stop's cancel tells the agent which turn keys it returned, and the agent keeps no stored turn under a returned key (agent + hub seams).
 - [ ] **A steer is visible while it waits.** Between Steer now and the running turn's end, the steered message shows as a chip marked as steering, with no Edit or Remove, on every page of the topic, until it is drawn (hub push + client).
