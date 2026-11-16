@@ -276,6 +276,49 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Who hears of the queue is asked as each change is told, so sharing or unsharing the topic while
+    // its reply runs moves the queue's news as it moves the stream's.
+    [Fact]
+    public async Task TheQueue_IsToldToTheAudienceTheTopicHasAsItChanges_ShareAndUnshareIncluded()
+    {
+        GivenTheTopic(owner: "fran", shared: false);
+        _store.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>(), It.IsAny<bool>()))
+            .Callback((TopicMetadata saved, bool _) => GivenTheTopic(owner: "fran", shared: saved.Shared))
+            .Returns(Task.CompletedTask);
+        var told = TellsOfTheQueue();
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        string[] privately = ["space:home:default:sees-all", "space:home:default:user:fran"];
+
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        GroupsToldLast(told).ShouldBe(privately);
+
+        await ShareAsync(fran, shared: true);
+        (await fran.EnqueueMessage(TopicId, "third", "c-3", null)).ShouldBeTrue();
+        GroupsToldLast(told).ShouldBe(["space:home:default"]);
+
+        await ShareAsync(fran, shared: false);
+        (await fran.EnqueueMessage(TopicId, "fourth", "c-4", null)).ShouldBeTrue();
+        GroupsToldLast(told).ShouldBe(privately);
+
+        foreach (var (answer, next) in new[] { ("one", "second"), ("two", "third"), ("three", "fourth") })
+        {
+            await FinishTurnAsync($"answer {answer}");
+            await AgentWasSentAsync(next);
+        }
+
+        await FinishTurnAsync("answer four");
+        await wire.Ended;
+    }
+
+    private async Task ShareAsync(ChatHub owner, bool shared)
+    {
+        _store.Setup(s => s.GetTopicAsync("home", "jack", 7, TopicId))
+            .ReturnsAsync(await _store.Object.GetTopicByChatIdAndThreadIdAsync("jack", 7, 42));
+        await owner.SetTopicShared("jack", 7, TopicId, shared);
+    }
+
     // A private topic's queue is read by whoever sees the topic, and to anyone else there is no such
     // conversation: not even that something waits in it.
     [Fact]
@@ -1120,6 +1163,15 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         lock (told)
         {
             return told.Select(t => t.Notification).MaxBy(n => n.Revision)!;
+        }
+    }
+
+    private static IReadOnlyList<string> GroupsToldLast(List<(string Group, QueueChangedNotification Notification)> told)
+    {
+        var latest = Latest(told).Revision;
+        lock (told)
+        {
+            return [.. told.Where(t => t.Notification.Revision == latest).Select(t => t.Group).Order()];
         }
     }
 
