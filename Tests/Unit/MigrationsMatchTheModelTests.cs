@@ -5,11 +5,9 @@ using Shouldly;
 
 namespace Tests.Unit;
 
-// A model change that no migration carries. EF asks this on every MigrateAsync and throws on a
-// difference, which made every test that boots the accounts service ask it again — a model diff per
-// test, the largest single cost in the suite's CPU once the routes were generated. The fixtures that
-// boot a server per test copy a store migrated once and skip the question
-// (AccountsServer.FromTemplate); it is asked here instead, once per store.
+// A model change that no migration carries. EF's migrator asks this on every MigrateAsync, applied or
+// not, so the services migrate only when a migration is pending (AccountsDatabase, SugaryDatabase) and
+// a start on a current store never asks: it is asked here instead, once per store.
 public class MigrationsMatchTheModelTests
 {
     [Fact]

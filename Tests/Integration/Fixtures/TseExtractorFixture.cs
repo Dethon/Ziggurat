@@ -28,6 +28,7 @@ public class TseExtractorFixture : IAsyncLifetime
     public const string EnrolledSpeaker = "test-speaker";
 
     private IContainer? _container;
+    private HostMountDirectory? _mount;
     private string? _voicesDir;
 
     public string? SkipReason { get; private set; }
@@ -44,7 +45,8 @@ public class TseExtractorFixture : IAsyncLifetime
             return;
         }
 
-        _voicesDir = Path.Combine(Path.GetTempPath(), $"tse-voices-{Guid.NewGuid():N}");
+        _mount = HostMountDirectory.Claim("tse-voices");
+        _voicesDir = _mount.Path;
         var speakerDir = Path.Combine(_voicesDir, EnrolledSpeaker);
         Directory.CreateDirectory(speakerDir);
         await File.WriteAllBytesAsync(Path.Combine(speakerDir, "enroll-01.wav"), SyntheticEnrollmentWav());
@@ -145,11 +147,6 @@ public class TseExtractorFixture : IAsyncLifetime
         {
             await _container.DisposeAsync();
         }
-        if (_voicesDir is not null && Directory.Exists(_voicesDir))
-        {
-            try
-            { Directory.Delete(_voicesDir, recursive: true); }
-            catch { /* best effort — container teardown may briefly hold handles */ }
-        }
+        _mount?.Dispose();
     }
 }

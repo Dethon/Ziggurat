@@ -21,7 +21,7 @@ paths:
 
 ## The store
 
-EF Core on SQLite in `./volumes/accounts` (owned by PUID/PGID through the `accounts-volume` one-shot, as Sugary's is), migrated and the home household seeded by a hosted service before the first request, and by every command before it runs — the operator's first command may come before the service ever started. **Nothing in the model or the migrations names SQLite**, so a hosted database is a provider swap:
+EF Core on SQLite in `./volumes/accounts` (owned by PUID/PGID through the `accounts-volume` one-shot, as Sugary's is), migrated and the home household seeded by a hosted service before the first request, and by every command before it runs — the operator's first command may come before the service ever started. It is migrated only when a migration is pending (`GetPendingMigrationsAsync`), as Sugary's store is: EF's migrator diffs the design-time model on every call, so a start on a current store would pay a model diff for nothing — a model change no migration carries is `MigrationsMatchTheModelTests`' to catch. **Nothing in the model or the migrations names SQLite**, so a hosted database is a provider swap:
 
 - Keys are opaque generated strings (`Tokens.NewId`, 32 lowercase hex: no `:` to break a composite key elsewhere), never a name and never a generated integer, so no `Sqlite:Autoincrement`. Key columns carry a max length, which an indexable key needs on other providers.
 - Instants are `DateTimeOffset` converted to UTC `DateTime` (`ConfigureConventions`), enums are strings, no raw SQL, no JSON columns.

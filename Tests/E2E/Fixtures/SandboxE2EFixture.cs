@@ -35,6 +35,8 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
 
     public string McpEndpoint { get; private set; } = "";
 
+    private HostMountDirectory? _mount;
+
     // The host side of the container's persistent workspace, so a test can look at the file the
     // container wrote where the volume — not the container's own layer — keeps it.
     public string WorkspaceOnHost { get; private set; } = "";
@@ -64,8 +66,8 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             await TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSandbox, ct);
         });
 
-        WorkspaceOnHost = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-home-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(WorkspaceOnHost);
+        _mount = HostMountDirectory.Claim("mcp-sandbox-home");
+        WorkspaceOnHost = _mount.Path;
 
         // The agent's bridge endpoint, hosted here over whatever registry a test mints a call
         // against: the container reaches it through the host gateway, as compose's sandbox reaches
@@ -152,17 +154,7 @@ public sealed class SandboxE2EFixture : IAsyncLifetime
             await _bridgeHost.DisposeAsync();
         }
 
-        try
-        {
-            if (Directory.Exists(WorkspaceOnHost))
-            {
-                Directory.Delete(WorkspaceOnHost, true);
-            }
-        }
-        catch (IOException)
-        {
-            // A leftover temp directory is not a failing test.
-        }
+        _mount?.Dispose();
     }
 
     // The sandbox's HomeDir setting, which its appsettings ships and compose gives a volume. The

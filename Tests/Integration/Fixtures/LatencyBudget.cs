@@ -15,8 +15,8 @@ internal static class LatencyBudget
 {
     // Five rather than three: with a second suite running beside this one, the fastest of three still
     // carried enough of the host's noise to eat a hundred of a 200 ms structural margin. The timing
-    // collection runs beside the E2E chains, well off the run's end, so the extra readings cost it
-    // nothing that shows.
+    // collection is serial and ends with the run's other long chains, so every reading added here
+    // adds to the run's length: add a claim's attempts here only when it cannot be read once.
     private const int Attempts = 5;
 
     internal static async Task<long> FastestAsync(Func<Task<long>> attempt)

@@ -10,6 +10,7 @@ public class JackettFixture : IAsyncLifetime
     private const string TestApiKey = "integrationtestapikey123";
 
     private IContainer _container = null!;
+    private HostMountDirectory? _mount;
     private string? _configDir;
 
     private string ApiUrl { get; set; } = null!;
@@ -17,8 +18,8 @@ public class JackettFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _configDir = Path.Combine(Path.GetTempPath(), $"jackett-test-{Guid.NewGuid()}");
-        Directory.CreateDirectory(_configDir);
+        _mount = HostMountDirectory.Claim("jackett-test");
+        _configDir = _mount.Path;
 
         var serverConfig = $$"""
                              {
@@ -85,14 +86,6 @@ public class JackettFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _container.DisposeAsync();
-        if (_configDir != null && Directory.Exists(_configDir))
-        {
-            try
-            { Directory.Delete(_configDir, true); }
-            catch
-            {
-                /* ignore */
-            }
-        }
+        _mount?.Dispose();
     }
 }

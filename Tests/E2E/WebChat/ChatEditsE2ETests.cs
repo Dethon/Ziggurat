@@ -6,8 +6,10 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 namespace Tests.E2E.WebChat;
 
 // Rewriting a conversation from its page against the stack's real model: acted on straight after a
-// reply streamed, with no reload, since that is when a person reaches for it.
-[Collection(WebChatE2ECollections.Conversation)]
+// reply streamed, with no reload, since that is when a person reaches for it. A collection of its own:
+// its turns are the provider's seconds, and queued behind the chat's other real-model turns they were
+// the run's longest chain by forty seconds.
+[Collection(WebChatE2ECollections.Rewrites)]
 [Trait("Category", "E2E")]
 public class ChatEditsE2ETests(WebChatE2EFixture fixture)
 {
@@ -167,13 +169,36 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         var before = (await reply.Locator(".message-content").InnerTextAsync()).Length;
 
         await ChooseAsync(reply, "Continue");
-        await Assertions.Expect(page.Locator("[data-testid=composer-cancel]")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        await Assertions.Expect(stop).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+
+        // Grown past what was kept is the claim; the rest of a very long story is the provider's half
+        // minute, not the test's, so the continuation is stopped once it has added to the bubble.
+        await GrowsPastAsync(Replies(page).Last.Locator(".message-content"), before);
+        if (await stop.IsVisibleAsync())
+        {
+            await ClickThroughApprovalsAsync(page, stop);
+        }
+
         await IdleAsync(page);
 
         await Assertions.Expect(Replies(page)).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
         await Assertions.Expect(page.Locator(".chat-message.user")).ToHaveCountAsync(1);
         var after = (await Replies(page).Last.Locator(".message-content").InnerTextAsync()).Length;
         after.ShouldBeGreaterThan(before);
+    }
+
+    private static async Task GrowsPastAsync(ILocator content, int length)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        while ((await content.InnerTextAsync()).Length <= length)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"The continued reply never grew past its {length} kept characters in 2 minutes.");
+            }
+
+            await content.Page.WaitForTimeoutAsync(250);
+        }
     }
 
     private async Task<IPage> OpenAsync()

@@ -33,7 +33,7 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
     private const int BridgeBackCall = 7801;
 
     private readonly string _keyDirectory = Path.Combine(Path.GetTempPath(), "tunnel-tests", Guid.NewGuid().ToString("N"));
-    private readonly string _workspace = Path.Combine(Path.GetTempPath(), $"mcp-sandbox-home-{Guid.NewGuid():N}");
+    private readonly HostMountDirectory _mount = HostMountDirectory.Claim("mcp-sandbox-home");
     private AccountsServer? _accounts;
     private RelayHost? _relay;
     private SigningKeyStore _keys = null!;
@@ -63,9 +63,8 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
         _relay = await RelayHost.StartAsync(
             _accounts, AgentCredential, redis.ConnectionString, _keys, new RecordingMetricsPublisher(), on: IPAddress.Any);
 
-        Directory.CreateDirectory(_workspace);
         _sandbox = TestContainers.Container(E2EImages.McpSandbox.ImageName, "mcp-sandbox-tunnelled")
-            .WithBindMount(_workspace, SandboxE2EFixture.ContainerWorkspace, AccessMode.ReadWrite)
+            .WithBindMount(_mount.Path, SandboxE2EFixture.ContainerWorkspace, AccessMode.ReadWrite)
             .AsCompose()
             .WithExtraHost("host.docker.internal", "host-gateway")
             .WithEnvironment("MCP__TUNNEL__HUB", _relay.HubFromContainers)
@@ -95,7 +94,8 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
             await _accounts.DisposeAsync();
         }
 
-        foreach (var directory in new[] { _keyDirectory, _workspace }.Where(Directory.Exists))
+        _mount.Dispose();
+        foreach (var directory in new[] { _keyDirectory }.Where(Directory.Exists))
         {
             try
             {

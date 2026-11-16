@@ -69,6 +69,15 @@ for this, and each shape below is one that has already failed here.
   both edges: asking only whether a window has closed is answered instantly by one that has not
   opened yet.
 
+## Containers
+
+- A container's bind mount comes from `HostMountDirectory.Claim(name)`, never a fresh temp
+  directory. Docker Desktop on WSL keeps a staging mount for every source path it has seen, for
+  good, and each one makes every later container start slower, so a new path per test slows every
+  run after it. A stable path reuses its staging. A container that writes its mount as root leaves
+  nothing that can be emptied; such a fixture keeps a temp directory and should be one per run, not
+  one per test
+
 ## E2E Tests
 
 - Fixtures extend `E2EFixtureBase` (`IAsyncLifetime`), which manages browser lifecycle and
@@ -114,6 +123,16 @@ for this, and each shape below is one that has already failed here.
 - A wait on a real model is bounded by the provider, not the app. The reply in
   `SendMessage_AppearsInChat` crosses the network to a live LLM; when that cap is exceeded the
   failure must say so, or an ordinary slow generation is read as the client failing to render
+- A wait for a real model's text needs a turn that ends in text: ask the model not to call tools.
+  A turned-down approval ends the turn with no text (`ApprovalRejection`), so a wait that rejects
+  approvals and then waits for words can only time out. When the claim is only that a turn was
+  stored, wait for the turn (`WaitForTurnKeptAsync`), not its words. When the claim is that a long
+  reply grew or streamed, stop the reply once that is seen; don't idle out the rest of it
+- Tests in one collection run one after another, so where a new class goes matters more to the
+  run's length than what it does. A class that waits on a real model or a browser goes into a
+  collection whose chain is short, or into one of its own (for WebChat: a space name, with
+  `CollectionSlices` raised). It never joins the longest chain. After adding one, compare its
+  collection's span in the run's `.trx` with the others'
 - What a run spent its wall clock on is answerable rather than guessable: set `E2E_TRACE_FILE` and
   every fixture phase, container start and row-settle wait appends its seconds to that file
   (`E2ETrace`, a null check when the variable is unset). Read it beside the run's `.trx` — the trx
