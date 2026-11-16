@@ -559,6 +559,26 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // A page names its files by id, and nothing checked the id was this conversation's when the message
+    // was queued: removing it deletes nothing another conversation keeps.
+    [Fact]
+    public async Task ARemovedMessageNamingAnotherConversationsFile_LeavesThatFileAlone()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var theirs = await _attachmentStore.SaveAsync(
+            new AgentKey("9:99", "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
+            CancellationToken.None);
+        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [theirs])).ShouldBeTrue();
+
+        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).ShouldHaveSingleItem().Id);
+
+        _attachmentStore.Find(theirs.Id).ShouldNotBeNull();
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
