@@ -635,6 +635,31 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Withdrawn too late, the message is running: the person is told so, and its files stay with it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithdrawalAfterTheTurnStarted_IsAlreadySent_AndKeepsTheFiles(bool takingBack)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var photo = await UploadAsync();
+        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [photo])).ShouldBeTrue();
+        var queued = (await fran.GetQueue(TopicId)).ShouldHaveSingleItem();
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("look");
+
+        var refused = await Should.ThrowAsync<HubException>(() => takingBack
+            ? fran.TakeBackQueued(TopicId, queued.Id)
+            : fran.RemoveQueued(TopicId, queued.Id));
+
+        refused.Message.ShouldBe(TopicRefusals.AlreadySent);
+        _attachmentStore.Find(photo.Id).ShouldNotBeNull();
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+    }
+
     private Task<AttachmentReference> UploadAsync() =>
         _attachmentStore.SaveAsync(
             new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
