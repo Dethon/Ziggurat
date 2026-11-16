@@ -1,25 +1,54 @@
+@* A choice among a few short options is a segmented control, every option in sight; a long list
+   (Voice's sixteen metrics) is a dropdown, which a row of pills could only show by running off the
+   page or wrapping into a wall of buttons. *@
 <div class="pill-selector">
-    <span class="pill-label">@Label</span>
-    <div class="pill-group">
-        @foreach (var option in Options)
-        {
-            var isActive = option.Value == Value;
-            var isDisabled = DisabledValues.Contains(option.Value);
-            <button class="pill @(isActive ? "active" : "") @(isDisabled ? "disabled" : "")"
-                    disabled="@isDisabled"
-                    @onclick="() => SelectValue(option.Value)">
-                @option.Label
-            </button>
-        }
-    </div>
+    <span class="pill-label" id="@_labelId">@Label</span>
+    @if (AsDropdown)
+    {
+        <span class="select-wrap">
+            <select aria-labelledby="@_labelId" value="@Value" @onchange="e => SelectValue(e.Value as string ?? Value)">
+                @foreach (var option in Options)
+                {
+                    <option value="@option.Value" selected="@(option.Value == Value)"
+                            disabled="@DisabledValues.Contains(option.Value)">@option.Label</option>
+                }
+            </select>
+            <Icon Glyph="Icons.ChevronDown" Class="select-chevron" />
+        </span>
+    }
+    else
+    {
+        <div class="pill-group" role="group" aria-labelledby="@_labelId">
+            @foreach (var option in Options)
+            {
+                var isActive = option.Value == Value;
+                var isDisabled = DisabledValues.Contains(option.Value);
+                <button type="button" class="pill @(isActive ? "active" : "") @(isDisabled ? "disabled" : "")"
+                        aria-pressed="@(isActive ? "true" : "false")"
+                        disabled="@isDisabled"
+                        @onclick="() => SelectValue(option.Value)">
+                    @option.Label
+                </button>
+            }
+        </div>
+    }
 </div>
 
 @code {
+    // Past these, a segmented control no longer fits a phone's width.
+    private const int MostPills = 5;
+    private const int MostPillCharacters = 40;
+
     [Parameter, EditorRequired] public string Label { get; set; } = "";
     [Parameter, EditorRequired] public IReadOnlyList<PillOption> Options { get; set; } = [];
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> OnChanged { get; set; }
     [Parameter] public IReadOnlySet<string> DisabledValues { get; set; } = new HashSet<string>();
+
+    private readonly string _labelId = $"pill-{Guid.NewGuid():N}";
+
+    private bool AsDropdown =>
+        Options.Count > MostPills || Options.Sum(o => o.Label.Length) > MostPillCharacters;
 
     private async Task SelectValue(string value)
     {
@@ -29,27 +58,3 @@
 
     public record PillOption(string Label, string Value);
 }
-
-<style>
-    .pill-selector { display: flex; flex-direction: column; gap: 0.25rem; }
-    .pill-label { font-size: 0.65rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.08em; }
-    .pill-group { display: flex; gap: 0.3rem; }
-    .pill {
-        background: var(--bg-card);
-        color: var(--text-secondary);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 12px;
-        padding: 0.25rem 0.75rem;
-        cursor: pointer;
-        font-size: 0.75rem;
-        transition: all 0.2s;
-        white-space: nowrap;
-    }
-    .pill:hover:not(.disabled) { color: var(--text-primary); border-color: var(--accent-blue); }
-    .pill.active { background: rgba(0,210,255,0.15); color: var(--accent-blue); border-color: var(--accent-blue); }
-    .pill.disabled { opacity: 0.4; cursor: not-allowed; }
-
-    @@media (max-width: 768px) {
-        .pill { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
-    }
-</style>

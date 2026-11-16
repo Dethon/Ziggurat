@@ -9,6 +9,7 @@
 <div class="web-page">
     <MetricControls TStore="WebStore" TState="WebState"
                     Title="Web"
+                    Description="Overlays the browser met on its way to a page, and how each was closed."
                     Family="Families.Web"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -25,7 +26,7 @@
                 <KpiCard Label="Closed by pattern" Value="@Share(state, ModalDismissalOutcomes.Selector, ModalDismissalOutcomes.Text)" Color="var(--accent-green)" />
                 <KpiCard Label="Closed by judgment" Value="@Share(state, ModalDismissalOutcomes.Judgment)" Color="var(--accent-green)" />
                 <KpiCard Label="Left standing" Value="@Share(state, ModalDismissalOutcomes.LeftStanding)" Color="var(--accent-red)" />
-                <KpiCard Label="Median judgment" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Median judgment" Value="@($"{MedianLatency(state):N0} ms")" Color="var(--accent-yellow)" />
             </section>
 
             <section class="section">
@@ -34,6 +35,7 @@
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
                               Unit="@GetMetricUnit(state)" />
@@ -41,7 +43,7 @@
 
             <section class="section">
                 <h3>Recent overlays</h3>
-                <div class="events-table">
+                <div class="events-table tbl-web">
                     <div class="table-header">
                         <span>Time</span>
                         <span>Kind</span>
@@ -57,7 +59,7 @@
                             <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span>@evt.Kind</span>
                             <span class="@OutcomeClass(evt.Outcome)">@evt.Outcome</span>
-                            <span title="@evt.Selector">@evt.Selector</span>
+                            <span class="mono" title="@evt.Selector">@evt.Selector</span>
                             <span>@evt.ButtonText</span>
                             <span>@(evt.Confidence is { } c ? c.ToString("F2") : "")</span>
                             <span>@(evt.DurationMs is { } d ? $"{d} ms" : "")</span>
@@ -65,7 +67,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No overlays recorded</p>
+                        <EmptyState Message="No overlays recorded" />
                     }
                 </div>
             </section>
@@ -143,89 +145,3 @@
         _ => "status-ok"
     };
 }
-
-<style>
-    .web-page {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-
-    .kpi-row {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .section h3 {
-        font-size: 1rem;
-        margin-bottom: 0.8rem;
-        color: var(--text-secondary);
-    }
-
-    .events-table {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .table-header, .table-row {
-        display: grid;
-        grid-template-columns: 135px 110px 120px minmax(0, 1.6fr) minmax(0, 1.2fr) 90px 80px;
-        gap: 0.5rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.82rem;
-    }
-
-    .table-header {
-        background: var(--bg-secondary);
-        color: var(--text-secondary);
-        font-weight: 600;
-        border-radius: 4px;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-    }
-
-    .table-row {
-        background: var(--bg-card);
-        border-radius: 4px;
-    }
-
-    .table-row:hover {
-        background: rgba(255,255,255,0.03);
-    }
-
-    .table-row span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .status-ok {
-        color: var(--accent-green);
-    }
-
-    .status-err {
-        color: var(--accent-red);
-    }
-
-    .no-data {
-        color: var(--text-secondary);
-        font-size: 0.85rem;
-        padding: 0.5rem 0.8rem;
-    }
-
-    @@media (max-width: 768px) {
-        .events-table {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .table-header, .table-row {
-            grid-template-columns: 110px 90px 100px minmax(0, 1.6fr) minmax(0, 1.2fr) 70px 70px;
-            font-size: 0.72rem;
-            padding: 0.4rem 0.5rem;
-            min-width: 700px;
-        }
-    }
-</style>

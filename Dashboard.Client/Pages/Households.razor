@@ -7,7 +7,10 @@
 
 <div class="households-page">
     <header class="page-header">
-        <h2>Households</h2>
+        <div class="page-title">
+            <h2>Households</h2>
+            <p class="page-description">Every household on the deployment, its people and the servers it connected.</p>
+        </div>
     </header>
 
     <section class="section">
@@ -54,8 +57,8 @@
     }
 
     <section class="section">
-        <h3>Every household</h3>
-        <div class="events-table" role="table" aria-label="Households">
+        <h3>Every household <span class="section-count">@_state.Households.Count</span></h3>
+        <div class="events-table tbl-households" role="table" aria-label="Households">
             <div class="table-header" role="row">
                 <span role="columnheader">Household</span>
                 <span role="columnheader">Owners</span>
@@ -74,7 +77,7 @@
                             <span class="tag">home</span>
                         }
                     </span>
-                    <span role="cell" class="owners">
+                    <span role="cell" class="owners" data-label="Owners">
                         @foreach (var owner in household.Owners)
                         {
                             <span class="owner">
@@ -91,10 +94,10 @@
                             </span>
                         }
                     </span>
-                    <span role="cell">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
-                    <span role="cell">@Servers(household)</span>
-                    <span role="cell">@(household.LastSeenAt is { } seen ? DashboardTime.Moment(seen) : "never")</span>
-                    <span role="cell" class="status">
+                    <span role="cell" data-label="Members">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
+                    <span role="cell" data-label="Connected servers">@Servers(household)</span>
+                    <span role="cell" data-label="Last seen">@(household.LastSeenAt is { } seen ? DashboardTime.Moment(seen) : "never")</span>
+                    <span role="cell" class="status" data-label="Status">
                         @if (household.SuspendedAt is { } since)
                         {
                             <span class="suspended">suspended since @DashboardTime.Moment(since)</span>
@@ -104,7 +107,7 @@
                         }
                         else
                         {
-                            <span>running</span>
+                            <span class="running">running</span>
                             @* The home is the operator's own: suspended, nothing would be left to resume it from. *@
                             @if (!household.IsHome && _confirmingSuspend == household.Id)
                             {
@@ -128,7 +131,7 @@
             }
             @if (_state.Loaded && _state.Households.Count == 0)
             {
-                <p class="no-data">No households</p>
+                <EmptyState Message="No households" />
             }
         </div>
     </section>
@@ -179,38 +182,3 @@
 
     public void Dispose() => _subscription?.Dispose();
 }
-
-<style>
-    .households-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .new-household { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
-    .new-household label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--text-secondary); }
-    .households-page input { background: var(--bg-card); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.85rem; min-width: 14rem; }
-    .households-page button { background: rgba(0, 210, 255, 0.15); color: var(--accent-blue); border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 6px; padding: 0.45rem 0.8rem; font-size: 0.85rem; cursor: pointer; }
-    .households-page button:disabled { opacity: 0.5; cursor: default; }
-    .households-page button.quiet { background: none; border: none; padding: 0.1rem 0.3rem; color: var(--text-secondary); }
-    .households-page button.quiet:hover { color: var(--accent-blue); }
-    .notice { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: var(--accent-red); border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.85rem; }
-    .notice ul { margin: 0.4rem 0 0 1.2rem; }
-    .minted-link { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 6px; padding: 0.7rem 0.9rem; font-size: 0.85rem; }
-    .minted-link p { flex-basis: 100%; }
-    .minted-link input { flex: 1; font-family: monospace; }
-    .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 100px minmax(0, 1.2fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; align-items: center; }
-    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
-    .table-row { background: var(--bg-card); border-radius: 4px; }
-    .owner { display: inline-flex; align-items: center; margin-right: 0.6rem; }
-    .tag { font-size: 0.68rem; color: var(--accent-purple); margin-left: 0.3rem; }
-    .status { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-    .status .suspended { color: var(--accent-red); }
-    .households-page button.danger { background: rgba(248, 113, 113, 0.12); color: var(--accent-red); border-color: rgba(248, 113, 113, 0.3); }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
-
-    @@media (max-width: 768px) {
-        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 680px; }
-        .households-page input { min-width: 0; width: 100%; }
-        .new-household label { flex-basis: 100%; }
-    }
-</style>

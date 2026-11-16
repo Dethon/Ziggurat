@@ -1,7 +1,8 @@
-
-<div class="kpi-card" style="border-color: @Color;">
-    <div class="kpi-label">@Label</div>
-    <div class="kpi-value" style="color: @Color;">@Value</div>
+@* A headline figure. Its colour marks the family it belongs to with a small swatch rather than
+   painting the number, so a row of seven stays calm and the figures read as figures. *@
+<div class="kpi-card" style="--kpi-color: @Color;">
+    <div class="kpi-label"><span class="kpi-swatch" aria-hidden="true"></span>@Label</div>
+    <div class="kpi-value">@Value</div>
 </div>
 
 @code {
@@ -9,30 +10,3 @@
     [Parameter, EditorRequired] public string Value { get; set; } = "";
     [Parameter] public string Color { get; set; } = "var(--accent-blue)";
 }
-
-<style>
-    .kpi-card {
-        background: var(--bg-card);
-        border-radius: 10px;
-        padding: 1.2rem 1.5rem;
-        border-left: 3px solid;
-        min-width: 160px;
-        flex: 1;
-    }
-    .kpi-label {
-        font-size: 0.8rem;
-        color: var(--text-secondary);
-        margin-bottom: 0.4rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-    .kpi-value {
-        font-size: 1.6rem;
-        font-weight: 700;
-    }
-
-    @@media (max-width: 768px) {
-        .kpi-card { min-width: calc(50% - 0.5rem); padding: 0.8rem 1rem; }
-        .kpi-value { font-size: 1.3rem; }
-    }
-</style>

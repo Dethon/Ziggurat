@@ -3,9 +3,10 @@
 @inject HouseholdDirectory Directory
 
 <div class="health-grid">
-    @foreach (var svc in Services)
+    @* What is down comes first: on a phone the grid is taller than the screen. *@
+    @foreach (var svc in Services.OrderBy(s => s.IsHealthy).ThenBy(s => s.Service, StringComparer.OrdinalIgnoreCase))
     {
-        <div class="health-item" title="@(svc.IsHealthy ? "Healthy" : "Unhealthy") — Last seen: @(svc.LastSeen ?? "never")">
+        <div class="health-item" title="@svc.Service — @(svc.IsHealthy ? "healthy" : "unhealthy"), last seen @(svc.LastSeen ?? "never")">
             <span class="health-dot @(svc.IsHealthy ? "healthy" : "unhealthy")"></span>
             <span class="health-name">@svc.Service</span>
             @if (svc.Household is { } household)
@@ -16,7 +17,7 @@
     }
     @if (!Services.Any())
     {
-        <p class="no-data">No health data</p>
+        <EmptyState Message="No health data" />
     }
 </div>
 
@@ -28,14 +29,3 @@
 
     protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
 }
-
-<style>
-    .health-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-    .health-item { display: flex; align-items: center; gap: 0.4rem; background: var(--bg-card); padding: 0.5rem 0.8rem; border-radius: 6px; }
-    .health-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .health-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
-    .health-dot.unhealthy { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
-    .health-name { font-size: 0.85rem; color: var(--text-primary); }
-    .health-household { font-size: 0.7rem; color: var(--text-secondary); font-family: monospace; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
-</style>

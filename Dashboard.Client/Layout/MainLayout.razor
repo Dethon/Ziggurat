@@ -1,58 +1,120 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject MetricsLiveConnection LiveConnection
+@inject NavigationManager Navigation
 
 <div class="layout">
-    <nav class="sidebar">
-        @* Every one of these was a font glyph, six of them trailing a text-presentation variation
-           selector to talk the platform out of drawing them as emoji, which is the whole argument
-           for not typing an icon. The voice speaker below was already drawn; the rest match it. *@
-        <NavLink href="/" Match="NavLinkMatch.All" class="sidebar-icon" title="Overview">
-            <Icon Glyph="Icons.Dashboard" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/tokens" class="sidebar-icon" title="Tokens">
-            <Icon Glyph="Icons.Currency" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/tools" class="sidebar-icon" title="Tools">
-            <Icon Glyph="Icons.Gear" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/memory" class="sidebar-icon" title="Memory">
-            <Icon Glyph="Icons.Chip" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/errors" class="sidebar-icon" title="Errors">
-            <Icon Glyph="Icons.Warning" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/schedules" class="sidebar-icon" title="Schedules">
-            <Icon Glyph="Icons.Calendar" Size="1.1em" />
-        </NavLink>
-        @* A stopwatch rather than the calendar above it: schedules are when work fires, latency is
-           how long it took, and two clock faces would have read as the same page twice. *@
-        <NavLink href="/latency" class="sidebar-icon" title="Latency">
-            <Icon Glyph="Icons.Stopwatch" Size="1.1em" />
-        </NavLink>
-        <NavLink href="/voice" class="sidebar-icon" title="Voice">
-            <Icon Glyph="Icons.Speaker" Size="1.1em" />
-        </NavLink>
-        @* A bolt: the page is about the head start a turn gets before the model's first call. *@
-        <NavLink href="/skills" class="sidebar-icon" title="Skills">
-            <Icon Glyph="Icons.Bolt" Size="1.1em" />
-        </NavLink>
-        @* A globe: the page is about the walls the browser met on its way to a page. *@
-        <NavLink href="/web" class="sidebar-icon" title="Web">
-            <Icon Glyph="Icons.Globe" Size="1.1em" />
-        </NavLink>
-        @* A house: the deployment's households, each with its people and the servers it connected. *@
-        <NavLink href="/households" class="sidebar-icon" title="Households">
-            <Icon Glyph="Icons.House" Size="1.1em" />
-        </NavLink>
-        <ConnectionIndicator />
+    @* One nav for every width, so each page has exactly one link to it. On a phone the first group is
+       the bottom bar and the rest open as a sheet behind More; on a desktop every group is listed. *@
+    <nav class="sidebar @(_moreOpen ? "more-open" : "")" aria-label="Pages"
+         @onkeydown="@(e => { if (e.Key == "Escape") _moreOpen = false; })">
+        <a href="/" class="brand" aria-label="Ziggurat dashboard">
+            <span class="brand-mark"><Icon Glyph="Icons.Ziggurat" Size="18" /></span>
+            <span class="brand-text">
+                <span class="brand-name">Ziggurat</span>
+                <span class="brand-sub">Operations</span>
+            </span>
+        </a>
+
+        <div class="nav-section nav-primary">
+            <span class="nav-section-label">Monitor</span>
+            @foreach (var page in Primary)
+            {
+                <NavItem Page="page" />
+            }
+        </div>
+
+        <div class="nav-sheet" id="nav-sheet">
+            @foreach (var (label, pages) in Sections)
+            {
+                <div class="nav-section">
+                    <span class="nav-section-label">@label</span>
+                    @foreach (var page in pages)
+                    {
+                        <NavItem Page="page" />
+                    }
+                </div>
+            }
+        </div>
+
+        <button type="button" class="nav-item nav-more @(InSheet ? "active" : "")"
+                aria-expanded="@(_moreOpen ? "true" : "false")" aria-controls="nav-sheet"
+                @onclick="() => _moreOpen = !_moreOpen">
+            <Icon Glyph="Icons.More" Class="nav-icon" />
+            <span class="nav-label">More</span>
+        </button>
     </nav>
-    <main class="content">
-        <HouseholdPicker />
-        @Body
-    </main>
+
+    @if (_moreOpen)
+    {
+        <div class="nav-backdrop" @onclick="() => _moreOpen = false"></div>
+    }
+
+    <div class="main">
+        <header class="topbar">
+            <span class="topbar-brand">
+                <span class="brand-mark"><Icon Glyph="Icons.Ziggurat" Size="16" /></span>
+                <span class="brand-name">Ziggurat</span>
+            </span>
+            <HouseholdPicker />
+            <ConnectionIndicator />
+        </header>
+        <main class="content">
+            @Body
+        </main>
+    </div>
 </div>
 
 @code {
+    // The first group fits a phone's bottom bar; every other page is one tap behind More.
+    private static readonly IReadOnlyList<NavPage> Primary =
+    [
+        new("/", "Overview", Icons.Dashboard, Exact: true),
+        new("/tokens", "Tokens", Icons.Currency),
+        new("/tools", "Tools", Icons.Gear),
+        new("/errors", "Errors", Icons.Warning),
+    ];
+
+    private static readonly IReadOnlyList<(string Label, IReadOnlyList<NavPage> Pages)> Sections =
+    [
+        ("Agents",
+        [
+            new("/latency", "Latency", Icons.Stopwatch),
+            new("/memory", "Memory", Icons.Chip),
+            new("/schedules", "Schedules", Icons.Calendar),
+            new("/skills", "Skills", Icons.Bolt),
+            new("/voice", "Voice", Icons.Speaker),
+            new("/web", "Web", Icons.Globe),
+        ]),
+        ("Operate",
+        [
+            new("/households", "Households", Icons.House),
+        ]),
+    ];
+
+    private bool _moreOpen;
+
+    private bool InSheet
+    {
+        get
+        {
+            var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+            return Sections.SelectMany(s => s.Pages).Any(p => path.StartsWith(p.Href, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
     // Nothing to catch: the live connection keeps trying until it is live.
-    protected override Task OnInitializedAsync() => LiveConnection.ConnectAsync();
+    protected override Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        return LiveConnection.ConnectAsync();
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        _moreOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 }

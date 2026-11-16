@@ -9,6 +9,7 @@
 <div class="skills-page">
     <MetricControls TStore="SkillsStore" TState="SkillsState"
                     Title="Skills"
+                    Description="Which skills were loaded ahead of a turn's first model call."
                     Family="Families.Skills"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -23,7 +24,7 @@
                 <KpiCard Label="Preloaded" Value="@Share(state, SkillPreloadOutcomes.Preloaded)" Color="var(--accent-green)" />
                 <KpiCard Label="Deadline misses" Value="@Share(state, SkillPreloadOutcomes.Deadline)" Color="var(--accent-yellow)" />
                 <KpiCard Label="Errors" Value="@Share(state, SkillPreloadOutcomes.Error)" Color="var(--accent-red)" />
-                <KpiCard Label="Median latency" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Median latency" Value="@($"{MedianLatency(state):N0} ms")" Color="var(--accent-yellow)" />
             </section>
 
             <section class="section">
@@ -32,6 +33,7 @@
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
                               Unit="@GetMetricUnit(state)" />
@@ -39,7 +41,7 @@
 
             <section class="section">
                 <h3>Recent judgments</h3>
-                <div class="events-table">
+                <div class="events-table tbl-skills">
                     <div class="table-header">
                         <span>Time</span>
                         <span>Agent</span>
@@ -65,7 +67,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No judgments recorded</p>
+                        <EmptyState Message="No judgments recorded" />
                     }
                 </div>
             </section>
@@ -135,92 +137,6 @@
     {
         SkillPreloadOutcomes.Preloaded => "status-ok",
         SkillPreloadOutcomes.Deadline or SkillPreloadOutcomes.Error => "status-err",
-        _ => ""
+        _ => "badge"
     };
 }
-
-<style>
-    .skills-page {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-
-    .kpi-row {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .section h3 {
-        font-size: 1rem;
-        margin-bottom: 0.8rem;
-        color: var(--text-secondary);
-    }
-
-    .events-table {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .table-header, .table-row {
-        display: grid;
-        grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1.4fr) minmax(0, 1.4fr) 90px 80px;
-        gap: 0.5rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.82rem;
-    }
-
-    .table-header {
-        background: var(--bg-secondary);
-        color: var(--text-secondary);
-        font-weight: 600;
-        border-radius: 4px;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-    }
-
-    .table-row {
-        background: var(--bg-card);
-        border-radius: 4px;
-    }
-
-    .table-row:hover {
-        background: rgba(255,255,255,0.03);
-    }
-
-    .table-row span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .status-ok {
-        color: var(--accent-green);
-    }
-
-    .status-err {
-        color: var(--accent-red);
-    }
-
-    .no-data {
-        color: var(--text-secondary);
-        font-size: 0.85rem;
-        padding: 0.5rem 0.8rem;
-    }
-
-    @@media (max-width: 768px) {
-        .events-table {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .table-header, .table-row {
-            grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 100px minmax(0, 1.4fr) minmax(0, 1.4fr) 70px 70px;
-            font-size: 0.72rem;
-            padding: 0.4rem 0.5rem;
-            min-width: 760px;
-        }
-    }
-</style>

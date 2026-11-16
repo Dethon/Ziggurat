@@ -9,6 +9,7 @@
 <div class="voice-page">
     <MetricControls TStore="VoiceStore" TState="VoiceState"
                     Title="Voice"
+                    Description="Satellites, transcription and how soon a spoken answer starts."
                     Family="Families.Voice"
                     DimensionOptions="DimensionOptions"
                     MetricOptions="MetricOptions"
@@ -20,12 +21,13 @@
         <ChildContent Context="state">
             <section class="kpi-row">
                 <KpiCard Label="Utterances" Value="@state.Events.Count(e => e.Metric == VoiceMetric.UtteranceTranscribed).ToString("N0")" Color="var(--accent-blue)" />
-                <KpiCard Label="Median speech → audio" Value="@($"{MedianLatency(state):F0}ms")" Color="var(--accent-yellow)" />
+                <KpiCard Label="Median speech → audio" Value="@($"{MedianLatency(state):N0} ms")" Color="var(--accent-yellow)" />
                 <KpiCard Label="STT errors" Value="@state.Events.Count(e => e.Metric == VoiceMetric.SttError).ToString("N0")" Color="var(--accent-red)" />
                 <KpiCard Label="TTS errors" Value="@state.Events.Count(e => e.Metric == VoiceMetric.TtsError).ToString("N0")" Color="var(--accent-red)" />
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
                               Unit="@GetMetricUnit(state)" />
@@ -33,16 +35,16 @@
 
             <section class="section">
                 <h3>Recent voice events</h3>
-                <div class="events-table">
+                <div class="events-table tbl-voice">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite <SortArrow Column="Satellite" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room <SortArrow Column="Room" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity <SortArrow Column="Identity" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric <SortArrow Column="Metric" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error <SortArrow Column="Error" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Satellite")' @onclick='() => SortBy("Satellite")'>Satellite <SortArrow Column="Satellite" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Room")' @onclick='() => SortBy("Room")'>Room <SortArrow Column="Room" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Identity")' @onclick='() => SortBy("Identity")'>Identity <SortArrow Column="Identity" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Metric")' @onclick='() => SortBy("Metric")'>Metric <SortArrow Column="Metric" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Outcome")' @onclick='() => SortBy("Outcome")'>Outcome <SortArrow Column="Outcome" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Error")' @onclick='() => SortBy("Error")'>Error <SortArrow Column="Error" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
@@ -68,7 +70,7 @@
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No voice events recorded</p>
+                        <EmptyState Message="No voice events recorded" />
                     }
                 </div>
             </section>
@@ -172,131 +174,3 @@
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 }
-
-<style>
-    .voice-page {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-    }
-
-    .kpi-row {
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .section h3 {
-        font-size: 1rem;
-        margin-bottom: 0.8rem;
-        color: var(--text-secondary);
-    }
-
-    .events-table {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-
-    .table-header, .table-row {
-        display: grid;
-        grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 130px 90px 110px minmax(0, 1fr);
-        gap: 0.5rem;
-        padding: 0.4rem 0.8rem;
-        font-size: 0.82rem;
-    }
-
-    .table-header {
-        background: var(--bg-secondary);
-        color: var(--text-secondary);
-        font-weight: 600;
-        border-radius: 4px;
-        text-transform: uppercase;
-        font-size: 0.7rem;
-    }
-
-    .sortable {
-        cursor: pointer;
-        user-select: none;
-    }
-
-    .sortable:hover {
-        color: var(--text-primary);
-    }
-
-    .sortable.sorted {
-        color: var(--text-primary);
-    }
-
-    .table-row {
-        background: var(--bg-card);
-        border-radius: 4px;
-    }
-
-    .table-row:hover {
-        background: rgba(255,255,255,0.03);
-    }
-
-    .table-row span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .status-ok {
-        color: var(--accent-green);
-    }
-
-    .status-err {
-        color: var(--accent-red);
-    }
-
-    .tooltip-anchor {
-        cursor: default;
-    }
-
-    .tooltip-anchor:focus {
-        outline: none;
-    }
-
-    .tooltip-popup {
-        display: none;
-        background: var(--bg-secondary);
-        color: var(--text-primary);
-        border: 1px solid rgba(255,255,255,0.1);
-        border-radius: 6px;
-        padding: 0.5rem 0.7rem;
-        font-size: 0.78rem;
-        white-space: pre-wrap;
-        word-break: break-word;
-        max-width: 320px;
-        min-width: 150px;
-        z-index: 1000;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-        pointer-events: none;
-    }
-
-    .no-data {
-        color: var(--text-secondary);
-        font-size: 0.85rem;
-        padding: 0.5rem 0.8rem;
-    }
-
-    @@media (max-width: 768px) {
-        .events-table {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .table-header, .table-row {
-            grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 110px 70px 90px minmax(0, 1fr);
-            font-size: 0.72rem;
-            padding: 0.4rem 0.5rem;
-            min-width: 760px;
-        }
-
-        .table-row span {
-            word-break: break-word;
-        }
-    }
-</style>

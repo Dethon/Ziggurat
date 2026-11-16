@@ -1,7 +1,7 @@
 <div class="@(Data is not null && Data.Count > 0 ? "chart-container" : "")" style="@_containerStyle">
 @if (Data is null || Data.Count == 0)
 {
-    <p class="no-data">No data available</p>
+    <EmptyState Message="No data available" />
 }
 else if (ChartType == ChartMode.Donut)
 {
@@ -24,8 +24,7 @@ else
                          SeriesType="SeriesType.Bar"
                          XValue="e => e.Label"
                          YValue="e => e.Value"
-                         OrderByDescending="e => e.Y"
-                         ShowDataLabels />
+                         OrderByDescending="e => e.Y" />
     </ApexChart>
 }
 </div>
@@ -48,15 +47,14 @@ else
     private string _prevMetricLabel = "";
     private bool _needsUpdate;
 
-    private static readonly List<string> Palette =
-        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
-
     private readonly ApexChartOptions<ChartEntry> _donutOptions = new()
     {
         Chart = new Chart
         {
             Background = "transparent",
-            ForeColor = "#a0a0b0",
+            ForeColor = ChartTheme.Text,
+            FontFamily = ChartTheme.Font,
+            Toolbar = new Toolbar { Show = false },
             Height = "250",
             Animations = new Animations
             {
@@ -64,8 +62,27 @@ else
                 AnimateGradually = new AnimateGradually { Enabled = false }
             }
         },
-        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
-        Colors = Palette,
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = ChartTheme.Text } },
+        Colors = ChartTheme.Palette,
+        Stroke = new Stroke { Colors = [ChartTheme.Surface], Width = 2 },
+        PlotOptions = new PlotOptions
+        {
+            Pie = new PlotOptionsPie
+            {
+                Donut = new PlotOptionsDonut
+                {
+                    Size = "70%",
+                    // The whole in the middle, so the slices read as shares of something.
+                    Labels = new DonutLabels
+                    {
+                        Show = true,
+                        Name = new DonutLabelName { Color = ChartTheme.Text, FontSize = "12px" },
+                        Value = new DonutLabelValue { Color = ChartTheme.Label, FontSize = "20px", FontWeight = "650" },
+                        Total = new DonutLabelTotal { Show = true, ShowAlways = true, Label = "Total", Color = ChartTheme.Text, FontSize = "12px" }
+                    }
+                }
+            }
+        },
         Theme = new Theme { Mode = Mode.Dark },
         Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } }
     };
@@ -75,7 +92,9 @@ else
         Chart = new Chart
         {
             Background = "transparent",
-            ForeColor = "#a0a0b0",
+            ForeColor = ChartTheme.Text,
+            FontFamily = ChartTheme.Font,
+            Toolbar = new Toolbar { Show = false },
             Height = "250",
             Animations = new Animations
             {
@@ -88,29 +107,27 @@ else
             Bar = new PlotOptionsBar
                 {
                     Horizontal = true,
-                    BarHeight = "50%",
-                    DataLabels = new PlotOptionsBarDataLabels
-                    {
-                        Position = BarDataLabelPosition.Bottom,
-                        HideOverflowingLabels = false
-                    }
+                    BarHeight = "58%",
+                    BorderRadius = 4,
+                    BorderRadiusApplication = BorderRadiusApplication.End
                 }
         },
-        DataLabels = new DataLabels
-        {
-            Enabled = true,
-            Style = new DataLabelsStyle { FontSize = "11px", Colors = ["#e0e0e0"] },
-            TextAnchor = TextAnchor.Start,
-            Formatter = "function(val, opts) { return '- ' + opts.w.globals.labels[opts.dataPointIndex]; }"
-        },
+        // One series, one hue: the bars differ in length, not in identity. The names sit on the
+        // axis in text colour, and each value is the tooltip's.
+        DataLabels = new DataLabels { Enabled = false },
         Yaxis =
         [
             new YAxis
             {
-                Show = false
+                Labels = new YAxisLabels
+                {
+                    MaxWidth = 180,
+                    Style = new AxisLabelStyle { Colors = new Color(ChartTheme.Label), FontSize = "12px" }
+                }
             }
         ],
-        Colors = Palette,
+        Colors = [ChartTheme.Palette[0]],
+        Legend = new Legend { Show = false },
         Theme = new Theme { Mode = Mode.Dark },
         Tooltip = new Tooltip
         {
@@ -121,17 +138,35 @@ else
         },
         Grid = new Grid
         {
-            BorderColor = "#2a2a3e",
+            BorderColor = ChartTheme.Grid,
+            StrokeDashArray = 4,
             Padding = new Padding { Left = 0 }
-        }
+        },
+        // A phone gives the names less of its width.
+        Responsive =
+        [
+            new Responsive<ChartEntry>
+            {
+                Breakpoint = 600,
+                Options = new ApexChartOptions<ChartEntry>
+                {
+                    Yaxis = [new YAxis { Labels = new YAxisLabels { MaxWidth = 120, Style = new AxisLabelStyle { Colors = new Color(ChartTheme.Label), FontSize = "11px" } } }]
+                }
+            }
+        ]
     };
 
     protected override void OnParametersSet()
     {
         _entries = Data?
             .OrderByDescending(kv => kv.Value)
-            .Select(kv => new ChartEntry(Truncate(kv.Key, UseFullLabels), kv.Value))
+            .Select(kv => new ChartEntry(Truncate(Shorten(kv.Key, Data), UseFullLabels), kv.Value))
             .ToList() ?? [];
+
+        // A slice's colour follows who it is, not where it ranks, so a push that reorders the
+        // breakdown repaints nobody: each label takes its slot from the labels in name order.
+        var slots = _entries.Select(e => e.Label).Distinct().Order(StringComparer.Ordinal).Select((label, i) => (label, i)).ToDictionary(x => x.label, x => x.i);
+        _donutOptions.Colors = _entries.Select(e => ChartTheme.Palette[slots[e.Label] % ChartTheme.Palette.Count]).ToList();
 
         var escapedLabel = MetricLabel.Replace("'", "\\'");
         var titleFormatter = string.IsNullOrWhiteSpace(MetricLabel)
@@ -144,26 +179,33 @@ else
         var hasUnit = !string.IsNullOrWhiteSpace(Unit);
         var valueFormatter = hasUnit
             ? Unit.StartsWith('$')
-                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
-                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
-            : "function(val) { return parseFloat(val.toFixed(2)); }";
+                ? $"function(val) {{ return '{escapedUnit}' + Number(val.toFixed(2)).toLocaleString(); }}"
+                : $"function(val) {{ return Number(val.toFixed(2)).toLocaleString() + '{escapedUnit}'; }}"
+            : "function(val) { return Number(val.toFixed(2)).toLocaleString(); }";
 
         _barOptions.Tooltip.Y.Formatter = valueFormatter;
         _donutOptions.Tooltip.Y.Formatter = valueFormatter;
 
         var maxValue = _entries.Count > 0 ? _entries.Max(e => e.Value) : 0;
+        // The axis and the donut's total in short form (12K, 2.7M): a phone's axis has room for
+        // four ticks of "4,000ms" only by overlapping them.
+        var compact = "Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(val)";
         var xaxisFormatter = hasUnit
             ? Unit.StartsWith('$')
-                ? $"function(val) {{ return '{escapedUnit}' + parseFloat(val.toFixed(2)); }}"
-                : $"function(val) {{ return parseFloat(val.toFixed(2)) + '{escapedUnit}'; }}"
-            : "function(val) { return parseFloat(val.toFixed(2)); }";
+                ? $"function(val) {{ return '{escapedUnit}' + {compact}; }}"
+                : $"function(val) {{ return {compact} + '{(Unit == "ms" ? " " : "")}{escapedUnit}'; }}"
+            : $"function(val) {{ return {compact}; }}";
+
+        var donut = _donutOptions.PlotOptions!.Pie!.Donut!.Labels!;
+        donut.Value!.Formatter = $"function(val) {{ return ({xaxisFormatter})(parseFloat(val)); }}";
+        donut.Total!.Formatter = $"function(w) {{ return ({xaxisFormatter})(w.globals.seriesTotals.reduce(function(a, b) {{ return a + b; }}, 0)); }}";
         _barOptions.Xaxis = new XAxis
         {
             Labels = new XAxisLabels { Formatter = xaxisFormatter },
-            TickAmount = maxValue <= 5 ? maxValue : null
+            TickAmount = maxValue <= 4 ? maxValue : 4
         };
 
-        var barHeight = Math.Max(250, _entries.Count * 50);
+        var barHeight = Math.Max(220, _entries.Count * 40 + 60);
         _barOptions.Chart!.Height = barHeight.ToString();
         _containerStyle = ChartType == ChartMode.HorizontalBar && _entries.Count > 0
             ? $"min-height: {barHeight}px"
@@ -198,6 +240,18 @@ else
         }
     }
 
+    // A tool is keyed mcp__server__tool (any prefix__server__tool), most of which is the same prefix on every bar: the tool's
+    // own name says it, with its server beside it only when two servers have a tool of that name.
+    private static string Shorten(string key, IReadOnlyDictionary<string, decimal> all)
+    {
+        if (ToolName(key) is not var (server, tool))
+            return key;
+        return all.Keys.Count(k => ToolName(k) is var (_, other) && other == tool) > 1 ? $"{tool} ({server})" : tool;
+    }
+
+    private static (string Server, string Tool)? ToolName(string key) =>
+        key.Split("__") is [.., { Length: > 0 } server, { Length: > 0 } tool] ? (server, tool) : null;
+
     private static string Truncate(string s, bool full)
     {
         var label = full ? s : s[(s.LastIndexOf(':') + 1)..];
@@ -208,8 +262,3 @@ else
 
     public enum ChartMode { Donut, HorizontalBar }
 }
-
-<style>
-    .chart-container { min-height: 250px; transition: min-height 0.2s ease; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
-</style>

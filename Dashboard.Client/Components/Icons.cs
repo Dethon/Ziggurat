@@ -67,6 +67,20 @@ public static class Icons
 
     public static readonly IconGlyph Check = Filled("M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41Z");
 
+    // The app's mark: a stepped tower, drawn in the sidebar and the phone's top bar.
+    public static readonly IconGlyph Ziggurat = Filled("M9 3h6v4H9z", "M6 9h12v4H6z", "M3 15h18v5H3z");
+
+    // The phone's bottom bar has room for four pages; the rest sit behind this.
+    public static readonly IconGlyph More = Filled(
+        "M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z");
+
+    // A select's affordance: native arrows differ per platform and ignore the theme.
+    public static readonly IconGlyph ChevronDown = Filled("M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z");
+
+    // An inbox tray for a list or chart that has nothing to show yet.
+    public static readonly IconGlyph Inbox = Filled(
+        "M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 12h-4a3 3 0 0 1-6 0H5V5h14v10z");
+
     private static IconGlyph Filled(params string[] paths) =>
         new(string.Concat(paths.Select(p => $"""<path d="{p}" />""")));
 }

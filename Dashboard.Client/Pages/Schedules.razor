@@ -8,43 +8,45 @@
 <div class="schedules-page">
     <MetricControls TStore="SchedulesStore" TState="SchedulesState"
                     Title="Schedule Executions"
+                    Description="Scheduled runs, how long they took and how they ended."
                     Family="Families.Schedules"
                     DimensionOptions="DimensionOptions">
         <ChildContent Context="state">
             <section class="kpi-row">
                 <KpiCard Label="Total Runs" Value="@state.Events.Count.ToString("N0")" Color="var(--accent-purple)" />
                 <KpiCard Label="Success Rate" Value="@($"{SuccessRate(state):F1}%")" Color="var(--accent-green)" />
-                <KpiCard Label="Avg Duration" Value="@($"{AvgDuration(state):F0}ms")" Color="var(--accent-blue)" />
+                <KpiCard Label="Avg Duration" Value="@($"{AvgDuration(state):N0} ms")" Color="var(--accent-blue)" />
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown.AsChartData()" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="Execution Count" />
             </section>
 
             <section class="section">
-                <h3>Execution History</h3>
-                <div class="events-table">
+                <h3>Recent runs</h3>
+                <div class="events-table tbl-schedules">
                     <div class="table-header">
-                        <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Schedule")' @onclick='() => SortBy("Schedule")'>Schedule <SortArrow Column="Schedule" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status <SortArrow Column="Status" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
-                        <span class='sortable @SortClass("Details")' @onclick='() => SortBy("Details")'>Details <SortArrow Column="Details" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
+                        <button type="button" class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Schedule")' @onclick='() => SortBy("Schedule")'>Schedule <SortArrow Column="Schedule" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Duration")' @onclick='() => SortBy("Duration")'>Duration <SortArrow Column="Duration" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Status")' @onclick='() => SortBy("Status")'>Status <SortArrow Column="Status" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
+                        <button type="button" class='sortable @SortClass("Details")' @onclick='() => SortBy("Details")'>Details <SortArrow Column="Details" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></button>
                     </div>
                     @foreach (var evt in GetSortedEvents(state))
                     {
                         <div class="table-row">
                             <span>@DashboardTime.Event(evt.Timestamp)</span>
-                            <span>@evt.ScheduleId</span>
-                            <span>@evt.DurationMs ms</span>
+                            <span class="mono" title="@evt.ScheduleId">@evt.ScheduleId</span>
+                            <span>@evt.DurationMs.ToString("N0") ms</span>
                             <span class="@(evt.Success ? "status-ok" : "status-err")">@(evt.Success ? "OK" : "FAIL")</span>
-                            <span class="detail-text" title="@(evt.Error ?? evt.Prompt)">@Truncate(evt.Error ?? evt.Prompt, 60)</span>
+                            <span class="@(evt.Error is null ? "tone-muted" : "tone-red")" title="@(evt.Error ?? evt.Prompt)">@(evt.Error ?? evt.Prompt)</span>
                         </div>
                     }
                     @if (!state.Events.Any())
                     {
-                        <p class="no-data">No schedule executions recorded</p>
+                        <EmptyState Message="No schedule executions recorded" />
                     }
                 </div>
             </section>
@@ -65,8 +67,6 @@
     private static double AvgDuration(SchedulesState state) =>
         state.Events.Count > 0 ? state.Events.Average(e => e.DurationMs) : 0;
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : string.Concat(s.AsSpan(0, max), "...");
 
     private string _sortColumn = "Time";
     private bool _sortAsc;
@@ -93,27 +93,3 @@
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 }
-
-<style>
-    .schedules-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 135px 140px 100px 70px 1fr; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
-    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--text-primary); }
-    .sortable.sorted { color: var(--text-primary); }
-    .table-row { background: var(--bg-card); border-radius: 4px; }
-    .table-row:hover { background: rgba(255,255,255,0.03); }
-    .status-ok { color: var(--accent-green); font-weight: 600; }
-    .status-err { color: var(--accent-red); font-weight: 600; }
-    .detail-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 0.5rem 0.8rem; }
-
-    @@media (max-width: 768px) {
-        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 110px 110px 80px 55px 1fr; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 485px; }
-        .detail-text { white-space: normal; word-break: break-word; }
-    }
-</style>

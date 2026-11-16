@@ -70,6 +70,26 @@ seven decisions that happened to agree. A header writes
 `<SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" />` and no page defines a
 `SortIndicator` of its own.
 
+## The dashboard has one stylesheet
+
+`Dashboard.Client/wwwroot/css/app.css` is all of the dashboard's CSS: tokens on `:root`, the shell
+(sidebar, top bar, the phone's bottom bar and More sheet), the shared pieces (`.section` cards,
+`.kpi-card`, `.toolbar`, `.pill-selector`, `.events-table`, badges) and then what one page needs.
+A component carries no `<style>` block and there is no `.razor.css`: a `<style>` in a component is
+global anyway and rendered once per instance, and nine pages' copies of the same table rules had
+drifted apart. A table's columns are a class beside `events-table` (`tbl-tokens`, `tbl-voice`…)
+setting `--cols` and the `--table-min` it scrolls sideways below; a new table adds one line there.
+The chart colours are `ChartTheme`'s, since ApexCharts writes them into SVG attributes the custom
+properties never reach — a validated categorical order for the dark surface, and one hue for a
+single-series bar chart.
+
+On a phone the nav is the same `<nav class="sidebar">`, never a second one: its first group is the
+bottom bar and the rest open as a sheet behind More, so every page keeps exactly one link (the
+E2E's `nav.sidebar a[href=…]` is strict). Every link shows its name; a bare icon is not a way to a
+page. `PillSelector` draws a segmented control for a few short options and a dropdown past five
+or forty characters of labels, so no row of options is ever wider than the screen
+(`DashboardPhoneE2ETests`).
+
 ## The service worker answers only the app's own pages
 
 WebChat's published service worker answers a navigation with the cached `index.html`, which is what
