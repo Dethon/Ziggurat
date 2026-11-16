@@ -43,8 +43,10 @@ public sealed class StreamService(
     // end while the turn it was meant to cut still runs. That answer is the steer's, held until the
     // running turn ends and drawn after the steer's message there, where its turn would have run; the
     // running turn is not ended by it. Read and written under _streamLock.
-    private sealed record WaitingSteer(QueuedMessage Message)
+    private sealed class WaitingSteer(QueuedMessage message)
     {
+        public QueuedMessage Message { get; } = message;
+
         public List<ChatStreamMessage> Held { get; } = [];
 
         // Its turn ended already (the reply that said IsComplete came under its key).
