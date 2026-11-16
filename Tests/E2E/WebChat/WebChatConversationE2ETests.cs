@@ -35,8 +35,8 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
             var cancelButton = page.Locator("[data-testid=composer-cancel]");
             await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
 
-            // Cancel replaces Send while the reply runs: one button in that spot, always the one
-            // the user can act on.
+            // Stop sits beside Send while the reply runs, and with the composer emptied by the send
+            // there is nothing for Send to send.
             var sendButton = page.Locator("[data-testid=composer-send]");
             await Assertions.Expect(sendButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
             // The composer is empty once the message has gone, so the control that comes back when

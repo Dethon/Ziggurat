@@ -189,13 +189,23 @@ public sealed class SendMessageEffect : IDisposable
             }
         }
 
+        var senderId = _userIdentityStore.State.SignedIn?.UserId;
+
+        // Sent while the reply streams, it waits its turn in the hub's queue and is drawn once that
+        // turn starts; drawing it now would cut the reply in two.
+        if (_topicStreams.Snapshot(topic.TopicId).HasStream)
+        {
+            await _streamingService.QueueMessageAsync(topic, action.Message, senderId, action.Attachments);
+            return;
+        }
+
         // Close off the bubble the agent is writing before the user's own message goes in.
         // Nothing to close on a topic with no reply in flight.
         _topicStreams.FinalizeCurrent(topic.TopicId);
 
         // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
         var correlationId = _pipeline.SubmitUserMessage(
-            topic.TopicId, action.Message, _userIdentityStore.State.SignedIn?.UserId,
+            topic.TopicId, action.Message, senderId,
             attached.Count == 0 ? null : attached);
 
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault

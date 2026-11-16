@@ -15,7 +15,34 @@ public sealed class MessagePipeline(
     : IMessagePipeline
 {
     private readonly Dictionary<string, string> _pendingUserMessages = new();
+    private readonly HashSet<string> _queuedUserMessages = [];
     private readonly Lock _lock = new();
+
+    // A message sent while a reply streams is drawn by nobody now: the hub writes it on the stream as
+    // its turn starts, carrying this id, and the page draws it there.
+    public string QueueUserMessage()
+    {
+        var correlationId = Guid.NewGuid().ToString("N");
+        lock (_lock)
+        {
+            _queuedUserMessages.Add(correlationId);
+        }
+
+        return correlationId;
+    }
+
+    public bool WasQueuedByThisClient(string? correlationId)
+    {
+        if (string.IsNullOrEmpty(correlationId))
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            return _queuedUserMessages.Contains(correlationId);
+        }
+    }
 
     public string SubmitUserMessage(
         string topicId, string content, string? senderId,

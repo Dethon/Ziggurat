@@ -6,16 +6,16 @@ namespace Tests.Unit.WebChat.Client.Components;
 
 public class ChatInputLogicTests
 {
+    // Whether a reply is running is no part of it: a message sent then waits in the topic's queue.
     [Theory]
-    [InlineData(false, "hello", false, true)]  // connected, has text, not answering -> can send
-    [InlineData(false, "hello", true, false)]  // agent is answering -> cannot send
-    [InlineData(true, "hello", false, false)]  // composer disabled (no agent / disconnected)
-    [InlineData(false, "", false, false)]      // empty input
-    [InlineData(false, "   ", false, false)]   // whitespace-only input
-    [InlineData(false, null, false, false)]    // null input
-    public void CanSend_ReturnsExpected(bool disabled, string? inputText, bool isStreaming, bool expected)
+    [InlineData(false, "hello", true)]  // connected, has text -> can send
+    [InlineData(true, "hello", false)]  // composer disabled (no agent / disconnected)
+    [InlineData(false, "", false)]      // empty input
+    [InlineData(false, "   ", false)]   // whitespace-only input
+    [InlineData(false, null, false)]    // null input
+    public void CanSend_ReturnsExpected(bool disabled, string? inputText, bool expected)
     {
-        ChatInputLogic.CanSend(disabled, inputText, isStreaming).ShouldBe(expected);
+        ChatInputLogic.CanSend(disabled, inputText).ShouldBe(expected);
     }
 
     // Read-only is said, not left to a refusal: the message would show as sent and then fail.

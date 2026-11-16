@@ -21,5 +21,9 @@ public interface IMessagePipeline
 
     bool WasSentByThisClient(string? correlationId);
 
+    string QueueUserMessage();
+
+    bool WasQueuedByThisClient(string? correlationId);
+
     PipelineSnapshot GetSnapshot(string topicId);
 }
