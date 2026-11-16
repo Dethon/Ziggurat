@@ -126,8 +126,9 @@ public sealed class QueuedSendTests
         newer.Release();
     }
 
+    // Nothing was drawn for it, so its words go back to the composer rather than being lost.
     [Fact]
-    public async Task AQueuedSendTheHubRefuses_IsToldAsTheRefusal()
+    public async Task AQueuedSendTheHubRefuses_IsToldAsTheRefusal_AndItsWordsGoBackToTheComposer()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
@@ -143,6 +144,7 @@ public sealed class QueuedSendTests
 
         await TestChat.Eventually(() => client.Toasts.State.Toasts.Any(t => t.Message.Contains("signed out")));
         Shown(client).ShouldBe(["user: first"]);
+        client.Composer.State.Dictation.Transcript.ShouldNotBeNull().Text.ShouldBe("second");
         reply.Release();
     }
 

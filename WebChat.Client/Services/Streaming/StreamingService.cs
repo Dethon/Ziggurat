@@ -94,6 +94,9 @@ public sealed class StreamingService(
                 var queued = await EnqueueAsync(outgoing with { CorrelationId = pipeline.QueueUserMessage() });
                 if (queued is null)
                 {
+                    // Nothing was drawn for it, so its words go back where they were typed; its
+                    // files never left the composer.
+                    dispatcher.Dispatch(new OfferComposerText(message));
                     return;
                 }
 

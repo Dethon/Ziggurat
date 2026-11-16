@@ -42,8 +42,12 @@ public class QueuedMessagesE2ETests(WebChatE2EFixture fixture)
                 }
             }
 
-            // Sent while the reply waits on its approval: the composer still sends, and nothing is drawn.
-            await SendAsync(input, $"Reply with only the word ALPHA{tag}. Do not call any tools.");
+            // Sent while the reply waits on its approval: the composer still sends, with Stop beside
+            // Send rather than in its place, and nothing is drawn.
+            await input.FillAsync($"Reply with only the word ALPHA{tag}. Do not call any tools.");
+            await Assertions.Expect(page.Locator("[data-testid=composer-send]")).ToBeVisibleAsync();
+            await Assertions.Expect(page.Locator("[data-testid=composer-cancel]")).ToBeVisibleAsync();
+            await input.PressAsync("Enter");
             await SendAsync(input, $"Reply with only the word BRAVO{tag}. Do not call any tools.");
 
             var chips = page.Locator("[data-testid=queue-chip]");

@@ -36,6 +36,19 @@ public sealed class QueueDispatcher(
         }
     }
 
+    // The chips are the pages' to catch up on; a topic that could not be read just now costs the turn nothing.
+    private async Task TellQueueAsync(SenderSnapshot sender)
+    {
+        try
+        {
+            await _news.TellAsync(sender);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not tell topic {TopicId} its queue changed", sender.TopicId);
+        }
+    }
+
     // Written, then vouched for afresh, then sent: the person saw the message waiting, so it takes its
     // place in the conversation as its turn starts even when the turn is refused under it. A queued
     // message runs whether or not its sender still has a page open, so nothing here is bound to one.
@@ -43,9 +56,9 @@ public sealed class QueueDispatcher(
     {
         var (queued, stream) = turn;
         var sender = queued.Sender;
+        await TellQueueAsync(sender);
         try
         {
-            await _news.TellAsync(sender);
             if (!streamService.IsRunning(sender.TopicId, stream))
             {
                 return;
