@@ -482,6 +482,29 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second", "third"]);
     }
 
+    // A stop while the next message's sender is being vouched for, as its turn was about to start: it has
+    // not started, so it goes back to its sender and is never drawn on the stream nor sent.
+    [Fact]
+    public async Task AStopWhileTheNextMessageIsBeingVouchedFor_ReturnsIt_NeitherDrawnNorSent()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "second", "c-2", null)).ShouldBeTrue();
+        var vouching = _accounts.HoldNext();
+
+        await FinishTurnAsync("answer one");
+        await vouching.Asked;
+        await fran.CancelTopic(TopicId);
+        vouching.Answer();
+        await wire.Ended;
+        await Eventually.Settle();
+
+        (await SentSoFarAsync()).ShouldBe(["first"]);
+        wire.Said().ShouldBe(["user: first", "agent: answer one"]);
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second"]);
+    }
+
     // A deleted conversation keeps nothing of what was said or queued in it, returned messages included.
     [Fact]
     public async Task DeletingTheTopic_DropsWhatAStopReturned()

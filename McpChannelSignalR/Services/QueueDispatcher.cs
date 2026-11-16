@@ -36,9 +36,11 @@ public sealed class QueueDispatcher(
         }
     }
 
-    // Written, then vouched for afresh, then sent: the person saw the message waiting, so it takes its
-    // place in the conversation as its turn starts even when the turn is refused under it. A queued
-    // message runs whether or not its sender still has a page open, so nothing here is bound to one.
+    // Vouched for afresh, then written, then sent: the person saw the message waiting, so it takes its
+    // place in the conversation as its turn starts even when the turn is refused under it. Vouched for
+    // before its turn starts, so a stop while the accounts service answers returns it to its sender
+    // rather than leave it drawn on the stream and never sent. A queued message runs whether or not its
+    // sender still has a page open, so nothing here is bound to one.
     private async Task DispatchAsync(QueuedTurn turn)
     {
         var (queued, stream) = turn;
@@ -46,21 +48,13 @@ public sealed class QueueDispatcher(
         await _news.TellOrLogAsync(sender, logger);
         try
         {
+            var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
             if (!streamService.Start(turn))
             {
                 return;
             }
 
             await _turns.WriteMessageAsync(sender, queued.Message);
-            var vouching = await _turns.VouchingAsync(sender.UserId, sender.SessionId, CancellationToken.None);
-
-            // Asked again once the accounts service has answered: what ends a refused turn ends whatever
-            // stream the topic has, which after a stop may be another one.
-            if (!streamService.IsRunning(sender.TopicId, stream))
-            {
-                return;
-            }
-
             if (vouching.Account is not { } account)
             {
                 await _turns.RefuseAsync(sender, vouching.Refusal);
