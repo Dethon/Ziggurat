@@ -3,7 +3,7 @@ using Tests.Integration.Fixtures;
 
 namespace Tests.Unit;
 
-public class HostMountDirectoryTests
+public class HostMountDirectoryTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "host-mount-tests-" + Guid.NewGuid().ToString("N"));
 
@@ -38,6 +38,8 @@ public class HostMountDirectoryTests
         Inode(again.Path).ShouldBe(inode, "a directory deleted and made again is another inode, which Docker's staging mount no longer shows");
         Directory.EnumerateFileSystemEntries(again.Path).ShouldBeEmpty();
     }
+
+    public void Dispose() => Directory.Delete(_root, recursive: true);
 
     private static long Inode(string path) =>
         long.Parse(System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("stat", ["-c", "%i", path])
