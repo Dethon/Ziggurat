@@ -987,7 +987,7 @@ button { cursor: pointer; }
     .health-item { padding: 0.5rem 0.6rem; column-gap: 0.5rem; }
 
     .activity-item { grid-template-columns: auto minmax(0, 1fr); row-gap: 0.25rem; padding: 0.6rem 1rem; }
-    .activity-text { grid-column: 1 / -1; grid-row: 2; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .activity-text { grid-column: 1 / -1; grid-row: 2; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
     .activity-time { justify-self: end; }
 
     .section-grid { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
