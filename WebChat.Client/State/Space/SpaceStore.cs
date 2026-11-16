@@ -25,10 +25,11 @@ public sealed class SpaceStore : IDisposable
 
     private static SpaceState Reduce(SpaceState state, IAction action) => action switch
     {
-        SelectSpace a => state with { CurrentSlug = a.Slug },
+        SelectSpace a => state with { CurrentSlug = a.Slug, Named = state.Named && state.CurrentSlug == a.Slug },
         SpaceValidated a => new SpaceState
         {
-            CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor, DefaultAgent = a.DefaultAgent
+            CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor, DefaultAgent = a.DefaultAgent,
+            Named = true
         },
         InvalidSpace => SpaceState.Initial,
         _ => state

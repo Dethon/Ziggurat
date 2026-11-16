@@ -8,6 +8,10 @@ public sealed record SpaceState
     public string SpaceName { get; init; } = "Main";
     public string AccentColor { get; init; } = SpaceConfig.DefaultAccentColor;
 
+    // Whether the hub has named this space yet. Until it has, the name and colour above are
+    // placeholders, never what an installed app should be told it is.
+    public bool Named { get; init; }
+
     // The agent a conversation in this space opens on unless the person picked another here, as the
     // household's configuration names it; none when it names none.
     public string? DefaultAgent { get; init; }
