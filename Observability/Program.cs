@@ -47,8 +47,8 @@ app.MapGet("/manifest.webmanifest", () =>
         id = "/",
         scope = "/",
         display = "standalone",
-        background_color = "#1a1a2e",
-        theme_color = "#1a1a2e",
+        background_color = "#0b0f17",
+        theme_color = "#0b0f17",
         prefer_related_applications = false,
         icons = new[]
         {

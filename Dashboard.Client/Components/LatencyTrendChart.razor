@@ -30,15 +30,14 @@ else
 
     private bool HasData => _series.Any(s => s.Points.Count > 0);
 
-    private static readonly List<string> Palette =
-        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
-
     private readonly ApexChartOptions<TrendDatum> _options = new()
     {
         Chart = new Chart
         {
             Background = "transparent",
-            ForeColor = "#a0a0b0",
+            ForeColor = ChartTheme.Text,
+            FontFamily = ChartTheme.Font,
+            Toolbar = new Toolbar { Show = false },
             Height = "260",
             Animations = new Animations
             {
@@ -46,13 +45,15 @@ else
                 AnimateGradually = new AnimateGradually { Enabled = false }
             }
         },
-        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
-        Colors = Palette,
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = ChartTheme.Text } },
+        Colors = ChartTheme.Palette,
+        Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 },
         Theme = new Theme { Mode = Mode.Dark },
         Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } },
         Grid = new Grid
         {
-            BorderColor = "#2a2a3e",
+            BorderColor = ChartTheme.Grid,
+            StrokeDashArray = 4,
             Padding = new Padding { Left = 0 }
         },
         Xaxis = new XAxis
@@ -80,8 +81,3 @@ else
 
     public sealed record TrendDatum(DateTime X, double Y, string Stage);
 }
-
-<style>
-    .chart-container { min-height: 260px; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
-</style>

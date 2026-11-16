@@ -48,15 +48,14 @@ else
     private string _prevMetricLabel = "";
     private bool _needsUpdate;
 
-    private static readonly List<string> Palette =
-        ["#6366f1", "#22d3ee", "#f59e0b", "#ef4444", "#10b981", "#f472b6", "#a78bfa", "#fbbf24"];
-
     private readonly ApexChartOptions<ChartEntry> _donutOptions = new()
     {
         Chart = new Chart
         {
             Background = "transparent",
-            ForeColor = "#a0a0b0",
+            ForeColor = ChartTheme.Text,
+            FontFamily = ChartTheme.Font,
+            Toolbar = new Toolbar { Show = false },
             Height = "250",
             Animations = new Animations
             {
@@ -64,8 +63,10 @@ else
                 AnimateGradually = new AnimateGradually { Enabled = false }
             }
         },
-        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = "#a0a0b0" } },
-        Colors = Palette,
+        Legend = new Legend { Position = LegendPosition.Bottom, Labels = new LegendLabels { Colors = ChartTheme.Text } },
+        Colors = ChartTheme.Palette,
+        Stroke = new Stroke { Colors = ["transparent"], Width = 2 },
+        PlotOptions = new PlotOptions { Pie = new PlotOptionsPie { Donut = new PlotOptionsDonut { Size = "68%" } } },
         Theme = new Theme { Mode = Mode.Dark },
         Tooltip = new Tooltip { Y = new TooltipY { Title = new TooltipYTitle() } }
     };
@@ -75,7 +76,9 @@ else
         Chart = new Chart
         {
             Background = "transparent",
-            ForeColor = "#a0a0b0",
+            ForeColor = ChartTheme.Text,
+            FontFamily = ChartTheme.Font,
+            Toolbar = new Toolbar { Show = false },
             Height = "250",
             Animations = new Animations
             {
@@ -88,7 +91,9 @@ else
             Bar = new PlotOptionsBar
                 {
                     Horizontal = true,
-                    BarHeight = "50%",
+                    BarHeight = "60%",
+                    Distributed = true,
+                    BorderRadius = 4,
                     DataLabels = new PlotOptionsBarDataLabels
                     {
                         Position = BarDataLabelPosition.Bottom,
@@ -99,9 +104,9 @@ else
         DataLabels = new DataLabels
         {
             Enabled = true,
-            Style = new DataLabelsStyle { FontSize = "11px", Colors = ["#e0e0e0"] },
+            Style = new DataLabelsStyle { FontSize = "11px", Colors = [ChartTheme.Label], FontWeight = "500" },
             TextAnchor = TextAnchor.Start,
-            Formatter = "function(val, opts) { return '- ' + opts.w.globals.labels[opts.dataPointIndex]; }"
+            Formatter = "function(val, opts) { return opts.w.globals.labels[opts.dataPointIndex]; }"
         },
         Yaxis =
         [
@@ -110,7 +115,8 @@ else
                 Show = false
             }
         ],
-        Colors = Palette,
+        Colors = ChartTheme.Palette,
+        Legend = new Legend { Show = false },
         Theme = new Theme { Mode = Mode.Dark },
         Tooltip = new Tooltip
         {
@@ -121,7 +127,8 @@ else
         },
         Grid = new Grid
         {
-            BorderColor = "#2a2a3e",
+            BorderColor = ChartTheme.Grid,
+            StrokeDashArray = 4,
             Padding = new Padding { Left = 0 }
         }
     };
@@ -208,8 +215,3 @@ else
 
     public enum ChartMode { Donut, HorizontalBar }
 }
-
-<style>
-    .chart-container { min-height: 250px; transition: min-height 0.2s ease; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; padding: 1rem 0; }
-</style>

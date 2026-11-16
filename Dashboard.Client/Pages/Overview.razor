@@ -1,5 +1,4 @@
 @page "/"
-@using Dashboard.Client.State.Connection
 @using Dashboard.Client.State.Errors
 @using Dashboard.Client.State.Health
 @using Dashboard.Client.State.Metrics
@@ -16,7 +15,6 @@
 @inject ToolsStore Tools
 @inject ErrorsStore Errors
 @inject SchedulesStore Schedules
-@inject ConnectionStore Connection
 @inject VoiceStore Voice
 @inject MetricFamilyTable Families
 @inject DataLoadEffect DataLoad
@@ -24,12 +22,12 @@
 
 <div class="overview-page">
     <header class="page-header">
-        <h2>Overview</h2>
-        <div class="controls">
-            <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
-                          OnChanged="OnTimeChanged" />
-            <span class="connection-status @_status.Modifier">@_status.Label</span>
+        <div class="page-title">
+            <h2>Overview</h2>
+            <p class="page-description">Spend, tool use and service health across the deployment.</p>
         </div>
+        <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
+                      OnChanged="OnTimeChanged" />
     </header>
 
     <section class="kpi-row">
@@ -43,12 +41,25 @@
     </section>
 
     <section class="section">
-        <h3>Service Health</h3>
+        <h3>
+            Service health
+            @if (_health.Services.Any())
+            {
+                var down = _health.Services.Count(s => !s.IsHealthy);
+                <span class="health-summary">
+                    @(_health.Services.Count - down) of @_health.Services.Count up@(down > 0 ? " · " : "")
+                    @if (down > 0)
+                    {
+                        <span class="tone-red">@down down</span>
+                    }
+                </span>
+            }
+        </h3>
         <HealthGrid Services="_health.Services" />
     </section>
 
     <section class="section">
-        <h3>Recent Activity</h3>
+        <h3>Recent activity <span class="section-count">@_recentActivity.Count.ToString("N0")</span></h3>
         <div class="activity-feed">
             @foreach (var item in _recentActivity)
             {
@@ -72,7 +83,6 @@
 @code {
     private MetricsState _metrics = new();
     private HealthState _health = new();
-    private ConnectionStatus _status = ConnectionStatus.Connecting;
     private int _selectedDays = 1;
     private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
     private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -95,7 +105,6 @@
 
         _subscriptions.Add(Metrics.StateObservable.Subscribe(s => InvokeAsync(() => { _metrics = s; StateHasChanged(); })));
         _subscriptions.Add(Health.StateObservable.Subscribe(s => InvokeAsync(() => { _health = s; StateHasChanged(); })));
-        _subscriptions.Add(Connection.StateObservable.Subscribe(s => InvokeAsync(() => { _status = s.Status; StateHasChanged(); })));
 
         _subscriptions.Add(Tokens.StateObservable.Subscribe(_ => InvokeAsync(() => { RebuildActivity(); StateHasChanged(); })));
         _subscriptions.Add(Tools.StateObservable.Subscribe(_ => InvokeAsync(() => { RebuildActivity(); StateHasChanged(); })));
@@ -153,35 +162,3 @@
 
     private record ActivityItem(string Type, string TypeLabel, string Description, DateTimeOffset Timestamp);
 }
-
-<style>
-    .overview-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .connection-status { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 10px; font-weight: 600; }
-    .connection-status.live { background: rgba(74,222,128,0.15); color: var(--accent-green); }
-    .connection-status.connecting,
-    .connection-status.reconnecting { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .activity-feed { display: flex; flex-direction: column; gap: 0.4rem; }
-    .activity-item { display: flex; align-items: center; gap: 0.6rem; background: var(--bg-card); padding: 0.5rem 0.8rem; border-radius: 6px; font-size: 0.85rem; }
-    .activity-badge { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-    .activity-badge.token { background: rgba(0,210,255,0.15); color: var(--accent-blue); }
-    .activity-badge.tool { background: rgba(251,191,36,0.15); color: var(--accent-yellow); }
-    .activity-badge.error { background: rgba(248,113,113,0.15); color: var(--accent-red); }
-    .activity-badge.schedule { background: rgba(167,139,250,0.15); color: var(--accent-purple); }
-    .activity-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
-    .tooltip-anchor { cursor: default; }
-    .tooltip-anchor:focus { outline: none; }
-    .tooltip-popup { display: none; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
-    .activity-time { color: var(--text-secondary); font-size: 0.75rem; white-space: nowrap; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
-
-    @@media (max-width: 768px) {
-        .page-header h2 { font-size: 1.1rem; }
-        .activity-item { flex-wrap: wrap; gap: 0.3rem; font-size: 0.78rem; }
-        .activity-text { min-width: 0; flex-basis: 100%; order: 3; }
-    }
-</style>

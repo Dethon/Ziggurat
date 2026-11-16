@@ -20,14 +20,15 @@
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
                               Unit="@GetMetricUnit(state)" />
             </section>
 
             <section class="section">
-                <h3>Recent Tool Calls</h3>
-                <div class="events-table">
+                <h3>Recent calls</h3>
+                <div class="events-table tbl-tools">
                     <div class="table-header">
                         <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                         <span class='sortable @SortClass("Tool")' @onclick='() => SortBy("Tool")'>Tool <SortArrow Column="Tool" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
@@ -38,11 +39,8 @@
                     {
                         <div class="table-row">
                             <span>@DashboardTime.Event(evt.Timestamp)</span>
-                            <span class="tool-name" title="@evt.ToolName">
-                                <span class="tool-name-full">@evt.ToolName</span>
-                                <span class="tool-name-short">@ShortToolName(evt.ToolName)</span>
-                            </span>
-                            <span>@evt.DurationMs ms</span>
+                            <span class="mono" title="@evt.ToolName">@ShortToolName(evt.ToolName)</span>
+                            <span>@evt.DurationMs.ToString("N0") ms</span>
                             @if (evt.Success)
                             {
                                 <span class="status-ok">OK</span>
@@ -127,31 +125,3 @@
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 }
-
-<style>
-    .tools-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 2fr) 100px minmax(0, 1fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
-    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--text-primary); }
-    .sortable.sorted { color: var(--text-primary); }
-    .table-row { background: var(--bg-card); border-radius: 4px; }
-    .table-row:hover { background: rgba(255,255,255,0.03); }
-    .tool-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tool-name-short { display: none; }
-    .status-ok { color: var(--accent-green); }
-    .status-err { color: var(--accent-red); }
-    .tooltip-anchor { cursor: default; }
-    .tooltip-anchor:focus { outline: none; }
-    .tooltip-popup { display: none; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-width: 320px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none; }
-
-    @@media (max-width: 768px) {
-        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 110px minmax(0, 2fr) 80px minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 405px; }
-        .tool-name-full { display: none; }
-        .tool-name-short { display: inline; }
-    }
-</style>

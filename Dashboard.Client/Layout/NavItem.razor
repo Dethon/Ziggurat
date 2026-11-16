@@ -1,0 +1,10 @@
+@* A page in the nav: always its icon and its name, so nothing has to be recognised from a glyph alone. *@
+<NavLink href="@Page.Href" Match="@(Page.Exact ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+         class="nav-item" title="@Page.Label">
+    <Icon Glyph="Page.Glyph" Class="nav-icon" />
+    <span class="nav-label">@Page.Label</span>
+</NavLink>
+
+@code {
+    [Parameter, EditorRequired] public NavPage Page { get; set; } = default!;
+}

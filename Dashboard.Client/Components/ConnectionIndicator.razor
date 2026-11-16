@@ -2,7 +2,8 @@
 @implements IDisposable
 @inject ConnectionStore Connection
 
-<div class="live-indicator @_status.Modifier" title="@_status.Label">
+@* The one connection badge, in the top bar of every page; the overview reads the same store. *@
+<div class="connection-status @_status.Modifier" title="Connection: @_status.Label">
     <span class="live-dot"></span>
     <span class="live-label">@_status.Label</span>
 </div>
@@ -25,35 +26,3 @@
 
     public void Dispose() => _subscription?.Dispose();
 }
-
-<style>
-    .live-indicator {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.25rem;
-        margin-top: auto;
-        margin-bottom: 0.75rem;
-        font-size: 0.55rem;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-secondary);
-    }
-    .live-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--text-secondary);
-    }
-    .live-indicator.live .live-dot { background: var(--accent-green); }
-    .live-indicator.connecting .live-dot { background: var(--accent-yellow); }
-    .live-indicator.reconnecting .live-dot { background: var(--accent-yellow); }
-    .live-indicator.live .live-label { color: var(--accent-green); }
-    .live-indicator.connecting .live-label,
-    .live-indicator.reconnecting .live-label { color: var(--accent-yellow); }
-
-    @@media (max-width: 768px) {
-        .live-indicator { margin: 0; justify-content: center; }
-        .live-label { display: none; }
-    }
-</style>

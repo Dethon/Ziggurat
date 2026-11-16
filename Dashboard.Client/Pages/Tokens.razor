@@ -20,6 +20,7 @@
             </section>
 
             <section class="section">
+                <h3>Breakdown</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.Donut"
                               MetricLabel="@(MetricOptions.FirstOrDefault(o => o.Value == state.Metric.ToString())?.Label ?? "")"
                               Unit="@(state.Metric == TokenMetric.Cost ? "$" : "")"
@@ -27,8 +28,8 @@
             </section>
 
             <section class="section">
-                <h3>Recent Token Events</h3>
-                <div class="events-table">
+                <h3>Recent calls</h3>
+                <div class="events-table tbl-tokens">
                     <div class="table-header">
                         <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                         <span class='sortable @SortClass("Sender")' @onclick='() => SortBy("Sender")'>Sender <SortArrow Column="Sender" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
@@ -42,7 +43,7 @@
                         <div class="table-row">
                             <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span>@PeopleOf(state.Events).Of(evt.UserId, evt.Sender)</span>
-                            <span>@evt.Model</span>
+                            <span class="mono" title="@evt.Model">@evt.Model</span>
                             <span>@evt.InputTokens.ToString("N0")</span>
                             <span>@evt.OutputTokens.ToString("N0")</span>
                             <span>@($"${evt.Cost:F4}")</span>
@@ -113,23 +114,3 @@
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 }
-
-<style>
-    .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) 90px 90px 90px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
-    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--text-primary); }
-    .sortable.sorted { color: var(--text-primary); }
-    .table-row { background: var(--bg-card); border-radius: 4px; }
-    .table-row:hover { background: rgba(255,255,255,0.03); }
-
-    @@media (max-width: 768px) {
-        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 70px 70px 70px; font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 525px; }
-        .table-row span { word-break: break-word; }
-    }
-</style>

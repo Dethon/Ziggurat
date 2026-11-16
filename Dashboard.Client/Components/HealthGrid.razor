@@ -28,14 +28,3 @@
 
     protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
 }
-
-<style>
-    .health-grid { display: flex; flex-wrap: wrap; gap: 0.8rem; }
-    .health-item { display: flex; align-items: center; gap: 0.4rem; background: var(--bg-card); padding: 0.5rem 0.8rem; border-radius: 6px; }
-    .health-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .health-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
-    .health-dot.unhealthy { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
-    .health-name { font-size: 0.85rem; color: var(--text-primary); }
-    .health-household { font-size: 0.7rem; color: var(--text-secondary); font-family: monospace; }
-    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
-</style>

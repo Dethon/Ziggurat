@@ -8,26 +8,34 @@
 @inject DataLoadEffect DataLoad
 
 <header class="page-header">
-    <h2>@Title</h2>
-    <div class="controls">
-        <PillSelector Label="Group by" Options="DimensionOptions" Value="@Family.Dimension.Current"
-                      OnChanged="value => _session.ChangeAsync(Family.Dimension, value)" />
-        @if (Family.Metric is { } metric)
+    <div class="page-title">
+        <h2>@Title</h2>
+        @if (!string.IsNullOrEmpty(Description))
         {
-            <PillSelector Label="Metric" Options="MetricOptions" Value="@metric.Current"
-                          OnChanged="value => _session.ChangeAsync(metric, value)"
-                          DisabledValues="Unavailable()" />
+            <p class="page-description">@Description</p>
         }
-        @ExtraControls?.Invoke(_session)
-        <PillSelector Label="Time" Options="TimeOptions" Value="@_session.SelectedDays.ToString()"
-                      OnChanged="_session.ChangeDaysAsync" />
     </div>
+    <PillSelector Label="Time" Options="TimeOptions" Value="@_session.SelectedDays.ToString()"
+                  OnChanged="_session.ChangeDaysAsync" />
 </header>
+
+<div class="toolbar">
+    <PillSelector Label="Group by" Options="DimensionOptions" Value="@Family.Dimension.Current"
+                  OnChanged="value => _session.ChangeAsync(Family.Dimension, value)" />
+    @if (Family.Metric is { } metric)
+    {
+        <PillSelector Label="Metric" Options="MetricOptions" Value="@metric.Current"
+                      OnChanged="value => _session.ChangeAsync(metric, value)"
+                      DisabledValues="Unavailable()" />
+    }
+    @ExtraControls?.Invoke(_session)
+</div>
 
 @ChildContent(_state)
 
 @code {
     [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Description { get; set; }
     [Parameter, EditorRequired] public MetricFamily<TStore> Family { get; set; } = default!;
     [Parameter, EditorRequired] public IReadOnlyList<PillOption> DimensionOptions { get; set; } = [];
     [Parameter] public IReadOnlyList<PillOption> MetricOptions { get; set; } = [];
@@ -71,14 +79,3 @@
 
     public void Dispose() => _sub?.Dispose();
 }
-
-<style>
-    .page-header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 1rem; }
-    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
-    .controls { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-end; }
-
-    @@media (max-width: 768px) {
-        .page-header { flex-direction: column; }
-        .page-header h2 { font-size: 1.1rem; }
-    }
-</style>

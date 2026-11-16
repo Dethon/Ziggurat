@@ -5,7 +5,7 @@
 @using static Dashboard.Client.Components.PillSelector
 @inject MetricFamilyTable Families
 
-<div class="tokens-page">
+<div class="latency-page">
     <MetricControls TStore="LatencyStore" TState="LatencyState"
                     Title="Latency"
                     Family="Families.Latency"
@@ -20,6 +20,7 @@
             </section>
 
             <section class="section">
+                <h3>@MetricLabel(state) by stage</h3>
                 <DynamicChart Data="state.Breakdown" ChartType="DynamicChart.ChartMode.HorizontalBar"
                               MetricLabel="@MetricLabel(state)"
                               Unit="ms" UseFullLabels="true" />
@@ -31,8 +32,8 @@
             </section>
 
             <section class="section">
-                <h3>Recent Turns</h3>
-                <div class="events-table">
+                <h3>Recent spans</h3>
+                <div class="events-table tbl-latency">
                     <div class="table-header">
                         <span class='sortable @SortClass("Time")' @onclick='() => SortBy("Time")'>Time <SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
                         <span class='sortable @SortClass("Stage")' @onclick='() => SortBy("Stage")'>Stage <SortArrow Column="Stage" SortColumn="@_sortColumn" Ascending="@_sortAsc" /></span>
@@ -46,10 +47,10 @@
                         <div class="table-row">
                             <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span>@evt.Stage</span>
-                            <span>@(evt.Model ?? "-")</span>
+                            <span class="mono" title="@evt.Model">@(evt.Model ?? "—")</span>
                             <span>@evt.DurationMs.ToString("N0") ms</span>
-                            <span>@(evt.AgentName ?? evt.AgentId ?? "-")</span>
-                            <span>@(evt.ConversationId ?? "-")</span>
+                            <span>@(evt.AgentName ?? evt.AgentId ?? "—")</span>
+                            <span class="mono tone-muted" title="@evt.ConversationId">@(evt.ConversationId ?? "—")</span>
                         </div>
                     }
                 </div>
@@ -122,20 +123,3 @@
 
     private string SortClass(string column) => _sortColumn == column ? "sorted" : "";
 }
-
-<style>
-    .tokens-page { display: flex; flex-direction: column; gap: 1.5rem; }
-    .kpi-row { display: flex; gap: 1rem; flex-wrap: wrap; }
-    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
-    .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: 135px minmax(0, 1fr) minmax(0, 1fr) 120px minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; }
-    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
-    .table-row { background: var(--bg-card); border-radius: 4px; }
-    .table-row:hover { background: rgba(255,255,255,0.03); }
-
-    @@media (max-width: 768px) {
-        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { grid-template-columns: 110px minmax(0, 1fr) minmax(0, 1fr) 90px minmax(0, 1fr) minmax(0, 1fr); font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 660px; }
-        .table-row span { word-break: break-word; }
-    }
-</style>
