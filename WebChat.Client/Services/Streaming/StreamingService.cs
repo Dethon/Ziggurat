@@ -48,7 +48,7 @@ public sealed class StreamingService(
                 : [];
             var returned = attachments is null ? ReturnedPatchOf(topic) : null;
             var outgoing = new Outgoing(
-                topic, message, correlationId, returned?.Patch ?? GetConfigPatch(topic),
+                topic, message, correlationId, returned is { } back ? back.Patch : GetConfigPatch(topic),
                 attachments ?? ComposerSelectors.References(sending),
                 sending)
             {
@@ -91,7 +91,7 @@ public sealed class StreamingService(
                 : [];
             var references = attachments ?? ComposerSelectors.References(sending);
             var returned = attachments is null ? ReturnedPatchOf(topic) : null;
-            var outgoing = new Outgoing(topic, message, null, returned?.Patch ?? GetConfigPatch(topic), references, sending)
+            var outgoing = new Outgoing(topic, message, null, returned is { } back ? back.Patch : GetConfigPatch(topic), references, sending)
             {
                 Returned = returned
             };
