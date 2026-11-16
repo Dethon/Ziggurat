@@ -1381,6 +1381,41 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["steer me", "older"]);
     }
 
+    // A schedule's turn attached to the topic while the person's turn runs, ending first, is the fire's
+    // turn over, not the person's: the steer they sent into their own turn is written once that turn ends.
+    [Fact]
+    public async Task AFireEndingWhileTheSteeredTurnRuns_LeavesTheSteerWaiting_UntilThePersonsTurnEnds()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+
+        // As create_conversation announces a schedule's turn in the topic, and send_reply ends it.
+        _streamService.GetOrCreateStream(TopicId, "summarize my mail", "scheduler", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = ConversationId, Content = "your mail", ContentType = ReplyContentType.Text,
+            IsComplete = true, MessageId = "fire", TurnKey = TurnKey.Mint(), AgentInitiated = true
+        });
+        await Eventually.Settle();
+
+        wire.Said().ShouldNotContain("user: steer me");
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+
+        await FinishTurnAsync("done");
+        await Eventually.Until(() => wire.Said().Contains("user: steer me"), "the steer is written once the person's turn ends");
+        await FinishTurnAsync("answer to the steer");
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first", "agent: your mail", "agent: done",
+            "user: steer me", "agent: answer to the steer"
+        ]);
+    }
+
     private static string IdOf(QueueChangedNotification queue, string content) =>
         queue.Items.Single(i => i.Content == content).Id;
 

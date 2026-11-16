@@ -154,7 +154,9 @@ public sealed class StreamService(
             await WriteMessageAsync(topicId, new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId });
         }
 
-        CompleteStream(topicId);
+        // A turn an agent started (a schedule's, attached to the topic while a person's turn runs) ending
+        // gives up its own place and is no end of the turn a steer was sent into.
+        CompleteStream(topicId, startsSteers: p.AgentInitiated != true);
     }
 
     // A reply under the key of a steer that has not started is that steer's answer, given before the turn
@@ -281,10 +283,11 @@ public sealed class StreamService(
     // A place held on the running stream (OpenOrHold, Hold), turned into a message waiting at the back
     // of its queue, or, when a stop took that stream meanwhile, handed back to its sender with the rest
     // of it. The place went with the stream either way, and a stream opened since is no part of it.
-    public Queueing Enqueue(string topicId, long stream, QueuedMessage message) => Finish(topicId, stream, message);
+    public Queueing Enqueue(string topicId, long stream, QueuedMessage message) =>
+        Finish(topicId, stream, message, startsSteers: false);
 
     // A place held on the running stream given up, the message it was held for refused.
-    public void Release(string topicId, long stream) => Finish(topicId, stream, null);
+    public void Release(string topicId, long stream) => Finish(topicId, stream, null, startsSteers: false);
 
     // The topic's queue now, in the order it will run.
     public QueueSnapshot QueueOf(string topicId)
@@ -513,13 +516,14 @@ public sealed class StreamService(
     public const int PushExcerptLength = 140;
     private const string NoExcerpt = "The agent has finished responding";
 
-    private void CompleteStream(string topicId) => Finish(topicId, heldOn: null, queueing: null);
+    private void CompleteStream(string topicId, bool startsSteers) =>
+        Finish(topicId, heldOn: null, queueing: null, startsSteers);
 
     // A turn on the stream is over, or a place held on it given up (queueing its message, or not): the
     // next queued message's turn starts on the same stream, and only once nothing is pending or queued
     // does the stream end. A place is given up only on the stream it was held on, in the same step as
     // its message is queued, so a stop in between can neither lose the message nor end another stream.
-    private Queueing Finish(string topicId, long? heldOn, QueuedMessage? queueing)
+    private Queueing Finish(string topicId, long? heldOn, QueuedMessage? queueing, bool startsSteers)
     {
         ChannelSession? finished = null;
         string? spaceSlug = null;
@@ -553,7 +557,7 @@ public sealed class StreamService(
 
             // Decrement pending count — only tear down when the last agent finishes
             var remaining = _pendingPromptCounts.AddOrUpdate(topicId, 0, (_, count) => count - 1);
-            if (heldOn is null)
+            if (startsSteers)
             {
                 remaining = StartSteers(topicId, remaining);
             }
