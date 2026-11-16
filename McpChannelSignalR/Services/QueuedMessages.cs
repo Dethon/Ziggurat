@@ -28,7 +28,11 @@ public enum Queueing
 
 // The head of a queue, taken as the turn before it ended, on the stream it was taken from: a stream
 // stopped or replaced while its dispatch was being vouched for is not the one to write it on.
-public sealed record QueuedTurn(QueuedMessage Message, long Stream);
+public sealed record QueuedTurn(QueuedMessage Message, StreamKey Stream);
+
+// One stream of a topic's, as opposed to the one opened after it: a place held, a head taken or a stop
+// names the stream it happened on, so nothing it leaves behind lands on another.
+public readonly record struct StreamKey(string TopicId, long Number);
 
 // A topic's queue as of one change, numbered so a page told of two changes keeps the later.
 // With whose own turn the stream is running, by their account's user id: the one person who may steer it.

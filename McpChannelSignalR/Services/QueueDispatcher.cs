@@ -70,7 +70,7 @@ public sealed class QueueDispatcher(
                 await _news.TellOrLogAsync(sender, logger);
             }
         }
-        catch (Exception ex) when (streamService.IsRunning(sender.TopicId, stream))
+        catch (Exception ex) when (streamService.IsRunning(stream))
         {
             // The turn it was given would otherwise hold the stream open for good.
             logger.LogError(ex, "Sending queued message {MessageId} in topic {TopicId} failed", queued.Id, sender.TopicId);

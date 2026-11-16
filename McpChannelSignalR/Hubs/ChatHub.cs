@@ -725,7 +725,7 @@ public sealed class ChatHub(
     // that took that stream meanwhile hands the message back to its sender with the rest of the queue,
     // and the page is told it was taken, not sent, so it does not run behind the cancel.
     private async Task<(bool Queued, string? Refusal)> QueueAsync(
-        ChannelSession session, SenderSnapshot sender, TurnMessage turn, long stream, CancellationToken ct)
+        ChannelSession session, SenderSnapshot sender, TurnMessage turn, StreamKey stream, CancellationToken ct)
     {
         string? refusal;
         try
@@ -738,18 +738,18 @@ public sealed class ChatHub(
         }
         catch
         {
-            streamService.Release(sender.TopicId, stream);
+            streamService.Release(stream);
             throw;
         }
 
         if (refusal is not null)
         {
-            streamService.Release(sender.TopicId, stream);
+            streamService.Release(stream);
             return (false, refusal);
         }
 
         var message = QueuedMessage.Of(sender, turn);
-        switch (streamService.Enqueue(sender.TopicId, stream, message))
+        switch (streamService.Enqueue(stream, message))
         {
             case Queueing.NotRunning:
                 return (false, null);

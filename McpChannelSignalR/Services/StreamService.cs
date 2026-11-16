@@ -26,7 +26,7 @@ public sealed class StreamService(
     // both kept under _streamLock with the stream itself: a message is queued only while the topic
     // streams, and the stream ends only once nothing is pending or queued.
     private readonly Dictionary<string, List<QueuedMessage>> _queues = new();
-    private readonly Dictionary<string, long> _streamIds = new();
+    private readonly Dictionary<string, StreamKey> _streamIds = new();
 
     // Queue heads taken as the turn before them ended, until the dispatcher starts each (StartAsync):
     // not started yet, so a stop meanwhile returns them with the rest.
@@ -70,7 +70,7 @@ public sealed class StreamService(
     // even once a page has taken it.
     private readonly Dictionary<string, Stopped> _stopped = new();
 
-    private sealed record Stopped(long Stream, Dictionary<string, Account?> Returned)
+    private sealed record Stopped(StreamKey Stream, Dictionary<string, Account?> Returned)
     {
         public void Add(QueuedMessage message) => Returned[message.Id] = message.Sender.Principal.Account;
     }
@@ -214,7 +214,7 @@ public sealed class StreamService(
 
             var broadcastChannel = new BroadcastChannel<ChatStreamMessage>();
             _responseChannels[topicId] = broadcastChannel;
-            _streamIds[topicId] = ++_lastStreamId;
+            _streamIds[topicId] = new StreamKey(topicId, ++_lastStreamId);
 
             _streamBuffers.TryRemove(topicId, out _);
 
@@ -235,7 +235,7 @@ public sealed class StreamService(
     // on that one — counted as pending, so the stream cannot end while the send is being admitted —
     // which the send gives up by queueing (Enqueue) or by being refused (Release), naming the stream it
     // was held on. The running stream's prompt and sender stay those of the turn it is on.
-    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened, long Stream) OpenOrHold(
+    public (BroadcastChannel<ChatStreamMessage> Channel, CancellationToken Token, bool Opened, StreamKey Stream) OpenOrHold(
         string topicId, string prompt, string senderId, Account person, CancellationToken parentToken)
     {
         lock (_streamLock)
@@ -256,7 +256,7 @@ public sealed class StreamService(
 
     // A place held on the running stream for a message being admitted to its queue; null when nothing
     // runs to queue behind.
-    public long? Hold(string topicId)
+    public StreamKey? Hold(string topicId)
     {
         lock (_streamLock)
         {
@@ -285,11 +285,11 @@ public sealed class StreamService(
     // A place held on the running stream (OpenOrHold, Hold), turned into a message waiting at the back
     // of its queue, or, when a stop took that stream meanwhile, handed back to its sender with the rest
     // of it. The place went with the stream either way, and a stream opened since is no part of it.
-    public Queueing Enqueue(string topicId, long stream, QueuedMessage message) =>
-        Finish(topicId, stream, message, startsSteers: false);
+    public Queueing Enqueue(StreamKey held, QueuedMessage message) =>
+        Finish(held.TopicId, held, message, startsSteers: false);
 
     // A place held on the running stream given up, the message it was held for refused.
-    public void Release(string topicId, long stream) => Finish(topicId, stream, null, startsSteers: false);
+    public void Release(StreamKey held) => Finish(held.TopicId, held, null, startsSteers: false);
 
     // The topic's queue now, in the order it will run.
     public QueueSnapshot QueueOf(string topicId)
@@ -423,7 +423,7 @@ public sealed class StreamService(
         lock (_streamLock)
         {
             var topicId = turn.Message.Sender.TopicId;
-            if (!(IsRunning(topicId, turn.Stream)
+            if (!(IsRunning(turn.Stream)
                   && _dispatching.TryGetValue(topicId, out var dispatching)
                   && dispatching.RemoveAll(m => m.Id == turn.Message.Id) > 0))
             {
@@ -438,11 +438,11 @@ public sealed class StreamService(
 
     // Whether the stream a queued turn was taken from is still the topic's: a stop, or a stop and a
     // new send, while its sender was being vouched for leaves it nothing to be written on.
-    public bool IsRunning(string topicId, long stream)
+    public bool IsRunning(StreamKey stream)
     {
         lock (_streamLock)
         {
-            return _streamIds.TryGetValue(topicId, out var running) && running == stream;
+            return _streamIds.TryGetValue(stream.TopicId, out var running) && running == stream;
         }
     }
 
@@ -525,7 +525,7 @@ public sealed class StreamService(
     // next queued message's turn starts on the same stream, and only once nothing is pending or queued
     // does the stream end. A place is given up only on the stream it was held on, in the same step as
     // its message is queued, so a stop in between can neither lose the message nor end another stream.
-    private Queueing Finish(string topicId, long? heldOn, QueuedMessage? queueing, bool startsSteers)
+    private Queueing Finish(string topicId, StreamKey? heldOn, QueuedMessage? queueing, bool startsSteers)
     {
         ChannelSession? finished = null;
         string? spaceSlug = null;
