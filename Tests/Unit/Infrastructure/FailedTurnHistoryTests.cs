@@ -94,6 +94,24 @@ public class FailedTurnHistoryTests
         _stored.Select(m => (m.Text, m.IsFailedTurn())).ShouldBe([("Hola", false), ("answer", false)]);
     }
 
+    // Two failed turns one after another are two turns: retrying the second takes its place alone, and the
+    // first stays where it is, still failed and never read by the model. Only one turn's own messages (steers
+    // that went in together) are retried by its last.
+    [Fact]
+    public async Task ARetryOfTheSecondOfTwoFailedTurns_TakesItsPlaceAlone()
+    {
+        await RunAsync(new ThrowingClient(new TurnRefusedException(Refusal)), "Hola");
+        await RunAsync(new ThrowingClient(new TurnRefusedException(Refusal)), "Otra cosa");
+        var client = new RecordingClient();
+
+        await RunAsync(client, "Otra cosa");
+
+        client.Seen.Select(m => m.Text).ShouldBe(["Otra cosa"]);
+        _dropped.ShouldBe([2]);
+        _stored.Select(m => (m.Text, m.IsFailedTurn())).ShouldBe(
+            [("Hola", true), (Refusal, true), ("Otra cosa", false), ("answer", false)]);
+    }
+
     [Fact]
     public async Task ADifferentMessageAfterAFailedTurn_LeavesItWhereItIs()
     {

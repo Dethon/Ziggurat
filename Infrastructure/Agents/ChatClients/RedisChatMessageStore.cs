@@ -418,13 +418,18 @@ public sealed class RedisChatMessageStore(
         public bool Ends(ChatMessage request) => TrailingId is not null && request.GetEntryId() == TrailingId;
     }
 
-    // The failed turn a conversation ends on: its messages, and what the person said in it.
+    // The failed turn a conversation ends on: its messages, and what the person said in it. One turn alone —
+    // what its person said and what they were told — however many failed before it: a different message
+    // sent after a failed turn leaves that turn where it is, and if it fails too, its own failure is the turn
+    // a retry takes the place of.
     private sealed record FailedTail(IReadOnlyList<ChatMessage> Messages)
     {
         public static FailedTail? Of(IReadOnlyList<ChatMessage> stored)
         {
-            var tail = stored.Reverse().TakeWhile(m => m.IsFailedTurn()).Reverse().ToList();
-            return tail.Count == 0 ? null : new FailedTail(tail);
+            var failed = stored.Reverse().TakeWhile(m => m.IsFailedTurn()).Reverse().ToList();
+            return failed.Count == 0
+                ? null
+                : new FailedTail([.. failed.SkipLast(1).Reverse().TakeWhile(m => m.Role == ChatRole.User).Reverse(), failed[^1]]);
         }
 
         // A request saying again what the turn's person said last in it — all of it, or its last messages,
