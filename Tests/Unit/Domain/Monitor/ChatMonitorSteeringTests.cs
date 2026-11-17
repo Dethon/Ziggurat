@@ -156,6 +156,12 @@ public class ChatMonitorSteeringTests
         ]);
         model.Requests.Count.ShouldBe(2);
         ToolLoopRun.Render(model.Requests[1]).TakeLast(2).ShouldBe(["user: no, the other one", "user: and in red"]);
+
+        // Read back as a reload draws it: the steered messages one after another, each its own entry, then
+        // the one answer.
+        var shown = Transcript.Shown(run.Line());
+        ToolLoopRun.Render(shown).Skip(2).ShouldBe(["user: no, the other one", "user: and in red", "assistant: Both answered"]);
+        shown.Skip(2).Select(m => m.GetEntryId()).Distinct().Count().ShouldBe(3);
         // Answered under the first steer's key; the second's key only ends, once, after that answer, since
         // the hub counts every steer it sent as a turn until its key ends.
         var steered = run.Replies.Where(r => r.TurnKey is "steer-1" or "steer-2").ToList();
