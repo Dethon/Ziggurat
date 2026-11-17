@@ -128,7 +128,7 @@ public sealed class McpChannelConnectionCreateConversationTests
         return InMemoryMcpServer.StartAsync(services => services
             .AddSingleton(sessions)
             .AddSingleton(new StreamService(
-                sessions, _store, new Mock<IPushNotificationService>().Object, NullLogger<StreamService>.Instance))
+                sessions, _store, new Mock<IPushNotificationService>().Object, TimeProvider.System, NullLogger<StreamService>.Instance))
             .AddSingleton(new Mock<IHubNotificationSender>().Object)
             .AddSingleton(_store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_store, TimeProvider.System))

@@ -9,6 +9,11 @@ namespace Domain.Channels;
 // subscriber whose copy waits for its next poll.
 public readonly record struct EnqueueReceipt(bool Accepted, bool Live);
 
+// A poller that names itself (an id it minted, the same on every poll it makes) and the last batch it received
+// from this inbox (0 before its first): what lets the inbox hand a batch whose answer never reached it to it
+// again, rather than lose it on a write it cannot see fail.
+public sealed record PollerCursor(string Poller, long Received);
+
 public sealed class ChannelInbox(
     TimeProvider? timeProvider = null,
     int capacity = 256,
@@ -119,8 +124,9 @@ public sealed class ChannelInbox(
         }
     }
 
-    // The other half of a drain. A poll never acknowledges what it received, so a batch handed to a
-    // request that then dies exists nowhere else — the drain already emptied the queue. A poll that
+    // The other half of a drain. A poll does not acknowledge the batch it is answered with (at most the
+    // next poll of a poller that names itself does), so a batch handed to a request that then dies exists
+    // nowhere else — the drain already emptied the queue. A poll that
     // finds its response dead hands the batch back here and it goes in at the front, because it is
     // older than anything that arrived while it was away. Order across the whole queue is preserved,
     // which is what the message/cancel sequence depends on.
@@ -173,14 +179,30 @@ public sealed class ChannelInbox(
     // A poll's whole turn at the queue, in one call: the batch is drained, turned into whatever the
     // caller sends back, and — if that caller is already gone — put back at the front, with no other
     // poll on this subscriber getting in between. The three are one operation because the middle one
-    // decides whether the first one counts: a poll never acknowledges what it received, so a batch
-    // that was drained into a dead response exists nowhere else, and handing it back as a separate
+    // decides whether the first one counts: a poll does not acknowledge the batch it is answered with, so a
+    // batch that was drained into a dead response exists nowhere else, and handing it back as a separate
     // step let a racing poll take a message that arrived after it and dispatch it first.
     public Task<T> ReceiveAsync<T>(
         string subscriberId,
         TimeSpan maxWait,
         Func<IReadOnlyList<ChannelInboxItem>, T> project,
         CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        return ReceiveAsync<T>(subscriberId, maxWait, (items, _) => project(items), ct, cursor: null);
+    }
+
+    // The same poll, for a poller that names itself and the batch it last received: the batch drained for it
+    // is kept as handed out, and the projection is handed its number, which that poller names on its next
+    // poll. That poll lets it go, or, naming an earlier one, has it delivered again ahead of everything else:
+    // the answer it rode on never arrived. A poll by anyone else lets it go unredelivered, as a poller that
+    // names nothing (one from before) always has: a batch is committed as it is drained.
+    public Task<T> ReceiveAsync<T>(
+        string subscriberId,
+        TimeSpan maxWait,
+        Func<IReadOnlyList<ChannelInboxItem>, long?, T> project,
+        CancellationToken ct,
+        PollerCursor? cursor)
     {
         ArgumentNullException.ThrowIfNull(project);
         var now = _timeProvider.GetUtcNow();
@@ -193,7 +215,7 @@ public sealed class ChannelInbox(
             if (subscriber.TryTouch(now))
             {
                 return subscriber.ReceiveAsync(
-                    maxWait, _timeProvider, project, batch => Restore(subscriberId, batch), ct);
+                    maxWait, _timeProvider, project, batch => Restore(subscriberId, batch), cursor, ct);
             }
 
             // A concurrent prune retired this instance between the lookup and the touch. Seeding
@@ -254,6 +276,12 @@ public sealed class ChannelInbox(
         private bool _hasPolled;
         private bool _retired;
 
+        // The last batch drained for a poller that names itself, until that poller's next poll says whether its
+        // answer arrived. Numbered per subscriber from the clock, not from one, so a poller still naming a batch
+        // of an inbox before this one (the server restarted under it) never names one of this inbox's.
+        private (string Poller, long Number, IReadOnlyList<ChannelInboxItem> Items)? _handedOut;
+        private long _batches = createdAt.UtcTicks;
+
         public bool TryTouch(DateTimeOffset now)
         {
             lock (_gate)
@@ -296,7 +324,7 @@ public sealed class ChannelInbox(
         {
             lock (_gate)
             {
-                if (_retired || _items.Count > 0 || _lastPolledAt >= cutoff)
+                if (_retired || _items.Count > 0 || _handedOut is not null || _lastPolledAt >= cutoff)
                 {
                     return false;
                 }
@@ -361,6 +389,11 @@ public sealed class ChannelInbox(
                     return EnqueueOutcome.Refused;
                 }
 
+                if (_handedOut is { } handedOut && ReferenceEquals(handedOut.Items, batch))
+                {
+                    _handedOut = null;
+                }
+
                 var rebuilt = batch.Concat(_items).ToArray();
                 dropped = Math.Max(0, rebuilt.Length - capacity);
                 _items.Clear();
@@ -382,8 +415,9 @@ public sealed class ChannelInbox(
         public async Task<T> ReceiveAsync<T>(
             TimeSpan maxWait,
             TimeProvider timeProvider,
-            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            Func<IReadOnlyList<ChannelInboxItem>, long?, T> project,
             Action<IReadOnlyList<ChannelInboxItem>> handBack,
+            PollerCursor? cursor,
             CancellationToken ct)
         {
             // Same contract as the post-wait check below, on the path that never waits: a poll whose
@@ -396,12 +430,13 @@ public sealed class ChannelInbox(
             TaskCompletionSource<bool>? displaced = null;
             lock (_handoff)
             {
-                IReadOnlyList<ChannelInboxItem>? pending = null;
+                (IReadOnlyList<ChannelInboxItem> Items, long? Number)? pending = null;
                 lock (_gate)
                 {
+                    Settle(cursor);
                     if (_items.Count > 0)
                     {
-                        pending = Drain(ct);
+                        pending = Drain(ct, cursor);
                     }
                     else
                     {
@@ -415,9 +450,9 @@ public sealed class ChannelInbox(
                     }
                 }
 
-                if (pending is not null)
+                if (pending is { } drained)
                 {
-                    return Complete(pending, project, handBack, ct);
+                    return Complete(drained, project, handBack, ct);
                 }
             }
 
@@ -427,7 +462,7 @@ public sealed class ChannelInbox(
 
             if (maxWait <= TimeSpan.Zero)
             {
-                return RetireAndComplete(waiter!, project, handBack, ct);
+                return RetireAndComplete(waiter!, project, handBack, cursor, ct);
             }
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -449,25 +484,26 @@ public sealed class ChannelInbox(
 
             if (completed == waiter.Task && !waiter.Task.Result)
             {
-                return project([]);
+                return project([], null);
             }
 
-            return RetireAndComplete(waiter, project, handBack, ct);
+            return RetireAndComplete(waiter, project, handBack, cursor, ct);
         }
 
         private T RetireAndComplete<T>(
             TaskCompletionSource<bool> waiter,
-            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            Func<IReadOnlyList<ChannelInboxItem>, long?, T> project,
             Action<IReadOnlyList<ChannelInboxItem>> handBack,
+            PollerCursor? cursor,
             CancellationToken ct)
         {
             lock (_handoff)
             {
-                IReadOnlyList<ChannelInboxItem> batch;
+                (IReadOnlyList<ChannelInboxItem> Items, long? Number) batch;
                 lock (_gate)
                 {
                     RetireWaiter(waiter);
-                    batch = Drain(ct);
+                    batch = Drain(ct, cursor);
                 }
 
                 return Complete(batch, project, handBack, ct);
@@ -477,25 +513,27 @@ public sealed class ChannelInbox(
         // Caller holds _handoff and nothing else: the projection is the caller's own work — building
         // the response — so it must not run under the lock producers enqueue against.
         //
-        // The drain emptied the queue and a poll acknowledges nothing, so from here the batch exists
-        // only in the response being built: a request aborted while it is being written takes the
-        // batch with it. Asking the token once more with the response in hand covers everything up
-        // to the write, and a batch that has nowhere to go goes back to the front of the queue. The
-        // write itself stays open — closing it needs an acknowledgement this protocol does not have.
+        // The drain emptied the queue, so from here the batch exists only in the response being built
+        // (and, for a poller that names itself, as handed out): a request aborted while it is being
+        // written takes the batch with it. Asking the token once more with the response in hand covers
+        // everything up to the write, and a batch that has nowhere to go goes back to the front of the
+        // queue. The write itself is left to the poller's next poll, which says whether it arrived
+        // (Settle); a poller that names nothing acknowledges nothing, and for it the write stays open.
         //
         // A projection that throws is the same loss by another route: it is the caller's own work
         // over content the sender chose, so one unserializable message would otherwise take the
         // whole batch — cancels included — with it. The poll still fails; the batch goes back.
         private static T Complete<T>(
-            IReadOnlyList<ChannelInboxItem> batch,
-            Func<IReadOnlyList<ChannelInboxItem>, T> project,
+            (IReadOnlyList<ChannelInboxItem> Items, long? Number) drained,
+            Func<IReadOnlyList<ChannelInboxItem>, long?, T> project,
             Action<IReadOnlyList<ChannelInboxItem>> handBack,
             CancellationToken ct)
         {
+            var batch = drained.Items;
             T projected;
             try
             {
-                projected = project(batch);
+                projected = project(batch, drained.Number);
             }
             catch
             {
@@ -534,14 +572,46 @@ public sealed class ChannelInbox(
         // before the queue is emptied means there is nothing to put back.
         //
         // What is left of the window is the response itself, which Complete covers: it asks once
-        // more with the response built and hands the batch back. Only the write is left open, and
-        // closing that needs an acknowledgement from the poller this protocol does not have.
-        private IReadOnlyList<ChannelInboxItem> Drain(CancellationToken ct)
+        // more with the response built and hands the batch back. Only the write is left open, and a
+        // poller that names itself closes it: the batch drained for it is kept as handed out, under the
+        // number its answer carries, until its next poll says whether that answer arrived (Settle).
+        private (IReadOnlyList<ChannelInboxItem> Items, long? Number) Drain(CancellationToken ct, PollerCursor? cursor)
         {
             var drained = _items.ToArray();
             ct.ThrowIfCancellationRequested();
             _items.Clear();
-            return drained;
+            if (cursor is null || drained.Length == 0)
+            {
+                return (drained, null);
+            }
+
+            _handedOut = (cursor.Poller, ++_batches, drained);
+            return (drained, _batches);
+        }
+
+        // Caller holds _gate, at the start of a poll. The batch handed out last is settled by whoever polls
+        // next: the poller it went to naming another number (the one before it) never got its answer, so it
+        // goes first in line again, drained by this very poll; anyone else lets it go, as every batch was
+        // let go before pollers named themselves. Over capacity only until this poll drains it.
+        private void Settle(PollerCursor? cursor)
+        {
+            if (_handedOut is not { } handedOut)
+            {
+                return;
+            }
+
+            _handedOut = null;
+            if (cursor is null || cursor.Poller != handedOut.Poller || cursor.Received == handedOut.Number)
+            {
+                return;
+            }
+
+            var again = handedOut.Items.Concat(_items).ToArray();
+            _items.Clear();
+            foreach (var item in again)
+            {
+                _items.Enqueue(item);
+            }
         }
     }
 }

@@ -360,8 +360,8 @@ public sealed class RedisThreadStateStore(
     // only files must still survive, or an image-only message would vanish on reload.
     // A call the person turned down reads as a line of the reply: the turn ends on it with no text,
     // and a transcript of text alone showed the question with nothing under it.
-    private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
-        messages.Where(Transcript.IsShown);
+    private static IReadOnlyList<ChatMessage> Readable(IReadOnlyList<ChatMessage> messages) =>
+        Transcript.Shown(messages);
 
     private static string TextOf(ChatMessage message) => Transcript.TextOf(message);
 
@@ -679,20 +679,39 @@ public sealed class RedisThreadStateStore(
             names[message] = HistoryEntries.IdAt(messages, index);
         }
 
-        // A turn's tool calls are hidden; the reply they lead to names them.
+        // Projected from the same set a badge counts, so unread never says more than the
+        // transcript shows.
+        var readable = Readable(messages);
+        var drawn = readable.ToHashSet(_byReference);
+
+        // A turn's tool calls are hidden; the reply they lead to names them, and so does the last of
+        // their results when it stands for a reply that said nothing.
         var tools = new Dictionary<ChatMessage, IReadOnlyList<string>>(ReferenceEqualityComparer.Instance);
         List<string> calling = [];
+
+        // Such a reply goes by the id its calls streamed under, so the page that drew them as they ran
+        // names its bubble from this one (EntryIdNaming) and rewrites from it are not taken for stale.
+        var wordlessIds = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
+        string? callingId = null;
+        bool SaysSomething(ChatMessage m) => m.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(TextOf(m));
+        bool StandsForAWordlessReply(ChatMessage m) =>
+            m.Role == ChatRole.Tool && drawn.Contains(m) && string.IsNullOrWhiteSpace(TextOf(m));
         foreach (var message in messages)
         {
             calling.AddRange(message.Contents.OfType<FunctionCallContent>().Select(c => BareToolName(c.Name)));
+            callingId = message.Contents.OfType<FunctionCallContent>().Any() ? message.MessageId : callingId;
             if (message.Role == ChatRole.User)
             {
                 calling.Clear();
             }
-            else if (calling.Count > 0 && message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(TextOf(message)))
+            else if (calling.Count > 0 && (SaysSomething(message) || StandsForAWordlessReply(message)))
             {
                 tools[message] = [.. calling.Distinct()];
                 calling.Clear();
+                if (message.Role == ChatRole.Tool)
+                {
+                    wordlessIds[message] = callingId;
+                }
             }
         }
 
@@ -703,12 +722,9 @@ public sealed class RedisThreadStateStore(
             .GroupBy(x => x.Value, x => x.Key, _byReference)
             .ToDictionary(g => g.Key, g => g.ToList(), _byReference);
 
-        // Projected from the same set a badge counts, so unread never says more than the
-        // transcript shows.
-        var readable = Readable(messages).ToList();
         var projected = readable
             .Select(m => new ChatHistoryMessage(
-                m.MessageId,
+                wordlessIds.GetValueOrDefault(m) ?? m.MessageId,
                 m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
                 TextOf(m),
                 m.GetAuthorId(),
@@ -732,6 +748,7 @@ public sealed class RedisThreadStateStore(
     // the one before it rather than one more.
     private static int Shown(IReadOnlyList<ChatMessage> messages)
     {
+        var readable = Readable(messages).ToHashSet(_byReference);
         var continuing = false;
         return messages.Count(m =>
         {
@@ -740,7 +757,7 @@ public sealed class RedisThreadStateStore(
                 continuing = m.IsContinuation();
             }
 
-            return !(continuing && m.Role == ChatRole.Assistant && !m.IsFailedTurn()) && Readable([m]).Any();
+            return !(continuing && m.Role == ChatRole.Assistant && !m.IsFailedTurn()) && readable.Contains(m);
         });
     }
 

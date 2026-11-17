@@ -33,6 +33,7 @@ public class ChatHubUnsharedStreamTests
     public ChatHubUnsharedStreamTests()
     {
         _streams = new StreamService(_sessions, _store.Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         _store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jonas", ChatId, ThreadId)).ReturnsAsync(() => _topic);
         _store.Setup(s => s.GetTopicAsync("home", "jonas", ChatId, TopicId)).ReturnsAsync(() => _topic);
@@ -50,9 +51,11 @@ public class ChatHubUnsharedStreamTests
             new ApprovalService(_streams, _sessions, _store.Object, new Mock<IHubNotificationSender>().Object,
                 new Mock<IPushNotificationService>().Object, new AccountConnections(), NullLogger<ApprovalService>.Instance),
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
-            new Mock<IAgentCatalog>().Object, _store.Object, pushSubscriptionStore: null!, attachmentService: null!,
+            new Mock<IAgentCatalog>().Object, _store.Object, pushSubscriptionStore: null!, attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
-            new VouchingAccounts(), new HouseholdSpacesAccounts(), NullLogger<ChatHub>.Instance)
+            HubParts.Turns(_streams, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streams, _store.Object, new Mock<IHubNotificationSender>().Object),
+            new HouseholdSpacesAccounts(), NullLogger<ChatHub>.Instance)
         {
             Context = caller
         };

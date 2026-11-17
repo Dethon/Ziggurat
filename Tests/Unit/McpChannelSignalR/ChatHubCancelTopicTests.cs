@@ -33,6 +33,7 @@ public class ChatHubCancelTopicTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _approvalService = new ApprovalService(
@@ -52,11 +53,12 @@ public class ChatHubCancelTopicTests : IDisposable
             new Mock<IAgentCatalog>().Object,
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

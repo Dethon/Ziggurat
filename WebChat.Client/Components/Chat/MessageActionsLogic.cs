@@ -65,4 +65,18 @@ public static class MessageActionsLogic
     // What running the message at an index again may do again: every tool a reply from there on called.
     public static IReadOnlyList<string> ToolsFrom(IReadOnlyList<ChatMessageModel> messages, int index) =>
         [.. messages.Skip(index).SelectMany(m => m.ToolsCalled ?? []).Distinct()];
+
+    // Retry on a failure: the last bubble's, as it always was (RetryLastMessage), or a refusal drawn right
+    // under the reader's own message wherever it sits now — another member's turn may have been drawn
+    // after it, and it is still that message's. Never while a reply streams.
+    public static bool OffersRetry(IReadOnlyList<ChatMessageModel> messages, int index, bool streaming, string? me) =>
+        !streaming && messages[index].IsError && (index == messages.Count - 1 || RetriedAt(messages, index, me) is not null);
+
+    // The reader's own message a refusal at index refused, which its Retry sends again; none for anyone
+    // else's, which is theirs to send.
+    public static ChatMessageModel? RetriedAt(IReadOnlyList<ChatMessageModel> messages, int index, string? me) =>
+        index > 0 && me is not null && messages[index] is { IsError: true }
+        && messages[index - 1] is { Role: "user" } refused && refused.SenderId == me
+            ? refused
+            : null;
 }

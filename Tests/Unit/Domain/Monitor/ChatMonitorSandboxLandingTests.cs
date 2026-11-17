@@ -267,6 +267,37 @@ public class ChatMonitorSandboxLandingTests
         messages!.Single().GetLandingFailures().ShouldBe(["photo.png", "ledger.csv"]);
     }
 
+    // Steers that go in together are one turn but each its own message: each lands under its own key, so
+    // two of them sending a file of one name both keep it.
+    [Fact]
+    public async Task SteersThatGoInTogether_EachLandTheirFilesApart()
+    {
+        var sandbox = new RecordingSandbox();
+        var agent = AgentWith(sandbox);
+        var channel = new FakeChannelConnection
+        {
+            ChannelId = "signalr",
+            Receipts = reply => reply.IsComplete && reply.TurnKey is not ("steer-1" or "steer-2")
+                ? ReplyReceipt.None with { SteeredTogether = ["steer-1", "steer-2"] }
+                : ReplyReceipt.None
+        };
+        var message = MonitorTestMocks.CreateChannelMessage(conversationId: "7:42", channelId: "signalr", agentId: "jonas");
+        channel.WriteMessage(message with { Content = "look it up" });
+        channel.WriteMessage(message with { Content = "this one", Steer = true, TurnKey = "steer-1", Attachments = [_photo] });
+        channel.WriteMessage(message with { Content = "and this", Steer = true, TurnKey = "steer-2", Attachments = [_sameNameAgain] });
+        channel.Attachments[_photo.Id] = [1, 2, 3, 4];
+        channel.Attachments[_sameNameAgain.Id] = [1, 2, 3, 4];
+        channel.Complete();
+
+        await MonitorOver(channel, agent).Monitor(CancellationToken.None);
+
+        sandbox.Writes.Count.ShouldBe(2);
+        sandbox.Writes.Select(w => w.Path).Distinct().Count().ShouldBe(2);
+        agent.ReceivedMessages.TryDequeue(out _).ShouldBeTrue();
+        agent.ReceivedMessages.TryDequeue(out var together).ShouldBeTrue();
+        together!.Select(m => m.Text).ShouldBe(["this one", "and this"]);
+    }
+
     private static FakeAiAgent AgentWith(
         RecordingSandbox? sandbox, string? workspace = "home/sandbox_user")
     {
@@ -299,17 +330,17 @@ public class ChatMonitorSandboxLandingTests
             channel.Attachments[attachment.Id] = [1, 2, 3, 4];
         }
 
-        var monitor = new ChatMonitor(
-            [channel],
-            MonitorTestMocks.CreateAgentFactory(agent),
-            MonitorTestMocks.CreateThreadResolver(),
-            new Mock<IMetricsPublisher>().Object,
-            null,
-            new Mock<ILogger<ChatMonitor>>().Object,
-            TestAssertions.Verifier());
-
-        await monitor.Monitor(CancellationToken.None);
+        await MonitorOver(channel, agent).Monitor(CancellationToken.None);
     }
+
+    private static ChatMonitor MonitorOver(FakeChannelConnection channel, FakeAiAgent agent) => new(
+        [channel],
+        MonitorTestMocks.CreateAgentFactory(agent),
+        MonitorTestMocks.CreateThreadResolver(),
+        new Mock<IMetricsPublisher>().Object,
+        null,
+        new Mock<ILogger<ChatMonitor>>().Object,
+        TestAssertions.Verifier());
 
     private sealed class StubRegistry(RecordingSandbox sandbox, string? workspace) : IVirtualFileSystemRegistry
     {

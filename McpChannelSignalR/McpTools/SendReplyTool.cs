@@ -21,8 +21,8 @@ public sealed class SendReplyTool
         [Description("Key of the turn this reply answers")] string? turnKey = null,
         [Description("Whether the turn this reply answers was agent-initiated")] bool? agentInitiated = null)
     {
-        // WebChat accepts both and reads neither: its live stream is already keyed per topic, and
-        // rewiring that on the turn key is its own argument.
+        // WebChat's live stream is keyed per topic, not per turn; the stream service reads the turn key
+        // only to tell a steer's own answer (a refusal as it arrived) from the turn it was sent into.
         var p = new SendReplyParams
         {
             ConversationId = conversationId,
@@ -36,6 +36,6 @@ public sealed class SendReplyTool
 
         var streamService = services.GetRequiredService<IStreamService>();
         await streamService.WriteReplyAsync(p);
-        return "ok";
+        return streamService.ReceiptFor(p).ToWire();
     }
 }

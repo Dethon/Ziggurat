@@ -16,6 +16,8 @@ public sealed class McpChannelReceiveTool(ChannelInbox inbox) : ChannelReceiveTo
     public Task<string> McpRun(
         [Description(SubscriberIdDescription)] string subscriberId,
         [Description(MaxWaitMsDescription)] int maxWaitMs,
-        CancellationToken cancellationToken)
-        => Run(subscriberId, maxWaitMs, cancellationToken);
+        CancellationToken cancellationToken,
+        [Description(PollerDescription)] string? poller = null,
+        [Description(ReceivedDescription)] long? received = null)
+        => Run(subscriberId, maxWaitMs, poller, received, cancellationToken);
 }

@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 
 namespace Domain.DTOs.WebChat;
@@ -77,3 +78,44 @@ public record AgentsUpdatedNotification;
 // The household's people changed (a role, "sees all conversations", a member disabled): what this
 // connection may see was read off its assertion as it opened, so the page opens a fresh one.
 public record AccessChangedNotification;
+// A person's message waiting for the running turn to end, as every page on the topic shows it: whose
+// it is, so a page labels other people's and offers its own person theirs, and what it carries.
+public record QueuedMessageItem(
+    string Id,
+    string Content,
+    int FileCount,
+    string SenderId,
+    string SenderName,
+    DateTimeOffset QueuedAt);
+
+// A queued message handed back to its sender — taken back to be edited — as they queued it: its words,
+// its files as the upload store holds them, and the model and effort it was sent with.
+// CorrelationId is the sending page's own id for it, so a page that drew it as sent takes it off again.
+public record ReturnedMessage(
+    string Id,
+    string Content,
+    IReadOnlyList<AttachmentReference> Attachments,
+    AgentConfigPatch? ConfigPatch,
+    string? CorrelationId = null);
+
+// A topic's queue changed. The whole queue, in the order it will run, so a page replaces what it
+// showed; Revision orders two pushes sent close together, since they may arrive the other way round.
+// RunningFor is the account (user id) whose own turn the stream is running, the one person a page offers
+// Steer now to; none while an agent's turn runs, or a queued one is about to start. Steering is what was
+// steered into the running turn and is not drawn yet, apart from Items so a page from before, which knows
+// only Items, never offers to edit or remove a message that has left the queue.
+public record QueueChangedNotification(
+    string TopicId,
+    IReadOnlyList<QueuedMessageItem> Items,
+    long Revision,
+    string? SpaceSlug = null,
+    string? RunningFor = null,
+    IReadOnlyList<QueuedMessageItem>? Steering = null);
+// A stop handed back messages this person queued on a topic: a page showing it takes them
+// (ChatHub.TakeReturned) into its composer; any other finds them when the topic is next opened.
+// CorrelationIds are the sending pages' ids for them, so whichever page drew one as sent takes it off,
+// whether or not that page is the one to take the words.
+// Unshared: the topic stopped being shared with this person, so these are no longer taken from it but
+// from the hub by person (ChatHub.TakeUnshared), into whatever composer is on screen.
+public record QueueReturnedNotification(
+    string TopicId, string? SpaceSlug = null, IReadOnlyList<string>? CorrelationIds = null, bool Unshared = false);

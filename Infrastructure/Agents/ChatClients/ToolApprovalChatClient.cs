@@ -104,6 +104,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             // However the call ended — returned, threw, refused, cancelled — or the calls written
             // after it would wait for something that is never coming.
             place.GiveUp();
+
+            // A steered turn ends here, once this call has its result: the library reads the flag only
+            // after the call returns, and with concurrency on it still waits for the rest of the batch,
+            // so every call the model made keeps its result and the model is not asked again.
+            if (TurnSteering.Of(context.Options)?.IsSteered == true)
+            {
+                context.Terminate = true;
+            }
         }
     }
 

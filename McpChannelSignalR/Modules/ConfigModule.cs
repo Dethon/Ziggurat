@@ -58,6 +58,7 @@ public static class ConfigModule
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
             .AddHostedService<AttachmentSweeper>()
+            .AddHostedService<QueueDispatcher>()
             .AddHostedService<HouseholdAgentsAnnouncer>()
             .AddHostedService<EndedSessionsListener>();
 
@@ -110,10 +111,13 @@ public static class ConfigModule
     private static readonly TimeSpan _frozenPageTolerance = TimeSpan.FromMinutes(2);
 
     // The registration guard rides with the hub's own options, so wherever the hub is served it is
-    // served behind it.
+    // served behind it. The hub's turns and queue news are registered with it, once, since the queue
+    // dispatcher sends what the hub queued through the same ones.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
         services.AddSingleton<AccountConnections>()
             .AddSingleton<SessionConnections>()
+            .AddSingleton<PersonTurns>()
+            .AddSingleton<QueueNews>()
             .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
             .AddHubOptions<ChatHub>(options => options.AddFilter<SignedInConnectionFilter>())
             .Services;

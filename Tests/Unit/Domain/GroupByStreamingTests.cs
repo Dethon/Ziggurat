@@ -144,6 +144,87 @@ public class GroupByStreamingTests
         dropped.ShouldBe([1, 2, 3]);
     }
 
+    // A group that completes with items still unread (a conversation's stop, read by its consumer while the
+    // person's next message was already routed behind it) hands them back: they go to a fresh group of their
+    // key, in the order they came and ahead of anything the source gives after, rather than vanish with it.
+    [Fact]
+    public async Task GroupByStreaming_ItemsLeftUnreadInACompletedGroup_GoToAFreshGroup_AheadOfWhatFollows()
+    {
+        var source = System.Threading.Channels.Channel.CreateUnbounded<string>();
+        var groups = new List<List<string>>();
+        var reading = new List<Task>();
+        var stopRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var letGo = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var markerRouted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var routing = Task.Run(async () =>
+        {
+            // Routed in the order they came: once the marker's key is asked, everything before it is in its group.
+            await foreach (var group in source.Reader.ReadAllAsync().GroupByStreaming((item, _) =>
+                           {
+                               if (item == "marker")
+                               {
+                                   markerRouted.TrySetResult();
+                               }
+
+                               return ValueTask.FromResult(item == "marker" ? "conv-2" : "conv-1");
+                           }))
+            {
+                if (group.Key == "conv-2")
+                {
+                    continue;
+                }
+
+                var read = new List<string>();
+                lock (groups)
+                {
+                    groups.Add(read);
+                }
+
+                var first = groups.Count == 1;
+                reading.Add(Task.Run(async () =>
+                {
+                    await foreach (var item in group)
+                    {
+                        lock (groups)
+                        {
+                            read.Add(item);
+                        }
+
+                        if (first && item == "stop")
+                        {
+                            stopRead.TrySetResult();
+                            await letGo.Task.WaitAsync(TimeSpan.FromSeconds(60));
+                            group.Complete();
+                        }
+                    }
+                }));
+            }
+        });
+        source.Writer.TryWrite("stop");
+        await stopRead.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        source.Writer.TryWrite("after one");
+        source.Writer.TryWrite("after two");
+        source.Writer.TryWrite("marker");
+        await markerRouted.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        letGo.SetResult();
+        await Eventually.Until(() => snapshot() is [_, [_, _]], "the fresh group to get them");
+        source.Writer.TryWrite("later");
+        source.Writer.Complete();
+        await routing.WaitAsync(TimeSpan.FromSeconds(60));
+        await Task.WhenAll(reading).WaitAsync(TimeSpan.FromSeconds(60));
+
+        snapshot().ShouldBe([["stop"], ["after one", "after two", "later"]]);
+
+        List<List<string>> snapshot()
+        {
+            lock (groups)
+            {
+                return [.. groups.Select(g => g.ToList())];
+            }
+        }
+    }
+
     [Fact]
     public async Task GroupByStreaming_GroupsCanBeConsumedConcurrently()
     {

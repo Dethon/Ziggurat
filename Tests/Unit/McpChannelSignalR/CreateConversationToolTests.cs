@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -26,6 +27,7 @@ public class CreateConversationToolTests
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             new Mock<ILogger<StreamService>>().Object);
         _services = new ServiceCollection()
             .AddSingleton(_sessionService)
@@ -140,6 +142,32 @@ public class CreateConversationToolTests
             "space:home:default:user:fran", "OnStreamStarted",
             It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The first turn of a topic an agent opens counts as the stream's running turn: a message queued
+    // behind it (somebody answering a fired reminder while it streams) waits for that turn to end
+    // rather than being sent the moment it is queued.
+    [Fact]
+    public async Task McpRun_AMessageQueuedBehindTheFirstTurnOfATopicItMints_WaitsForThatTurnToEnd()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        var sender = new SenderSnapshot(
+            topicId, "session-1", new Principal("signalr", "fran", new Account("home", "fran")), "Fran",
+            new ConversationIdentity(11, 22), "sugary", "default");
+
+        var stream = _streamService.Hold(topicId).ShouldNotBeNull();
+        _streamService.Enqueue(stream, sender, new TurnMessage("and dessert", null, null, null))
+            .ShouldBe(Queueing.Queued);
+
+        _streamService.Dispatches.TryRead(out _).ShouldBeFalse();
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "11:22", Content = "about 80 g", ContentType = ReplyContentType.Text, IsComplete = true
+        });
+        _streamService.Dispatches.TryRead(out var next).ShouldBeTrue();
+        next.Message.Message.Content.ShouldBe("and dessert");
+        _streamService.IsStreaming(topicId).ShouldBeTrue();
     }
 
     // The prompt a minted topic opens with is buffered with the time it was sent, as a later turn's

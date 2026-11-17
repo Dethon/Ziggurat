@@ -39,6 +39,7 @@ public sealed class ChatHubDictationTests : IDisposable
             sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _hub = new ChatHub(
@@ -57,7 +58,8 @@ public sealed class ChatHubDictationTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             _dictation,
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

@@ -1,6 +1,7 @@
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
@@ -34,6 +35,7 @@ public class ChatHubNotLiveTests
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         // Nobody ever polls this inbox, so every emit reports "not live" — the cold-restart shape.
@@ -45,11 +47,12 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
@@ -74,15 +77,28 @@ public class ChatHubNotLiveTests
         _streamService.IsStreaming(TopicId).ShouldBeFalse();
     }
 
+    // A queued message is sent once the running turn ends, with no hub call in hand: finding nobody
+    // listening then, it ends the stream as a live send does rather than leaving it pending.
     [Fact]
-    public async Task EnqueueMessage_TheEmitReachedNobody_TellsTheStreamInsteadOfLeavingItPending()
+    public async Task EnqueueMessage_TheEmitAtDispatchReachedNobody_TellsTheStreamInsteadOfLeavingItPending()
     {
+        using var dispatcher = new QueueDispatcher(
+            _streamService,
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
+            NullLogger<QueueDispatcher>.Instance);
+        await dispatcher.StartAsync(CancellationToken.None);
         var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
         var subscription = channel.Subscribe();
 
         // True, not false: false is the client's signal to open a *second* stream, which would send
         // the same prompt again over a channel that already took it.
         (await _hub.EnqueueMessage(TopicId, "y esto", null, null)).ShouldBeTrue();
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "7:42", Content = "hola answered", ContentType = ReplyContentType.Text, IsComplete = true
+        });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var received = new List<ChatStreamMessage>();
@@ -115,11 +131,14 @@ public class ChatHubNotLiveTests
             new Mock<IAgentCatalog>().Object,
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(
+                _streamService, new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), new VouchingAccounts(),
+                factory.CreateLogger<PersonTurns>()),
+            HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),
             new HouseholdSpacesAccounts(),
             factory.CreateLogger<ChatHub>())
         {

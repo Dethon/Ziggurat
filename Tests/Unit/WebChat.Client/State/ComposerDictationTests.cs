@@ -16,14 +16,14 @@ public sealed class ComposerDictationTests
     [Fact]
     public void WithNothingTypedAndNothingAttached_TheRightHandControlIsTheMicrophone()
     {
-        ComposerSelectors.SendControl(isStreaming: false, text: "", readyAttachments: 0, DictationStatus.Idle)
+        ComposerSelectors.SendControl(text: "", readyAttachments: 0, DictationStatus.Idle)
             .ShouldBe(SendControl.Microphone);
     }
 
     [Fact]
     public void AsSoonAsThereIsText_TheControlIsSendAgain()
     {
-        ComposerSelectors.SendControl(isStreaming: false, text: "h", readyAttachments: 0, DictationStatus.Idle)
+        ComposerSelectors.SendControl(text: "h", readyAttachments: 0, DictationStatus.Idle)
             .ShouldBe(SendControl.Send);
     }
 
@@ -32,22 +32,29 @@ public sealed class ComposerDictationTests
     [Fact]
     public void WithAFileAttachedAndNothingTyped_TheControlIsSend()
     {
-        ComposerSelectors.SendControl(isStreaming: false, text: "  ", readyAttachments: 1, DictationStatus.Idle)
+        ComposerSelectors.SendControl(text: "  ", readyAttachments: 1, DictationStatus.Idle)
             .ShouldBe(SendControl.Send);
     }
 
-    // Unchanged: while the reply runs, Send could only ever be dead — and that is true whatever
-    // the microphone is doing, which is what "the streaming-cancel state continues to take
-    // precedence" means.
+    // A message sent while the reply runs is queued, so Send stays what it would be; Stop sits beside
+    // it rather than in its place, so sending and stopping never compete for one button.
     [Theory]
-    [InlineData(DictationStatus.Idle)]
-    [InlineData(DictationStatus.Recording)]
-    [InlineData(DictationStatus.Latched)]
-    [InlineData(DictationStatus.Transcribing)]
-    public void WhileTheReplyRuns_TheControlIsStillCancel(DictationStatus dictation)
+    [InlineData("next thought", 0, DictationStatus.Idle, SendControl.Send)]
+    [InlineData("", 1, DictationStatus.Idle, SendControl.Send)]
+    [InlineData("", 0, DictationStatus.Idle, SendControl.Microphone)]
+    [InlineData("half typed", 0, DictationStatus.Recording, SendControl.Microphone)]
+    public void WhileTheReplyRuns_StopSitsBesideTheControlItWouldBeOtherwise(
+        string text, int ready, DictationStatus dictation, SendControl expected)
     {
-        ComposerSelectors.SendControl(isStreaming: true, text: "", readyAttachments: 0, dictation)
-            .ShouldBe(SendControl.Cancel);
+        ComposerSelectors.Controls(isStreaming: true, text, ready, dictation)
+            .ShouldBe(new ComposerControls(expected, Stop: true));
+    }
+
+    [Fact]
+    public void WithNoReplyRunning_ThereIsNoStop()
+    {
+        ComposerSelectors.Controls(isStreaming: false, "hola", 0, DictationStatus.Idle)
+            .ShouldBe(new ComposerControls(SendControl.Send, Stop: false));
     }
 
     // An open microphone holds the spot even against text: the strip is what is on screen, and the
@@ -57,7 +64,7 @@ public sealed class ComposerDictationTests
     [InlineData(DictationStatus.Latched)]
     public void WhileTheMicrophoneIsOpen_TheControlStaysTheMicrophone(DictationStatus dictation)
     {
-        ComposerSelectors.SendControl(isStreaming: false, text: "half typed", readyAttachments: 1, dictation)
+        ComposerSelectors.SendControl(text: "half typed", readyAttachments: 1, dictation)
             .ShouldBe(SendControl.Microphone);
     }
 
@@ -67,7 +74,7 @@ public sealed class ComposerDictationTests
     public void WhileTheTranscriptIsStillComing_TextInTheBoxMakesTheControlSendAgain()
     {
         ComposerSelectors.SendControl(
-                isStreaming: false, text: "half typed", readyAttachments: 0, DictationStatus.Transcribing)
+                text: "half typed", readyAttachments: 0, DictationStatus.Transcribing)
             .ShouldBe(SendControl.Send);
     }
 
@@ -126,6 +133,26 @@ public sealed class ComposerDictationTests
 
         second.ShouldNotBe(first);
         second.Text.ShouldBe("otra vez");
+    }
+
+    // Words handed over from elsewhere are not words the microphone heard: they take a slot of their own,
+    // and what was dictated stays what was dictated.
+    [Fact]
+    public async Task WordsHandedToTheComposer_LeaveTheDictationsTranscriptAlone()
+    {
+        await using var client = await StartAsync();
+
+        client.Dispatcher.Dispatch(new DictationTranscribed("lo dictado"));
+        client.Dispatcher.Dispatch(new OfferComposerText("lo ofrecido"));
+
+        client.Composer.State.Dictation.Transcript!.Text.ShouldBe("lo dictado");
+        client.Composer.State.Handed.ShouldNotBeNull().Placement.ShouldBe(TextPlacement.After);
+
+        client.Dispatcher.Dispatch(new ReturnToComposer("topic-1", [new ReturnedMessage("q1", "lo devuelto", [], null)]));
+
+        client.Composer.State.Dictation.Transcript!.Text.ShouldBe("lo dictado");
+        client.Composer.State.Handed.ShouldNotBeNull().Text.ShouldBe("lo devuelto");
+        client.Composer.State.Handed.Placement.ShouldBe(TextPlacement.Before);
     }
 
     // The browser mints the ticket and posts the audio; the ticket is minted here because only

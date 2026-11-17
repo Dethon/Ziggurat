@@ -33,6 +33,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IDisposable _sendMessageRegistration;
     private readonly IDisposable _cancelStreamingRegistration;
     private readonly IDisposable _retryLastMessageRegistration;
+    private readonly IDisposable _retryRefusedRegistration;
     private readonly IDisposable _sendRerunRegistration;
     private readonly IDisposable _continueRegistration;
 
@@ -70,6 +71,11 @@ public sealed class SendMessageEffect : IDisposable
         _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
             HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
         _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
+
+        // Not taken back first, as the last message is: turns followed it, and the conversation keeps a
+        // failed turn where it was once another follows, so the message goes again where a new one goes.
+        _retryRefusedRegistration = dispatcher.RegisterHandler<RetryRefused>(action =>
+            dispatcher.Dispatch(new SendMessage(action.TopicId, action.Refused.Content, action.Refused.Attachments ?? [])));
         _sendRerunRegistration = dispatcher.RegisterHandler<SendRerun>(action =>
             HandleSendRerunAsync(action).LogFaults(_logger, nameof(SendRerun)));
         _continueRegistration = dispatcher.RegisterHandler<ContinueReply>(action =>
@@ -189,13 +195,23 @@ public sealed class SendMessageEffect : IDisposable
             }
         }
 
+        var senderId = _userIdentityStore.State.SignedIn?.UserId;
+
+        // Sent while the reply streams, it waits its turn in the hub's queue and is drawn once that
+        // turn starts; drawing it now would cut the reply in two.
+        if (_topicStreams.Snapshot(topic.TopicId).HasStream)
+        {
+            await _streamingService.QueueMessageAsync(topic, action.Message, senderId, action.Attachments);
+            return;
+        }
+
         // Close off the bubble the agent is writing before the user's own message goes in.
         // Nothing to close on a topic with no reply in flight.
         _topicStreams.FinalizeCurrent(topic.TopicId);
 
         // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
         var correlationId = _pipeline.SubmitUserMessage(
-            topic.TopicId, action.Message, _userIdentityStore.State.SignedIn?.UserId,
+            topic.TopicId, action.Message, senderId,
             attached.Count == 0 ? null : attached);
 
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
@@ -295,9 +311,10 @@ public sealed class SendMessageEffect : IDisposable
             }
 
             // With its files. A message can now be nothing but attachments, so re-sending the
-            // text alone would ask the model about a picture it was never given.
+            // text alone would ask the model about a picture it was never given. None is still its
+            // own, never "whatever the composer holds": the composer's files wait for its own send.
             _dispatcher.Dispatch(new SendMessage(
-                action.TopicId, lastUserMessage.Content, lastUserMessage.Attachments));
+                action.TopicId, lastUserMessage.Content, lastUserMessage.Attachments ?? []));
         }
     }
 
@@ -306,6 +323,7 @@ public sealed class SendMessageEffect : IDisposable
         _sendMessageRegistration.Dispose();
         _cancelStreamingRegistration.Dispose();
         _retryLastMessageRegistration.Dispose();
+        _retryRefusedRegistration.Dispose();
         _sendRerunRegistration.Dispose();
         _continueRegistration.Dispose();
     }

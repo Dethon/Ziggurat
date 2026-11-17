@@ -20,6 +20,7 @@ using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Queue;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -60,13 +61,13 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         {
             typeof(TopicsStore), typeof(MessagesStore), typeof(StreamingStore), typeof(ConnectionStore),
             typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
-            typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore),
+            typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore), typeof(QueueStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
             typeof(TopicSelectionEffect), typeof(OpenTopicEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
             typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect),
-            typeof(TopicShareEffect)
+            typeof(TopicShareEffect), typeof(QueueEffect), typeof(ReturnedMessagesEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -200,6 +201,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             (object?[] args) => new AttachmentDownload(
                 $"/api/attachments/{args[0]}?ticket=download-1", DateTimeOffset.UtcNow.AddMinutes(15)));
         connection.Answer("EnqueueMessage", false);
+        connection.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[]);
+        connection.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[]);
         connection.Answer("RespondToApprovalAsync", true);
     }
 

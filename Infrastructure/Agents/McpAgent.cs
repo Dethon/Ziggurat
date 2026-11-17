@@ -172,6 +172,10 @@ public sealed class McpAgent : DisposableAgent
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         _history.ReadAsync(thread);
 
+    public override Task KeepUnansweredAsync(
+        AgentSession thread, IReadOnlyList<ChatMessage> messages, string? failedWith, CancellationToken ct) =>
+        _history.KeepUnansweredAsync(thread, messages, failedWith);
+
     public override async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
@@ -338,17 +342,24 @@ public sealed class McpAgent : DisposableAgent
             .Select(m => m.GetConversationContext())
             .FirstOrDefault(c => c is not null);
 
-        options ??= CreateRunOptions(session, conversationContext, turnConfig);
+        var steering = (options as TurnRunOptions)?.Steering;
+        options = AreTheAgentsToBuild(options)
+            ? CreateRunOptions(session, conversationContext, turnConfig, steering)
+            : options;
 
         // What the reply streams goes to the history as it passes, so a reply the person stops is kept
-        // as far as it got.
-        _history.BeginCollecting(thread);
+        // as far as it got — unless the channel handed the turn's message back as it stopped it.
+        _history.BeginCollecting(thread, steering);
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
             _history.Collect(thread, update);
             yield return update;
         }
     }
+
+    // None, or the group's, which carry what the turn needs beside the options rather than in their
+    // place: the agent builds its own either way. Anything else is a caller's replacing them.
+    private static bool AreTheAgentsToBuild(AgentRunOptions? options) => options is null or TurnRunOptions;
 
     // One resolution site for the whole patch, and one rejection rule for both fields: fall
     // back to the configured value and warn. A bad override never costs the user a turn, but
@@ -359,7 +370,7 @@ public sealed class McpAgent : DisposableAgent
         // instructions, tools, reasoning effort and the config patch. Non-channel callers
         // (harnesses, benchmarks) legitimately do this, so it stays possible — but an agent
         // running stripped of what makes it that agent must not look like a normal turn.
-        if (suppliedOptions is not null)
+        if (!AreTheAgentsToBuild(suppliedOptions))
         {
             _logger?.LogWarning(
                 "Agent '{AgentName}' ran with caller-supplied AgentRunOptions; this turn uses none of " +
@@ -444,7 +455,7 @@ public sealed class McpAgent : DisposableAgent
     }
 
     private ChatClientAgentRunOptions CreateRunOptions(
-        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig)
+        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig, TurnSteering? steering)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
@@ -466,14 +477,20 @@ public sealed class McpAgent : DisposableAgent
             ResponseFormat = turnConfig.ResponseFormat is { } format
                 ? ChatResponseFormat.ForJsonSchema(format.Schema, format.Name)
                 : null,
-            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat)
+            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat, steering)
         });
     }
 
     private AdditionalPropertiesDictionary BuildTurnProperties(
-        ConversationContext? conversationContext, ResponseFormat? format)
+        ConversationContext? conversationContext, ResponseFormat? format, TurnSteering? steering)
     {
         var properties = BuildConversationContextProperties(conversationContext);
+        // Where the tool loop reads it after each call, on this turn's options alone.
+        if (steering is not null)
+        {
+            properties[TurnSteering.OptionsKey] = steering;
+        }
+
         // The format a channel asks for is always strict: it parses the answer, so a hint is not
         // enough. The chat client reads this to send the schema strict and as written.
         if (format is not null)

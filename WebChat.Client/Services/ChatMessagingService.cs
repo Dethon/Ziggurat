@@ -36,4 +36,22 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         IReadOnlyList<AttachmentReference>? attachments = null) =>
         liveConnection.InvokeAsync<bool>(
             "EnqueueMessage", topicId, message, correlationId, configPatch, attachments);
+
+    public Task<HubResult<QueueChangedNotification>> GetQueueAsync(string topicId) =>
+        liveConnection.InvokeAsync<QueueChangedNotification>("GetQueue", topicId);
+
+    public Task<HubResult<Nothing>> RemoveQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync("RemoveQueued", topicId, queuedId);
+
+    public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync<ReturnedMessage>("TakeBackQueued", topicId, queuedId);
+
+    public Task<HubResult<Nothing>> SteerQueuedAsync(string topicId, string queuedId) =>
+        liveConnection.InvokeAsync("SteerQueued", topicId, queuedId);
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId) =>
+        liveConnection.InvokeAsync<IReadOnlyList<ReturnedMessage>>("TakeReturned", topicId);
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeUnsharedAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<ReturnedMessage>>("TakeUnshared");
 }

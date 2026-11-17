@@ -1,0 +1,103 @@
+@inherits StoreSubscriberComponent
+
+@inject QueueStore QueueStore
+@inject UserIdentityStore UserIdentityStore
+@inject IDispatcher Dispatcher
+
+@code {
+    [Parameter] public string? TopicId { get; set; }
+
+    private IReadOnlyList<QueueChip> _chips = [];
+
+    protected override void OnInitialized()
+    {
+        Subscribe(QueueStore.StateObservable, state => state, _ => Update());
+        Subscribe(UserIdentityStore.StateObservable, state => state.SignedIn?.UserId, _ => Update());
+    }
+
+    protected override void OnParametersSet() => Update();
+
+    private void Update() =>
+        _chips = QueueSelectors.Chips(QueueStore.State, TopicId, UserIdentityStore.State.SignedIn?.UserId);
+
+    private void Edit(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new EditQueuedMessage(TopicId, chip.Id));
+        }
+    }
+
+    private void Steer(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new SteerQueuedMessage(TopicId, chip.Id));
+        }
+    }
+
+    private void Remove(QueueChip chip)
+    {
+        if (TopicId is not null)
+        {
+            Dispatcher.Dispatch(new RemoveQueuedMessage(TopicId, chip.Id));
+        }
+    }
+}
+
+@* The messages waiting for the running reply to end, in the order they will run. Each is a chip
+   until its turn starts, when the hub writes it on the stream and the page draws it in the
+   conversation. One steered into the running reply waits first, marked steering, with nothing left
+   to do to it. *@
+@if (_chips.Count > 0)
+{
+    <ol class="queue-chips" data-testid="queue-chips" aria-label="Messages waiting to be sent">
+        @foreach (var chip in _chips)
+        {
+            <li class="queue-chip @(chip.Mine ? "mine" : "") @(chip.Steering ? "steering" : "")" data-testid="queue-chip"
+                data-steering="@(chip.Steering ? "true" : null)" @key="chip.Id">
+                @if (chip.Steering)
+                {
+                    <span class="queue-chip-steering" data-testid="queue-chip-steering" title="Steering the running reply">
+                        <Icon Glyph="Icons.Steer" Size="12" />
+                        Steering
+                    </span>
+                }
+                @if (chip.SenderName is not null)
+                {
+                    <span class="queue-chip-sender">@chip.SenderName</span>
+                }
+                <span class="queue-chip-text">@chip.Excerpt</span>
+                @if (chip.FileCount > 0)
+                {
+                    <span class="queue-chip-files" title="@(chip.FileCount == 1 ? "1 file" : $"{chip.FileCount} files")">
+                        <Icon Glyph="Icons.PaperclipStroked" Size="12" />
+                        @chip.FileCount
+                    </span>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Steer))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-steer"
+                            title="Steer now" aria-label="Send this message into the running reply now"
+                            @onclick="() => Steer(chip)">
+                        <Icon Glyph="Icons.Steer" Size="14" />
+                    </button>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Edit))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-edit"
+                            title="Edit" aria-label="Edit this queued message" @onclick="() => Edit(chip)">
+                        <Icon Glyph="Icons.Pencil" Size="14" />
+                    </button>
+                }
+                @if (chip.Actions.HasFlag(QueueChipActions.Remove))
+                {
+                    <button type="button" class="queue-chip-action" data-testid="queue-chip-remove"
+                            title="Remove" aria-label="Remove this queued message" @onclick="() => Remove(chip)">
+                        <Icon Glyph="Icons.CloseStroked" Size="14" />
+                    </button>
+                }
+            </li>
+        }
+    </ol>
+}

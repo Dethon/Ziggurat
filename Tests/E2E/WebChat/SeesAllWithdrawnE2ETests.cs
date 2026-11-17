@@ -30,8 +30,7 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
         await WebChatE2ETests.GotoWebChatAsync(writer, fixture.WebChatUrl);
         await WebChatE2ETests.SelectAgentAsync(writer);
         var words = $"Private {tag}: answer in one short sentence.";
-        await writer.Locator("textarea.chat-input").FillAsync(words);
-        await writer.Locator("textarea.chat-input").PressAsync("Enter");
+        await SendAsync(writer, words);
         await writer.Locator(".topic-item", new PageLocatorOptions { HasText = $"Private {tag}" })
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
@@ -75,6 +74,7 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
         await SetSeesAllAsync(owner, reader, true);
 
         var page = await readerContext.NewPageAsync();
+        var heard = await HeardOnAsync(page);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
         await WebChatE2ETests.SelectAgentAsync(page);
         var whose = page.GetByLabel("Whose conversations");
@@ -82,12 +82,152 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
             .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
         await whose.SelectOptionAsync(new SelectOptionValue { Label = $"Writer {tag}'s" });
 
-        await page.Locator("textarea.chat-input").FillAsync($"Mine {tag}: answer in one short sentence.");
-        await page.Locator("textarea.chat-input").PressAsync("Enter");
+        heard.Mark("send");
+        await SendAsync(page, $"Mine {tag}: answer in one short sentence.");
 
-        await Assertions.Expect(whose).ToHaveValueAsync("mine", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+        await ExpectOrDescribeAsync(page, heard,
+            () => Assertions.Expect(whose).ToHaveValueAsync("mine", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 }));
         await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Mine {tag}" })
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+    }
+
+    // Sent the way a person sends, not pressed blind. Every page of this household renews its connection
+    // whenever anybody's role or grant changes in it — siblings in other collections change them at any
+    // moment — and the composer is disabled while that lasts: an Enter pressed into it then reaches
+    // nothing, and the words simply stay put. Send waits for a control that can take them (through any
+    // approval a sibling's reply leaked over the page); and since a renewal can still start between that
+    // check and the click, the click is made again while the composer visibly holds the words. It never
+    // sends twice: a click that was taken emptied the composer first, and one on a render not caught up
+    // yet finds nothing to send.
+    private static async Task SendAsync(IPage page, string words)
+    {
+        var input = page.Locator("textarea.chat-input");
+        var send = page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Send", Exact = true });
+        await input.FillAsync(words);
+        foreach (var attempt in Enumerable.Range(1, 3))
+        {
+            await WebChatE2ETests.ClickThroughApprovalsAsync(page, send);
+            try
+            {
+                await Assertions.Expect(input).ToHaveValueAsync("", new LocatorAssertionsToHaveValueOptions { Timeout = 5_000 });
+                return;
+            }
+            catch (PlaywrightException) when (attempt < 3)
+            {
+                var held = await input.InputValueAsync();
+                if (held == "")
+                {
+                    return;
+                }
+
+                if (held != words)
+                {
+                    throw;
+                }
+            }
+        }
+    }
+
+    // What the page held when the list did not move: whether the words are still in the composer (the
+    // send never left) or gone (it left and died), what it was told, and when the household's access
+    // changes reached it — each renews the page's connection, and siblings in other collections make
+    // them in this household at any moment.
+    private static async Task ExpectOrDescribeAsync(IPage page, PageLog heard, Func<Task> expectation)
+    {
+        try
+        {
+            await expectation();
+        }
+        catch (PlaywrightException failure)
+        {
+            throw new PlaywrightException($"{failure.Message}\n--- what the page held ---\n{await DescribeAsync(page, heard)}", failure);
+        }
+    }
+
+    private static async Task<string> DescribeAsync(IPage page, PageLog heard)
+    {
+        var quick = new LocatorInputValueOptions { Timeout = 2_000 };
+        async Task<string> Read(Func<Task<string>> read)
+        {
+            try
+            {
+                return await read();
+            }
+            catch (Exception ex)
+            {
+                return $"(unread: {ex.GetType().Name})";
+            }
+        }
+
+        var composer = page.Locator("textarea.chat-input");
+        return string.Join("\n",
+            $"composer: '{await Read(() => composer.InputValueAsync(quick))}', disabled: {await Read(async () => (await composer.IsDisabledAsync(new LocatorIsDisabledOptions { Timeout = 2_000 })).ToString())}",
+            $"filter: {await Read(() => page.GetByLabel("Whose conversations").InputValueAsync(quick))}",
+            $"connection: {await Read(async () => (await page.Locator(".connection-status").AllInnerTextsAsync()).FirstOrDefault() ?? "")}",
+            $"toasts: [{await Read(async () => string.Join(" | ", await page.Locator(".toast-message").AllInnerTextsAsync()))}]",
+            $"rows: [{await Read(async () => string.Join(" | ", await page.Locator(".topic-item").AllInnerTextsAsync()))}]",
+            $"timeline:\n  {string.Join("\n  ", heard.Lines)}");
+    }
+
+    private static async Task<PageLog> HeardOnAsync(IPage page)
+    {
+        var log = new PageLog();
+
+        // The composer's connection, as the page drew it: a renewal disables it while it lasts.
+        await page.AddInitScriptAsync("""
+            (() => {
+                let last = '';
+                new MutationObserver(() => {
+                    const input = document.querySelector('textarea.chat-input');
+                    const status = document.querySelector('.connection-status')?.textContent?.trim() ?? '';
+                    const now = `composer ${input ? (input.disabled ? 'disabled' : 'enabled') : 'absent'}, ${status}`;
+                    if (now !== last) {
+                        last = now;
+                        console.warn(`[e2e] ${now}`);
+                    }
+                }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+            })();
+            """);
+        page.WebSocket += (_, socket) => socket.FrameReceived += (_, frame) =>
+        {
+            if (frame.Text?.Contains("OnAccessChanged", StringComparison.Ordinal) == true)
+            {
+                log.Mark("OnAccessChanged");
+            }
+        };
+        page.Console += (_, message) =>
+        {
+            if (message.Type is "error" or "warning")
+            {
+                log.Mark($"console {message.Type}: {message.Text}");
+            }
+        };
+        return log;
+    }
+
+    private sealed class PageLog
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _lines = [];
+
+        public void Mark(string what)
+        {
+            lock (_gate)
+            {
+                _lines.Add($"{DateTime.UtcNow:HH:mm:ss.fff} {what}");
+            }
+        }
+
+        public IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _lines];
+                }
+            }
+        }
     }
 
     private async Task SetSeesAllAsync(IPage owner, string name, bool seesAll)

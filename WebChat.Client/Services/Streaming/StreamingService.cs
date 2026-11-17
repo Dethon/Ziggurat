@@ -1,6 +1,8 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
+using WebChat.Client.Helpers;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentSettings;
@@ -38,16 +40,7 @@ public sealed class StreamingService(
         await _streamLock.WaitAsync();
         try
         {
-            // Read before the send and cleared after it, so an attachment cannot ride a second
-            // message. A retry brings its own references and leaves the composer alone;
-            // everything else sends what the composer holds and empties exactly that.
-            var sending = attachments is null
-                ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
-                : [];
-            var outgoing = new Outgoing(
-                topic, message, correlationId, GetConfigPatch(topic),
-                attachments ?? ComposerSelectors.References(sending),
-                sending);
+            var outgoing = Compose(topic, message, correlationId, attachments);
 
             // Read once, and carried into the send: the round trip below is long enough for a
             // resume to claim the topic, and what may be ended afterwards is the stream this
@@ -65,6 +58,79 @@ public sealed class StreamingService(
         {
             _streamLock.Release();
         }
+    }
+
+    // A message sent while the topic's reply streams waits in the hub's queue and is drawn by nobody
+    // now, so the reply keeps its one bubble: the hub writes it on the stream as its turn starts, and
+    // this page draws it there. Decided under the lock, against the stream as it is then: finding none
+    // after all, it is sent and drawn as any message is.
+    public async Task QueueMessageAsync(
+        StoredTopic topic,
+        string message,
+        string? senderId,
+        IReadOnlyList<AttachmentReference>? attachments = null)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var outgoing = Compose(topic, message, correlationId: null, attachments);
+
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                var queued = await EnqueueAsync(outgoing with { CorrelationId = pipeline.QueueUserMessage() });
+                if (queued is null)
+                {
+                    // Nothing was drawn for it, so its words go back where they were typed; its
+                    // files never left the composer.
+                    dispatcher.Dispatch(new OfferComposerText(message));
+                    return;
+                }
+
+                if (queued.Value)
+                {
+                    ClearSent(outgoing);
+                    return;
+                }
+            }
+
+            // Nothing to queue behind: the reply this page showed is over, and is closed off before
+            // the message is drawn under it.
+            topicStreams.FinalizeCurrent(topic.TopicId);
+            var correlationId = pipeline.SubmitUserMessage(
+                topic.TopicId, message, senderId, outgoing.Attachments is { Count: > 0 } references ? references : null);
+            await StartNewStreamAsync(outgoing with { CorrelationId = correlationId }, seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
+    // True when the hub queued it, false when nothing was running to queue behind, and null when the
+    // person has been told why it went nowhere: not live, or the hub's refusal.
+    private async Task<bool?> EnqueueAsync(Outgoing outgoing)
+    {
+        HubResult<bool> enqueued;
+        try
+        {
+            enqueued = await messagingService.EnqueueMessageAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments);
+        }
+        catch (HubException refused)
+        {
+            dispatcher.Dispatch(new ShowError(Helpers.HubRefusal.MessageOf(refused)));
+            return null;
+        }
+
+        if (!enqueued.IsLive)
+        {
+            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return null;
+        }
+
+        return enqueued.Value;
     }
 
     public async Task RerunAsync(
@@ -129,26 +195,36 @@ public sealed class StreamingService(
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
-        var enqueued = await messagingService.EnqueueMessageAsync(
-            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
-            outgoing.ConfigPatch, outgoing.Attachments);
-
         // A not-live enqueue is not the server saying "there is no stream to enqueue onto".
         // Falling through here would open a second stream over a transport that cannot carry it
         // and show the user a reply that has already failed.
-        if (!enqueued.IsLive)
+        if (await EnqueueAsync(outgoing) is not { } enqueued)
         {
-            dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
             return;
         }
 
-        if (!enqueued.Value)
+        if (!enqueued)
         {
             await StartNewStreamAsync(outgoing, seen);
             return;
         }
 
-        ClearSent(outgoing.Topic.TopicId, outgoing.Sending);
+        ClearSent(outgoing);
+    }
+
+    // Read before the send and cleared after it, so an attachment cannot ride a second message. A retry
+    // brings its own references and leaves the composer alone; everything else sends what the composer
+    // holds and empties exactly that.
+    private Outgoing Compose(
+        StoredTopic topic, string message, string? correlationId, IReadOnlyList<AttachmentReference>? attachments)
+    {
+        IReadOnlyList<ComposerAttachment> sending = attachments is null
+            ? ComposerSelectors.Ready(composerStore.State.For(topic.TopicId))
+            : [];
+        return new Outgoing(
+            topic, message, correlationId, GetConfigPatch(topic),
+            attachments ?? ComposerSelectors.References(sending),
+            sending);
     }
 
     private AgentConfigPatch? GetConfigPatch(StoredTopic topic) =>
@@ -157,11 +233,11 @@ public sealed class StreamingService(
 
     // By local id, so a file picked during the send's round trip stays in the composer instead of
     // being swept away with the ones that travelled.
-    private void ClearSent(string topicId, IReadOnlyList<ComposerAttachment> sent)
+    private void ClearSent(Outgoing sent)
     {
-        if (sent.Count > 0)
+        if (sent.Sending.Count > 0)
         {
-            dispatcher.Dispatch(new ClearAttachments(topicId, sent.Select(a => a.LocalId).ToList()));
+            dispatcher.Dispatch(new ClearAttachments(sent.Topic.TopicId, sent.Sending.Select(a => a.LocalId).ToList()));
         }
     }
 
@@ -198,7 +274,7 @@ public sealed class StreamingService(
             return;
         }
 
-        ClearSent(topic.TopicId, outgoing.Sending);
+        ClearSent(outgoing);
 
         // Reached either on an idle topic, where there was nothing to end, or after the server
         // said there was nothing to enqueue onto — which means the reply we saw is over. Ending
@@ -216,24 +292,31 @@ public sealed class StreamingService(
             topic.TopicId,
             new ChatMessageModel { Role = "assistant" },
             currentMessageId: null,
-            lease => ProcessStreamAsync(topic, chunks, lease));
+            lease => ProcessStreamAsync(topic, chunks, lease, outgoing));
         if (opened is null)
         {
-            _ = ShowRefusalsOfAsync(topic, chunks);
+            _ = ShowRefusalsOfAsync(topic, chunks, outgoing);
         }
     }
 
     // The losing wire's errors, and nothing else: its content is the holder's to show, and the two
-    // wires share no numbering to merge chunks by.
-    private async Task ShowRefusalsOfAsync(StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks)
+    // wires share no numbering to merge chunks by. An error on it is this send's — the hub refusing it
+    // as it queued it behind another member's running reply — so it is drawn under the send's own
+    // message, never at the end, where it would sit between that member's message and the reply to it.
+    private async Task ShowRefusalsOfAsync(
+        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, Outgoing sent)
     {
         try
         {
             await foreach (var chunk in chunks)
             {
-                if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
+                if (chunk.RefusedSend && chunk.Error is { } refusal)
                 {
-                    ShowErrorOnce(topic.TopicId, error);
+                    GiveBack(sent, refusal);
+                }
+                else if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
+                {
+                    ShowRefusalUnder(topic.TopicId, sent.CorrelationId, error);
                 }
             }
         }
@@ -241,6 +324,41 @@ public sealed class StreamingService(
         {
             // The holder's wire answers for the reply; a drop on this one says nothing new.
         }
+    }
+
+    // A send the hub refused as it queued it was never taken: drawn as sent before the page knew a reply
+    // ran, it is taken off again, the refusal told, and its words and files go back to the composer, as
+    // for one EnqueueMessage refused.
+    private void GiveBack(Outgoing sent, string refusal)
+    {
+        var topicId = sent.Topic.TopicId;
+        dispatcher.Dispatch(new ShowError(refusal));
+        if (sent.CorrelationId is { } drawn)
+        {
+            dispatcher.Dispatch(new TakeOffSentMessages(topicId, [drawn]));
+        }
+
+        dispatcher.Dispatch(new ReturnToComposer(topicId,
+            [new ReturnedMessage(sent.CorrelationId ?? "", sent.Message, sent.Attachments ?? [], null, sent.CorrelationId)]));
+    }
+
+    private void ShowRefusalUnder(string topicId, string? correlationId, string error)
+    {
+        var shown = messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []).ToList();
+        var sent = correlationId is null ? -1 : shown.FindLastIndex(m => m.CorrelationId == correlationId);
+        if (correlationId is null || sent < 0)
+        {
+            ShowErrorOnce(topicId, error);
+            return;
+        }
+
+        dispatcher.Dispatch(new ShowError(error));
+        if (shown.ElementAtOrDefault(sent + 1) is { IsError: true } under && under.Content == error)
+        {
+            return;
+        }
+
+        dispatcher.Dispatch(new AddMessageUnder(topicId, correlationId, CreateErrorMessage(error)));
     }
 
     // Once, whichever wire it came on: two readers of one topic can both carry the same answer, and
@@ -279,10 +397,12 @@ public sealed class StreamingService(
         return null;
     }
 
+    // Sending: the send whose own wire this is, when it is one, which a refusal of that send gives back.
     private async Task ProcessStreamAsync(
         StoredTopic topic,
         IAsyncEnumerable<ChatStreamMessage> chunks,
-        StreamLease lease)
+        StreamLease lease,
+        Outgoing? sending = null)
     {
         // The agent's stream can interleave chunks from different assistant messages: a later
         // message's tool-call display races ahead of an earlier message's content (which lags
@@ -301,6 +421,12 @@ public sealed class StreamingService(
                 if (chunk.ApprovalRequest is not null)
                 {
                     dispatcher.Dispatch(new ShowApproval(topic.TopicId, chunk.ApprovalRequest));
+                    continue;
+                }
+
+                if (chunk is { RefusedSend: true, Error: { } refusal } && sending is not null)
+                {
+                    GiveBack(sending, refusal);
                     continue;
                 }
 
@@ -325,10 +451,14 @@ public sealed class StreamingService(
                 // cut the reply shown so far from the rest of it.
                 if (chunk.UserMessage is { } sent)
                 {
+                    // One this page queued is known by its own id alone: the same words loaded with
+                    // the history are an earlier message, never this one.
                     var mine = pipeline.WasSentByThisClient(sent.CorrelationId);
-                    if (!mine && BufferRebuildUtility.IsShown(
-                            messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
-                            sent.SenderId, chunk.Content ?? "", sent.CorrelationId))
+                    var page = messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []);
+                    var shown = pipeline.WasQueuedByThisClient(sent.CorrelationId)
+                        ? page.Any(m => m.CorrelationId == sent.CorrelationId)
+                        : BufferRebuildUtility.IsShown(page, sent.SenderId, chunk.Content ?? "", sent.CorrelationId);
+                    if (!mine && shown)
                     {
                         continue;
                     }

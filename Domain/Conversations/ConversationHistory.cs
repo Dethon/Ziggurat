@@ -1,3 +1,4 @@
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Conversations;
@@ -34,4 +35,14 @@ public sealed record ConversationHistory(
         Versions.TryGetValue(slot, out var versions)
             ? new VersionPosition(versions.Ordered().ToList().IndexOf(null), versions.Inactive.Count + 1)
             : null;
+
+    // The files the conversation names anywhere, on its line or in a version put aside.
+    public IReadOnlyList<string> HeldAttachments() =>
+    [
+        .. Messages
+            .Concat(Versions.Values.SelectMany(slot => slot.Inactive).SelectMany(v => v.Messages))
+            .SelectMany(m => m.GetAttachments() ?? [])
+            .Select(a => a.Id)
+            .Distinct()
+    ];
 }

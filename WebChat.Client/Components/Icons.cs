@@ -155,6 +155,15 @@ public static class Icons
     public static readonly IconGlyph Pencil = Stroked(
         """<path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />""");
 
+    // Stroked to sit beside a queue chip's stroked actions; the composer's filled controls keep the filled
+    // one.
+    public static readonly IconGlyph PaperclipStroked = Stroked(
+        """<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />""");
+
+    // A queued message's Steer now: a turn taken, the reply sent another way.
+    public static readonly IconGlyph Steer = Stroked(
+        """<polyline points="15 14 20 9 15 4" /><path d="M4 20v-7a4 4 0 0 1 4-4h12" />""");
+
     public static readonly IconGlyph More = Stroked(
         """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");
 

@@ -1,9 +1,12 @@
+using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.StateManagers;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Shouldly;
 using StackExchange.Redis;
@@ -184,6 +187,121 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
 
         history.Select(h => h.ToolsCalled).ShouldBe([null, ["timer_set"], null, null]);
+    }
+
+    // A reply cut at a tool boundary by its person's steer, or stopped between its calls, said nothing,
+    // and is still a reply: it is drawn as one naming the tools it ran, and counted as one.
+    [Fact]
+    public async Task GetHistoryAsync_AReplyThatRanToolsAndSaidNothing_IsDrawnNamingThem()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t", _chatId, 0, _agentId, "Orchard", DateTimeOffset.UtcNow, null, TenantId: "home"));
+        await store.AppendMessagesAsync(Key,
+        [
+            Message("u1", "user", "look it up"),
+            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("c1", "mcp__websearch__web_search")])
+            {
+                MessageId = "calling"
+            },
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "found")]),
+            Message("u2", "user", "no, the other one"),
+            Message("a2", "assistant", "the other one")
+        ]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => (h.Role, h.Content)).ShouldBe([
+            ("user", "look it up"),
+            ("assistant", ""),
+            ("user", "no, the other one"),
+            ("assistant", "the other one")
+        ]);
+        history.Select(h => h.ToolsCalled).ShouldBe([null, ["web_search"], null, null]);
+        history[1].IsInterrupted.ShouldBeFalse();
+        // By the id its calls streamed under, so the page that drew them names its bubble from this one.
+        history[1].MessageId.ShouldBe("calling");
+        (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(4);
+    }
+
+    // A reply the person stopped between its tool calls, kept as the stop keeps one (the calls that got
+    // their results, nothing of the call it was making), ends the line on those results without a word:
+    // it is drawn as a reply naming the tools it ran, not marked interrupted, so no Continue is offered.
+    [Fact]
+    public async Task GetHistoryAsync_AReplyStoppedBetweenItsToolCalls_IsDrawnNamingTheToolsItRan()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t", _chatId, 0, _agentId, "Orchard", DateTimeOffset.UtcNow, null, TenantId: "home"));
+        var history = new RedisChatMessageStore(store);
+        var model = new ModelCalls(
+            [new FunctionCallContent("c1", "mcp__websearch__web_search")],
+            [new TextReasoningContent("and now the other one"), new FunctionCallContent("c2", "mcp__websearch__web_search")]);
+        var agent = model.AsAIAgent(new ChatClientAgentOptions
+        {
+            ChatHistoryProvider = history,
+            ChatOptions = new ChatOptions { Tools = [AIFunctionFactory.Create(() => "found", "mcp__websearch__web_search")] }
+        });
+        var session = await agent.CreateSessionAsync();
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, Key);
+        history.BeginCollecting(session);
+
+        // Stopped once the second model call has begun: the first call's result is in, the second call is not.
+        using var stop = new CancellationTokenSource();
+        try
+        {
+            await foreach (var update in agent.RunStreamingAsync(
+                               [new ChatMessage(ChatRole.User, "look it up")], session, cancellationToken: stop.Token))
+            {
+                history.Collect(session, update);
+                if (update.Contents.OfType<TextReasoningContent>().Any())
+                {
+                    await stop.CancelAsync();
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        var shown = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        shown.Select(h => (h.Role, h.Content)).ShouldBe([("user", "look it up"), ("assistant", "")]);
+        shown[1].ToolsCalled.ShouldBe(["web_search"]);
+        shown[1].IsInterrupted.ShouldBeFalse();
+        (await store.GetMessagesAsync(Key))!.SelectMany(m => m.Contents).OfType<FunctionCallContent>()
+            .Select(c => c.CallId).ShouldBe(["c1"]);
+        (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(2);
+    }
+
+    // Answers each model call with its own contents, one update per content, yielding between them so a
+    // stop can land.
+    private sealed class ModelCalls(params IReadOnlyList<AIContent>[] calls) : IChatClient
+    {
+        private int _call;
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            var call = calls[Math.Min(Interlocked.Increment(ref _call) - 1, calls.Length - 1)];
+            foreach (var content in call)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return new ChatResponseUpdate(ChatRole.Assistant, [content]) { MessageId = $"m{_call}" };
+                await Task.Yield();
+            }
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
     }
 
     [Fact]

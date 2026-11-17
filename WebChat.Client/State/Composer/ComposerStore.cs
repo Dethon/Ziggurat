@@ -1,6 +1,7 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
+using WebChat.Client.State.AgentSettings;
 
 namespace WebChat.Client.State.Composer;
 
@@ -40,6 +41,11 @@ public record DictationTranscribed(string Text) : IAction;
 // Words handed to the composer from elsewhere — a fork's, from the message it was forked from — which
 // land in the box as a transcript does, for the person to send.
 public record OfferComposerText(string Text) : IAction;
+
+// Queued messages given back to their sender's composer on a topic — one taken back to be edited —
+// in the order they were queued: their words before whatever is typed there, each joined by a blank
+// line, and their files back as ready attachments, already uploaded.
+public record ReturnToComposer(string TopicId, IReadOnlyList<ReturnedMessage> Messages) : IAction;
 
 // Thrown away: slid to discard, the trash button, Escape, a topic change, or a hidden tab. No
 // request was made and nothing reaches the composer.
@@ -100,10 +106,9 @@ public sealed class ComposerStore : IDisposable
             }
         },
 
-        OfferComposerText a => state with
-        {
-            Dictation = state.Dictation with { Transcript = new PendingTranscript(a.Text, Stamp()) }
-        },
+        OfferComposerText a => state with { Handed = new HandedWords(a.Text, Stamp(), TextPlacement.After) },
+
+        ReturnToComposer a => Returned(state, a),
 
         DictationDiscarded => state with
         {
@@ -171,13 +176,40 @@ public sealed class ComposerStore : IDisposable
         _ => state
     };
 
+    private static ComposerState Returned(ComposerState state, ReturnToComposer returned)
+    {
+        var text = string.Join(
+            ComposerSelectors.ReturnedSeparator,
+            returned.Messages.Select(m => m.Content).Where(content => !string.IsNullOrWhiteSpace(content)));
+        IReadOnlyList<ComposerAttachment> files =
+        [
+            .. state.For(returned.TopicId),
+            .. returned.Messages.SelectMany(m => m.Attachments).Select(reference => new ComposerAttachment
+            {
+                LocalId = Guid.NewGuid().ToString("N"),
+                FileName = reference.FileName,
+                MediaType = reference.MediaType,
+                SizeBytes = reference.SizeBytes,
+                Status = AttachmentStatus.Ready,
+                PercentComplete = 100,
+                Reference = reference
+            })
+        ];
+
+        return state with
+        {
+            AttachmentsByTopic = state.AttachmentsByTopic.With(returned.TopicId, files),
+            Handed = text.Length == 0 ? state.Handed : new HandedWords(text, Stamp(), TextPlacement.Before)
+        };
+    }
+
     private static ComposerState Dictating(ComposerState state, DictationStatus status) => state with
     {
         Dictation = state.Dictation with { Status = status, Refusal = null, Hint = null }
     };
 
-    // Monotonic within the session, which is all the composer needs to tell one transcript from
-    // the next one carrying the same words.
+    // Monotonic within the session, which is all the composer needs to tell one transcript, or one
+    // handing, from the next carrying the same words.
     private static long Stamp() => Interlocked.Increment(ref _stamp);
 
     private static long _stamp;

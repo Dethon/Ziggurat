@@ -47,6 +47,7 @@ public sealed class ChatHubHistoryEditTests : IDisposable
             attachmentSettings, new AttachmentTickets(attachmentSettings, time), _attachments, NullLogger<AttachmentService>.Instance);
         _streamService = new StreamService(
             _sessionService, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         var approvals = new ApprovalService(
             _streamService, _sessionService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object,
@@ -56,7 +57,9 @@ public sealed class ChatHubHistoryEditTests : IDisposable
             _sessionService, _streamService, approvals,
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object, _store.Object, new Mock<IPushSubscriptionStore>().Object, attachments,
-            _hubSender.Object, new RetentionSettings(), new DictationSettings(), new VouchingAccounts(),
+            _hubSender.Object, new RetentionSettings(), new DictationSettings(),
+            HubParts.Turns(_streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(_streamService, _store.Object, _hubSender.Object),
             new HouseholdSpacesAccounts(), NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller(),

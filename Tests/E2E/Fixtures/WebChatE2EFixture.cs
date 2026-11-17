@@ -208,11 +208,15 @@ public class WebChatE2EListScrollCollection : ICollectionFixture<WebChatE2EFixtu
 [CollectionDefinition(WebChatE2ECollections.DictationLong)]
 public class WebChatE2EDictationLongCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// Rewriting a conversation on the real model, out of Conversation. The twenty-third, which fills the
-// slices the stack has (WebChatCollectionSliceTests): a further collection needs a space name and
-// CollectionSlices raised.
+// Rewriting a conversation on the real model, out of Conversation.
 [CollectionDefinition(WebChatE2ECollections.Rewrites)]
 public class WebChatE2ERewritesCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// Messages queued behind a running reply, on the real model: several turns of the provider's in one
+// case, so a chain of its own. The twenty-fourth, which fills the slices the stack has
+// (WebChatCollectionSliceTests): a further collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.Queue)]
+public class WebChatE2EQueueCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -239,4 +243,5 @@ public static class WebChatE2ECollections
     public const string ListScroll = "WebChatE2E.ListScroll";
     public const string DictationLong = "WebChatE2E.DictationLong";
     public const string Rewrites = "WebChatE2E.Rewrites";
+    public const string Queue = "WebChatE2E.Queue";
 }

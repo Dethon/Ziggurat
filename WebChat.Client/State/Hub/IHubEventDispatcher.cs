@@ -16,4 +16,8 @@ public interface IHubEventDispatcher
     void HandleAccessChanged(AccessChangedNotification notification);
 
     void HandleHistoryChanged(HistoryChangedNotification notification);
+
+    void HandleQueueChanged(QueueChangedNotification notification);
+
+    void HandleQueueReturned(QueueReturnedNotification notification);
 }

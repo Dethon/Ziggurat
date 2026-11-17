@@ -17,6 +17,14 @@ public interface IStreamingService
         string? correlationId = null,
         IReadOnlyList<AttachmentReference>? attachments = null);
 
+    // A message sent while the topic's reply streams: queued by the hub and drawn when its turn
+    // starts, or sent and drawn at once when the reply turns out to be over.
+    Task QueueMessageAsync(
+        StoredTopic topic,
+        string message,
+        string? senderId,
+        IReadOnlyList<AttachmentReference>? attachments = null);
+
     // Two moments, deliberately apart. Showing takes what the server said the reply had
     // written and puts it on screen; reading attaches to the wire, and that call does not
     // come back until the reply's next chunk does. A caller that did them as one would show

@@ -36,6 +36,7 @@ public class ChatHubStreamStartedTests
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
 
         _hub = new ChatHub(
@@ -46,11 +47,12 @@ public class ChatHubStreamStartedTests
             new Mock<IAgentCatalog>().Object,
             _store.Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             _sender.Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(streamService, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
+            HubParts.News(streamService, _store.Object, _sender.Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
@@ -109,13 +111,10 @@ public class ChatHubStreamStartedTests
     {
         GivenTheTopic(owner: "marta", shared: true);
         _hub.Context.Items[ChatHub.DisplayNameItem] = "Fran";
-        var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
-        var subscription = channel.Subscribe();
-
-        await SendAsync();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var userMessage = await subscription.ReadAllAsync(cts.Token).FirstAsync(m => m.UserMessage is not null, cts.Token);
+        var userMessage = await _hub.SendMessage(TopicId, "hola", null, null, null, cts.Token)
+            .FirstAsync(m => m.UserMessage is not null, cts.Token);
         userMessage.UserMessage!.SenderId.ShouldBe("fran");
         userMessage.UserMessage.SenderName.ShouldBe("Fran");
     }
@@ -141,13 +140,14 @@ public class ChatHubStreamStartedTests
         await foreach (var message in _hub.SendMessage(TopicId, "hola", null, null, null, cts.Token))
         {
             seen.Add(message);
-            if (message.UserMessage?.SenderId == "fran")
+            if (message.Content == "Apunt")
             {
                 break;
             }
         }
 
-        seen.Select(m => m.Content).ShouldBe(["vino", "Apunt", "hola"]);
+        // Fran's own message waits in the queue behind Carlos's turn, and comes on the stream later.
+        seen.Select(m => m.Content).ShouldBe(["vino", "Apunt"]);
     }
 
     // A page resuming a stream asks for its state, then for its wire: a message written between the

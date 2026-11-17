@@ -20,43 +20,55 @@ public interface IAsyncGrouping<out TKey, out TElement> : IAsyncEnumerable<TElem
 
 public static class IAsyncEnumerableExtensions
 {
-    private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action onComplete, Action<TElement>? onDropped)
-        : IAsyncGrouping<TKey, TElement>
+    // A group's items, until it completes. Completing hands back what its consumer had not read (handBack, in the
+    // order it came) and refuses anything written after, under one lock with the write, so no item is both in
+    // the group and handed back, and none is in neither.
+    private sealed class AsyncGrouping<TKey, TElement>(TKey key, Action<AsyncGrouping<TKey, TElement>> onComplete,
+        Action<TElement> handBack) : IAsyncGrouping<TKey, TElement>
     {
         private readonly Channel<TElement> _channel = Channel.CreateUnbounded<TElement>();
-        private int _completed;
+        private readonly Lock _gate = new();
+        private bool _completed;
 
         public TKey Key => key;
 
-        internal async ValueTask WriteAsync(TElement item, CancellationToken ct)
+        // False once the group completed: the item is the caller's to route again.
+        internal bool TryWrite(TElement item)
         {
-            // An item that races in just behind the group's completion never reaches the
-            // channel, so no drain can recover it — reporting it here is its only trace.
-            if (_completed != 0)
+            lock (_gate)
             {
-                onDropped?.Invoke(item);
-                return;
-            }
-
-            try
-            {
-                await _channel.Writer.WriteAsync(item, ct);
-            }
-            catch (ChannelClosedException)
-            {
-                onDropped?.Invoke(item);
+                return !_completed && _channel.Writer.TryWrite(item);
             }
         }
 
         public void Complete()
         {
-            if (Interlocked.CompareExchange(ref _completed, 1, 0) != 0)
+            lock (_gate)
             {
-                return;
+                if (_completed)
+                {
+                    return;
+                }
+
+                _completed = true;
+                _channel.Writer.TryComplete();
+                while (_channel.Reader.TryRead(out var unread))
+                {
+                    handBack(unread);
+                }
             }
 
-            _channel.Writer.TryComplete();
-            onComplete();
+            onComplete(this);
+        }
+
+        // The source ended: nothing more comes, and what is in the group is still its consumer's to read.
+        internal void End()
+        {
+            lock (_gate)
+            {
+                _completed = true;
+                _channel.Writer.TryComplete();
+            }
         }
 
         public IEnumerable<TElement> DrainPending()
@@ -75,35 +87,113 @@ public static class IAsyncEnumerableExtensions
 
     extension<TSource>(IAsyncEnumerable<TSource> source)
     {
+        // A group completes when its consumer is done with it (a conversation's stop, a failed setup): what it
+        // had not read, and anything routed to it as it completed, was sent after whatever ended it, so it is
+        // routed again, to a fresh group of its key, in the order it came and ahead of anything the source
+        // gives after. Once: a group made for an item handed back drops what it leaves unread (onDropped), as
+        // does a fresh group that refuses the item it was made for (a consumer done before reading anything),
+        // so a consumer that ends every group at once cannot keep an item going round.
         public async IAsyncEnumerable<IAsyncGrouping<TKey, TSource>> GroupByStreaming<TKey>(
             Func<TSource, CancellationToken, ValueTask<TKey>> keySelector,
             Action<TSource>? onDropped = null,
             [EnumeratorCancellation] CancellationToken ct = default) where TKey : notnull
         {
             var groups = new ConcurrentDictionary<TKey, AsyncGrouping<TKey, TSource>>();
+            var handedBack = Channel.CreateUnbounded<(TSource Item, bool Again)>();
+            await using var reading = source.GetAsyncEnumerator(ct);
+            Task<bool>? next = null;
+            Task<bool>? handBackWaiting = null;
+            var cancelled = Task.Delay(Timeout.Infinite, ct);
             try
             {
-                await foreach (var item in source.WithCancellation(ct))
+                while (true)
                 {
-                    var key = await keySelector(item, ct);
-                    if (!groups.TryGetValue(key, out var group))
+                    ct.ThrowIfCancellationRequested();
+                    var fromSource = !handedBack.Reader.TryRead(out var routed);
+                    if (fromSource)
                     {
-                        group = new AsyncGrouping<TKey, TSource>(key, () => groups.TryRemove(key, out _), onDropped);
-                        groups[key] = group;
-                        yield return group;
+                        next ??= reading.MoveNextAsync().AsTask();
+                        handBackWaiting ??= handedBack.Reader.WaitToReadAsync(CancellationToken.None).AsTask();
+                        if (await Task.WhenAny(next, handBackWaiting, cancelled) != next)
+                        {
+                            ct.ThrowIfCancellationRequested();
+                            handBackWaiting = null;
+                            continue;
+                        }
+
+                        if (!await next)
+                        {
+                            break;
+                        }
+
+                        next = null;
+                        // Whatever was handed back meanwhile came before this item.
+                        if (handedBack.Reader.TryPeek(out _))
+                        {
+                            handedBack.Writer.TryWrite((reading.Current, false));
+                            continue;
+                        }
+
+                        routed = (reading.Current, false);
                     }
 
-                    await group.WriteAsync(item, ct);
+                    var key = await keySelector(routed.Item, ct);
+                    if (groups.TryGetValue(key, out var group) && group.TryWrite(routed.Item))
+                    {
+                        continue;
+                    }
+
+                    // A group refusing an item read just now has just completed, and what it handed back came
+                    // before that item.
+                    if (fromSource && group is not null && handedBack.Reader.TryPeek(out _))
+                    {
+                        handedBack.Writer.TryWrite(routed);
+                        continue;
+                    }
+
+                    // No group of its key, or the one there completed as the item reached it: a fresh one.
+                    var again = routed.Again;
+                    var fresh = new AsyncGrouping<TKey, TSource>(
+                        key, done => groups.TryRemove(new KeyValuePair<TKey, AsyncGrouping<TKey, TSource>>(key, done)),
+                        item =>
+                        {
+                            if (again)
+                            {
+                                onDropped?.Invoke(item);
+                            }
+                            else
+                            {
+                                handedBack.Writer.TryWrite((item, true));
+                            }
+                        });
+                    groups[key] = fresh;
+                    yield return fresh;
+                    if (!fresh.TryWrite(routed.Item))
+                    {
+                        onDropped?.Invoke(routed.Item);
+                    }
                 }
             }
             finally
             {
                 foreach (var group in groups.Values)
                 {
-                    group.Complete();
+                    group.End();
                 }
 
                 groups.Clear();
+
+                // The source's read still out is settled before the source is let go.
+                if (next is not null)
+                {
+                    try
+                    {
+                        await next;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                    }
+                }
             }
         }
 

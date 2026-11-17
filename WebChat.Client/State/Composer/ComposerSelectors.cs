@@ -53,25 +53,39 @@ public static class ComposerSelectors
     public static bool HasUploadInFlight(IReadOnlyList<ComposerAttachment> attachments) =>
         attachments.Any(a => a.Status == AttachmentStatus.Uploading);
 
-    // One control on the right, always the one the person is about to use. Cancel while the reply
-    // runs, as it always has been; the microphone only where Send would have nothing to send, so
-    // no composer width is lost to a third button and the control under the thumb is never dead.
-    // Cancel keeps the precedence it always had: while the reply runs, Send could only ever be
-    // dead, and that is true whatever the microphone is doing. Below it, an open microphone holds
-    // the spot even against text — the strip is what is on screen, and the control must not change
-    // under the finger holding it.
-    public static SendControl SendControl(
-        bool isStreaming, string? text, int readyAttachments, DictationStatus dictation) => true switch
-        {
-            _ when isStreaming => Composer.SendControl.Cancel,
-            _ when dictation is DictationStatus.Recording or DictationStatus.Latched =>
-                Composer.SendControl.Microphone,
-            _ when !string.IsNullOrWhiteSpace(text) || readyAttachments > 0 => Composer.SendControl.Send,
-            _ => Composer.SendControl.Microphone
-        };
+    // The controls on the right: the one the person is about to use, and Stop beside it while the
+    // reply runs. Stop no longer takes Send's place — a message sent mid-reply is queued — so
+    // sending and stopping never compete for one button.
+    public static ComposerControls Controls(
+        bool isStreaming, string? text, int readyAttachments, DictationStatus dictation) =>
+        new(SendControl(text, readyAttachments, dictation), Stop: isStreaming);
+
+    // The microphone only where Send would have nothing to send, so the control under the thumb is
+    // never dead. An open microphone holds the spot even against text — the strip is what is on
+    // screen, and the control must not change under the finger holding it.
+    public static SendControl SendControl(string? text, int readyAttachments, DictationStatus dictation) => true switch
+    {
+        _ when dictation is DictationStatus.Recording or DictationStatus.Latched =>
+            Composer.SendControl.Microphone,
+        _ when !string.IsNullOrWhiteSpace(text) || readyAttachments > 0 => Composer.SendControl.Send,
+        _ => Composer.SendControl.Microphone
+    };
 
     // Words are added to what was typed rather than replacing it: dictating must never destroy
     // half a sentence somebody had already thumbed in.
     public static string Append(string? existing, string transcript) =>
         string.IsNullOrWhiteSpace(existing) ? transcript : $"{existing.TrimEnd()} {transcript}";
+
+    // A paragraph break, so each message given back stays a paragraph of its own beside the next and
+    // what is typed.
+    public const string ReturnedSeparator = "\n\n";
+
+    // Handed words put where they belong in what is typed, which is never lost: a fork's words follow
+    // it, a message given back from the queue goes before it, since it was written first.
+    public static string Place(string? existing, HandedWords words) => words.Placement switch
+    {
+        TextPlacement.Before when !string.IsNullOrWhiteSpace(existing) => $"{words.Text}{ReturnedSeparator}{existing}",
+        TextPlacement.Before => words.Text,
+        _ => Append(existing, words.Text)
+    };
 }

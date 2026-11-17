@@ -8,6 +8,11 @@ public record MessagesLoaded(string TopicId, IReadOnlyList<ChatMessageModel> Mes
 
 public record AddMessage(string TopicId, ChatMessageModel Message, string? StreamMessageId = null) : IAction;
 
+// A message drawn right under the person's own message the page sent with that correlation id, or at the
+// end when the page shows none: a refusal read off a send's own wire is that send's, and another member's
+// turn may have been drawn after it meanwhile.
+public record AddMessageUnder(string TopicId, string CorrelationId, ChatMessageModel Message) : IAction;
+
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
@@ -38,10 +43,18 @@ public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> 
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
+// The person's own messages this page drew as sent, by the correlation ids the page sent them with, that
+// the hub never took after all: handed back to the composer by a stop, or refused as they were queued.
+public record TakeOffSentMessages(string TopicId, IReadOnlyList<string> CorrelationIds) : IAction;
+
 // The message a retry sends again, taken back so the retry stands in its place.
 public record RemoveLastMessage(string TopicId) : IAction;
 
 public record RetryLastMessage(string TopicId) : IAction;
+
+// Retry on a refusal drawn under the reader's own message with other turns after it: that message sent
+// again as a new one.
+public record RetryRefused(string TopicId, ChatMessageModel Refused) : IAction;
 
 public record ClearAllMessages : IAction;
 
@@ -78,6 +91,8 @@ public sealed class MessagesStore : IDisposable
 
         AddMessage a => AddMessageWithDedup(state, a.TopicId, a.Message, a.StreamMessageId),
 
+        AddMessageUnder a => AddMessageUnderSent(state, a),
+
         UpdateMessage a => state with
         {
             MessagesByTopic = UpdateMessageInTopic(state.MessagesByTopic, a.TopicId, a.MessageId, a.Message)
@@ -91,6 +106,15 @@ public sealed class MessagesStore : IDisposable
             },
 
         RemoveTrailingErrors => state,
+
+        TakeOffSentMessages a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => state with
+        {
+            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, (IReadOnlyList<ChatMessageModel>)msgs
+                .Where(m => m.Role != "user" || m.CorrelationId is null || !a.CorrelationIds.Contains(m.CorrelationId))
+                .ToList())
+        },
+
+        TakeOffSentMessages => state,
 
         RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) && msgs.Count > 0 =>
             state with { MessagesByTopic = state.MessagesByTopic.With(a.TopicId, msgs.Take(msgs.Count - 1).ToList()) },
@@ -137,6 +161,19 @@ public sealed class MessagesStore : IDisposable
         }
 
         return messagesByTopic.With(topicId, (IReadOnlyList<ChatMessageModel>)updated);
+    }
+
+    private static MessagesState AddMessageUnderSent(MessagesState state, AddMessageUnder a)
+    {
+        var shown = state.MessagesByTopic.GetValueOrDefault(a.TopicId, []).ToList();
+        var sent = shown.FindLastIndex(m => m.CorrelationId == a.CorrelationId);
+        return sent < 0
+            ? AddMessageWithDedup(state, a.TopicId, a.Message, null)
+            : state with
+            {
+                MessagesByTopic = state.MessagesByTopic.With(
+                    a.TopicId, [.. shown.Take(sent + 1), a.Message, .. shown.Skip(sent + 1)])
+            };
     }
 
     private static MessagesState AddMessageWithDedup(

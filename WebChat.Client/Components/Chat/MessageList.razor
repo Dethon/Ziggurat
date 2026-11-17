@@ -243,13 +243,21 @@
 
     private bool _isRetrying;
 
-    private void HandleRetry()
+    private void HandleRetry(int index)
     {
-        if (_topicId is not null && !_isRetrying)
+        if (_topicId is null || _isRetrying)
         {
-            _isRetrying = true;
-            Dispatcher.Dispatch(new RetryLastMessage(_topicId));
+            return;
         }
+
+        _isRetrying = true;
+        if (index == _messages.Count - 1)
+        {
+            Dispatcher.Dispatch(new RetryLastMessage(_topicId));
+            return;
+        }
+
+        Dispatcher.Dispatch(new RetryRefused(_topicId, MessageActionsLogic.RetriedAt(_messages, index, _currentUserId)!));
     }
 
     // The message being edited in place of its bubble, by entry id: a reload that keeps it keeps the
@@ -434,8 +442,8 @@
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
-                         ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
-                         OnRetry="@HandleRetry"
+                         ShowRetry="@MessageActionsLogic.OffersRetry(_messages, index, _isStreaming, _currentUserId)"
+                         OnRetry="@(() => HandleRetry(index))"
                          Actions="@ActionsFor(message, index)"
                          RerollModels="@RerollModels"
                          AgentModel="@AgentModel"

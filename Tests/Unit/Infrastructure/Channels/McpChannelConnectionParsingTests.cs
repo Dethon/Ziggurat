@@ -189,6 +189,22 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
+    public async Task HandleChannelMessageNotification_ASteer_IsMappedAsOne()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"fran","content":"look at the other one","steer":true}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.Steer.ShouldBeTrue();
+            break;
+        }
+    }
+
+    [Fact]
     public async Task HandleChannelMessageNotification_WithResponseFormat_MapsItOntoChannelMessage()
     {
         var conn = new McpChannelConnection("sugary");

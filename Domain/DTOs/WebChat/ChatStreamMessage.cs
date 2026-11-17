@@ -18,4 +18,9 @@ public record ChatStreamMessage
     // Files sent with a user message. References only: the browser mints a download URL when the
     // transcript renders one.
     public IReadOnlyList<AttachmentReference>? Attachments { get; init; }
+
+    // The error refuses the send whose wire carries it, as the hub queued it behind a reply the page had not
+    // heard start: the message was never taken, so the page that drew it as sent takes it off again and
+    // gives its words back. A page from before ignores it and draws the error as it always did.
+    public bool RefusedSend { get; init; }
 }

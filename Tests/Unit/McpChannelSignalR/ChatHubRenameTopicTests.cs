@@ -29,20 +29,24 @@ public class ChatHubRenameTopicTests
     public ChatHubRenameTopicTests()
     {
         var sessions = new SessionService();
+        var streams = new StreamService(sessions, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
+            NullLogger<StreamService>.Instance);
+        var emitter = new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast);
         _hub = new ChatHub(
             sessions,
-            new StreamService(sessions, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
-                NullLogger<StreamService>.Instance),
+            streams,
             approvalService: null!,
-            new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
+            emitter,
             new Mock<IAgentCatalog>().Object,
             _store.Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             _sender.Object,
             new RetentionSettings(),
             new DictationSettings(),
-            new VouchingAccounts(),
+            HubParts.Turns(streams, emitter, new VouchingAccounts()),
+            HubParts.News(streams, _store.Object, _sender.Object),
             new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {

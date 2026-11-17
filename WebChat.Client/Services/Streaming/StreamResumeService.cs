@@ -1,9 +1,12 @@
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
+using WebChat.Client.Extensions;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Pipeline;
+using WebChat.Client.State.Queue;
+using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.Services.Streaming;
 
@@ -14,7 +17,9 @@ public sealed class StreamResumeService(
     IStreamingService streamingService,
     IDispatcher dispatcher,
     IMessagePipeline pipeline,
-    TopicStreams topicStreams) : IStreamResumeService
+    TopicStreams topicStreams,
+    TopicsStore topicsStore,
+    ILogger<StreamResumeService> logger) : IStreamResumeService
 {
     public async Task TryResumeStreamAsync(StoredTopic topic)
     {
@@ -79,6 +84,15 @@ public sealed class StreamResumeService(
             dispatcher.Dispatch(new TopicApprovalsReconciled(topic.TopicId, pendingApproval.Value));
         }
 
+        // So is what waits behind the reply, which this page may have been away for. Not awaited: the
+        // reply is shown first, and chips that cannot be read stay as they were. The topic on screen is
+        // left to the open and the return to live, which ask already, so it is asked once; a topic
+        // resumed behind it has nobody else to ask.
+        if (topicsStore.State.SelectedTopicId != topic.TopicId)
+        {
+            CatchUpQueueAsync(topic.TopicId).LogFaults(logger, "queue catch-up");
+        }
+
         // Single rebuild: buffer + history → merged result
         var existingHistory = pipeline.MessagesFor(topic.TopicId) ?? [];
         var result = BufferRebuildUtility.ResumeFromBuffer(
@@ -100,5 +114,14 @@ public sealed class StreamResumeService(
         // The wire starts with whatever the stream carried after the state just drawn: opening it
         // took round trips, and a page opening a topic mid-reply lost what was written meanwhile.
         return await streamingService.TryReadResumedStreamAsync(lease, topic, StreamSeen.Of(state.BufferedMessages));
+    }
+
+    // Pushes on their way meanwhile are kept or not by revision.
+    private async Task CatchUpQueueAsync(string topicId)
+    {
+        if (await messagingService.GetQueueAsync(topicId) is { IsLive: true, Value: { } queue })
+        {
+            dispatcher.Dispatch(new QueueChanged(queue));
+        }
     }
 }

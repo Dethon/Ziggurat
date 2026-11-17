@@ -105,8 +105,11 @@ public sealed class CreateConversationTool
         // Create a stream so send_reply chunks have somewhere to go. The stream's
         // currentPrompt seeds the user-role bubble on WebChat, so it must be the
         // originating prompt — falling back to topicName for legacy callers.
+        // Counted as the stream's running turn, as a later one is: a message queued behind it waits for
+        // it to end.
         var streamService = services.GetRequiredService<StreamService>();
         streamService.GetOrCreateStream(creation.Topic.TopicId, p.InitialPrompt ?? p.TopicName, p.Sender, CancellationToken.None);
+        streamService.TryIncrementPending(creation.Topic.TopicId);
 
         // Buffered as a later turn's prompt is, so a page that follows the turn draws it with the time
         // it was sent: the stream's state carries the prompt's words alone.

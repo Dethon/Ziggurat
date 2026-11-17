@@ -191,6 +191,7 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
         var sessions = new SessionService();
         var streams = new StreamService(
             sessions, new Mock<IThreadStateStore>().Object, new Mock<IPushNotificationService>().Object,
+            TimeProvider.System,
             NullLogger<StreamService>.Instance);
         var catalog = new MutableAgentCatalog();
         catalog.Replace(_registered);
@@ -199,6 +200,7 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
         builder.WebHost.UseTestServer();
         builder.Services
             .AddChatSignalR()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(sessions)
             .AddSingleton(streams)
             .AddSingleton(new ApprovalService(

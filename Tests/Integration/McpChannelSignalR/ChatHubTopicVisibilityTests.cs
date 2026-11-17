@@ -64,7 +64,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         _store = new RedisThreadStateStore(
             redis.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromDays(365) }, TimeProvider.System);
         _streams = new StreamService(
-            _sessions, _store, new Mock<IPushNotificationService>().Object, NullLogger<StreamService>.Instance);
+            _sessions, _store, new Mock<IPushNotificationService>().Object, TimeProvider.System, NullLogger<StreamService>.Instance);
         var attachmentSettings = new AttachmentSettings { StoragePath = _root };
         var time = new FakeTimeProvider();
         var catalog = new Mock<IAgentCatalog>();
@@ -74,6 +74,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         builder.WebHost.UseTestServer();
         builder.Services
             .AddChatSignalR()
+            .AddSingleton(TimeProvider.System)
             .AddSingleton(_sessions)
             .AddSingleton(_streams)
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()

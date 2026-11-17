@@ -1,0 +1,219 @@
+using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
+using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
+using WebChat.Client.Models;
+using WebChat.Client.State.Composer;
+using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
+
+namespace Tests.Unit.WebChat.Client.State;
+
+// Messages a stop handed back to the person who queued them land in their composer on that topic, from
+// whichever page of theirs takes them first: one showing the topic when told, or the next to open it.
+public sealed class ReturnedMessagesTests
+{
+    private static readonly AttachmentReference Photo = new()
+    {
+        Id = "7-42/abc",
+        FileName = "photo.png",
+        MediaType = "image/png",
+        SizeBytes = 4
+    };
+
+    [Fact]
+    public async Task ToldWhileShowingTheTopic_TakesThem_AndPutsThemInTheComposer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)
+        [
+            new ReturnedMessage("q1", "first queued", [Photo], null),
+            new ReturnedMessage("q2", "second queued", [], null)
+        ]);
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("typed", client.Composer.State.Handed!)
+            .ShouldBe("first queued\n\nsecond queued\n\ntyped");
+        var file = client.Composer.State.For("topic-1").ShouldHaveSingleItem();
+        (file.Status, file.Reference).ShouldBe((AttachmentStatus.Ready, Photo));
+        transport.Calls.ShouldContain(call =>
+            call.MethodName == "TakeReturned" && call.Arguments.SequenceEqual(new object?[] { "topic-1" }));
+    }
+
+    // Another topic's composer is no place for them, and taking them there would hand them to the wrong
+    // conversation: they wait at the hub until the topic is opened, here or on another device.
+    [Fact]
+    public async Task ToldWhileShowingAnotherTopic_TakesNothing_UntilThatTopicIsOpened()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "GetHistory"));
+        var asked = new List<object?>();
+        transport.Answer("TakeReturned", args =>
+        {
+            lock (asked)
+            {
+                asked.Add(args[0]);
+            }
+
+            return (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on one", [], null)];
+        });
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default"));
+        await Eventually.Settle();
+        lock (asked)
+        {
+            asked.ShouldNotContain("topic-1");
+        }
+
+        client.Composer.State.Handed.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued on one");
+    }
+
+    // A phone asleep through the stop missed the telling, and wakes on the topic it already shows.
+    [Fact]
+    public async Task BecomingLiveAgainOnTheTopic_TakesWhatWasReturnedMeanwhile()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeReturned"));
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued while asleep", [], null)]);
+
+        await transport.RaiseReconnectingAsync(null);
+        await transport.RaiseReconnectedAsync("connection-2");
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued while asleep");
+    }
+
+    // The hub hands them over once, so an answer that lands after the person moved to another topic is
+    // kept on the page for the topic they came from rather than dropped or put in the wrong composer.
+    [Fact]
+    public async Task TakenJustAsThePersonMovedToAnotherTopic_WaitForThemToComeBack()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeReturned"));
+        var handedOver = 0;
+        transport.Answer("TakeReturned", args =>
+        {
+            if (args[0] as string != "topic-1" || Interlocked.Exchange(ref handedOver, 1) == 1)
+            {
+                return (IReadOnlyList<ReturnedMessage>)[];
+            }
+
+            client.Dispatcher.Dispatch(new SelectTopic("topic-2"));
+            return (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued on one", [], null)];
+        });
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+        await TestChat.Eventually(() => Volatile.Read(ref handedOver) == 1);
+        await Eventually.Settle();
+        client.Topics.State.SelectedTopicId.ShouldBe("topic-2");
+        client.Composer.State.Handed.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued on one");
+    }
+
+    // The owner stopped sharing the topic: the person's queued words go to whatever composer is on screen,
+    // since that topic is no longer theirs to write in, with a toast saying why. Words only: the files were
+    // added to that conversation, and no other would take them.
+    [Fact]
+    public async Task ToldATopicWasUnshared_TakesTheirWordsIntoTheComposerOnScreen_WithAToast()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)
+            [new ReturnedMessage("q1", "queued there", [Photo], null)]);
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("typed", client.Composer.State.Handed!).ShouldBe("queued there\n\ntyped");
+        client.Composer.State.For("topic-2").ShouldBeEmpty();
+        client.Toasts.State.Toasts.ShouldContain(t => t.Message.Contains("no longer shared"));
+        transport.Calls.ShouldNotContain(call => call.MethodName == "TakeReturned" && Equals(call.Arguments[0], "topic-1"));
+    }
+
+    // The common case: the member is reading the topic they queued in when its owner unshares it. The topic's
+    // change closes it on their page first, and their words land in the composer left on screen.
+    [Fact]
+    public async Task UnsharedWhileReadingThatTopic_ClosesIt_AndTheirWordsAreInTheComposerLeft()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued there", [], null)]);
+        var unshared = TestChat.Topic("topic-1") with { OwnerId = "marta", TenantId = "home", Shared = false };
+
+        transport.Raise("OnTopicChanged", new TopicChangedNotification(TopicChangeType.Updated, "topic-1", unshared, "default"));
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        client.Topics.State.SelectedTopicId.ShouldBeNull();
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued there");
+    }
+
+    // Someone who sees every topic still reads it, but may no longer write in it: their words wait on the
+    // page until another composer is on screen, never landing in the one they cannot send from.
+    [Fact]
+    public async Task UnsharedWhileStillReadingThatTopic_TheirWordsWaitForAnotherComposer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued there", [], null)]);
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+        await TestChat.Eventually(() => transport.Calls.Count(call => call.MethodName == "TakeUnshared") >= 2);
+        await Eventually.Settle();
+        client.Composer.State.Handed.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-2"));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued there");
+    }
+
+    // A person with no page open when it was unshared finds them as a page of theirs next becomes live.
+    [Fact]
+    public async Task BecomingLive_TakesWhatUnsharingHandedThem()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeUnshared"));
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued while away", [], null)]);
+
+        await transport.RaiseReconnectingAsync(null);
+        await transport.RaiseReconnectedAsync("connection-2");
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued while away");
+    }
+
+    private static void Seed(ScriptedChatClient client, string open)
+    {
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        client.Dispatcher.Dispatch(new SetAgents([new AgentCatalogEntry("agent-1", "Agent One", null)]));
+        client.Dispatcher.Dispatch(new SelectAgent("agent-1"));
+        client.Dispatcher.Dispatch(new TopicsLoaded(
+            [StoredTopic.FromMetadata(TestChat.Topic("topic-1")), StoredTopic.FromMetadata(TestChat.Topic("topic-2"))]));
+        client.Dispatcher.Dispatch(new SelectTopic(open));
+    }
+}

@@ -142,6 +142,32 @@ public sealed class SendMessageEffectTests : IDisposable
         remaining.ShouldBeEmpty();
     }
 
+    // Two messages steered into one reply that failed: Retry sends the last of them again, in its place, and
+    // leaves the first drawn above it, as the agent keeps the turn it retries, both messages then one answer.
+    [Fact]
+    public void RetryLastMessage_AfterAFailedTurnOfTwoMessages_SendsTheLast_AndKeepsTheFirstAboveIt()
+    {
+        var topic = new StoredTopic
+        { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new SelectTopic("topic-1"));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1",
+        [
+            new ChatMessageModel { Role = "user", Content = "no, the other one" },
+            new ChatMessageModel { Role = "user", Content = "and in red" },
+            new ChatMessageModel { Role = "assistant", Content = "failed", IsError = true }
+        ]));
+        SendMessage? sent = null;
+        using var watch = _dispatcher.RegisterHandler<SendMessage>(x => sent ??= x);
+
+        _dispatcher.Dispatch(new RetryLastMessage("topic-1"));
+
+        sent.ShouldNotBeNull().Message.ShouldBe("and in red");
+        _messagesStore.State.MessagesByTopic["topic-1"].Select(m => m.Content)
+            .ShouldBe(["no, the other one", "and in red"]);
+    }
+
     [Fact]
     public void RetryLastMessage_InterleavedErrors_PicksLastUserMessage()
     {

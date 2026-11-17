@@ -424,6 +424,88 @@ public class ChannelReceiveContractTests
         }
     }
 
+    // A poll's answer that dies on the wire after the inbox let its batch go (here: the server fails the call
+    // once the batch was taken) took a steer the hub already counted as heard. The agent names itself and the
+    // last batch it received on every poll, so its next poll gets the batch again: the message arrives, once.
+    [Fact]
+    public async Task McpChannelConnection_AnAnswerLostAfterTheInboxLetItGo_IsDeliveredAgainOnTheNextPoll()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<LosingFirstAnswerReceiveTool>());
+        var connection = new McpChannelConnection("signalr");
+        try
+        {
+            // The subscriber is there before anything is sent, as a running agent's is.
+            (await inbox.ReceiveAsync(SignalRSubscriberId, TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
+            await connection.ConnectAsync($"http://localhost:{port}/mcp", CancellationToken.None);
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-1", Sender = "user", Content = "steer", TurnKey = "steer-1"
+            }));
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-1", Sender = "user", Content = "after", TurnKey = "after-1"
+            }));
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var received = await connection.Messages.Take(2).ToListAsync(cts.Token);
+
+            LosingFirstAnswerReceiveTool.Lost.ShouldBe(1);
+            received.Select(m => m.TurnKey).ShouldBe(["steer-1", "after-1"]);
+            await Eventually.Settle();
+            (await inbox.ReceiveAsync(SignalRSubscriberId, TimeSpan.Zero, CancellationToken.None)).ShouldBeEmpty();
+        }
+        finally
+        {
+            await connection.DisposeAsync();
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    // A hub from before this protocol takes the agent's newer arguments as any tool takes one it does not
+    // declare: it ignores it, and answers the poll as it always did.
+    [Fact]
+    public async Task ChannelReceive_AnArgumentItDoesNotKnow_IsIgnored()
+    {
+        var port = TestPort.GetAvailable();
+        var inbox = new ChannelInbox();
+        var app = await StartServerAsync(port, inbox, b => b.WithTools<McpChannelReceiveTool>());
+        try
+        {
+            await using var client = await McpClient.CreateAsync(
+                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri($"http://localhost:{port}/mcp") }));
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-1", Sender = "user", Content = "hello"
+            }));
+            await inbox.ReceiveAsync(SignalRSubscriberId, TimeSpan.Zero, CancellationToken.None);
+            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            {
+                ConversationId = "conv-1", Sender = "user", Content = "hello"
+            }));
+
+            var call = await client.CallToolAsync(
+                ChannelProtocol.ReceiveTool,
+                new Dictionary<string, object?>
+                {
+                    ["subscriberId"] = SignalRSubscriberId, ["maxWaitMs"] = 0, ["somethingNewer"] = "x"
+                });
+
+            call.IsError.ShouldNotBe(true);
+            var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(
+                call.Content.OfType<TextContentBlock>().First().Text, ChannelProtocol.SerializerOptions)!;
+            batch.Items.ShouldHaveSingleItem();
+            batch.Batch.ShouldBeNull();
+        }
+        finally
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
     [Fact]
     public async Task McpChannelConnection_WhenServerIsDown_DisposesWithoutHanging()
     {
@@ -693,4 +775,29 @@ public sealed class ImmediateTool
     [McpServerTool(Name = "ping")]
     [Description("Test tool that answers immediately.")]
     public static string McpRun() => "pong";
+}
+
+// The real receive tool, except that the first answer carrying anything dies after the inbox let its batch go:
+// the shape of an answer lost on the wire, which the inbox cannot see.
+[McpServerToolType]
+public sealed class LosingFirstAnswerReceiveTool(ChannelInbox inbox) : global::Domain.Tools.Channels.ChannelReceiveTool(inbox)
+{
+    private static int _lost;
+
+    public static int Lost => _lost;
+
+    [McpServerTool(Name = ChannelProtocol.ReceiveTool)]
+    [Description("Test receive tool that loses its first answer.")]
+    public async Task<string> McpRun(
+        string subscriberId, int maxWaitMs, CancellationToken cancellationToken, string? poller = null, long? received = null)
+    {
+        var answer = await Run(subscriberId, maxWaitMs, poller, received, cancellationToken);
+        var batch = JsonSerializer.Deserialize<ChannelReceiveResult>(answer, ChannelProtocol.SerializerOptions)!;
+        if (batch.Items.Count > 0 && Interlocked.CompareExchange(ref _lost, 1, 0) == 0)
+        {
+            throw new InvalidOperationException("the answer died on its way");
+        }
+
+        return answer;
+    }
 }

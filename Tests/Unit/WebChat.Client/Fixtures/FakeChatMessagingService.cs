@@ -214,4 +214,22 @@ public sealed class FakeChatMessagingService : IChatMessagingService
             ? HubResult<bool>.NotLive
             : HubResult<bool>.Answered(_enqueueResult));
     }
+
+    public Task<HubResult<QueueChangedNotification>> GetQueueAsync(string topicId) =>
+        Task.FromResult(HubResult<QueueChangedNotification>.NotLive);
+
+    public Task<HubResult<Nothing>> RemoveQueuedAsync(string topicId, string queuedId) =>
+        Task.FromResult(HubResult<Nothing>.NotLive);
+
+    public Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId) =>
+        Task.FromResult(HubResult<ReturnedMessage>.NotLive);
+
+    public Task<HubResult<Nothing>> SteerQueuedAsync(string topicId, string queuedId) =>
+        Task.FromResult(HubResult<Nothing>.NotLive);
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId) =>
+        Task.FromResult(new HubResult<IReadOnlyList<ReturnedMessage>>(true, []));
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeUnsharedAsync() =>
+        Task.FromResult(new HubResult<IReadOnlyList<ReturnedMessage>>(true, []));
 }

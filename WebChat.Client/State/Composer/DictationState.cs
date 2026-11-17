@@ -15,16 +15,17 @@ public enum DictationStatus
     Transcribing
 }
 
-// Which control the composer offers on the right. The streaming cancel takes precedence over
-// everything, exactly as it did before there was a microphone.
+// Which control the composer offers on the right, Send or the microphone in one place.
 public enum SendControl
 {
     Send,
-    Microphone,
-    Cancel
+    Microphone
 }
 
-// Words waiting to be put into the composer. The stamp is what makes the same sentence dictated
+// The composer's controls: Send or the microphone, and Stop beside them while the reply runs.
+public sealed record ComposerControls(SendControl Main, bool Stop);
+
+// Dictated words waiting to be put into the composer. The stamp is what makes the same sentence dictated
 // twice two events rather than one: a person who repeats themselves must still get both.
 public sealed record PendingTranscript(string Text, long Stamp);
 

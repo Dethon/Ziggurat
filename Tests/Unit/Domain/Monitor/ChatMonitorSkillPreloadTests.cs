@@ -238,6 +238,73 @@ public class ChatMonitorSkillPreloadTests
         agent.ReceivedMessages.ShouldBeEmpty();
     }
 
+    // Steers that go in together are one turn of several messages: each is recalled for and extracted from
+    // as it would have been alone, and the judge is asked once, for the last, which the skills provider
+    // takes the pending answer from.
+    [Fact]
+    public async Task SteersThatGoInTogether_AreEachRecalledAndExtracted_AndPreloadedOnceForTheLast()
+    {
+        var agent = MonitorTestMocks.CreateAgent();
+        agent.Skills = [_home];
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var recall = new ExtractingRecallHook();
+        var channel = new FakeChannelConnection
+        {
+            ChannelId = "test-channel",
+            Receipts = reply => reply.IsComplete && reply.TurnKey is not ("steer-1" or "steer-2")
+                ? ReplyReceipt.None with { SteeredTogether = ["steer-1", "steer-2"] }
+                : ReplyReceipt.None
+        };
+        var message = MonitorTestMocks.CreateChannelMessage();
+        channel.WriteMessage(message with { Content = "enciende la luz" });
+        channel.WriteMessage(message with { Content = "la del salón", Steer = true, TurnKey = "steer-1" });
+        channel.WriteMessage(message with { Content = "y la cocina", Steer = true, TurnKey = "steer-2" });
+        channel.Complete();
+
+        await Monitor(agent, channel, recall, new SkillPreloader(judge, _settings, TimeProvider.System)).Monitor(CancellationToken.None);
+
+        agent.ReceivedMessages.TryDequeue(out _).ShouldBeTrue();
+        agent.ReceivedMessages.TryDequeue(out var together).ShouldBeTrue();
+        together!.Select(m => m.Text).ShouldBe(["la del salón", "y la cocina"]);
+        together.ShouldAllBe(m => m.GetMemoryContext() != null);
+        recall.Extracted.ShouldBe(["enciende la luz", "la del salón", "y la cocina"]);
+        judge.Asked.Select(a => a.State["request"]!.GetValue<string>()).ShouldBe(["enciende la luz", "y la cocina"]);
+        SkillPreloadPending.TryTake(together[0]).ShouldBeNull();
+        (await SkillPreloadPending.TryTake(together[1]).ShouldNotBeNull()).Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+    }
+
+    // Recalls for every message and leaves an extraction behind that says which message it was.
+    private sealed class ExtractingRecallHook : IMemoryRecallHook
+    {
+        private readonly List<string> _extracted = [];
+
+        public IReadOnlyList<string> Extracted
+        {
+            get
+            {
+                lock (_extracted)
+                {
+                    return [.. _extracted];
+                }
+            }
+        }
+
+        public Task<MemoryExtraction?> EnrichAsync(
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+        {
+            message.SetMemoryContext(new MemoryContext([], null));
+            return Task.FromResult<MemoryExtraction?>(_ =>
+            {
+                lock (_extracted)
+                {
+                    _extracted.Add(message.Text);
+                }
+
+                return ValueTask.CompletedTask;
+            });
+        }
+    }
+
     private static ChatMonitor Monitor(FakeAiAgent agent, FakeChannelConnection channel, IMemoryRecallHook? recall, ISkillPreloader preloader) =>
         new(
             [channel],
