@@ -125,13 +125,20 @@ public sealed class RedisChatMessageStore(
         // Before the read: a rewrite made after it would be written over by this turn's append.
         await store.MarkTurnInFlightAsync(redisKey, _turnInFlightExpiry);
         var stored = await store.GetMessagesAsync(redisKey) ?? [];
-        _failedTail.AddOrUpdate(context.Session, FailedTail.Of(stored));
+        var failedTail = FailedTail.Of(stored);
+        _failedTail.AddOrUpdate(context.Session, failedTail);
 
         // A reroll's message is the one the line ends on, and the request carries it again: read once.
         _lineRead.AddOrUpdate(context.Session, new LineRead(stored.Length, stored.LastOrDefault()?.GetEntryId()));
         var rerun = Rerun.Of(stored, context.RequestMessages);
         _rerun.AddOrUpdate(context.Session, rerun);
-        var messages = ModelView(rerun.TrailingId is null ? stored : stored.SkipLast(1));
+        // A retry of a failed turn's last messages answers the whole of it: the person's earlier words in it,
+        // hidden from the model while the turn stood failed, are read again before what was sent.
+        IReadOnlyList<ChatMessage> messages =
+        [
+            .. ModelView(rerun.TrailingId is null ? stored : stored.SkipLast(1)),
+            .. failedTail?.RetriedBy(context.RequestMessages)?.Earlier ?? []
+        ];
         _lastProvided.AddOrUpdate(context.Session, messages);
         return messages;
     }
@@ -214,21 +221,21 @@ public sealed class RedisChatMessageStore(
         // A reroll's message is on the line already. Answered, it stays where it is; failed, it is taken
         // off and kept again marked as the failed turn it was, in its place and under its name.
         var rerunFailed = failed && rerun.TrailingId is not null;
-        var requests = context.RequestMessages.Where(m => rerunFailed || !rerun.Ends(m));
+
+        // The same words sent again after a failed turn are its retry, which takes its place: the
+        // conversation keeps what was said once, as the person's screen does after retrying. A page retries
+        // a failed turn by its last message, so a turn of several (steers that went in together) is retried
+        // by the last of them, and its earlier ones are kept again, ahead of it, as the turn's.
+        var retried = _failedTail.TryGetValue(context.Session, out var tail) ? tail?.RetriedBy(context.RequestMessages) : null;
+        var requests = (retried?.Earlier ?? []).Concat(context.RequestMessages.Where(m => rerunFailed || !rerun.Ends(m)));
         var newMessages = (failed ? requests.Select(Failed) : requests)
             .Concat(context.ResponseMessages ?? [])
             .ToArray();
-
-        // The same words sent again after a failed turn are its retry, which takes its place: the
-        // conversation keeps what was said once, as the person's screen does after retrying.
-        var retried = _failedTail.TryGetValue(context.Session, out var tail) && tail?.RetriedBy(context.RequestMessages) == true
-            ? tail
-            : null;
         var replaced = (retried?.Count ?? 0) + (rerunFailed ? 1 : 0);
 
         // A retry keeps the names of the messages it replaces, so whatever was kept under them — the
         // versions of a reroll that failed — is still found by them.
-        var retriedIds = new Queue<string>(retried?.UserEntryIds ?? []);
+        var retriedIds = new Queue<string>(retried?.RetriedEntryIds ?? []);
         foreach (var message in newMessages.Where(m => m.GetEntryId() is null))
         {
             message.SetEntryId(message.Role == ChatRole.User && retriedIds.TryDequeue(out var kept)
@@ -411,21 +418,48 @@ public sealed class RedisChatMessageStore(
         public bool Ends(ChatMessage request) => TrailingId is not null && request.GetEntryId() == TrailingId;
     }
 
-    // The failed turn a conversation ends on: how many messages it is, and what the person said in it.
-    private sealed record FailedTail(int Count, IReadOnlyList<string> Said, IReadOnlyList<string> UserEntryIds)
+    // The failed turn a conversation ends on: its messages, and what the person said in it.
+    private sealed record FailedTail(IReadOnlyList<ChatMessage> Messages)
     {
         public static FailedTail? Of(IReadOnlyList<ChatMessage> stored)
         {
             var tail = stored.Reverse().TakeWhile(m => m.IsFailedTurn()).Reverse().ToList();
-            return tail.Count == 0
-                ? null
-                : new FailedTail(tail.Count, SaidIn(tail),
-                    [.. tail.Where(m => m.Role == ChatRole.User).Select(m => m.GetEntryId()).OfType<string>()]);
+            return tail.Count == 0 ? null : new FailedTail(tail);
         }
 
-        public bool RetriedBy(IEnumerable<ChatMessage> requests) => SaidIn(requests).SequenceEqual(Said);
+        // A request saying again what the turn's person said last in it — all of it, or its last messages,
+        // as a page retries a turn of several by its last — retries it.
+        public FailedRetry? RetriedBy(IEnumerable<ChatMessage> requests)
+        {
+            var asked = SaidIn(requests);
+            var said = Messages.Where(m => m.Role == ChatRole.User).ToList();
+            if (asked.Count == 0 || asked.Count > said.Count
+                || !said.TakeLast(asked.Count).Select(m => m.Text).SequenceEqual(asked))
+            {
+                return null;
+            }
+
+            var earlier = said.Take(said.Count - asked.Count).ToList();
+            return new FailedRetry(
+                Messages.Count,
+                [.. earlier.Select(Answered)],
+                [.. said.TakeLast(asked.Count).Select(m => m.GetEntryId()).OfType<string>()]);
+        }
 
         private static IReadOnlyList<string> SaidIn(IEnumerable<ChatMessage> messages) =>
             [.. messages.Where(m => m.Role == ChatRole.User).Select(m => m.Text)];
+
+        private static ChatMessage Answered(ChatMessage message)
+        {
+            var copy = message.Clone();
+            copy.AdditionalProperties = message.AdditionalProperties is null ? [] : new(message.AdditionalProperties);
+            copy.UnmarkFailedTurn();
+            return copy;
+        }
     }
+
+    // A retry of a failed turn: how many messages of the line it replaces, the person's earlier messages of
+    // that turn (kept again, under their own names, ahead of what was sent), and the names of those it sent
+    // again, which its own messages take.
+    private sealed record FailedRetry(int Count, IReadOnlyList<ChatMessage> Earlier, IReadOnlyList<string> RetriedEntryIds);
 }

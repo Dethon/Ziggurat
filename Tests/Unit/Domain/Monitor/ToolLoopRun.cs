@@ -362,6 +362,16 @@ internal sealed class ScriptedModel(params IReadOnlyList<AIContent>[] steps) : I
 {
     private readonly List<IReadOnlyList<ChatMessage>> _requests = [];
     private readonly Dictionary<int, TaskCompletionSource> _holds = [];
+    private readonly HashSet<int> _failing = [];
+
+    // Call `step` fails, as a provider's error fails a turn.
+    public void Fail(int step)
+    {
+        lock (_requests)
+        {
+            _failing.Add(step);
+        }
+    }
 
     // The answer to call `step` is held back once the call is made, until the action returned is run:
     // a turn still being written, with no tool boundary ahead of it.
@@ -398,11 +408,18 @@ internal sealed class ScriptedModel(params IReadOnlyList<AIContent>[] steps) : I
         await Task.Yield();
         int step;
         TaskCompletionSource? held;
+        bool fails;
         lock (_requests)
         {
             step = _requests.Count;
             _requests.Add([.. messages]);
             held = _holds.GetValueOrDefault(step);
+            fails = _failing.Contains(step);
+        }
+
+        if (fails)
+        {
+            throw new InvalidOperationException("the provider failed");
         }
 
         if (held is not null)

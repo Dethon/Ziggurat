@@ -437,6 +437,39 @@ public class ChatMonitorSteeringTests
         }
     }
 
+    // Steers that went in together and failed are kept failed, both of them; the page's Retry sends the last
+    // message alone, as it retries any failed turn. That retry takes the failed turn's place, as a reroll of a
+    // merged turn answers it whole: the line keeps both messages once, then the one answer, and the model is
+    // asked about both.
+    [Fact]
+    public async Task RetryingAFailedMergedTurn_ReplacesIt_AndItsAnswerCoversEveryMessage()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [], [new TextContent("Both answered")]);
+        model.Fail(1);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await Eventually.Until(
+            () => run.Replies.Any(r => r is { IsComplete: true, TurnKey: "steer-2" }), "the steers' turn to fail");
+        run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn());
+        var names = run.Line().Skip(3).Take(2).Select(m => m.GetEntryId()).ToList();
+
+        run.Send("and in red");
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe(["user: no, the other one", "user: and in red", "assistant: Both answered"]);
+        run.Line().ShouldAllBe(m => !m.IsFailedTurn());
+        // Each keeps its name, so what was kept under it is still found by it.
+        run.Line().Skip(3).Take(2).Select(m => m.GetEntryId()).ShouldBe(names);
+        ToolLoopRun.Render(model.Requests[2]).TakeLast(2).ShouldBe(["user: no, the other one", "user: and in red"]);
+    }
+
     // A stop's cancel tells the agent which steers it drew and which it handed back: a hub that names what it
     // returned (none, here) returns every steer it has not drawn, so one it does not name was drawn and is
     // kept; one it names is in its sender's composer and is not; and a hub from before, which names nothing,
