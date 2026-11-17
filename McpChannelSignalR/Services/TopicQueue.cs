@@ -39,6 +39,14 @@ internal sealed class RunningQueue(StreamKey stream)
     // rather than the queue's head, and a stop meanwhile returns them to their senders.
     public List<WaitingSteer> Steers { get; } = [];
 
+    // The steers the last turn's end drew together, for the answer to that end (ReplyReceipt.SteeredTogether),
+    // by the turn key that end came under.
+    public DrawnSteers? DrawnTogether { get; set; }
+
+    // The keys of steers that went in with another, answered under its key: each still ends on its own, and
+    // that end is counted but not drawn, since their one answer already ended on the page.
+    public HashSet<string> Joined { get; } = [];
+
     // The topic's owner, once they stopped sharing it while this stream ran: a message from anyone else
     // still being admitted then goes to its sender, never into the queue.
     public Account? PrivateTo { get; set; }
@@ -74,6 +82,8 @@ internal sealed class WaitingSteer(QueuedMessage message)
     // Its turn ended already (the reply that said IsComplete came under its key).
     public bool Answered { get; set; }
 }
+
+internal sealed record DrawnSteers(string? EndedBy, IReadOnlyList<string> Keys);
 
 internal sealed class StoppedStream(StreamKey stream, IEnumerable<QueuedMessage> returned)
 {

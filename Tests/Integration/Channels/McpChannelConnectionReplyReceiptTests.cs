@@ -21,13 +21,18 @@ public class McpChannelConnectionReplyReceiptTests
         public McpGateSettings Mcp => McpTestSecret.Gate;
     }
 
-    // A stop handed back "steer-1" in conversation conv-1: a turn's end there is answered with it.
+    // A stop handed back "steer-1" in conversation conv-1: a turn's end there is answered with it. In conv-3
+    // the turn's end drew two steers together, which it is answered with.
     private sealed class StoppedStreams : IStreamService
     {
         public Task WriteReplyAsync(SendReplyParams p) => Task.CompletedTask;
 
-        public ReplyReceipt ReceiptFor(SendReplyParams p) =>
-            p is { IsComplete: true, ConversationId: "conv-1" } ? new ReplyReceipt(["steer-1"]) : ReplyReceipt.None;
+        public ReplyReceipt ReceiptFor(SendReplyParams p) => p switch
+        {
+            { IsComplete: true, ConversationId: "conv-1" } => new ReplyReceipt(["steer-1"]),
+            { IsComplete: true, ConversationId: "conv-3" } => ReplyReceipt.None with { SteeredTogether = ["steer-1", "steer-2"] },
+            _ => ReplyReceipt.None
+        };
     }
 
     [Theory]
@@ -53,5 +58,24 @@ public class McpChannelConnectionReplyReceiptTests
         }, CancellationToken.None);
 
         receipt.ReturnedTurnKeys.ShouldBe(returned);
+    }
+
+    [Fact]
+    public async Task ATurnsEndThatDrewSteersTogether_IsAnsweredWithThoseSteers()
+    {
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddSingleton<IStreamService, StoppedStreams>()
+            .AddToolServer(new ProbeSettings("probe"))
+            .WithTools<SendReplyTool>());
+        await using var connection = new McpChannelConnection("signalr", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+
+        var receipt = await connection.SendReplyAsync(new SendReplyParams
+        {
+            ConversationId = "conv-3", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true
+        }, CancellationToken.None);
+
+        receipt.SteeredTogether.ShouldBe(["steer-1", "steer-2"]);
+        receipt.ReturnedTurnKeys.ShouldBeEmpty();
     }
 }

@@ -1310,6 +1310,143 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         ]);
     }
 
+    // Two messages steered into one reply go in together (user's decision, 2026-11-17): the running turn's end
+    // draws every steer waiting there, in the order they were steered, before anything of their answer, and
+    // tells the agent so in its answer to that end. They are one turn, answered under the first one's key;
+    // the agent ends the second's key after that answer, which ends nothing more on the page, and only then
+    // does the queue go on.
+    [Fact]
+    public async Task SteersWaitingWhenTheRunningTurnEnds_AreAllDrawnThere_AndAnsweredAsOneTurn()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var first = TurnKeyOf("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer one", "c-3", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer two", "c-4", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer one"));
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer two"));
+        await AgentWasSentAsync("steer two");
+        var (one, two) = (TurnKeyOf("steer one"), TurnKeyOf("steer two"));
+
+        await StreamAsync("cut short", first);
+        var receipt = await EndTurnThroughTheToolAsync(first);
+
+        receipt.SteeredTogether.ShouldBe([one, two]);
+        await Eventually.Until(() => wire.Said().Contains("user: steer two"), "both steers are drawn at the cut");
+        wire.Said().ShouldBe(["user: first", "agent: cut short", "user: steer one", "user: steer two"]);
+        var queue = await fran.GetQueue(TopicId);
+        queue.Steering.ShouldBeEmpty();
+        queue.Items.Select(i => i.Content).ShouldBe(["older"]);
+        queue.RunningFor.ShouldBe("fran");
+
+        await StreamAsync("both answered", one);
+        await FinishTurnAsync(" at once", one);
+        await Eventually.Settle();
+        (await SentSoFarAsync()).ShouldBe(["first", "steer one", "steer two"]);
+        _streamService.IsStreaming(TopicId).ShouldBeTrue();
+
+        await EndRefusedTurnAsync(two);
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+        var chunks = wire.Chunks();
+        var answered = chunks.ToList().FindIndex(c => c.Content == " at once");
+        var older = chunks.ToList().FindIndex(c => c.UserMessage is not null && c.Content == "older");
+        chunks.Skip(answered).Take(older - answered).Count(c => c.IsComplete).ShouldBe(1);
+        wire.Said().ShouldBe([
+            "user: first", "agent: cut short",
+            "user: steer one", "user: steer two", "agent: both answered", "agent:  at once",
+            "user: older", "agent: answer to older"
+        ]);
+    }
+
+    // Stopped before the running turn's end was heard, every waiting steer goes back to its sender, the cancel
+    // names each, and the end heard after it draws nothing together; stopped after that end drew them, none
+    // goes back, since they are the turn the stop cancels, which the agent keeps as stopped.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AStop_ReturnsEverySteerWaiting_OrNoneOnceTheyWentInTogether(bool afterTheyWentIn)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var first = TurnKeyOf("first");
+        (await fran.EnqueueMessage(TopicId, "steer one", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer two", "c-3", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer one"));
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer two"));
+        await AgentWasSentAsync("steer two");
+        var steers = new[] { TurnKeyOf("steer one"), TurnKeyOf("steer two") };
+
+        var atTheCut = afterTheyWentIn ? await EndTurnThroughTheToolAsync(first) : null;
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+        var heardAfter = afterTheyWentIn ? null : await EndTurnThroughTheToolAsync(first);
+        await DrainInboxAsync();
+
+        ChannelCancelNotification cancel;
+        lock (_receivedLock)
+        {
+            cancel = _cancels.ShouldHaveSingleItem();
+        }
+
+        var taken = await fran.TakeReturned(TopicId);
+        if (afterTheyWentIn)
+        {
+            atTheCut!.SteeredTogether.ShouldBe(steers);
+            (cancel.ReturnedTurnKeys ?? []).ShouldBeEmpty();
+            taken.ShouldBeEmpty();
+            wire.Said().ShouldBe(["user: first", "user: steer one", "user: steer two"]);
+        }
+        else
+        {
+            heardAfter!.SteeredTogether.ShouldBeNull();
+            heardAfter.ReturnedTurnKeys.ShouldBe(steers);
+            cancel.ReturnedTurnKeys.ShouldBe(steers);
+            taken.Select(m => m.Content).ShouldBe(["steer one", "steer two"]);
+            wire.Said().ShouldBe(["user: first"]);
+        }
+    }
+
+    // A steer the agent refused as it arrived, waiting between two others, is drawn in its place with its
+    // refusal, its turn over; the two others go in together.
+    [Fact]
+    public async Task ARefusedSteerAmongThoseWaiting_IsDrawnWithItsRefusal_AndTheOthersGoInTogether()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var first = TurnKeyOf("first");
+        (await fran.EnqueueMessage(TopicId, "steer one", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer two", "c-3", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer three", "c-4", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "older", "c-5", null)).ShouldBeTrue();
+        foreach (var steer in new[] { "steer one", "steer two", "steer three" })
+        {
+            await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), steer));
+        }
+
+        await AgentWasSentAsync("steer three");
+        var (one, two, three) = (TurnKeyOf("steer one"), TurnKeyOf("steer two"), TurnKeyOf("steer three"));
+        await RefuseTurnAsync("you were disabled", two);
+
+        (await EndTurnThroughTheToolAsync(first)).SteeredTogether.ShouldBe([one, three]);
+        await FinishTurnAsync("one and three", one);
+        await EndRefusedTurnAsync(three);
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+        wire.Said().ShouldBe([
+            "user: first",
+            "user: steer one", "user: steer two", "error: you were disabled", "user: steer three",
+            "agent: one and three",
+            "user: older", "agent: answer to older"
+        ]);
+    }
+
     // Only the running turn's own person steers it: never another member's turn, nor a turn an agent
     // started for a schedule; and only the message's sender steers with it. Refused, it keeps its place.
     [Theory]
@@ -1425,6 +1562,13 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         ReplyReceipt.Parse(await SendReplyAsync("", isComplete: true)).ReturnedTurnKeys.ShouldBe([steer]);
     }
+
+    // A turn's end as the agent's send_reply reaches the hub, under its turn's key, through the tool itself:
+    // its stream's end, as the agent ends every turn, answered with what the agent reads.
+    private async Task<ReplyReceipt> EndTurnThroughTheToolAsync(string turnKey) =>
+        ReplyReceipt.Parse(await SendReplyTool.McpRun(
+            ConversationId, "", ReplyContentType.StreamComplete, true, messageId: null,
+            new ServiceCollection().AddSingleton<IStreamService>(_streamService).BuildServiceProvider(), turnKey));
 
     // As the agent's send_reply reaches the hub: through the tool itself, which answers what the agent reads.
     private Task<string> SendReplyAsync(string content, bool isComplete) =>
@@ -1911,14 +2055,15 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     }
 
     // As send_reply finishes a turn: its last words, marked complete.
-    private Task FinishTurnAsync(string answer) =>
+    private Task FinishTurnAsync(string answer, string? turnKey = null) =>
         _streamService.WriteReplyAsync(new SendReplyParams
         {
             ConversationId = ConversationId,
             Content = answer,
             ContentType = ReplyContentType.Text,
             IsComplete = true,
-            MessageId = answer
+            MessageId = answer,
+            TurnKey = turnKey
         });
 
     // As send_reply streams a turn's words, the turn not over yet.

@@ -112,7 +112,12 @@ public sealed class StreamService(
             return;
         }
 
-        await WriteMessageAsync(topicId, message);
+        // A steer that went in with others ends under its own key after their one answer: its turn is over,
+        // but the reply already ended on the page, so its end is counted and not drawn.
+        if (!(contentType == ReplyContentType.StreamComplete && isComplete && IsJoined(topicId, p.TurnKey)))
+        {
+            await WriteMessageAsync(topicId, message);
+        }
 
         // A turn ends on the one reply that says it is complete, never on its kind: the agent ends a
         // refused or failed turn with an error and then the stream's end, both under the same turn, and
@@ -131,7 +136,20 @@ public sealed class StreamService(
 
         // A turn an agent started (a schedule's, attached to the topic while a person's turn runs) ending
         // gives up its own place and is no end of the turn a steer was sent into.
-        CompleteStream(topicId, startsSteers: p.AgentInitiated != true);
+        CompleteStream(topicId, startsSteers: p.AgentInitiated != true, p.TurnKey);
+    }
+
+    private bool IsJoined(string topicId, string? turnKey)
+    {
+        if (turnKey is null)
+        {
+            return false;
+        }
+
+        lock (_streamLock)
+        {
+            return RunningOf(topicId)?.Joined.Contains(turnKey) == true;
+        }
     }
 
     // A turn's end is answered with what the topic's last stop handed back. The agent starts a conversation's
@@ -148,9 +166,11 @@ public sealed class StreamService(
 
         lock (_streamLock)
         {
-            return _topics.GetValueOrDefault(topicId)?.LastStopped is { } stopped
-                ? new ReplyReceipt(stopped.Ids)
-                : ReplyReceipt.None;
+            var topic = _topics.GetValueOrDefault(topicId);
+            var receipt = topic?.LastStopped is { } stopped ? new ReplyReceipt(stopped.Ids) : ReplyReceipt.None;
+            return topic?.Running?.DrawnTogether is { EndedBy: { } endedBy } drawn && endedBy == p.TurnKey
+                ? receipt with { SteeredTogether = drawn.Keys }
+                : receipt;
         }
     }
 
@@ -598,12 +618,12 @@ public sealed class StreamService(
     public const int PushExcerptLength = 140;
     private const string NoExcerpt = "The agent has finished responding";
 
-    private void CompleteStream(string topicId, bool startsSteers)
+    private void CompleteStream(string topicId, bool startsSteers, string? endedBy = null)
     {
         EndedStream? ended;
         lock (_streamLock)
         {
-            ended = GiveUpPlace(topicId, startsSteers);
+            ended = GiveUpPlace(topicId, startsSteers, endedBy);
         }
 
         Announce(ended);
@@ -613,13 +633,13 @@ public sealed class StreamService(
     // same stream, and only once nothing is pending or queued does the stream end. Called under
     // _streamLock, in the same step as whatever gave the place up, so a stop in between can neither lose
     // a message nor end another stream. Answers what the ended stream tells phones, if it ended.
-    private EndedStream? GiveUpPlace(string topicId, bool startsSteers)
+    private EndedStream? GiveUpPlace(string topicId, bool startsSteers, string? endedBy = null)
     {
         var running = RunningOf(topicId);
         var remaining = running?.RemovePending() ?? 0;
         if (startsSteers && running is not null)
         {
-            remaining = StartSteers(topicId, running, remaining);
+            remaining = StartSteers(topicId, running, remaining, endedBy);
         }
 
         if (remaining > 0)
@@ -662,13 +682,17 @@ public sealed class StreamService(
         }
     }
 
-    // A turn ending with a steer waiting: the steer's turn is the next, already sent, and the reply splits
-    // here, so its message is written now, before anything of its answer. A steer the agent already
-    // answered (refused as it arrived) is drawn with that answer, and its turn is over too, so the one
-    // after it starts. Each drawn is no longer steering, which the pages are told. Answers how many
-    // turns are still pending.
-    private int StartSteers(string topicId, RunningQueue running, int remaining)
+    // A turn ending with steers waiting: their turn is the next, already sent, and the reply splits here, so
+    // every one's message is written now, in the order they were steered, before anything of their answer.
+    // Those the agent has not answered go in together as one turn (user's decision, 2026-11-17), answered
+    // under the first one's key; the agent is told which in the answer to this end (ReceiptFor), and ends
+    // each of the others under its own key after that answer, so each keeps its pending place until then
+    // and the queue goes on only once all have ended. A steer the agent already answered (refused as it
+    // arrived) is drawn with that answer, its turn over. Each drawn is no longer steering, which the pages
+    // are told. Answers how many turns are still pending.
+    private int StartSteers(string topicId, RunningQueue running, int remaining, string? endedBy)
     {
+        List<string> together = [];
         while (remaining > 0 && running.Steers.Count > 0)
         {
             var steer = running.Steers[0];
@@ -684,11 +708,22 @@ public sealed class StreamService(
             if (!steer.Answered)
             {
                 running.RunningFor = sender.Principal.Account!;
-                return remaining;
+                together.Add(steer.Message.Id);
+                continue;
             }
 
-            running.RunningFor = null;
+            if (together.Count == 0)
+            {
+                running.RunningFor = null;
+            }
+
             remaining = running.RemovePending();
+        }
+
+        if (together.Count > 1)
+        {
+            running.DrawnTogether = new DrawnSteers(endedBy, together);
+            together.Skip(1).ToList().ForEach(key => running.Joined.Add(key));
         }
 
         return remaining;
