@@ -383,6 +383,21 @@ internal sealed class ConversationGroup(
         }
         finally
         {
+            try
+            {
+                await TearDownAsync();
+            }
+            finally
+            {
+                // Ended only once the group before it ended, so a group waiting for this one waits for every
+                // group before it too.
+                await AfterPredecessorAsync();
+                _context?.End();
+            }
+        }
+
+        async Task TearDownAsync()
+        {
             _running = null;
             await queue.DisposeAsync();
             await pumpCts.CancelAsync();
@@ -408,8 +423,29 @@ internal sealed class ConversationGroup(
                 LogDroppedTurn(logger, message);
             }
 
+            // What this group keeps goes after what the group before it keeps, even when this one never got
+            // to wait for it in a turn (stopped while its first turn waited).
+            await AfterPredecessorAsync();
             await KeepDrawnAsync(unstarted, unsettled);
-            _context?.End();
+        }
+    }
+
+    // The group before this one on the conversation has ended: kept what it keeps, however it ended.
+    private async Task AfterPredecessorAsync()
+    {
+        if (_context is not { Predecessor.IsCompleted: false } context)
+        {
+            return;
+        }
+
+        try
+        {
+            await context.Predecessor;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "The group before this one on conversation {ConversationId} ended in error",
+                agentKey.ConversationId);
         }
     }
 

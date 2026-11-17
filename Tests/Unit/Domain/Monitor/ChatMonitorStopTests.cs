@@ -80,6 +80,38 @@ public class ChatMonitorStopTests
         ]);
     }
 
+    // Stopped again while the next message's group still waits for the first stop's: that group keeps the next
+    // message as stopped too, but only once the first has kept its cut turn, so the line has both in the order
+    // the page drew them, and the first is never refused for a line moved under it.
+    [Fact]
+    public async Task AStopWhileTheNextGroupWaitsForTheLast_KeepsBothStoppedTurns_InOrder()
+    {
+        var lookUp = LocalTool.HeldPastAStop("look_up", "42");
+        var model = new ScriptedModel([new TextContent("Hello")], [lookUp.Call("call-1")], [new TextContent("never")]);
+        await using var run = new ToolLoopRun(model, [lookUp]);
+        run.Send("hi");
+        await Eventually.Until(() => run.StoredLine().Count == 2, "the first turn to be kept");
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Stop(returned: []);
+        await run.CancelHeardAsync();
+        run.Send("something else");
+        await run.GroupOpenAsync();
+        run.Stop(returned: []);
+        await run.CancelHeardAsync();
+        await Eventually.Settle();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        run.StoredLine().ShouldBe([
+            "user: hi", "assistant: Hello",
+            "user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42",
+            "user: something else"
+        ]);
+        model.Requests.Count.ShouldBe(2);
+    }
+
     private static ChannelMessage Unsigned(string conversationId, string turnKey) => new()
     {
         ConversationId = conversationId,

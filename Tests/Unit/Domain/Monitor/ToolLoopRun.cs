@@ -157,6 +157,10 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     public Task CancelHeardAsync() => Eventually.Until(
         () => !_threads.AgentKeys.Contains(new AgentKey(ConversationId, AgentId)), "the stop to reach the group");
 
+    // A group of the conversation is open: its context resolved, so it heard no stop since.
+    public Task GroupOpenAsync() => Eventually.Until(
+        () => _threads.AgentKeys.Contains(new AgentKey(ConversationId, AgentId)), "a group of the conversation to open");
+
     // A reply under none of the keys a test gives its messages: the turn the first message started.
     public static bool IsTheFirstTurns(SendReplyParams reply) =>
         reply.TurnKey is { } key && !key.StartsWith(ProbePrefix, StringComparison.Ordinal)
