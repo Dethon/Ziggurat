@@ -12,6 +12,17 @@ public class ReplyReceiptTests
     public void AReceiptNamingTurnKeys_ReadsBackAsThoseKeys() =>
         ReplyReceipt.Parse(new ReplyReceipt(["steer-1", "queued-2"]).ToWire()).ReturnedTurnKeys.ShouldBe(["steer-1", "queued-2"]);
 
+    // The steers a turn's end drew together ride beside what a stop handed back, and alone still leave "ok".
+    [Fact]
+    public void AReceiptNamingSteersDrawnTogether_ReadsBackAsThoseSteers()
+    {
+        var read = ReplyReceipt.Parse((ReplyReceipt.None with { SteeredTogether = ["steer-1", "steer-2"] }).ToWire());
+
+        read.SteeredTogether.ShouldBe(["steer-1", "steer-2"]);
+        read.ReturnedTurnKeys.ShouldBeEmpty();
+        ReplyReceipt.Parse("{\"returnedTurnKeys\":[\"queued-3\"]}").SteeredTogether.ShouldBeNull();
+    }
+
     [Theory]
     [InlineData("ok")]
     [InlineData("")]

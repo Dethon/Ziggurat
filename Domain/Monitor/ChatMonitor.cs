@@ -192,6 +192,7 @@ public class ChatMonitor(
 
             // Before the next update is pulled, which is what starts the conversation's next turn.
             conversation.TurnsReturned(delivery.ReturnedTurnKeys);
+            conversation.SteeredTogether(delivery.SteeredTogether);
             if (delivery.DeliveredContent)
             {
                 // Ends the span on the first delivered chunk; the scope publishes at most once, so

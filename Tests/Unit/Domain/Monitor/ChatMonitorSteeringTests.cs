@@ -128,6 +128,193 @@ public class ChatMonitorSteeringTests
         ]);
     }
 
+    // Two messages steered into the same reply go in together: the hub drew both where the cut turn ended
+    // and says so in its answer to that end, and the agent runs them as one turn, in the order they were
+    // steered, answered once under the first one's key.
+    [Fact]
+    public async Task TwoSteersWaitingWhenTheCutTurnEnds_GoInTogether_AndAreAnsweredOnce()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Both answered")]);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        run.StoredLine().ShouldBe([
+            "user: look it up",
+            "assistant: call look_up#call-1",
+            "tool: result call-1 = 42",
+            "user: no, the other one",
+            "user: and in red",
+            "assistant: Both answered"
+        ]);
+        model.Requests.Count.ShouldBe(2);
+        ToolLoopRun.Render(model.Requests[1]).TakeLast(2).ShouldBe(["user: no, the other one", "user: and in red"]);
+        // Answered under the first steer's key; the second's key only ends, once, after that answer, since
+        // the hub counts every steer it sent as a turn until its key ends.
+        var steered = run.Replies.Where(r => r.TurnKey is "steer-1" or "steer-2").ToList();
+        steered.Count(r => r is { IsComplete: true, TurnKey: "steer-1" }).ShouldBe(1);
+        steered.Where(r => r.TurnKey == "steer-2")
+            .Select(r => (r.ContentType, r.IsComplete)).ShouldBe([(ReplyContentType.StreamComplete, true)]);
+        steered.Last().TurnKey.ShouldBe("steer-2");
+    }
+
+    // The hub drew both steers as the cut turn ended, but the second was still on its way through the pump:
+    // the turn waits for it rather than answer the first alone and the second after.
+    [Fact]
+    public async Task ASteerDrawnTogetherButNotYetAdmitted_IsWaitedFor_AndGoesInWithTheFirst()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Both answered")]);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await Eventually.Until(
+            () => run.Replies.Any(r => r is { IsComplete: true, TurnKey: not ("steer-1" or "steer-2") }), "the cut turn to end");
+        await Eventually.Settle();
+        model.Requests.Count.ShouldBe(1);
+
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe(["user: no, the other one", "user: and in red", "assistant: Both answered"]);
+        model.Requests.Count.ShouldBe(2);
+    }
+
+    // A steer drawn together that the agent refused as it arrived (its member disabled meanwhile) is not
+    // waited for: the others go in without it.
+    [Fact]
+    public async Task ASteerDrawnTogetherThatWasRefusedAsItArrived_IsNotWaitedFor()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("First answered")]);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Channel.WriteUnsigned(new ChannelMessage
+        {
+            ConversationId = ToolLoopRun.ConversationId,
+            Content = "and in red",
+            Sender = "Fran",
+            ChannelId = "signalr",
+            AgentId = ToolLoopRun.AgentId,
+            Steer = true,
+            TurnKey = "steer-2"
+        });
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        // Before the channel's stream ends, which would end any wait too.
+        await Eventually.Until(
+            () => run.Replies.Any(r => r is { IsComplete: true, TurnKey: "steer-1" }), "the first steer to be answered");
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe(["user: no, the other one", "assistant: First answered"]);
+        run.Replies.Count(r => r is { IsComplete: true, TurnKey: "steer-1" }).ShouldBe(1);
+    }
+
+    // The steers went in together and the turn they make is running: a steer pressed now cuts it at its
+    // next tool boundary, as a steer cuts any turn of its person's, and is answered next.
+    [Fact]
+    public async Task ASteerAfterTheSteersWentInTogether_CutsTheirTurn()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var again = LocalTool.Held("again", "43");
+        var model = new ScriptedModel(
+            [lookUp.Call("call-1")], [again.Call("call-2")], [new TextContent("The third answered")]);
+        await using var run = new ToolLoopRun(
+            model, [lookUp, again], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await again.Started;
+        run.Send("in blue after all", steer: true, turnKey: "steer-3");
+        await run.AdmittedSoFarAsync();
+        again.Finish();
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe([
+            "user: no, the other one",
+            "user: and in red",
+            "assistant: call again#call-2",
+            "tool: result call-2 = 43",
+            "user: in blue after all",
+            "assistant: The third answered"
+        ]);
+        model.Requests.Count.ShouldBe(3);
+    }
+
+    // Stopped once the steers went in together: the hub drew them, so it handed none back, and the turn is
+    // kept as far as it got with both messages; had it handed them back, nothing of it is kept.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AStopAfterTheSteersWentInTogether_KeepsTheirTurnOrNothing_AsTheHubHandedThemBack(bool handedBack)
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Both answered")]);
+        model.Hold(1);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await Eventually.Until(() => model.Requests.Count == 2, "the steers' turn to be under way");
+        run.Stop(returned: handedBack ? ["steer-1", "steer-2"] : ["queued-3"]);
+        await run.FinishAsync();
+
+        var cut = new[] { "user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42" };
+        run.StoredLine().ShouldBe(handedBack ? cut : [.. cut, "user: no, the other one", "user: and in red"]);
+    }
+
+    // Stopped before the cut turn's end was heard: the hub handed both steers back and says so in its answer
+    // to that end, drawing nothing together, so neither runs.
+    [Fact]
+    public async Task SteersTheHubHandedBackAtTheCut_NeitherRuns()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: reply =>
+            reply is { IsComplete: true, TurnKey: not ("steer-1" or "steer-2") }
+                ? new ReplyReceipt(["steer-1", "steer-2"])
+                : ReplyReceipt.None);
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        model.Requests.Count.ShouldBe(1);
+        run.StoredLine().ShouldBe(["user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42"]);
+    }
+
+    // What the hub answers the cut turn's end with, as it draws the steers waiting there.
+    private static Func<SendReplyParams, ReplyReceipt> SteeredTogetherAtTheCut(params string[] steers) =>
+        reply => reply.IsComplete && !steers.Contains(reply.TurnKey)
+            ? ReplyReceipt.None with { SteeredTogether = steers }
+            : ReplyReceipt.None;
+
     // A worker runs inside its parent's tool call on options of its own, so the parent's steer never
     // cuts the worker's loop: the worker finishes its task, and the parent's turn ends once the call
     // that ran it returns.

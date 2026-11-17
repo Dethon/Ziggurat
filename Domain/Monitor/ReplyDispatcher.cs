@@ -12,21 +12,25 @@ namespace Domain.Monitor;
 // built out of the turn that produced the update.
 internal class ReplyDispatcher(ILogger logger)
 {
-    // What delivering one update came to: whether any of its content reached a target, and the turn keys a
-    // channel answered were handed back by a stop (ReplyReceipt), which the conversation must not run.
-    public sealed record Delivery(bool DeliveredContent, IReadOnlyList<string> ReturnedTurnKeys);
+    // What delivering one update came to: whether any of its content reached a target, the turn keys a
+    // channel answered were handed back by a stop (ReplyReceipt), which the conversation must not run, and
+    // the steers it drew together at a turn's end, which the conversation runs as one turn.
+    public sealed record Delivery(
+        bool DeliveredContent, IReadOnlyList<string> ReturnedTurnKeys, IReadOnlyList<string> SteeredTogether);
 
     public async Task<Delivery> DeliverUpdateAsync(
         AgentResponseUpdate update, Turn turn, CancellationToken ct)
     {
         var deliveredContent = false;
         List<string> returned = [];
+        IReadOnlyList<string> together = [];
         foreach (var mapped in MapResponseUpdate(update))
         {
             var receipts = await Task.WhenAll(turn.Targets.Select(target =>
                 DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
             deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && receipts.Any(r => r is not null);
             returned.AddRange(receipts.SelectMany(r => r?.ReturnedTurnKeys ?? []));
+            together = receipts.Select(r => r?.SteeredTogether).FirstOrDefault(keys => keys is { Count: > 0 }) ?? together;
         }
 
         foreach (var error in update.Contents.OfType<ErrorContent>())
@@ -39,7 +43,7 @@ internal class ReplyDispatcher(ILogger logger)
             });
         }
 
-        return new Delivery(deliveredContent, returned);
+        return new Delivery(deliveredContent, returned, together);
     }
 
     // The one place a reply's wire record is built. Everything a chunk says is decided above; the

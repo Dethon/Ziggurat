@@ -90,6 +90,10 @@ internal sealed class ConversationGroup(
         // The account a person's own turn acts for; none for a fire, whoever its delegation names, and
         // none for the guest, who is nobody to compare with.
         public Account? Person => Message.Origin is null ? Identity?.Account : null;
+
+        // A steer refused as it arrived, queued only to say it will not come: a turn gathering the steers
+        // the channel drew together stops waiting for it. Never run.
+        public bool Refused { get; init; }
     }
 
     // The turn running now and its steering handle, read by the message pump as a steer arrives. Set
@@ -103,6 +107,10 @@ internal sealed class ConversationGroup(
     // asked by key when a stopped turn is kept, so a turn that started from one keeps nothing, whether it
     // was running when the cancel arrived or only about to.
     private readonly ConcurrentDictionary<string, byte> _returnedTurnKeys = new();
+
+    // The steers a channel drew together where the turn they cut ended (ReplyReceipt.SteeredTogether), by
+    // each of their keys: whichever of them is taken first runs as one turn with the rest.
+    private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _steeredTogether = new();
 
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
@@ -245,6 +253,11 @@ internal sealed class ConversationGroup(
                 }
 
                 var x = queue.Current;
+                if (x.Refused)
+                {
+                    continue;
+                }
+
                 // The reader hands over items it already buffered even after the token fired,
                 // so a turn queued behind the one a /clear or /cancel just ended would start
                 // against the torn-down group. It is dropped instead, and acknowledged below.
@@ -256,10 +269,19 @@ internal sealed class ConversationGroup(
 
                 // A channel answered the last turn's end naming this one as handed back by a stop: its words
                 // are in its sender's composer, and the cancel that names it too may come only after it ran.
-                if (x.Message.TurnKey is { } key && _returnedTurnKeys.ContainsKey(key))
+                if (IsReturned(x))
                 {
                     LogDroppedTurn(logger, x.Message);
                     continue;
+                }
+
+                // Gathered before the turn is the running one: a steer arriving meanwhile signals nothing, so
+                // no message of the turn can cut the turn it is in.
+                var together = await SteeredWithAsync(x, pending.Reader);
+                if (_turnCt.IsCancellationRequested)
+                {
+                    together.ForEach(t => LogDroppedTurn(logger, t.Message));
+                    break;
                 }
 
                 var steering = new TurnSteering(x.Message.TurnKey, _returnedTurnKeys.ContainsKey);
@@ -267,7 +289,7 @@ internal sealed class ConversationGroup(
                 IAsyncEnumerable<TurnUpdate> turn;
                 try
                 {
-                    turn = await RunTurnAsync(x, steering);
+                    turn = await RunTurnAsync(x, together, steering);
                 }
                 catch (OperationCanceledException) when (_turnCt.IsCancellationRequested)
                 {
@@ -341,7 +363,10 @@ internal sealed class ConversationGroup(
             // them these two drains cover everything.
             while (pending.Reader.TryRead(out var dropped))
             {
-                LogDroppedTurn(logger, dropped.Message);
+                if (!dropped.Refused)
+                {
+                    LogDroppedTurn(logger, dropped.Message);
+                }
             }
 
             foreach (var (_, message) in messages.DrainPending())
@@ -407,6 +432,71 @@ internal sealed class ConversationGroup(
         }
     }
 
+    // The steers a channel drew together at a turn's end (ReplyReceipt.SteeredTogether), in the order they
+    // were steered, recorded before the conversation's next turn is taken: they go in as one turn.
+    public void SteeredTogether(IReadOnlyList<string> keys)
+    {
+        if (keys.Count < 2)
+        {
+            return;
+        }
+
+        foreach (var key in keys)
+        {
+            _steeredTogether[key] = keys;
+        }
+    }
+
+    private bool IsReturned(AdmittedTurn x) => x.Message.TurnKey is { } key && _returnedTurnKeys.ContainsKey(key);
+
+    // The rest of the steers the channel drew together with this one, taken off the pending turns in the
+    // order they arrive, which is the order they were steered. Each was sent before the turn they cut
+    // ended, but the pump admits them on its own time, so one may not be here yet: it is waited for, and a
+    // steer refused as it arrived says so (AdmittedTurn.Refused) rather than leave the wait hanging. Taking
+    // stops at anything else, which runs after as it would have. A steer the channel handed back since is
+    // dropped as any is. Answers the turn's messages, this one first.
+    private async Task<List<AdmittedTurn>> SteeredWithAsync(AdmittedTurn first, ChannelReader<AdmittedTurn> pending)
+    {
+        List<AdmittedTurn> together = [first];
+        if (!first.Message.Steer || first.Message.TurnKey is not { } key || !_steeredTogether.TryGetValue(key, out var keys))
+        {
+            return together;
+        }
+
+        keys.ToList().ForEach(k => _steeredTogether.TryRemove(k, out _));
+        var awaited = keys.SkipWhile(k => k != key).Skip(1).ToHashSet();
+        try
+        {
+            while (awaited.Count > 0
+                   && await pending.WaitToReadAsync(_turnCt)
+                   && pending.TryPeek(out var next)
+                   && next.Message is { Steer: true, TurnKey: { } nextKey }
+                   && awaited.Contains(nextKey)
+                   && (next.Refused || next.Person == first.Person))
+            {
+                pending.TryRead(out _);
+                awaited.Remove(nextKey);
+                if (next.Refused)
+                {
+                    continue;
+                }
+
+                if (IsReturned(next))
+                {
+                    LogDroppedTurn(logger, next.Message);
+                    continue;
+                }
+
+                together.Add(next);
+            }
+        }
+        catch (OperationCanceledException) when (_turnCt.IsCancellationRequested)
+        {
+        }
+
+        return together;
+    }
+
     private async Task DispatchCommandsAndQueueTurnsAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
         ChannelWriter<AdmittedTurn> writer,
@@ -446,6 +536,10 @@ internal sealed class ConversationGroup(
                             }
 
                             writer.TryWrite(admitted);
+                        }
+                        else if (x.Message is { Steer: true, TurnKey: not null })
+                        {
+                            writer.TryWrite(new AdmittedTurn(x.Channel, x.Message, null) { Refused = true });
                         }
 
                         break;
@@ -1002,7 +1096,10 @@ internal sealed class ConversationGroup(
         return _state = state with { Agent = agent, Thread = thread, Warmup = agent.WarmupSessionAsync(thread, _turnCt) };
     }
 
-    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x, TurnSteering steering)
+    // A turn's messages are x's alone, or the steers drawn together with it (SteeredWithAsync), x first: one
+    // turn, set up by x, answered once under its key.
+    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
+        AdmittedTurn x, IReadOnlyList<AdmittedTurn> messages, TurnSteering steering)
     {
         var state = _state is { } established ? await RebuildIfStaleAsync(established) : await EnsureEstablishedAsync(x);
         var targets = await ResolveTurnTargetsAsync(x, state);
@@ -1031,7 +1128,13 @@ internal sealed class ConversationGroup(
         {
             await targetResolver.AnnounceTurnStartAsync(turn.Targets, turn.Message, _turnCt);
         }
-        var (userMessage, extraction) = await BuildUserMessageAsync(turn, state);
+        // The skill preload is asked once, for the last message, which is the one the skills provider
+        // takes it from; recall and extraction are each message's, as they would have been one by one.
+        List<(ChatMessage Message, MemoryExtraction? Extraction)> built = [];
+        foreach (var message in messages)
+        {
+            built.Add(await BuildUserMessageAsync(message.Message, turn, state, preload: ReferenceEquals(message, messages[^1])));
+        }
 
         // From here a warmup failure is this turn's failure and is reported as one, so the
         // abandoned-warmup observer must not name it a second time.
@@ -1040,14 +1143,20 @@ internal sealed class ConversationGroup(
         // After the warmup, because the mounts only exist once the session has been built. An
         // agent with no sandbox lands nothing and keeps the attachment as model context, which is
         // the whole feature for that agent.
-        await LandAttachmentsAsync(x.Channel, turn, state, userMessage);
-        return StreamAgentTurn(state, userMessage, turn, extraction, steering);
+        foreach (var (message, (userMessage, _)) in messages.Zip(built))
+        {
+            await LandAttachmentsAsync(message.Channel, message.Message, turn, state, userMessage);
+        }
+
+        return StreamAgentTurn(
+            state, [.. built.Select(b => b.Message)], turn, [.. built.Select(b => b.Extraction).OfType<MemoryExtraction>()],
+            [.. messages.Skip(1).Select(m => m.Message.TurnKey).OfType<string>()], steering);
     }
 
     private async Task LandAttachmentsAsync(
-        IChannelConnection channel, Turn turn, GroupState state, ChatMessage userMessage)
+        IChannelConnection channel, ChannelMessage message, Turn turn, GroupState state, ChatMessage userMessage)
     {
-        if (turn.Message.Attachments is not { Count: > 0 } attachments)
+        if (message.Attachments is not { Count: > 0 } attachments)
         {
             return;
         }
@@ -1096,9 +1205,9 @@ internal sealed class ConversationGroup(
             : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
     }
 
-    private async Task<(ChatMessage Message, MemoryExtraction? Extraction)> BuildUserMessageAsync(Turn turn, GroupState state)
+    private async Task<(ChatMessage Message, MemoryExtraction? Extraction)> BuildUserMessageAsync(
+        ChannelMessage message, Turn turn, GroupState state, bool preload)
     {
-        var message = turn.Message;
         var userMessage = new ChatMessage(ChatRole.User, message.Content);
         userMessage.SetSenderId(message.Sender);
         userMessage.SetLocation(message.Location);
@@ -1132,7 +1241,7 @@ internal sealed class ConversationGroup(
         // agent signs each one as this identity, a worker's included, for as long as the turn runs.
         userMessage.SetConversationContext(
             DeliveryTargetResolver.BuildConversationContext(message, turn.Targets) with { Identity = turn.Identity });
-        if (skillPreloader is not null)
+        if (skillPreloader is not null && preload)
         {
             // Started here and awaited by nobody here: the judgment runs while recall makes its
             // own round trips, so a live turn pays nothing for it, and its deadline runs from
@@ -1226,13 +1335,17 @@ internal sealed class ConversationGroup(
             Reader = SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread))
         };
 
+    // A turn of several steers answers under the first one's key, and ends every other one's with a stream
+    // end of its own (`joined`), after its answer: the channel counts each steer it sent as a turn until
+    // that key ends, so each ends once, whether the channel drew them together or not.
     private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(
-        GroupState state, ChatMessage userMessage, Turn turn, MemoryExtraction? extraction, TurnSteering steering)
+        GroupState state, IReadOnlyList<ChatMessage> userMessages, Turn turn, IReadOnlyList<MemoryExtraction> extractions,
+        IReadOnlyList<string> joined, TurnSteering steering)
     {
         var stopwatch = Stopwatch.StartNew();
         var ct = _turnCt;
         return state.Agent
-            .RunStreamingAsync([userMessage], state.Thread, new TurnRunOptions { Steering = steering }, ct)
+            .RunStreamingAsync(userMessages, state.Thread, new TurnRunOptions { Steering = steering }, ct)
             .WithErrorHandling(ct)
             .ToUpdateAiResponsePairs()
             .Append((new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, null))
@@ -1255,14 +1368,21 @@ internal sealed class ConversationGroup(
                     // What the person said is extracted once the turn worked: one refused for the
                     // household's key or credit would be extracted on that same key, and a failed
                     // turn's retry is extracted in its place.
-                    if (!faulted && extraction is not null)
+                    if (!faulted)
                     {
-                        await extraction(_groupCt);
+                        foreach (var extraction in extractions)
+                        {
+                            await extraction(_groupCt);
+                        }
                     }
                 },
                 ct)
             .Finally(() => threadResolver.EndTurnAsync(state.DeliveryKey))
-            .Select(pair => new TurnUpdate(pair.Item1, turn));
+            .Select(pair => new TurnUpdate(pair.Item1, turn))
+            .Concat(joined
+                .Select(key => new TurnUpdate(
+                    new AgentResponseUpdate { Contents = [new StreamCompleteContent()] }, turn with { TurnKey = key }))
+                .ToAsyncEnumerable());
     }
 
     // Whether a household is the home, whose fires' prompts the operator's dashboard may show. One
