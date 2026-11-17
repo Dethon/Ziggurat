@@ -33,6 +33,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IDisposable _sendMessageRegistration;
     private readonly IDisposable _cancelStreamingRegistration;
     private readonly IDisposable _retryLastMessageRegistration;
+    private readonly IDisposable _retryRefusedRegistration;
     private readonly IDisposable _sendRerunRegistration;
     private readonly IDisposable _continueRegistration;
 
@@ -70,6 +71,11 @@ public sealed class SendMessageEffect : IDisposable
         _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
             HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
         _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
+
+        // Not taken back first, as the last message is: turns followed it, and the conversation keeps a
+        // failed turn where it was once another follows, so the message goes again where a new one goes.
+        _retryRefusedRegistration = dispatcher.RegisterHandler<RetryRefused>(action =>
+            dispatcher.Dispatch(new SendMessage(action.TopicId, action.Refused.Content, action.Refused.Attachments ?? [])));
         _sendRerunRegistration = dispatcher.RegisterHandler<SendRerun>(action =>
             HandleSendRerunAsync(action).LogFaults(_logger, nameof(SendRerun)));
         _continueRegistration = dispatcher.RegisterHandler<ContinueReply>(action =>
@@ -317,6 +323,7 @@ public sealed class SendMessageEffect : IDisposable
         _sendMessageRegistration.Dispose();
         _cancelStreamingRegistration.Dispose();
         _retryLastMessageRegistration.Dispose();
+        _retryRefusedRegistration.Dispose();
         _sendRerunRegistration.Dispose();
         _continueRegistration.Dispose();
     }

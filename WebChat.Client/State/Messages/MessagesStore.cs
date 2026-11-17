@@ -52,6 +52,10 @@ public record RemoveLastMessage(string TopicId) : IAction;
 
 public record RetryLastMessage(string TopicId) : IAction;
 
+// Retry on a refusal drawn under the reader's own message with other turns after it: that message sent
+// again as a new one.
+public record RetryRefused(string TopicId, ChatMessageModel Refused) : IAction;
+
 public record ClearAllMessages : IAction;
 
 public sealed class MessagesStore : IDisposable

@@ -101,4 +101,36 @@ public class MessageActionsLogicTests
     public void AReplyThatEnded_OffersNoContinue() =>
         MessageActionsLogic.For(Reply, new MessageActionContext(false, true, IsLastReply: true, IsLast: true, MayContinue: true))
             .ShouldNotContain(MessageActionKind.Continue);
+
+    private static readonly ChatMessageModel[] RefusedThenAnswered =
+    [
+        new() { Role = "user", Content = "second", SenderId = "fran", CorrelationId = "c-2" },
+        new() { Role = "assistant", Content = "This device was signed out", IsError = true },
+        new() { Role = "user", Content = "first", SenderId = "marta" },
+        new() { Role = "assistant", Content = "done", EntryId = "e9" }
+    ];
+
+    // A refusal drawn under the reader's own message stays that message's after another member's turn is
+    // drawn below it, and Retry stays on it: it is no longer the last bubble, which was all Retry asked.
+    [Fact]
+    public void ARefusalUnderTheReadersOwnMessage_OffersRetry_ThoughAnotherTurnFollowsIt()
+    {
+        MessageActionsLogic.OffersRetry(RefusedThenAnswered, 1, streaming: false, me: "fran").ShouldBeTrue();
+        MessageActionsLogic.RetriedAt(RefusedThenAnswered, 1, me: "fran").ShouldBe(RefusedThenAnswered[0]);
+    }
+
+    // Another member's refused message is theirs to send again, and nothing is retried while a reply streams.
+    [Theory]
+    [InlineData("marta", false)]
+    [InlineData("fran", true)]
+    public void ARefusalNotTheLast_OffersNoRetry_ToAnotherReader_OrWhileAReplyStreams(string me, bool streaming) =>
+        MessageActionsLogic.OffersRetry(RefusedThenAnswered, 1, streaming, me).ShouldBeFalse();
+
+    // The last bubble's failure keeps the Retry it always had, whoever's message it answers.
+    [Fact]
+    public void TheLastBubblesFailure_StillOffersRetry() =>
+        MessageActionsLogic.OffersRetry(
+            [new ChatMessageModel { Role = "user", Content = "hola", SenderId = "marta" },
+             new ChatMessageModel { Role = "assistant", Content = "failed", IsError = true }],
+            1, streaming: false, me: "fran").ShouldBeTrue();
 }

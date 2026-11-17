@@ -377,6 +377,38 @@ public sealed class QueuedSendTests
         }
     }
 
+    // Retry on a refusal that is not the last bubble sends the refused message again as a new one, at the
+    // end, where a message sent now goes: what followed it stays as it was, and so does the refused
+    // message, as the conversation keeps it (a failed turn stays where it was when another follows it).
+    [Fact]
+    public async Task RetryingARefusalThatIsNotTheLastBubble_SendsItsMessageAgain_AtTheEnd()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client,
+        [
+            new ChatHistoryMessage("u1", "user", "second", "fran", DateTimeOffset.UnixEpoch, Attachments: [Photo]),
+            new ChatHistoryMessage(null, "assistant", "This device was signed out", null, DateTimeOffset.UnixEpoch, IsError: true),
+            new ChatHistoryMessage("u2", "user", "first", "marta", DateTimeOffset.UnixEpoch),
+            new ChatHistoryMessage("a2", "assistant", "done", null, DateTimeOffset.UnixEpoch)
+        ]);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var wire = new GatedChatStream { Opening = null };
+        transport.Answer("SendMessage", _ => wire.Chunks());
+        var refused = client.Messages.State.MessagesByTopic["topic-1"][0];
+
+        client.Dispatcher.Dispatch(new RetryRefused("topic-1", refused));
+
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
+        var sent = transport.Calls.Single(call => call.MethodName == "SendMessage");
+        sent.Arguments[1].ShouldBe("second");
+        ((IEnumerable<AttachmentReference>)sent.Arguments[4]!).ShouldBe([Photo]);
+        Shown(client).ShouldBe([
+            "user: second", "assistant: This device was signed out", "user: first", "assistant: done", "user: second"
+        ]);
+        wire.Release();
+    }
+
     private static readonly AttachmentReference Photo = new()
     {
         Id = "7-42/abc",
