@@ -1,5 +1,6 @@
 using Domain.Conversations;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -228,5 +229,28 @@ public class ChatMonitorSteeringTests
 
         var cut = new[] { "user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42" };
         run.StoredLine().ShouldBe(handedBack ? cut : [.. cut, "user: the other one"]);
+    }
+
+    // The stop won the hub's race against the steered turn's end: the hub handed the steer back before it
+    // heard that end, and says so in its answer to the end's send_reply, which the agent waits for before
+    // it starts the next turn. The steer is never run, so nothing of it is kept, however fast it would
+    // have finished and whenever the cancel arrives.
+    [Fact]
+    public async Task ASteerTheHubNamesInItsAnswerToTheSteeredTurnsEnd_IsNeverRun()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: reply =>
+            reply is { IsComplete: true, TurnKey: not "steer-1" } ? new ReplyReceipt(["steer-1"]) : ReplyReceipt.None);
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("the other one", steer: true, turnKey: "steer-1");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await run.FinishAsync();
+
+        model.Requests.Count.ShouldBe(1);
+        run.StoredLine().ShouldBe(["user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42"]);
     }
 }

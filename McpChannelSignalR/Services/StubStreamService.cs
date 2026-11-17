@@ -11,4 +11,6 @@ public sealed class StubStreamService(ILogger<StubStreamService> logger) : IStre
             p.ConversationId, p.ContentType, p.IsComplete, p.Content.Length);
         return Task.CompletedTask;
     }
+
+    public ReplyReceipt ReceiptFor(SendReplyParams p) => ReplyReceipt.None;
 }

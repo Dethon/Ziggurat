@@ -36,6 +36,6 @@ public sealed class SendReplyTool
 
         var streamService = services.GetRequiredService<IStreamService>();
         await streamService.WriteReplyAsync(p);
-        return "ok";
+        return streamService.ReceiptFor(p).ToWire();
     }
 }

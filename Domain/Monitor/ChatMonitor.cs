@@ -187,9 +187,12 @@ public class ChatMonitor(
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {
-            var deliveredContent = await _replyDispatcher.DeliverUpdateAsync(
+            var delivery = await _replyDispatcher.DeliverUpdateAsync(
                 turnUpdate.Update, turnUpdate.Turn, ct);
-            if (deliveredContent)
+
+            // Before the next update is pulled, which is what starts the conversation's next turn.
+            conversation.TurnsReturned(delivery.ReturnedTurnKeys);
+            if (delivery.DeliveredContent)
             {
                 // Ends the span on the first delivered chunk; the scope publishes at most once, so
                 // every later chunk of the same turn is a no-op. A turn that delivers nothing

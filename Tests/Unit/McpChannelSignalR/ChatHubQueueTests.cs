@@ -1404,6 +1404,34 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         cancel.ReturnedTurnKeys.ShouldBe([TurnKeyOf("steer me"), older]);
     }
 
+    // A stop may win the hub's race against the steered turn's end: the steer goes back to its sender
+    // before the hub hears that end, and the agent, which waits on send_reply's answer before it starts
+    // the next turn, would start the steer and keep it if it finished before the cancel reached it. So the
+    // answer to that end names what the stop handed back, and the agent never runs it.
+    [Fact]
+    public async Task ATurnsEndHeardAfterAStop_IsAnsweredWithTheTurnKeysTheStopHandedBack()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await fran.EnqueueMessage(TopicId, "steer me", "c-2", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer me"));
+        await AgentWasSentAsync("steer me");
+        var steer = TurnKeyOf("steer me");
+        ReplyReceipt.Parse(await SendReplyAsync("still going", isComplete: false)).ReturnedTurnKeys.ShouldBeEmpty();
+
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        ReplyReceipt.Parse(await SendReplyAsync("", isComplete: true)).ReturnedTurnKeys.ShouldBe([steer]);
+    }
+
+    // As the agent's send_reply reaches the hub: through the tool itself, which answers what the agent reads.
+    private Task<string> SendReplyAsync(string content, bool isComplete) =>
+        SendReplyTool.McpRun(
+            ConversationId, content, isComplete ? ReplyContentType.StreamComplete : ReplyContentType.Text, isComplete,
+            messageId: null, new ServiceCollection().AddSingleton<IStreamService>(_streamService).BuildServiceProvider());
+
     // Vouched for afresh as it leaves the queue, as any turn is, for the session that queued it: a device
     // signed out since steers nothing, nor does its message steer from another device, which would send
     // what it left behind; the message keeps its place, to be refused again when its turn comes.

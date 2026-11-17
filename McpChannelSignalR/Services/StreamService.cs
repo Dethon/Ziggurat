@@ -134,6 +134,26 @@ public sealed class StreamService(
         CompleteStream(topicId, startsSteers: p.AgentInitiated != true);
     }
 
+    // A turn's end is answered with what the topic's last stop handed back. The agent starts a conversation's
+    // next turn only once the last reply was answered, and a stop that took the stream before this end was
+    // heard handed back a steer the agent has waiting, which it would otherwise run, and keep if it finished
+    // before the stop's cancel reached it. Every id the stop returned, not just the steers': the others
+    // were never sent, and naming them again costs nothing.
+    public ReplyReceipt ReceiptFor(SendReplyParams p)
+    {
+        if (!p.IsComplete || sessionService.GetTopicIdByConversationId(p.ConversationId) is not { } topicId)
+        {
+            return ReplyReceipt.None;
+        }
+
+        lock (_streamLock)
+        {
+            return _topics.GetValueOrDefault(topicId)?.LastStopped is { } stopped
+                ? new ReplyReceipt(stopped.Ids)
+                : ReplyReceipt.None;
+        }
+    }
+
     // A reply under the key of a steer that has not started is that steer's answer, given before the turn
     // it was sent into ended: kept on the steer rather than written into the reply still streaming.
     private bool HeldForSteer(string topicId, string? turnKey, ChatStreamMessage message, bool isComplete)

@@ -420,7 +420,7 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
         }
     }
 
-    public Task SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.CompletedTask;
+    public Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.FromResult(ReplyReceipt.None);
 
     public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct) =>
         Task.FromResult<byte[]?>(null);

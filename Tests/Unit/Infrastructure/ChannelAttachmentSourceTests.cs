@@ -113,7 +113,7 @@ public class ChannelAttachmentSourceTests
             return Bytes;
         }
 
-        public Task SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.CompletedTask;
+        public Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.FromResult(ReplyReceipt.None);
 
         public Task<bool> StoreAttachmentAsync(
             string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>

@@ -27,7 +27,9 @@ public interface IChannelConnection : IHouseholdChannel
     // The record rather than its fields spread out: it is already the wire shape every channel
     // server deserializes on the far side, so a new field is one edit here instead of a new
     // position in five argument lists.
-    Task SendReplyAsync(SendReplyParams reply, CancellationToken ct);
+    // Answered with what the channel says back (ReplyReceipt): which turns waiting here a stop handed
+    // back, so the conversation's next turn is never one of them.
+    Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct);
 
     // The question put where the turn asked it. Null is "nobody could be asked here" — no live
     // session to show it in, no satellite to speak it on — which leaves it to wherever else it was

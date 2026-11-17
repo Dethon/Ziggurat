@@ -254,6 +254,14 @@ internal sealed class ConversationGroup(
                     break;
                 }
 
+                // A channel answered the last turn's end naming this one as handed back by a stop: its words
+                // are in its sender's composer, and the cancel that names it too may come only after it ran.
+                if (x.Message.TurnKey is { } key && _returnedTurnKeys.ContainsKey(key))
+                {
+                    LogDroppedTurn(logger, x.Message);
+                    continue;
+                }
+
                 var steering = new TurnSteering(x.Message.TurnKey, _returnedTurnKeys.ContainsKey);
                 _running = new RunningTurn(x.Person, steering);
                 IAsyncEnumerable<TurnUpdate> turn;
@@ -387,6 +395,16 @@ internal sealed class ConversationGroup(
         logger.LogWarning(
             "Group teardown dropped a queued turn for conversation {ConversationId} and agent {AgentId}",
             message.ConversationId, message.AgentId);
+    }
+
+    // Turn keys a channel answered a reply with as handed back by a stop (ReplyReceipt), recorded as the
+    // cancel's are, before the conversation's next turn is taken.
+    public void TurnsReturned(IEnumerable<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            _returnedTurnKeys[key] = 0;
+        }
     }
 
     private async Task DispatchCommandsAndQueueTurnsAsync(

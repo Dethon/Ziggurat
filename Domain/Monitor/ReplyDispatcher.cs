@@ -12,15 +12,21 @@ namespace Domain.Monitor;
 // built out of the turn that produced the update.
 internal class ReplyDispatcher(ILogger logger)
 {
-    public async Task<bool> DeliverUpdateAsync(
+    // What delivering one update came to: whether any of its content reached a target, and the turn keys a
+    // channel answered were handed back by a stop (ReplyReceipt), which the conversation must not run.
+    public sealed record Delivery(bool DeliveredContent, IReadOnlyList<string> ReturnedTurnKeys);
+
+    public async Task<Delivery> DeliverUpdateAsync(
         AgentResponseUpdate update, Turn turn, CancellationToken ct)
     {
         var deliveredContent = false;
+        List<string> returned = [];
         foreach (var mapped in MapResponseUpdate(update))
         {
-            var results = await Task.WhenAll(turn.Targets.Select(target =>
+            var receipts = await Task.WhenAll(turn.Targets.Select(target =>
                 DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
-            deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && results.Any(r => r);
+            deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && receipts.Any(r => r is not null);
+            returned.AddRange(receipts.SelectMany(r => r?.ReturnedTurnKeys ?? []));
         }
 
         foreach (var error in update.Contents.OfType<ErrorContent>())
@@ -33,18 +39,19 @@ internal class ReplyDispatcher(ILogger logger)
             });
         }
 
-        return deliveredContent;
+        return new Delivery(deliveredContent, returned);
     }
 
     // The one place a reply's wire record is built. Everything a chunk says is decided above; the
     // conversation is the one part that belongs to the target rather than to the chunk, and the
     // turn key is what lets the far end tell this turn's answer from a previous one's.
-    private async Task<bool> DeliverToTargetAsync(
+    // Null when the target could not be delivered to.
+    private async Task<ReplyReceipt?> DeliverToTargetAsync(
         DeliveryTarget target, MappedChunk mapped, string? messageId, Turn turn, CancellationToken ct)
     {
         try
         {
-            await target.Channel.SendReplyAsync(
+            return await target.Channel.SendReplyAsync(
                 new SendReplyParams
                 {
                     ConversationId = target.ConversationId,
@@ -56,7 +63,7 @@ internal class ReplyDispatcher(ILogger logger)
                     AgentInitiated = turn.AgentInitiated
                 },
                 ct);
-            return true;
+
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -71,7 +78,7 @@ internal class ReplyDispatcher(ILogger logger)
                 ErrorType = ex.GetType().Name,
                 Message = ex.Message
             });
-            return false;
+            return null;
         }
     }
 

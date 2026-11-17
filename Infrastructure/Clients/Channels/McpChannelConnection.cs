@@ -524,7 +524,7 @@ public sealed class McpChannelConnection(
         _messageChannel.Writer.TryWrite(message);
     }
 
-    public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
+    public async Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct)
     {
         var client = RequireClient();
         // send_reply fires once per streamed content chunk (hundreds per response). Building
@@ -532,7 +532,7 @@ public sealed class McpChannelConnection(
         // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
         // identical (same camelCase keys, ContentType.ToString() matches the
         // JsonStringEnumConverter output).
-        await client.CallToolAsync(
+        var result = await client.CallToolAsync(
             ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>
             {
@@ -545,6 +545,7 @@ public sealed class McpChannelConnection(
                 ["agentInitiated"] = reply.AgentInitiated
             },
             cancellationToken: ct);
+        return ReplyReceipt.Parse(result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
     }
 
     public async Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)

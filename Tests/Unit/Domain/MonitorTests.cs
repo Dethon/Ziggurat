@@ -241,6 +241,9 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Action<SendReplyParams>? OnReply { get; init; }
 
+    // What the channel answers each reply with; nothing handed back unless a test says.
+    public Func<SendReplyParams, ReplyReceipt>? Receipts { get; init; }
+
     // A channel that cannot hand out a stream at all. A stream that dies mid-flight would not do:
     // the merge isolates a faulting stream deliberately (ConsumeStream), so one channel cannot tear
     // down its siblings — which leaves a fault raised while the pipeline is being built as the only
@@ -287,7 +290,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
         }
     }
 
-    public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
+    public async Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct)
     {
         if (ReplyGate is not null)
         {
@@ -300,6 +303,7 @@ internal sealed class FakeChannelConnection : IChannelConnection
         }
 
         OnReply?.Invoke(reply);
+        return Receipts?.Invoke(reply) ?? ReplyReceipt.None;
     }
 
     // What a person asked here answers: a yes, unless a test has them turn calls down.

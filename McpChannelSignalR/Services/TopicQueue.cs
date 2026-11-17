@@ -85,4 +85,7 @@ internal sealed class StoppedStream(StreamKey stream, IEnumerable<QueuedMessage>
     public void Add(QueuedMessage message) => _senders[message.Id] = message.Sender.Principal.Account;
 
     public bool Returned(string queuedId, out Account? sender) => _senders.TryGetValue(queuedId, out sender);
+
+    // Every message the stop handed back, by its queued id: a steer's is its turn's key at the agent.
+    public IReadOnlyList<string> Ids => [.. _senders.Keys];
 }

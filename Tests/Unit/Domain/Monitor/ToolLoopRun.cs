@@ -39,15 +39,17 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     // Every tool offered is whitelisted but those `refused`, which the channel turns down when asked —
     // the hook through which the approval client already ends a loop (FunctionInvocationContext.Terminate).
     // `sequential` runs a batch of calls one after another, as the library does with concurrency off.
+    // `receipts` is what the channel answers each reply with, as a hub names the turn keys a stop handed back.
     // A `worker` is offered to the agent as the run_subagent tool, and runs as production spawns one: an
     // agent of its own over its own approval client, sent the parent's context.
     public ToolLoopRun(
         ScriptedModel model, IReadOnlyList<LocalTool> tools, IReadOnlyList<LocalTool>? refused = null,
-        bool sequential = false, Worker? worker = null)
+        bool sequential = false, Worker? worker = null, Func<SendReplyParams, ReplyReceipt>? receipts = null)
     {
         Channel = new FakeChannelConnection
         {
-            ChannelId = ChatChannel, ApprovalAnswer = ToolApprovalResult.Rejected, ConversationIdToReturn = ConversationId
+            ChannelId = ChatChannel, ApprovalAnswer = ToolApprovalResult.Rejected, ConversationIdToReturn = ConversationId,
+            Receipts = receipts
         };
         var agents = new ToolLoopAgents(model, tools, refused ?? [], sequential, worker, _lines);
         var monitor = new ChatMonitor(
