@@ -328,6 +328,10 @@ public class ChatMonitorSteeringTests
         // Two steers drawn together, the stop landing while their turn is being set up.
         StopWhileTheyGather,
 
+        // Two steers drawn together, the stop landing while the group waits for the second, not here yet:
+        // the first is kept; the second, which never reached the agent, is nothing it can keep.
+        StopWhileItWaitsForTheSecond,
+
         // One steer, the stop landing while its turn is being set up.
         StopBeforeALoneSteersTurn,
 
@@ -350,6 +354,7 @@ public class ChatMonitorSteeringTests
 
     [Theory]
     [InlineData(GatheringExit.StopWhileTheyGather)]
+    [InlineData(GatheringExit.StopWhileItWaitsForTheSecond)]
     [InlineData(GatheringExit.StopBeforeALoneSteersTurn)]
     [InlineData(GatheringExit.StopBeforeTheirRunReachesTheHistory)]
     [InlineData(GatheringExit.ReachesTheTurnAfterTheStop)]
@@ -368,7 +373,7 @@ public class ChatMonitorSteeringTests
         var failed = exit == GatheringExit.TheirTurnFailsToSetUp;
         var answered = exit == GatheringExit.TheSecondWasNeverHeard;
         var stopped = !failed && !answered;
-        string[] drawn = two ? ["steer-1", "steer-2"] : ["steer-1"];
+        string[] drawn = two || exit == GatheringExit.StopWhileItWaitsForTheSecond ? ["steer-1", "steer-2"] : ["steer-1"];
         await using var run = new ToolLoopRun(model, [lookUp], recall: recall, beforeRun: runs.BeforeRunAsync,
             receipts: SteeredTogetherAtTheCut(drawn),
             holdReply: async reply =>
@@ -385,7 +390,7 @@ public class ChatMonitorSteeringTests
         {
             GatheringExit.StopBeforeTheirRunReachesTheHistory => runs.Hold("and in red"),
             GatheringExit.TheirTurnFailsToSetUp => recall.Fail("and in red"),
-            GatheringExit.TheSecondWasNeverHeard => Task.CompletedTask,
+            GatheringExit.TheSecondWasNeverHeard or GatheringExit.StopWhileItWaitsForTheSecond => Task.CompletedTask,
             _ => recall.Hold(two ? "and in red" : "no, the other one")
         };
 
@@ -399,7 +404,15 @@ public class ChatMonitorSteeringTests
 
         await run.AdmittedSoFarAsync();
         lookUp.Finish();
-        if (exit == GatheringExit.ReachesTheTurnAfterTheStop)
+        if (exit == GatheringExit.StopWhileItWaitsForTheSecond)
+        {
+            await Eventually.Until(
+                () => run.Replies.Any(r => r is { IsComplete: true } && ToolLoopRun.IsTheFirstTurns(r)), "the cut turn to end");
+            await Eventually.Settle();
+            model.Requests.Count.ShouldBe(1);
+            run.Stop(returned: []);
+        }
+        else if (exit == GatheringExit.ReachesTheTurnAfterTheStop)
         {
             await cutEndHeld.Task.WaitAsync(TimeSpan.FromSeconds(60));
             run.Stop(returned: []);
