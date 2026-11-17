@@ -67,9 +67,9 @@ pub enum TrayState {
     Error,
 }
 
-/// The one cue. It means "speak now", which is why it is played after the capture device is open
-/// rather than when the key was received — that ordering is the whole mitigation for opening the
-/// device on key-down with no pre-roll.
+/// The one cue. It means "speak now", which is why it is played once the capture is delivering
+/// audio rather than when the key was received: there is no pre-roll, so anything said before
+/// then is not captured.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cue {
     Start,
@@ -177,12 +177,14 @@ pub enum HostEvent {
 /// what makes "verified by hand on Windows" an acceptable answer for the real one.
 #[async_trait]
 pub trait Host: Send + Sync {
-    /// Opens the capture device, answering the format it actually opened at. Called when a
-    /// binding goes down; there is deliberately no pre-roll ring, so the first 50-200 ms of a
-    /// dictation is traded for not holding the device open.
+    /// Starts the capture, answering the format it runs at once audio is flowing. Called when a
+    /// binding goes down. There is deliberately no pre-roll ring, so a host keeps the device set
+    /// up and stopped between dictations if starting it from nothing is slow — that is the host's
+    /// business, and the core sees only how long this call takes.
     fn open_capture(&self) -> Result<CaptureFormat, HostError>;
 
-    /// Closes it. Called on key-up, on the watchdog, and on any path that abandons a dictation.
+    /// Stops it: no more audio. Called on key-up, on the
+    /// watchdog, and on any path that abandons a dictation.
     fn close_capture(&self);
 
     /// Which window is in front right now.

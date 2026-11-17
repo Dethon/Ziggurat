@@ -5,7 +5,7 @@ had typed them. Letting go ends it. Right-clicking the tray icon closes it.
 
 It reaches Lemonade directly, so it works whenever Whisper is up, whether or not the rest of the
 stack is running. It ships as one executable with nothing to install, and costs nothing while you
-are not using it: no microphone held open, no model loaded, no window on screen.
+are not using it: the microphone is stopped between dictations, no model loaded, no window on screen.
 
 Words arrive while you are still talking. A dictation is cut into segments wherever you pause,
 each is sent as you go, and each transcript is typed the moment it comes back.
@@ -52,7 +52,9 @@ settings travel if you carry the executable on a stick.
 
 ## The tray
 
-Four states: idle, recording, transcribing, and an error ring when Lemonade is not answering. The
+A microphone in four states: grey when idle, red while recording, amber while transcribing, and
+struck through when Lemonade is not answering. If Explorer restarts, the icon comes back on its
+own. The
 menu holds per-binding learn mode, the microphone list, a **Latched dictation** tick (press to
 start and press again to stop, instead of holding), a **Start with Windows** toggle (off until you
 ask for it, and turning it off removes exactly what turning it on added), and quit.

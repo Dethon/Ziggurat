@@ -44,15 +44,30 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 - **The base URL is `/v1`, not `/api/v1`.** Lemonade serves both; health lives under `/api/v1`
   and the OpenAI-compatible routes under `/v1`. The wrong one parses fine and 404s only when
   somebody is mid-sentence. A test pins it.
-- **The capture opens on key-down with no pre-roll, and the cue plays after it opens.** Unlike the
-  satellite, this trades the first 50-200 ms of audio for not holding the device and not showing
-  Windows' permanent microphone indicator. The cue ordering is the whole mitigation, which is why
-  it means "speak now" rather than "key received". This is the choice most likely to want
-  revisiting after real use.
+- **The capture starts on key-down with no pre-roll, from a stream prepared while idle, and the
+  cue plays once audio is flowing.** Setting a WASAPI stream up cost about 350 ms on every press
+  on an Arctis Nova Pro Wireless, which was the whole delay a person heard before the cue and saw
+  before the red icon; starting one already set up costs under 20 ms. So `win/capture.rs` sets a
+  stream up at startup and after each dictation stops it rather than dropping it — stopped, it
+  delivers nothing — and `audio::how_to_start` sets one up again when the default device changed
+  under it or it reported an error. Unlike the satellite there is still no pre-roll, so the device
+  is never running while idle; the open answers only once audio arrives, so the cue really means
+  "speak now". Whether Windows' microphone indicator stays off for a stream that is set up but
+  stopped has not been observed yet; if it does not, this is the choice to revisit.
 - **No visible window is ever created.** A window that can take focus can break injection into the
   window underneath, which is why the tray is the entire interface and the binary is built for the
-  windows subsystem. The one `HWND_MESSAGE` window the tray icon and the hook need is never shown,
-  never painted and cannot be focused.
+  windows subsystem. The `HWND_MESSAGE` window the tray icon and the hook need is never shown,
+  never painted and cannot be focused. A second window of the same class exists only to hear
+  Explorer's `TaskbarCreated` broadcast, which a message-only window never receives: it is
+  top-level, never shown, `WS_EX_NOACTIVATE` and a tool window. Without it an Explorer restart
+  leaves the speech typist running with no icon and no way to quit — which happened, for two
+  weeks, before anybody noticed.
+- **The icons are drawn, not shipped.** `src/icon.rs` draws every tray state and the
+  executable's own icon, and is platform-free so it is tested in WSL. The tray draws them at the
+  size the shell asks for (the process is per-monitor DPI-aware, so 20 or 24 pixels at 125 or
+  150 per cent); `build.rs` compiles the same file to write a `.res` the linker takes directly, so
+  no resource compiler is needed. The failing state differs from recording by shape, not only
+  colour.
 - **The keyboard hook must return promptly.** Windows silently removes a hook that takes too long,
   so the callback locks a mutex, decides, and posts to a channel with `try_send`. It never blocks
   and never awaits. For the same reason the core runs on its own thread: a message loop that stops
@@ -111,7 +126,7 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 ## Building
 
 ```sh
-scripts/build-release.sh          # one .exe, ~1.3 MB, cross-compiled from WSL (runnable from anywhere)
+scripts/build-release.sh          # one .exe, ~1.4 MB, cross-compiled from WSL (runnable from anywhere)
 cargo test                        # the whole suite, no Windows and no network needed
 cargo xwin check --target x86_64-pc-windows-msvc   # type-check the Windows half from WSL
 ```
@@ -130,13 +145,17 @@ CRT otherwise emits about fifty-five lines of LNK4099 — lld hunting for Micros
 would read. It is scoped to that one warning deliberately: `-A linker_messages` would hide a real
 link failure just as effectively.
 
+`build.rs` links the executable's icon in, only when the target is Windows; the release script's
+size and import checks are unchanged by it (the icon adds about 145 KB of `.rsrc`).
+
 The crate choices and their cross-compile rationale (no-TLS `reqwest`, `Shell_NotifyIconW` over a
 tray crate) live as comments in `Cargo.toml`.
 
 ## Rough edges accepted on purpose
 
-- The first 50-200 ms of a dictation is lost to opening the device, so speaking instantly clips a
-  leading plosive.
+- Whatever is said before the cue is lost: a few milliseconds with a prepared stream, but a
+  remote desktop microphone delivers nothing for about half a second after its first start, and a
+  changed default device has to be set up from nothing again.
 - Whisper capitalises the start of every segment it is given, so a sentence cut mid-way can read
   slightly oddly at the join. Prompt chaining is what limits the damage, not a fix for it.
 - The energy detector will cut on a long deliberate pause mid-sentence.
