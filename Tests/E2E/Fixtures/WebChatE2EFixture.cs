@@ -174,7 +174,7 @@ public class WebChatE2EAdminCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.People)]
 public class WebChatE2EPeopleCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// The chat's turns on the real model, out of the Chat collection, which keeps only the cases reading
+// The chat's turns, out of the Chat collection, which keeps only the cases reading
 // the household's name and agents beside the settings page that changes them.
 [CollectionDefinition(WebChatE2ECollections.Conversation)]
 public class WebChatE2EConversationCollection : ICollectionFixture<WebChatE2EFixture>;
@@ -208,12 +208,11 @@ public class WebChatE2EListScrollCollection : ICollectionFixture<WebChatE2EFixtu
 [CollectionDefinition(WebChatE2ECollections.DictationLong)]
 public class WebChatE2EDictationLongCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// Rewriting a conversation on the real model, out of Conversation.
+// Rewriting a conversation, out of Conversation.
 [CollectionDefinition(WebChatE2ECollections.Rewrites)]
 public class WebChatE2ERewritesCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// Messages queued behind a running reply, on the real model: several turns of the provider's in one
-// case, so a chain of its own. The twenty-fourth, which fills the slices the stack has
+// Messages queued behind a running reply: several turns in one case, so a chain of its own. The twenty-fourth, which fills the slices the stack has
 // (WebChatCollectionSliceTests): a further collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Queue)]
 public class WebChatE2EQueueCollection : ICollectionFixture<WebChatE2EFixture>;

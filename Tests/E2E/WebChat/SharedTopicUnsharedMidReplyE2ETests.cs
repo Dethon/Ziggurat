@@ -36,9 +36,8 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
         var carlosRow = carlos.Locator(".topic-item", new PageLocatorOptions { HasText = row });
         await carlosRow.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
-        // Long enough to still be streaming when the owner's click lands, and no longer: the test waits
-        // for the whole reply at the end, and ten paragraphs on a slow provider held the run two minutes.
-        var question = $"Wine {tag} again: write five long paragraphs about the history of wine.";
+        // The fake model's long story: still streaming when the owner's click lands, and stopped below.
+        var question = $"Wine {tag} again: write a very long and detailed story about the history of wine.";
         await SendAsync(ana, question);
         await Assertions.Expect(carlos.Locator(".chat-message.streaming-cursor"))
             .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 90_000 });
@@ -47,9 +46,8 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
         await Assertions.Expect(carlosRow).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 15_000 });
         await Assertions.Expect(Shown(carlos, question)).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 15_000 });
         await Assertions.Expect(carlos.Locator(".chat-message.assistant")).ToHaveCountAsync(0);
-        // The turn's end is what is still to cross: its owner stops it rather than waiting out the
-        // provider's whole reply, which on a slow day ran past two minutes. A stopped reply ends its
-        // stream as a finished one does, and Carlos's page must hear neither.
+        // The turn's end is what is still to cross: its owner stops it rather than waiting out the whole
+        // story. A stopped reply ends its stream as a finished one does, and Carlos's page must hear neither.
         // Dispatched rather than clicked: the control is drawn again as the reply streams, and beside a
         // second suite it never held still for the two frames a click waits for, for thirty seconds.
         await ana.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Stop the reply" })
@@ -68,7 +66,7 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
             .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
     }
 
-    // A reply on a live model ends when it ends; a page cannot send in a topic while one streams.
+    // A page cannot send in a topic while a reply streams.
     private static Task IdleAsync(IPage page) =>
         Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Stop the reply" }))
             .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 120_000 });

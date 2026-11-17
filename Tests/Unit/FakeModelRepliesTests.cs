@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Conversations;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using static Tests.Integration.Fixtures.FakeModelReplies;
@@ -132,4 +133,35 @@ public class FakeModelRepliesTests
         answer["items"]![0]!["confidence"]!.GetValue<string>().ShouldBe("low");
         answer["note"]!.GetValue<string>().ShouldNotBeEmpty();
     }
+
+    [Fact]
+    public void AContinue_CarriesOnTheStoryItContinues()
+    {
+        var story = For(Request(
+            User("Write a very long and detailed story about a lighthouse keeper."),
+            Assistant("Chapter line 1 of the voyage went on."),
+            User(Continuation.Instruction))).Output.ShouldBeOfType<Text>();
+
+        story.Chunks.Count.ShouldBe(StoryChunks);
+    }
+
+    // The chat keys a streamed message by its id, so no two replies may share one.
+    [Fact]
+    public void EveryReply_StreamsUnderIdsOfItsOwn()
+    {
+        var request = Request(User("Hello"));
+
+        var first = FakeResponsesWire.Stream(For(request));
+        var second = FakeResponsesWire.Stream(For(request));
+
+        MessageIds(first).ShouldHaveSingleItem();
+        MessageIds(first).ShouldNotBe(MessageIds(second));
+    }
+
+    private static IReadOnlyList<string> MessageIds(string sse) =>
+    [
+        .. System.Text.RegularExpressions.Regex.Matches(sse, "\"(?:id|item_id)\":\"(msg_[^\"]+)\"")
+            .Select(m => m.Groups[1].Value)
+            .Distinct()
+    ];
 }

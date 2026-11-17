@@ -67,7 +67,7 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         // conversation's row, whose preview is its last message's words — the question until the
         // reply is kept, then the reply — rather than off the streamed bubble: what this case is
         // about is the record the reload reads, and drawing a reply as it streams is
-        // SendMessage_AppearsInChat's. Up to the provider's worst case, returning when it lands.
+        // SendMessage_AppearsInChat's.
         var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"What is in this picture? {tag}" }).First;
         await Assertions.Expect(row.Locator(".topic-preview"))
             .ToHaveTextAsync(new Regex(@"^(?![\s\S]*What is in this picture)[\s\S]*\S"),

@@ -56,19 +56,23 @@ public class OpenRouterCanaryTests
 
         try
         {
-            var updates = await LlmAttempt.WithinAsync(TimeSpan.FromSeconds(60), async ct =>
-            {
-                var collected = new List<ChatResponseUpdate>();
-                await foreach (var update in invoking.GetStreamingResponseAsync(
-                                   [new ChatMessage(ChatRole.User, "Call TestTool, then say DONE")],
-                                   options,
-                                   ct))
+            // Whether the model chose to call the tool and then to say something is the model's turn, not
+            // the API's shape, so a turn that did neither is asked again before it reddens a routine run.
+            var updates = await LlmAttempt.UntilAsync(
+                () => LlmAttempt.WithinAsync(TimeSpan.FromSeconds(60), async ct =>
                 {
-                    collected.Add(update);
-                }
+                    var collected = new List<ChatResponseUpdate>();
+                    await foreach (var update in invoking.GetStreamingResponseAsync(
+                                       [new ChatMessage(ChatRole.User, "Call TestTool, then say DONE")],
+                                       options,
+                                       ct))
+                    {
+                        collected.Add(update);
+                    }
 
-                return collected;
-            });
+                    return collected;
+                }),
+                collected => called > 0 && !string.IsNullOrWhiteSpace(string.Concat(collected.Select(u => u.Text))));
 
             updates.ShouldNotBeEmpty();
             called.ShouldBeGreaterThan(0, "the model never called the tool, so the tool round trip was not exercised");

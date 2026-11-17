@@ -9,8 +9,8 @@ using static Tests.E2E.WebChat.HearthFlickE2ETests;
 namespace Tests.E2E.WebChat;
 
 // The open sheet's list still scrolls under a finger. Out of HearthFlickE2ETests by length, into a
-// collection of its own: each case there makes topics on the real model and waits for their rows to
-// settle, and as one chain of three they were among the run's longest on a slow day.
+// collection of its own: each case there makes topics and waits for their rows to settle, and as one
+// chain of three they were among the run's longest.
 [Collection(WebChatE2ECollections.ListScroll)]
 [Trait("Category", "E2E")]
 public sealed class HearthListScrollE2ETests(WebChatE2EFixture fixture)

@@ -32,11 +32,11 @@ public static class FakeResponsesWire
         }
     }
 
-    public static JsonObject Whole(Reply reply) => Response("completed", Output(reply));
+    public static JsonObject Whole(Reply reply) => Response(reply, "completed", Output(reply));
 
     private static IEnumerable<(string Sse, TimeSpan Delay)> Events(Reply reply)
     {
-        yield return (Event("response.created", new JsonObject { ["response"] = Response("in_progress", []) }), TimeSpan.Zero);
+        yield return (Event("response.created", new JsonObject { ["response"] = Response(reply, "in_progress", []) }), TimeSpan.Zero);
 
         var index = 0;
         if (reply.Reasoning is { } reasoning)
@@ -44,15 +44,15 @@ public static class FakeResponsesWire
             yield return (Event("response.output_item.added", new JsonObject
             {
                 ["output_index"] = index,
-                ["item"] = new JsonObject { ["type"] = "reasoning", ["id"] = "rs_1", ["summary"] = new JsonArray() }
+                ["item"] = new JsonObject { ["type"] = "reasoning", ["id"] = $"rs_{reply.Id}", ["summary"] = new JsonArray() }
             }), TimeSpan.Zero);
             yield return (Event("response.reasoning_summary_text.delta", new JsonObject
             {
-                ["item_id"] = "rs_1", ["output_index"] = index, ["summary_index"] = 0, ["delta"] = reasoning
+                ["item_id"] = $"rs_{reply.Id}", ["output_index"] = index, ["summary_index"] = 0, ["delta"] = reasoning
             }), TimeSpan.Zero);
             yield return (Event("response.output_item.done", new JsonObject
             {
-                ["output_index"] = index, ["item"] = ReasoningItem(reasoning)
+                ["output_index"] = index, ["item"] = ReasoningItem(reply, reasoning)
             }), TimeSpan.Zero);
             index++;
         }
@@ -65,7 +65,7 @@ public static class FakeResponsesWire
                     ["output_index"] = index,
                     ["item"] = new JsonObject
                     {
-                        ["type"] = "message", ["id"] = "msg_1", ["role"] = "assistant", ["status"] = "in_progress",
+                        ["type"] = "message", ["id"] = $"msg_{reply.Id}", ["role"] = "assistant", ["status"] = "in_progress",
                         ["content"] = new JsonArray()
                     }
                 }), TimeSpan.Zero);
@@ -73,13 +73,13 @@ public static class FakeResponsesWire
                 {
                     yield return (Event("response.output_text.delta", new JsonObject
                     {
-                        ["item_id"] = "msg_1", ["output_index"] = index, ["content_index"] = 0, ["delta"] = chunk
+                        ["item_id"] = $"msg_{reply.Id}", ["output_index"] = index, ["content_index"] = 0, ["delta"] = chunk
                     }), text.ChunkDelay);
                 }
 
                 yield return (Event("response.output_item.done", new JsonObject
                 {
-                    ["output_index"] = index, ["item"] = MessageItem(text.Whole)
+                    ["output_index"] = index, ["item"] = MessageItem(reply, text.Whole)
                 }), TimeSpan.Zero);
                 break;
             case ToolCall call:
@@ -94,7 +94,7 @@ public static class FakeResponsesWire
                 break;
         }
 
-        yield return (Event("response.completed", new JsonObject { ["response"] = Response("completed", Output(reply)) }), TimeSpan.Zero);
+        yield return (Event("response.completed", new JsonObject { ["response"] = Response(reply, "completed", Output(reply)) }), TimeSpan.Zero);
         yield return ("data: [DONE]\n\n", TimeSpan.Zero);
     }
 
@@ -103,33 +103,33 @@ public static class FakeResponsesWire
         var items = new JsonArray();
         if (reply.Reasoning is { } reasoning)
         {
-            items.Add(ReasoningItem(reasoning));
+            items.Add(ReasoningItem(reply, reasoning));
         }
 
         items.Add(reply.Output switch
         {
-            Text text => MessageItem(text.Whole),
+            Text text => MessageItem(reply, text.Whole),
             ToolCall call => CallItem(call, "completed", call.Arguments),
             _ => throw new InvalidOperationException($"No wire form for {reply.Output}")
         });
         return items;
     }
 
-    private static JsonObject Response(string status, JsonArray output) => new()
+    private static JsonObject Response(Reply reply, string status, JsonArray output) => new()
     {
-        ["id"] = "resp_1", ["object"] = "response", ["status"] = status, ["store"] = false, ["model"] = Model,
+        ["id"] = $"resp_{reply.Id}", ["object"] = "response", ["status"] = status, ["store"] = false, ["model"] = Model,
         ["output"] = output, ["usage"] = status == "completed" ? _usage.DeepClone() : null
     };
 
-    private static JsonObject ReasoningItem(string reasoning) => new()
+    private static JsonObject ReasoningItem(Reply reply, string reasoning) => new()
     {
-        ["type"] = "reasoning", ["id"] = "rs_1",
+        ["type"] = "reasoning", ["id"] = $"rs_{reply.Id}",
         ["summary"] = new JsonArray(new JsonObject { ["type"] = "summary_text", ["text"] = reasoning })
     };
 
-    private static JsonObject MessageItem(string text) => new()
+    private static JsonObject MessageItem(Reply reply, string text) => new()
     {
-        ["type"] = "message", ["id"] = "msg_1", ["role"] = "assistant", ["status"] = "completed",
+        ["type"] = "message", ["id"] = $"msg_{reply.Id}", ["role"] = "assistant", ["status"] = "completed",
         ["content"] = new JsonArray(new JsonObject
         {
             ["type"] = "output_text", ["text"] = text, ["annotations"] = new JsonArray(), ["logprobs"] = new JsonArray()

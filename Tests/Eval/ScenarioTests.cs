@@ -382,7 +382,8 @@ public class ScenarioWiringTests
     [Fact]
     public void EveryScenario_IsWiredIntoExactlyOneFullTierClass()
     {
-        var wired = Classes("Tier", "Full").SelectMany(Named).ToList();
+        // The model checks (Tests/Eval/ModelChecks) run on a full pass too, and hold no scenarios.
+        var wired = Classes("Tier", "Full").Where(HoldsScenarios).SelectMany(Named).ToList();
 
         wired.ShouldBe(
             EvalSuite.All.Where(s => s.Tier != EvalTier.Research).Select(s => s.Name).ToList(),

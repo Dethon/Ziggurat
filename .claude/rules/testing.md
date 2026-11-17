@@ -124,16 +124,20 @@ for this, and each shape below is one that has already failed here.
   chain, so a sibling's can arrive at any moment — including after a test has checked for one. Ask
   until the viewport is clear, and treat "an overlay is up but its buttons are not answerable yet"
   as a moment to look again rather than as dismissed
-- A wait on a real model is bounded by the provider, not the app. The reply in
-  `SendMessage_AppearsInChat` crosses the network to a live LLM; when that cap is exceeded the
-  failure must say so, or an ordinary slow generation is read as the client failing to render
-- A wait for a real model's text needs a turn that ends in text: ask the model not to call tools.
-  A turned-down approval ends the turn with no text (`ApprovalRejection`), so a wait that rejects
-  approvals and then waits for words can only time out. When the claim is only that a turn was
-  stored, wait for the turn (`WaitForTurnKeptAsync`), not its words. When the claim is that a long
-  reply grew or streamed, stop the reply once that is seen; don't idle out the rest of it
+- The stack's model is `FakeOpenRouter`, answering by rule (`FakeModelReplies`), never a provider:
+  a test asks for what it needs in the words the rules read — "Reply with only the word X" (several
+  such messages queued or steered together are answered together), "answer only OK", the glob-tool
+  demand in `QueueE2E.ToolDemand` for a reply held open on an approval, "a very long and detailed
+  story" for one streamed slowly enough to stop — and a new need is a new rule with a unit test in
+  `FakeModelRepliesTests`, never a call to a real model. The fake is shared by every collection, so
+  a rule is a pure function of the request and never a queue
+- A wait for the model's text needs a turn that ends in text. A turned-down approval ends the turn
+  with no text (`ApprovalRejection`), so a wait that rejects approvals and then waits for words can
+  only time out. When the claim is only that a turn was stored, wait for the turn
+  (`WaitForTurnKeptAsync`), not its words. When the claim is that a long reply grew or streamed,
+  stop the reply once that is seen; don't idle out the rest of it
 - Tests in one collection run one after another, so where a new class goes matters more to the
-  run's length than what it does. A class that waits on a real model or a browser goes into a
+  run's length than what it does. A class that waits on a model turn or a browser goes into a
   collection whose chain is short, or into one of its own (for WebChat: a space name, with
   `CollectionSlices` raised). It never joins the longest chain. After adding one, compare its
   collection's span in the run's `.trx` with the others'

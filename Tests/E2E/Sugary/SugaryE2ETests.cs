@@ -21,9 +21,9 @@ namespace Tests.E2E.Sugary;
 // table another agent reads under /sugary on their turn, and the conversation is a topic their
 // WebChat shows under the sugary agent.
 //
-// This reaches a live model (the shipped sugary agent's, Gemini 3.8 Flash today, through OpenRouter) and
-// so spends money — about a cent. Run it on purpose, never as part of a routine run:
-//   dotnet test --filter "Category=E2E&FullyQualifiedName~SugaryE2ETests"
+// The estimate is the stack's fake model answering the turn's strict schema with an instance of it
+// (FakeModelReplies), so what this pins is the path — the channel, the schema read, the save, the
+// mount and the review topic — not how well a model counts carbs; the Sugary tier of the eval does that.
 [Collection(WebChatE2ECollections.Sugary)]
 [Trait("Category", "E2E")]
 public class SugaryE2ETests(WebChatE2EFixture fixture)
@@ -121,7 +121,6 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         // up, and the server answers "not connected" at once until it has — no turn is sent and
         // nothing is spent — so that answer alone is asked again, for a bounded while.
         var connectDeadline = DateTime.UtcNow.AddMinutes(1);
-        var emptyAnswers = 0;
         while (true)
         {
             HttpResponseMessage response;
@@ -153,28 +152,17 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
                 continue;
             }
 
-            // A provider that answered with nothing at all is the provider's turn, not the path
-            // under test (seen beside a second suite), so that alone is asked again — twice at most.
-            if (response.StatusCode == HttpStatusCode.BadGateway
-                && body.Contains("The model returned no answer", StringComparison.Ordinal)
-                && emptyAnswers++ < 2)
-            {
-                continue;
-            }
-
             throw new ShouldAssertException(
                 $"The estimate failed with {(int)response.StatusCode}: {body}. A 502 carrying a reason is the "
-                + "agent's turn failing (the provider refused it, or the answer was outside the schema).");
+                + "agent's turn failing (the model refused it, or the answer was outside the schema).");
         }
     }
 
-    // The estimate is a real model's answer over the network, so the provider's worst case is what
-    // bounds it, as it bounds the chat E2E's reply; when that cap is passed the failure says so, or
-    // a slow generation reads as the Sugary channel losing the answer.
+    // When the cap is passed the failure says where the turn was, or a turn the agent never finished
+    // reads as the Sugary channel losing the answer.
     private static TimeoutException ModelTimeout(Exception? inner) => new(
-        $"No estimate after {WebChatStack.SugaryTurnTimeout.TotalMinutes:0} minutes. The estimate comes from a "
-        + "real model here (the sugary agent's, through OpenRouter), so this is a slow or failed generation "
-        + "rather than the Sugary channel or the app.", inner);
+        $"No estimate after {WebChatStack.SugaryTurnTimeout.TotalMinutes:0} minutes. The stack's model is the "
+        + "fake, which answers at once, so the agent's turn never reached it or never came back.", inner);
 
     private static MultipartFormDataContent Form(byte[] photo, string words)
     {

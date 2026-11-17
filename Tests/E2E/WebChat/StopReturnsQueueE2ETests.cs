@@ -7,8 +7,8 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 namespace Tests.E2E.WebChat;
 
 // Stop ends the reply and runs nothing queued behind it: two members of a shared topic each queue a
-// message, one stops, and each finds their own words back in their own composer — against the stack's
-// real model, the reply held open on its owner's tool approval so it is still running while they queue.
+// message, one stops, and each finds their own words back in their own composer — the reply held open on
+// its owner's tool approval so it is still running while they queue.
 [Collection(WebChatE2ECollections.Queue)]
 [Trait("Category", "E2E")]
 public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)

@@ -19,22 +19,9 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
     // order, which is what xUnit would have done with all of them.
     private static readonly string[] _bootsSomething =
     [
-        // The classes that wait on a real model come first, by name: their time is the provider's
-        // and costs the machine almost nothing, but each is a serial chain of turns, and one offered
-        // its thread late ends the run — McpAgentFileSystemTests started at 77 s and finished at 124.
-        // Prefixes would not do: "McpAgent" matched fourteen classes, most of them quick unit tests,
-        // and pushed these past the threads that start at once.
-        "McpAgentFileSystemTests",
-        "McpAgentTests",
-        "McpAgentMultiFileSystemTests",
-        "McpAgentReasoningTests",
-        "MemoryExtractionResponseFormatTests",
-        "MemoryProfileSynthesisResponseFormatTests",
-        "MemoryConsolidationResponseFormatTests",
-        "SubAgentTests",
-        "ThreadSessionTests",
-        "ToolApprovalChatClientTests",
-        "OpenRouterToolCallingWithReasoningTests",
+        // The canary waits on a real provider: its time costs the machine nothing, so it is offered
+        // a thread before the work that does.
+        "OpenRouterCanaryTests",
         "WebChatE2E.",
         // Every Camoufox collection — the shared chain, the timing pair and the isolated lanes —
         // waits on a browser container before its first test, and the class pinning a fingerprint
@@ -43,7 +30,7 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "CamoufoxFingerprintPinTests",
         // Longer chains before shorter ones: there are more of these than threads, and a chain of
         // half a minute offered its thread late is what the run then ends on (EvalWebTests started
-        // at 54 s behind the short model classes below and finished at 100).
+        // at 54 s behind the short classes then listed above it and finished at 100).
         "EvalWebTests",
         "SugaryClip",
         "DashboardE2E",

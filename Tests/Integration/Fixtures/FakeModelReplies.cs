@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.Conversations;
 
 namespace Tests.Integration.Fixtures;
 
@@ -31,7 +32,12 @@ public static partial class FakeModelReplies
 
     // The reply as items in the order the model emits them: reasoning (when asked for), then text or
     // one tool call.
-    public sealed record Reply(string? Reasoning, Output Output);
+    // Its own ids, as a provider's are: the agent and the chat key a streamed message by its id, so two
+    // replies in one conversation must never share one.
+    public sealed record Reply(string? Reasoning, Output Output)
+    {
+        public string Id { get; } = Guid.NewGuid().ToString("N");
+    }
 
     public static Reply For(JsonObject request)
     {
@@ -54,7 +60,12 @@ public static partial class FakeModelReplies
             return Says(ShortReply);
         }
 
-        var instruction = TextOf(items[lastUser]);
+        // A Continue carries on whatever the message before it asked for.
+        var asking = items.Take(lastUser).LastOrDefault(item => Role(item) == "user");
+        var instruction = TextOf(items[lastUser]) is var last && last.Contains(Continuation.Instruction, StringComparison.Ordinal)
+                          && asking is not null
+            ? TextOf(asking)
+            : TextOf(items[lastUser]);
         var lastCall = items.FindLastIndex(item => Type(item) == "function_call");
         var lastSpoke = items.FindLastIndex(item => Role(item) == "assistant");
 
