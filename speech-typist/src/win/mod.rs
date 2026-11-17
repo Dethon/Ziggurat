@@ -12,17 +12,22 @@ mod hook;
 mod inject;
 mod tray;
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use windows::core::w;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::HiDpi::{
+    SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetForegroundWindow, GetMessageW,
-    KillTimer, PostQuitMessage, RegisterClassW, SetTimer, TranslateMessage, UnhookWindowsHookEx,
-    HMENU, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP,
-    WM_TIMER, WNDCLASSW,
+    KillTimer, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SetTimer,
+    TranslateMessage, UnhookWindowsHookEx, HMENU, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_COMMAND, WM_DESTROY, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use crate::config::Config;
@@ -40,6 +45,10 @@ const TIMER_ID: usize = 1;
 /// Posted to the loop when the core has something for the tray, so a notification does not wait
 /// out the tick.
 const WM_UI: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+
+/// The message Explorer broadcasts when it has recreated the taskbar, and with it forgotten every
+/// tray icon. Registered by name, so its number is only known at run time.
+static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 /// What the core asked the tray to do. The tray icon belongs to the thread that created it, so
 /// these cross by queue rather than by call.
@@ -151,6 +160,13 @@ thread_local! {
 }
 
 pub fn main() -> anyhow::Result<()> {
+    // Before any window or icon exists: a process that is not DPI-aware is told the tray icon is
+    // 16 pixels at any scale and has whatever it draws stretched, which is what blurred it.
+    // Failing to set it only costs sharpness, so it is not a reason to stop.
+    unsafe {
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
+
     let (beside_exe, in_profile) = crate::config::locations();
     let loaded = crate::config::load(&beside_exe, &in_profile)?;
     let config = loaded.config.clone();
@@ -233,6 +249,29 @@ fn run_message_loop(
     }?;
     *outbox.hwnd.lock().unwrap() = hwnd.0 as isize;
 
+    // A message-only window receives no broadcasts, and "the taskbar was recreated" is only ever
+    // broadcast. So a second window of the same class exists to hear it: top-level so the
+    // broadcast reaches it, but never shown, a tool window so it has no taskbar button, and
+    // no-activate so it cannot take the focus that injection depends on. It is never touched
+    // again; its messages arrive at the same window procedure.
+    TASKBAR_CREATED.store(unsafe { RegisterWindowMessageW(w!("TaskbarCreated")) }, Ordering::Relaxed);
+    let _listener = unsafe {
+        CreateWindowExW(
+            WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            w!("SpeechTypistMessageWindow"),
+            w!("speech typist"),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            HWND::default(),
+            HMENU::default(),
+            HINSTANCE(instance.0),
+            None,
+        )
+    }?;
+
     let tray = tray::Tray::new(hwnd)?;
     let ui = Ui {
         tray,
@@ -293,6 +332,10 @@ extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam:
         }
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
+            LRESULT(0)
+        }
+        _ if message != 0 && message == TASKBAR_CREATED.load(Ordering::Relaxed) => {
+            with_ui(|ui| ui.tray.restore());
             LRESULT(0)
         }
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },

@@ -52,7 +52,9 @@ settings travel if you carry the executable on a stick.
 
 ## The tray
 
-Four states: idle, recording, transcribing, and an error ring when Lemonade is not answering. The
+A microphone in four states: grey when idle, red while recording, amber while transcribing, and
+struck through when Lemonade is not answering. If Explorer restarts, the icon comes back on its
+own. The
 menu holds per-binding learn mode, the microphone list, a **Latched dictation** tick (press to
 start and press again to stop, instead of holding), a **Start with Windows** toggle (off until you
 ask for it, and turning it off removes exactly what turning it on added), and quit.
