@@ -239,6 +239,10 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Func<Task>? ReplyGate { get; init; }
 
+    // Holds a reply of the test's choosing before the channel takes it: the agent starts a conversation's
+    // next turn only once its last reply was answered.
+    public Func<SendReplyParams, Task>? HoldReply { get; init; }
+
     public Action<SendReplyParams>? OnReply { get; init; }
 
     // What the channel answers each reply with; nothing handed back unless a test says.
@@ -295,6 +299,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
         if (ReplyGate is not null)
         {
             await ReplyGate();
+        }
+
+        if (HoldReply is not null)
+        {
+            await HoldReply(reply);
         }
 
         lock (_sentReplies)

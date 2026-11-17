@@ -142,6 +142,11 @@ public sealed class RedisChatMessageStore(
     // decide which of the request's messages are new.
     protected override ValueTask InvokedCoreAsync(InvokedContext context, CancellationToken cancellationToken = default)
     {
+        if (context.Session is not null && _turns.TryGetValue(context.Session, out var settled))
+        {
+            settled.Settle();
+        }
+
         // A turn the person stopped was said as far as it got: kept, marked interrupted, and read.
         if (context.InvokeException is OperationCanceledException)
         {
@@ -249,6 +254,37 @@ public sealed class RedisChatMessageStore(
         {
             _lock.Release();
             await store.ClearTurnInFlightAsync(redisKey);
+        }
+    }
+
+    // Messages no run took (the conversation group's: stopped before their turn started, or a turn that
+    // could not be set up), at the end of the line. Failed, each is marked so, and what the person was told
+    // follows, as a failed turn is kept, so the retry of its last message takes its place.
+    public async Task KeepUnansweredAsync(AgentSession session, IReadOnlyList<ChatMessage> messages, string? failedWith)
+    {
+        if (messages.Count == 0)
+        {
+            return;
+        }
+
+        var redisKey = ResolveRedisKey(session);
+        var told = failedWith is null ? null : new ChatMessage(ChatRole.Assistant, failedWith);
+        told?.SetTimestamp(DateTimeOffset.UtcNow);
+        told?.MarkFailedTurn();
+        ChatMessage[] kept = told is null ? [.. messages] : [.. messages.Select(Failed), told];
+        foreach (var message in kept.Where(m => m.GetEntryId() is null))
+        {
+            message.SetEntryId(Guid.NewGuid().ToString("N"));
+        }
+
+        await _lock.WaitAsync();
+        try
+        {
+            await store.AppendMessagesAsync(redisKey, kept);
+        }
+        finally
+        {
+            _lock.Release();
         }
     }
 

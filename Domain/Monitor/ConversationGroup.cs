@@ -112,6 +112,15 @@ internal sealed class ConversationGroup(
     // each of their keys: whichever of them is taken first runs as one turn with the rest.
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _steeredTogether = new();
 
+    // The keys of the steers the pump admitted, in the order they came, and of those a stop did not hand
+    // back. Both the pump's alone; the second is read once the pump is done, as the group ends. A channel
+    // that names what its stop handed back (ReturnedTurnKeys, even none) hands back every steer it has not
+    // drawn, so one it sent before that stop and does not name is drawn: its message is on the person's
+    // page, and is kept as stopped rather than dropped. A channel naming nothing (one from before) keeps
+    // the old rule: whatever waited is dropped.
+    private readonly List<string> _admittedSteers = [];
+    private readonly HashSet<string> _drawnAtStop = [];
+
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
         IReadOnlyList<DeliveryTarget> Targets,
@@ -229,6 +238,13 @@ internal sealed class ConversationGroup(
         // ends the group instead, exactly like a turn that fails to set up.
         var queue = pending.Reader.ReadAllAsync(_turnCt).IgnoreCancellation(_turnCt).GetAsyncEnumerator();
 
+        // Turns never run because the group ended first — a stop while their turn was set up, or before it
+        // was taken — kept as stopped at the end when a stop drew them, else dropped; and turns whose run a
+        // stop ended before it reached the history, kept the same way when drawn, and otherwise left as the
+        // run left them.
+        List<AdmittedTurn> unstarted = [];
+        List<AdmittedTurn> unsettled = [];
+
         try
         {
             while (true)
@@ -263,7 +279,7 @@ internal sealed class ConversationGroup(
                 // against the torn-down group. It is dropped instead, and acknowledged below.
                 if (_turnCt.IsCancellationRequested)
                 {
-                    LogDroppedTurn(logger, x.Message);
+                    unstarted.Add(x);
                     break;
                 }
 
@@ -280,7 +296,7 @@ internal sealed class ConversationGroup(
                 var together = await SteeredWithAsync(x, pending.Reader);
                 if (_turnCt.IsCancellationRequested)
                 {
-                    together.ForEach(t => LogDroppedTurn(logger, t.Message));
+                    unstarted.AddRange(together);
                     break;
                 }
 
@@ -301,7 +317,7 @@ internal sealed class ConversationGroup(
                     // timeout would break out of here with the group never completed, leaving
                     // every later message queued into a channel nobody reads.
                     await ObserveAbandonedWarmupAsync();
-                    LogDroppedTurns(together.Skip(1));
+                    unstarted.AddRange(together);
                     break;
                 }
                 catch (HouseholdWithoutKeyException ex)
@@ -351,6 +367,12 @@ internal sealed class ConversationGroup(
                 }
 
                 _running = null;
+
+                // Stopped before its run reached the history, which then decided nothing about it.
+                if (_turnCt.IsCancellationRequested && !steering.IsSettled)
+                {
+                    unsettled.AddRange(together);
+                }
             }
         }
         finally
@@ -369,7 +391,7 @@ internal sealed class ConversationGroup(
             {
                 if (!dropped.Refused)
                 {
-                    LogDroppedTurn(logger, dropped.Message);
+                    unstarted.Add(dropped);
                 }
             }
 
@@ -377,8 +399,46 @@ internal sealed class ConversationGroup(
             {
                 LogDroppedTurn(logger, message);
             }
+
+            await KeepDrawnAsync(unstarted, unsettled);
         }
     }
+
+    // What a stop drew and the group never ran is the person's, on their page: kept as a stopped turn with no
+    // answer, in the order it came, and never run, since nothing may run after the stop. Anything else that
+    // waited is dropped by the group's end, as it always was.
+    private async Task KeepDrawnAsync(IReadOnlyList<AdmittedTurn> unstarted, IReadOnlyList<AdmittedTurn> unsettled)
+    {
+        var drawn = unsettled.Concat(unstarted)
+            .Where(t => t.Message.TurnKey is { } key && _drawnAtStop.Contains(key) && !IsReturned(t))
+            .ToList();
+        unstarted.Except(drawn).ToList().ForEach(t => LogDroppedTurn(logger, t.Message));
+        if (drawn.Count == 0)
+        {
+            return;
+        }
+
+        if (_state is not { } state)
+        {
+            LogDroppedTurns(drawn);
+            return;
+        }
+
+        try
+        {
+            await state.Agent.KeepUnansweredAsync(state.Thread, [.. drawn.Select(PersonsMessageOf)], null, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Keeping {Count} stopped message(s) failed for conversation {ConversationId} and agent {AgentId}",
+                drawn.Count, agentKey.ConversationId, agentKey.AgentId);
+        }
+    }
+
+    // A message of a turn nobody ran, as the turn would have built it, without what only a run needs.
+    private static ChatMessage PersonsMessageOf(AdmittedTurn turn) =>
+        PersonsMessage(turn.Message, [], turn.Identity, HouseholdChannels.HouseholdOf(turn.Channel).HouseholdId);
 
     // A setup that failed ends the group, so the next message opens a fresh one.
     private async Task EndFailedSetupAsync()
@@ -526,6 +586,11 @@ internal sealed class ConversationGroup(
                             _returnedTurnKeys[key] = 0;
                         }
 
+                        if (x.Message.ReturnedTurnKeys is { } returned)
+                        {
+                            _admittedSteers.Except(returned).ToList().ForEach(key => _drawnAtStop.Add(key));
+                        }
+
                         CancelOwnContext();
                         break;
                     default:
@@ -541,6 +606,10 @@ internal sealed class ConversationGroup(
                             if (admitted.Message.Steer)
                             {
                                 SteerRunningTurn(admitted);
+                                if (admitted.Message.TurnKey is { } steerKey)
+                                {
+                                    _admittedSteers.Add(steerKey);
+                                }
                             }
 
                             writer.TryWrite(admitted);
@@ -1215,8 +1284,10 @@ internal sealed class ConversationGroup(
             : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
     }
 
-    private async Task<(ChatMessage Message, MemoryExtraction? Extraction)> BuildUserMessageAsync(
-        ChannelMessage message, Turn turn, GroupState state, bool preload)
+    // What the person said, as the conversation keeps it: everything but what only a run asks for (the
+    // skill preload, recall).
+    private static ChatMessage PersonsMessage(
+        ChannelMessage message, IReadOnlyList<DeliveryTarget> targets, IdentityClaims? identity, string? channelHouseholdId)
     {
         var userMessage = new ChatMessage(ChatRole.User, message.Content);
         userMessage.SetSenderId(message.Sender);
@@ -1245,12 +1316,19 @@ internal sealed class ConversationGroup(
         userMessage.SetAttachmentChannelId(
             message.Attachments is { Count: > 0 } ? message.ChannelId : null);
         userMessage.SetAttachmentHouseholdId(
-            message.Attachments is { Count: > 0 } ? turn.ChannelHouseholdId : null);
+            message.Attachments is { Count: > 0 } ? channelHouseholdId : null);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         // Who the turn acts for rides on its context, which every call the turn makes carries: the
         // agent signs each one as this identity, a worker's included, for as long as the turn runs.
         userMessage.SetConversationContext(
-            DeliveryTargetResolver.BuildConversationContext(message, turn.Targets) with { Identity = turn.Identity });
+            DeliveryTargetResolver.BuildConversationContext(message, targets) with { Identity = identity });
+        return userMessage;
+    }
+
+    private async Task<(ChatMessage Message, MemoryExtraction? Extraction)> BuildUserMessageAsync(
+        ChannelMessage message, Turn turn, GroupState state, bool preload)
+    {
+        var userMessage = PersonsMessage(message, turn.Targets, turn.Identity, turn.ChannelHouseholdId);
         if (skillPreloader is not null && preload)
         {
             // Started here and awaited by nobody here: the judgment runs while recall makes its

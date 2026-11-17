@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
+using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Shouldly;
 
@@ -313,6 +316,124 @@ public class ChatMonitorSteeringTests
 
         model.Requests.Count.ShouldBe(1);
         run.StoredLine().ShouldBe(["user: look it up", "assistant: call look_up#call-1", "tool: result call-1 = 42"]);
+    }
+
+    // Every steer the hub drew where the cut turn ended ends exactly once, and every message it drew is in the
+    // stored line, whichever way the agent leaves the step between that end and the steers' turn (ticket 14).
+    // A stop ends their keys at the hub, which hands none back once it drew them: the messages are kept as a
+    // stopped turn with no answer, and nothing runs after the stop.
+    public enum GatheringExit
+    {
+        // Two steers drawn together, the stop landing while their turn is being set up.
+        StopWhileTheyGather,
+
+        // One steer, the stop landing while its turn is being set up.
+        StopBeforeALoneSteersTurn,
+
+        // Two steers, the stop landing once their turn was handed to the agent but before its run reached the
+        // history, which then decides nothing about it.
+        StopBeforeTheirRunReachesTheHistory,
+
+        // The steer reached the agent before the stop, which the group heard before it took the steer.
+        ReachesTheTurnAfterTheStop
+    }
+
+    [Theory]
+    [InlineData(GatheringExit.StopWhileTheyGather)]
+    [InlineData(GatheringExit.StopBeforeALoneSteersTurn)]
+    [InlineData(GatheringExit.StopBeforeTheirRunReachesTheHistory)]
+    [InlineData(GatheringExit.ReachesTheTurnAfterTheStop)]
+    public async Task EveryDrawnSteer_EndsOnce_AndIsInTheStoredLine_HoweverTheGatheringIsLeft(GatheringExit exit)
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        var recall = new HeldRecall();
+        var runs = new HeldRecall();
+        var cutEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cutEndHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var two = exit is GatheringExit.StopWhileTheyGather or GatheringExit.StopBeforeTheirRunReachesTheHistory;
+        string[] drawn = two ? ["steer-1", "steer-2"] : ["steer-1"];
+        await using var run = new ToolLoopRun(model, [lookUp], recall: recall, beforeRun: runs.BeforeRunAsync,
+            receipts: SteeredTogetherAtTheCut(drawn),
+            holdReply: async reply =>
+            {
+                if (exit == GatheringExit.ReachesTheTurnAfterTheStop
+                    && reply is { ContentType: ReplyContentType.StreamComplete, IsComplete: true }
+                    && ToolLoopRun.IsTheFirstTurns(reply))
+                {
+                    cutEndHeld.TrySetResult();
+                    await cutEnd.Task.WaitAsync(TimeSpan.FromSeconds(60));
+                }
+            });
+        var setUp = exit == GatheringExit.StopBeforeTheirRunReachesTheHistory
+            ? runs.Hold("and in red")
+            : recall.Hold(two ? "and in red" : "no, the other one");
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        if (two)
+        {
+            run.Send("and in red", steer: true, turnKey: "steer-2");
+        }
+
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        if (exit == GatheringExit.ReachesTheTurnAfterTheStop)
+        {
+            await cutEndHeld.Task.WaitAsync(TimeSpan.FromSeconds(60));
+            run.Stop(returned: []);
+            await run.CancelHeardAsync();
+            cutEnd.SetResult();
+        }
+        else
+        {
+            await setUp;
+            run.Stop(returned: []);
+        }
+
+        await run.FinishAsync();
+
+        string[] said = two ? ["user: no, the other one", "user: and in red"] : ["user: no, the other one"];
+        run.StoredLine().Skip(3).ShouldBe(said);
+        run.Line().Skip(3).ShouldAllBe(m => !m.IsFailedTurn() && !m.IsInterrupted());
+        model.Requests.Count.ShouldBe(1);
+        // The stop ended every drawn key at the hub, which takes nothing after it; whatever the cancelled
+        // turn still sends ends each key once at most.
+        drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) <= 1);
+    }
+
+    // Asked of every message as its turn is set up, as memory recall is, and of every run before it reaches the
+    // agent: a message the test names holds its turn there until the turn is cancelled.
+    private sealed class HeldRecall : IMemoryRecallHook
+    {
+        private readonly ConcurrentDictionary<string, TaskCompletionSource> _held = new();
+
+        public Task Hold(string text) =>
+            _held.GetOrAdd(text, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
+                .Task.WaitAsync(TimeSpan.FromSeconds(60));
+
+        public async Task<MemoryExtraction?> EnrichAsync(
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread,
+            CancellationToken ct)
+        {
+            if (_held.TryGetValue(message.Text, out var held))
+            {
+                held.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+
+            return null;
+        }
+
+        public async Task BeforeRunAsync(IReadOnlyList<ChatMessage> messages, CancellationToken ct)
+        {
+            if (messages.Select(m => _held.GetValueOrDefault(m.Text)).FirstOrDefault(h => h is not null) is { } held)
+            {
+                held.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+        }
     }
 
     // What the hub answers the cut turn's end with, as it draws the steers waiting there.

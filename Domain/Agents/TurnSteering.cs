@@ -24,6 +24,15 @@ public sealed class TurnSteering(string? turnKey = null, Func<string, bool>? isR
     // would give them the steer twice.
     public bool IsReturned => turnKey is not null && isReturned?.Invoke(turnKey) == true;
 
+    private int _settled;
+
+    // The history has decided what the turn keeps — stored it, kept it as stopped, or kept nothing of a
+    // turn handed back. A turn stopped before its run reached the history never is, and the conversation
+    // group then keeps its messages itself when the channel drew them.
+    public bool IsSettled => Volatile.Read(ref _settled) == 1;
+
+    public void Settle() => Interlocked.Exchange(ref _settled, 1);
+
     public static TurnSteering? Of(ChatOptions? options) =>
         options?.AdditionalProperties?.GetValueOrDefault(OptionsKey) as TurnSteering;
 }

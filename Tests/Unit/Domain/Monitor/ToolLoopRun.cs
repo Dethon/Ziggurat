@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -11,6 +12,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -33,27 +35,32 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     public static readonly Account Person = new("fedcba9876543210fedcba9876543210", "0123456789abcdef0123456789abcdef");
 
     private readonly InMemoryLines _lines = new();
+    private readonly ChatThreadResolver _threads;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _monitor;
 
     // Every tool offered is whitelisted but those `refused`, which the channel turns down when asked —
     // the hook through which the approval client already ends a loop (FunctionInvocationContext.Terminate).
     // `sequential` runs a batch of calls one after another, as the library does with concurrency off.
-    // `receipts` is what the channel answers each reply with, as a hub names the turn keys a stop handed back.
-    // A `worker` is offered to the agent as the run_subagent tool, and runs as production spawns one: an
-    // agent of its own over its own approval client, sent the parent's context.
+    // `receipts` is what the channel answers each reply with, as a hub names the turn keys a stop handed back,
+    // and `holdReply` holds a reply before the channel takes it. A `worker` is offered to the agent as the
+    // run_subagent tool, and runs as production spawns one: an agent of its own over its own approval client,
+    // sent the parent's context. `recall` is asked of every message as the turn is set up, as memory is.
     public ToolLoopRun(
         ScriptedModel model, IReadOnlyList<LocalTool> tools, IReadOnlyList<LocalTool>? refused = null,
-        bool sequential = false, Worker? worker = null, Func<SendReplyParams, ReplyReceipt>? receipts = null)
+        bool sequential = false, Worker? worker = null, Func<SendReplyParams, ReplyReceipt>? receipts = null,
+        IMemoryRecallHook? recall = null, Func<SendReplyParams, Task>? holdReply = null,
+        Func<IReadOnlyList<ChatMessage>, CancellationToken, Task>? beforeRun = null)
     {
         Channel = new FakeChannelConnection
         {
             ChannelId = ChatChannel, ApprovalAnswer = ToolApprovalResult.Rejected, ConversationIdToReturn = ConversationId,
-            Receipts = receipts
+            Receipts = receipts, HoldReply = holdReply
         };
-        var agents = new ToolLoopAgents(model, tools, refused ?? [], sequential, worker, _lines);
+        var agents = new ToolLoopAgents(model, tools, refused ?? [], sequential, worker, _lines, beforeRun);
+        _threads = new ChatThreadResolver(_lines.Store);
         var monitor = new ChatMonitor(
-            [Channel], agents, new ChatThreadResolver(_lines.Store), NoOpMetricsPublisher.Instance, null,
+            [Channel], agents, _threads, NoOpMetricsPublisher.Instance, recall,
             NullLogger<ChatMonitor>.Instance, MonitorTestMocks.Assertions, delegations: TestDelegations.Verifier());
         _monitor = Task.Run(() => monitor.Monitor(_stop.Token));
     }
@@ -144,6 +151,16 @@ internal sealed class ToolLoopRun : IAsyncDisposable
     }
 
     private const string ProbePrefix = "probe-";
+
+    // The conversation's group heard a stop: its context is let go as the cancel is taken, before anything
+    // after it.
+    public Task CancelHeardAsync() => Eventually.Until(
+        () => !_threads.AgentKeys.Contains(new AgentKey(ConversationId, AgentId)), "the stop to reach the group");
+
+    // A reply under none of the keys a test gives its messages: the turn the first message started.
+    public static bool IsTheFirstTurns(SendReplyParams reply) =>
+        reply.TurnKey is { } key && !key.StartsWith(ProbePrefix, StringComparison.Ordinal)
+                                 && !key.StartsWith("steer-", StringComparison.Ordinal);
     private int _probes;
 
     // Ends the channel's stream; the monitor returns once every turn it holds has run to its end.
@@ -186,7 +203,8 @@ internal sealed class ToolLoopRun : IAsyncDisposable
 
     private sealed class ToolLoopAgents(
         IChatClient model, IReadOnlyList<LocalTool> tools, IReadOnlyList<LocalTool> refused, bool sequential,
-        Worker? worker, InMemoryLines lines) : IAgentFactory
+        Worker? worker, InMemoryLines lines, Func<IReadOnlyList<ChatMessage>, CancellationToken, Task>? beforeRun)
+        : IAgentFactory
     {
         public Task<DisposableAgent> CreateAsync(
             AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler,
@@ -208,10 +226,11 @@ internal sealed class ToolLoopRun : IAsyncDisposable
             {
                 AllowConcurrentInvocation = !sequential
             };
-            return Task.FromResult<DisposableAgent>(new McpAgent(
+            var agent = new McpAgent(
                 TestAgentSpec.Named(agentKey.ConversationId) with { AgentId = agentId ?? AgentId },
                 loop, lines.Store, NoOpMetricsPublisher.Instance, TimeProvider.System,
-                [.. tools.Concat(refused).Select(t => t.Tool), .. workers], []));
+                [.. tools.Concat(refused).Select(t => t.Tool), .. workers], []);
+            return Task.FromResult<DisposableAgent>(beforeRun is null ? agent : new HeldRunAgent(agent, beforeRun));
         }
 
         // As production builds a worker: its own approval client over its own model, keeping no history.
@@ -228,6 +247,57 @@ internal sealed class ToolLoopRun : IAsyncDisposable
                 TestAgentSpec.Named(ConversationId) with { AgentId = definition.Id, KeepsHistory = false },
                 loop, new NullThreadStateStore(), NoOpMetricsPublisher.Instance, TimeProvider.System,
                 [.. own.Tools.Select(t => t.Tool)], []);
+        }
+    }
+
+    // The agent the deployment builds, with a wait in front of each run: the time between the conversation
+    // group handing a turn over and the run reaching its history, where a stop leaves the history nothing
+    // to decide.
+    private sealed class HeldRunAgent(McpAgent inner, Func<IReadOnlyList<ChatMessage>, CancellationToken, Task> beforeRun)
+        : DisposableAgent
+    {
+        public override ValueTask DisposeAsync() => inner.DisposeAsync();
+
+        public override ValueTask DisposeThreadSessionAsync(AgentSession thread) => inner.DisposeThreadSessionAsync(thread);
+
+        public override Task WarmupSessionAsync(AgentSession thread, CancellationToken ct = default) =>
+            inner.WarmupSessionAsync(thread, ct);
+
+        public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
+            inner.GetHistoryAsync(thread, ct);
+
+        public override Task KeepUnansweredAsync(
+            AgentSession thread, IReadOnlyList<ChatMessage> messages, string? failedWith, CancellationToken ct) =>
+            inner.KeepUnansweredAsync(thread, messages, failedWith, ct);
+
+        protected override ValueTask<AgentSession> CreateSessionCoreAsync(CancellationToken cancellationToken = default) =>
+            inner.CreateSessionAsync(cancellationToken);
+
+        protected override ValueTask<JsonElement> SerializeSessionCoreAsync(
+            AgentSession session, JsonSerializerOptions? jsonSerializerOptions = null,
+            CancellationToken cancellationToken = default) =>
+            inner.SerializeSessionAsync(session, jsonSerializerOptions, cancellationToken);
+
+        protected override ValueTask<AgentSession> DeserializeSessionCoreAsync(
+            JsonElement serializedState, JsonSerializerOptions? jsonSerializerOptions = null,
+            CancellationToken cancellationToken = default) =>
+            inner.DeserializeSessionAsync(serializedState, jsonSerializerOptions, cancellationToken);
+
+        protected override Task<AgentResponse> RunCoreAsync(
+            IEnumerable<ChatMessage> messages, AgentSession? session = null, AgentRunOptions? options = null,
+            CancellationToken cancellationToken = default) =>
+            inner.RunAsync(messages, session, options, cancellationToken);
+
+        protected override async IAsyncEnumerable<AgentResponseUpdate> RunCoreStreamingAsync(
+            IEnumerable<ChatMessage> messages, AgentSession? session = null, AgentRunOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<ChatMessage> asked = [.. messages];
+            await beforeRun(asked, cancellationToken);
+            await foreach (var update in inner.RunStreamingAsync(asked, session, options, cancellationToken))
+            {
+                yield return update;
+            }
         }
     }
 

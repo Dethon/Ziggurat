@@ -37,6 +37,13 @@ public abstract class DisposableAgent : AIAgent, IAsyncDisposable
     public virtual Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ChatMessage>>([]);
 
+    // A person's messages no run took, kept at the end of the conversation: stopped before their turn
+    // started (no answer), or, with `failedWith`, a turn that could not be set up — each marked failed,
+    // then what the person was told, as a failed turn is kept. Nothing for an agent that keeps no history.
+    public virtual Task KeepUnansweredAsync(
+        AgentSession thread, IReadOnlyList<ChatMessage> messages, string? failedWith, CancellationToken ct) =>
+        Task.CompletedTask;
+
     // Who pays for the model calls made for this agent's turns — the household it was built for and
     // its key — so what is asked beside a turn (the skill preload) is paid the way the turn is.
     public virtual ModelPayer Payer => ModelPayer.Deployment;

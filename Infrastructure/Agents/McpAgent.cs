@@ -172,6 +172,10 @@ public sealed class McpAgent : DisposableAgent
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         _history.ReadAsync(thread);
 
+    public override Task KeepUnansweredAsync(
+        AgentSession thread, IReadOnlyList<ChatMessage> messages, string? failedWith, CancellationToken ct) =>
+        _history.KeepUnansweredAsync(thread, messages, failedWith);
+
     public override async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
