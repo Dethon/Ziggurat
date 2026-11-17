@@ -208,15 +208,15 @@ public class GroupByStreamingTests
         source.Writer.TryWrite("marker");
         await markerRouted.Task.WaitAsync(TimeSpan.FromSeconds(60));
         letGo.SetResult();
-        await Eventually.Until(() => Snapshot() is [_, [_, _]], "the fresh group to get them");
+        await Eventually.Until(() => snapshot() is [_, [_, _]], "the fresh group to get them");
         source.Writer.TryWrite("later");
         source.Writer.Complete();
         await routing.WaitAsync(TimeSpan.FromSeconds(60));
         await Task.WhenAll(reading).WaitAsync(TimeSpan.FromSeconds(60));
 
-        Snapshot().ShouldBe([["stop"], ["after one", "after two", "later"]]);
+        snapshot().ShouldBe([["stop"], ["after one", "after two", "later"]]);
 
-        List<List<string>> Snapshot()
+        List<List<string>> snapshot()
         {
             lock (groups)
             {

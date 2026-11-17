@@ -393,7 +393,7 @@ public sealed class QueuedSendTests
         transport.Answer("GetStreamState", new StreamState(
             true, [new ChatStreamMessage { Content = "thinking", MessageId = "m-1" }], "m-1", "first", "marta"));
         transport.Answer("ResumeStreamFrom", _ => reply.Chunks());
-        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second", [Photo]));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second", [_photo]));
         await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
         Shown(client).ShouldBe(["user: second"]);
         if (resumeHoldsTheTopic)
@@ -429,7 +429,7 @@ public sealed class QueuedSendTests
         Shown(client).Last().ShouldBe("assistant: thinking and done");
         client.Toasts.State.Toasts.ShouldContain(t => t.Message.Contains("signed out"));
         global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("second");
-        client.Composer.State.For("topic-1").ShouldHaveSingleItem().Reference.ShouldBe(Photo);
+        client.Composer.State.For("topic-1").ShouldHaveSingleItem().Reference.ShouldBe(_photo);
     }
 
     // A send the page drew as sent that the hub then hands back, a stop having landed as it was queued or
@@ -475,7 +475,7 @@ public sealed class QueuedSendTests
         var transport = await client.ConnectAsync();
         SeedTopic(client,
         [
-            new ChatHistoryMessage("u1", "user", "second", "fran", DateTimeOffset.UnixEpoch, Attachments: [Photo]),
+            new ChatHistoryMessage("u1", "user", "second", "fran", DateTimeOffset.UnixEpoch, Attachments: [_photo]),
             new ChatHistoryMessage(null, "assistant", "This device was signed out", null, DateTimeOffset.UnixEpoch, IsError: true),
             new ChatHistoryMessage("u2", "user", "first", "marta", DateTimeOffset.UnixEpoch),
             new ChatHistoryMessage("a2", "assistant", "done", null, DateTimeOffset.UnixEpoch)
@@ -490,14 +490,14 @@ public sealed class QueuedSendTests
         await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
         var sent = transport.Calls.Single(call => call.MethodName == "SendMessage");
         sent.Arguments[1].ShouldBe("second");
-        ((IEnumerable<AttachmentReference>)sent.Arguments[4]!).ShouldBe([Photo]);
+        ((IEnumerable<AttachmentReference>)sent.Arguments[4]!).ShouldBe([_photo]);
         Shown(client).ShouldBe([
             "user: second", "assistant: This device was signed out", "user: first", "assistant: done", "user: second"
         ]);
         wire.Release();
     }
 
-    private static readonly AttachmentReference Photo = new()
+    private static readonly AttachmentReference _photo = new()
     {
         Id = "7-42/abc",
         FileName = "photo.png",
