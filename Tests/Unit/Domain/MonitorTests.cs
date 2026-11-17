@@ -63,6 +63,16 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public int HistoryReads;
 
+    // What the conversation group kept of messages no run took, each keep its messages' texts.
+    public ConcurrentQueue<IReadOnlyList<string>> Kept { get; } = new();
+
+    public override Task KeepUnansweredAsync(
+        AgentSession thread, IReadOnlyList<ChatMessage> messages, string? failedWith, CancellationToken ct)
+    {
+        Kept.Enqueue([.. messages.Select(m => m.Text)]);
+        return Task.CompletedTask;
+    }
+
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct)
     {
         Interlocked.Increment(ref HistoryReads);

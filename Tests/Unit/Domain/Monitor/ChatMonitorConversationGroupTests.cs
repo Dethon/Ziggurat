@@ -419,6 +419,49 @@ public class ChatMonitorConversationGroupTests
             It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Once);
     }
 
+    // A person's first message, the one that opened their stream, with the channel's stop right behind it:
+    // the channel drew it (and names what it handed back, here nothing), so it is on their page, and it is
+    // kept as a stopped turn with no answer even when the group heard the stop before it took the message,
+    // and so had built nothing yet (as here: the pump has both admitted before the loop reads; were the loop
+    // first, the turn's setup would be stopped instead, and kept the same way). Nothing runs. A channel naming
+    // nothing (one from before) drops it as anything behind a cancel always was.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Group_FirstMessageWithAStopRightBehindIt_IsKeptUnanswered_WhenTheCancelNamesWhatItHandedBack(
+        bool namesWhatItHandedBack)
+    {
+        var channel = new FakeChannelConnection();
+        var agent = MonitorTestMocks.CreateAgent();
+        await using var group = new ConversationGroup(
+            new AgentKey("conv-1"),
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(agent),
+            new DeliveryTargetResolver([channel], new Mock<ILogger<ChatMonitor>>().Object),
+            new ChatThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            skillPreloader: null,
+            TestAssertions.Verifier(),
+            delegations: null,
+            standing: null,
+            households: null,
+            new Mock<ILogger<ChatMonitor>>().Object);
+        var grouping = new FakeGrouping(new AgentKey("conv-1"));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "hola")));
+        grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel") with
+        {
+            ReturnedTurnKeys = namesWhatItHandedBack ? [] : null
+        }));
+        grouping.Complete();
+
+        await foreach (var _ in group.RunAsync(grouping, grouping.Complete, CancellationToken.None))
+        { }
+
+        agent.Kept.ShouldBe(namesWhatItHandedBack ? [["hola"]] : []);
+        agent.ReceivedMessages.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Group_ThreadResolverDisposedAtShutdown_LogsAndCompletesTheGroup()
     {

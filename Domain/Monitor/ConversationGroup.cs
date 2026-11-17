@@ -94,6 +94,9 @@ internal sealed class ConversationGroup(
         // A steer refused as it arrived, queued only to say it will not come: a turn gathering the steers
         // the channel drew together stops waiting for it. Never run.
         public bool Refused { get; init; }
+
+        // Where it came in the order the pump admitted the group's turns.
+        public long Order { get; init; }
     }
 
     // The turn running now and its steering handle, read by the message pump as a steer arrives. Set
@@ -112,14 +115,16 @@ internal sealed class ConversationGroup(
     // each of their keys: whichever of them is taken first runs as one turn with the rest.
     private readonly ConcurrentDictionary<string, IReadOnlyList<string>> _steeredTogether = new();
 
-    // The keys of the steers the pump admitted, in the order they came, and of those a stop did not hand
-    // back. Both the pump's alone; the second is read once the pump is done, as the group ends. A channel
-    // that names what its stop handed back (ReturnedTurnKeys, even none) hands back every steer it has not
-    // drawn, so one it sent before that stop and does not name is drawn: its message is on the person's
-    // page, and is kept as stopped rather than dropped. A channel naming nothing (one from before) keeps
-    // the old rule: whatever waited is dropped.
-    private readonly List<string> _admittedSteers = [];
-    private readonly HashSet<string> _drawnAtStop = [];
+    // How many turns the pump admitted, and, once a stop's cancel named what it handed back (ReturnedTurnKeys,
+    // even none), how many it had admitted by then and on which channel. The pump's alone; read once the pump
+    // is done, as the group ends. Such a channel hands back every message it has not drawn and sends nothing
+    // after its cancel but a new stream's, so a person's message it sent before that cancel and does not
+    // name is drawn — a steer, the send that opened the stream, a queued head written as it was sent: on the
+    // person's page, and kept as stopped rather than dropped. A channel naming nothing (one from before)
+    // keeps the old rule: whatever waited is dropped.
+    private long _admitted;
+    private long? _drawnBefore;
+    private string? _stoppedOn;
 
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
@@ -410,16 +415,15 @@ internal sealed class ConversationGroup(
     // waited is dropped by the group's end, as it always was.
     private async Task KeepDrawnAsync(IReadOnlyList<AdmittedTurn> unstarted, IReadOnlyList<AdmittedTurn> unsettled)
     {
-        var drawn = unsettled.Concat(unstarted)
-            .Where(t => t.Message.TurnKey is { } key && _drawnAtStop.Contains(key) && !IsReturned(t))
-            .ToList();
+        var drawn = unsettled.Concat(unstarted).Where(DrawnAtStop).ToList();
         unstarted.Except(drawn).ToList().ForEach(t => LogDroppedTurn(logger, t.Message));
         if (drawn.Count == 0)
         {
             return;
         }
 
-        if (_state is not { } state)
+        // The group may have heard the stop before it took its first message, and so built nothing yet.
+        if ((_state ?? await EstablishedToKeepAsync(drawn[0])) is not { } state)
         {
             LogDroppedTurns(drawn);
             return;
@@ -434,6 +438,32 @@ internal sealed class ConversationGroup(
             logger.LogWarning(ex,
                 "Keeping {Count} stopped message(s) failed for conversation {ConversationId} and agent {AgentId}",
                 drawn.Count, agentKey.ConversationId, agentKey.AgentId);
+        }
+    }
+
+    // A person's own message the stop's channel sent before its cancel and did not hand back: drawn on their
+    // page. Never a fire, which is nobody's message there, nor Continue's ask, which is never drawn, nor a
+    // reroll's message, which the conversation holds already; and never another channel's, which that cancel
+    // says nothing about.
+    private bool DrawnAtStop(AdmittedTurn turn) =>
+        _drawnBefore is { } before && turn.Order < before && turn.Channel.ChannelId == _stoppedOn
+        && turn.Message is { Origin: null, Continuation: false, RerunOf: null } && !IsReturned(turn);
+
+    // The group built as its first turn would have built it, for nothing but to keep what that turn said; the
+    // warmup it starts on the turn token, which the stop cancelled, is only observed.
+    private async Task<GroupState?> EstablishedToKeepAsync(AdmittedTurn first)
+    {
+        try
+        {
+            var state = await EnsureEstablishedAsync(first);
+            await ObserveAbandonedWarmupAsync();
+            return state;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Building conversation {ConversationId} to keep its stopped message(s) failed",
+                agentKey.ConversationId);
+            return null;
         }
     }
 
@@ -632,9 +662,10 @@ internal sealed class ConversationGroup(
                             _returnedTurnKeys[key] = 0;
                         }
 
-                        if (x.Message.ReturnedTurnKeys is { } returned)
+                        if (x.Message.ReturnedTurnKeys is not null && _drawnBefore is null)
                         {
-                            _admittedSteers.Except(returned).ToList().ForEach(key => _drawnAtStop.Add(key));
+                            _drawnBefore = _admitted;
+                            _stoppedOn = x.Channel.ChannelId;
                         }
 
                         CancelOwnContext();
@@ -652,13 +683,9 @@ internal sealed class ConversationGroup(
                             if (admitted.Message.Steer)
                             {
                                 SteerRunningTurn(admitted);
-                                if (admitted.Message.TurnKey is { } steerKey)
-                                {
-                                    _admittedSteers.Add(steerKey);
-                                }
                             }
 
-                            writer.TryWrite(admitted);
+                            writer.TryWrite(admitted with { Order = _admitted++ });
                         }
                         else if (x.Message is { Steer: true, TurnKey: not null })
                         {

@@ -567,6 +567,68 @@ public class ChatMonitorSteeringTests
         model.Requests.Count.ShouldBe(1);
     }
 
+    // Not only steers: every message the hub drew survives a stop that lands before its turn starts (ticket 15).
+    // The hub's own first send opened the stream and its queued head was written as it was sent, both before
+    // the stop's cancel, which names what the stop handed back (nothing here): either is on the person's page,
+    // so it is kept as a stopped turn with no answer, and nothing runs after the stop. A fire is nobody's
+    // message on the page, and a hub from before names nothing: both are dropped, as anything behind a cancel
+    // always was.
+    public enum StoppedBeforeItStarted
+    {
+        FirstSendWhileItsTurnIsSetUp,
+        QueuedHeadWhileItsTurnIsSetUp,
+        QueuedHeadBeforeItsRunReachesTheHistory,
+        FireWhileItsTurnIsSetUp
+    }
+
+    [Theory]
+    [InlineData(StoppedBeforeItStarted.FirstSendWhileItsTurnIsSetUp, true)]
+    [InlineData(StoppedBeforeItStarted.FirstSendWhileItsTurnIsSetUp, false)]
+    [InlineData(StoppedBeforeItStarted.QueuedHeadWhileItsTurnIsSetUp, true)]
+    [InlineData(StoppedBeforeItStarted.QueuedHeadWhileItsTurnIsSetUp, false)]
+    [InlineData(StoppedBeforeItStarted.QueuedHeadBeforeItsRunReachesTheHistory, true)]
+    [InlineData(StoppedBeforeItStarted.FireWhileItsTurnIsSetUp, true)]
+    public async Task AMessageTheHubDrew_StoppedBeforeItsTurnStarted_IsKeptUnanswered_WhenTheCancelSaysWhatWentBack(
+        StoppedBeforeItStarted which, bool namesWhatWentBack)
+    {
+        var model = new ScriptedModel([new TextContent("It is 42")], [new TextContent("never")]);
+        var recall = new HeldRecall();
+        var runs = new HeldRecall();
+        await using var run = new ToolLoopRun(model, [], recall: recall, beforeRun: runs.BeforeRunAsync);
+        const string said = "and then this";
+        var setUp = which == StoppedBeforeItStarted.QueuedHeadBeforeItsRunReachesTheHistory
+            ? runs.Hold(said)
+            : recall.Hold(said);
+
+        string[] before = [];
+        if (which != StoppedBeforeItStarted.FirstSendWhileItsTurnIsSetUp)
+        {
+            run.Send("look it up");
+            await Eventually.Until(() => run.StoredLine().Count == 2, "the turn before to end");
+            before = ["user: look it up", "assistant: It is 42"];
+        }
+
+        if (which == StoppedBeforeItStarted.FireWhileItsTurnIsSetUp)
+        {
+            run.Fire(said);
+        }
+        else
+        {
+            run.Send(said);
+        }
+
+        await setUp;
+        run.Stop(returned: namesWhatWentBack ? [] : null);
+        await run.FinishAsync();
+
+        var kept = namesWhatWentBack && which != StoppedBeforeItStarted.FireWhileItsTurnIsSetUp;
+        run.StoredLine().ShouldBe(kept ? [.. before, $"user: {said}"] : before);
+        model.Requests.Count.ShouldBe(before.Length / 2);
+        run.Line().ShouldAllBe(m => !m.IsFailedTurn() && !m.IsInterrupted());
+        // A reload draws it as any stopped turn: the message, with nothing under it.
+        ToolLoopRun.Render(Transcript.Shown(run.Line())).ShouldBe(run.StoredLine());
+    }
+
     // Asked of every message as its turn is set up, as memory recall is, and of every run before it reaches the
     // agent: a message the test names holds its turn there until the turn is cancelled.
     private sealed class HeldRecall : IMemoryRecallHook
