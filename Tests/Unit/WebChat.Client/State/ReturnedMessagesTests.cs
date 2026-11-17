@@ -150,6 +150,46 @@ public sealed class ReturnedMessagesTests
         transport.Calls.ShouldNotContain(call => call.MethodName == "TakeReturned" && Equals(call.Arguments[0], "topic-1"));
     }
 
+    // The common case: the member is reading the topic they queued in when its owner unshares it. The topic's
+    // change closes it on their page first, and their words land in the composer left on screen.
+    [Fact]
+    public async Task UnsharedWhileReadingThatTopic_ClosesIt_AndTheirWordsAreInTheComposerLeft()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued there", [], null)]);
+        var unshared = TestChat.Topic("topic-1") with { OwnerId = "marta", TenantId = "home", Shared = false };
+
+        transport.Raise("OnTopicChanged", new TopicChangedNotification(TopicChangeType.Updated, "topic-1", unshared, "default"));
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        client.Topics.State.SelectedTopicId.ShouldBeNull();
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued there");
+    }
+
+    // Someone who sees every topic still reads it, but may no longer write in it: their words wait on the
+    // page until another composer is on screen, never landing in the one they cannot send from.
+    [Fact]
+    public async Task UnsharedWhileStillReadingThatTopic_TheirWordsWaitForAnotherComposer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-1");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued there", [], null)]);
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+        await TestChat.Eventually(() => transport.Calls.Count(call => call.MethodName == "TakeUnshared") >= 2);
+        await Eventually.Settle();
+        client.Composer.State.Handed.ShouldBeNull();
+
+        client.Dispatcher.Dispatch(new SelectTopic("topic-2"));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued there");
+    }
+
     // A person with no page open when it was unshared finds them as a page of theirs next becomes live.
     [Fact]
     public async Task BecomingLive_TakesWhatUnsharingHandedThem()

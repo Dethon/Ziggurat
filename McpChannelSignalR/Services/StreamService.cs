@@ -860,7 +860,11 @@ public sealed class StreamService(
                     _queueRevision++;
                 }
 
-                ended = dispatching.Select(_ => GiveUpPlace(topicId, startsSteers: false)).LastOrDefault(e => e is not null);
+                // Each head pulled gave up the one place it held; a loop, since every give-up must run.
+                foreach (var _ in dispatching)
+                {
+                    ended = GiveUpPlace(topicId, startsSteers: false) ?? ended;
+                }
             }
 
             moved.AddRange(TakeAll(topic.Returned, owner));

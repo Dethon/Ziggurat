@@ -26,6 +26,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly IDisposable _shown;
     private readonly IDisposable _unshared;
     private readonly IDisposable _live;
+    private readonly System.Reactive.Disposables.CompositeDisposable _waitingForAnotherComposer = [];
 
     // Said where the words land, which is not where they were queued.
     public const string UnsharedToast =
@@ -79,8 +80,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     }
 
     // Into whatever composer is on screen, the words alone: the files were added to the unshared topic's
-    // conversation, and no other would take them (TopicRefusals.NotYourFiles). Not that topic's composer,
-    // should it still be on screen, since its person may no longer write there.
+    // conversation, and no other would take them (TopicRefusals.NotYourFiles). Never that topic's composer.
     private async Task TakeUnsharedAsync(string? unsharedTopicId)
     {
         IReadOnlyList<ReturnedMessage> taken;
@@ -99,9 +99,18 @@ public sealed class ReturnedMessagesEffect : IDisposable
             return;
         }
 
-        var onScreen = _topics.State.SelectedTopicId is { } selected && selected != unsharedTopicId ? selected : "";
-        _dispatcher.Dispatch(new ShowError(UnsharedToast));
-        _dispatcher.Dispatch(new ReturnToComposer(onScreen, [.. taken.Select(m => m with { Attachments = [] })]));
+        // Someone who sees every topic may still be reading it, in a composer they can no longer send from:
+        // the words wait for another to be on screen.
+        IReadOnlyList<ReturnedMessage> words = [.. taken.Select(m => m with { Attachments = [] })];
+        _waitingForAnotherComposer.Add(_topics.StateObservable
+            .Select(state => state.SelectedTopicId)
+            .Where(selected => unsharedTopicId is null || selected != unsharedTopicId)
+            .Take(1)
+            .Subscribe(selected =>
+            {
+                _dispatcher.Dispatch(new ShowError(UnsharedToast));
+                _dispatcher.Dispatch(new ReturnToComposer(selected ?? "", words));
+            }));
     }
 
     // Quiet when nothing could be taken: the hub keeps them, and the next open of the topic asks again.
@@ -154,5 +163,6 @@ public sealed class ReturnedMessagesEffect : IDisposable
         _shown.Dispose();
         _unshared.Dispose();
         _live.Dispose();
+        _waitingForAnotherComposer.Dispose();
     }
 }
