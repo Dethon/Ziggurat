@@ -452,10 +452,13 @@ public sealed class StreamService(
         }
     }
 
-    // A steer the agent could not be sent, back at the head of its queue, while the running turn has not
-    // ended yet; false once it has, and the steer's turn has started on the stream.
+    // A steer the agent could not be sent, back at the head of its queue. It was never drawn, since the
+    // running turn's end draws only a steer heard (SteerHeard), so it is still waiting here unless a stop
+    // took it with the stream; false then. If the running turn ended while it was being sent, nothing runs
+    // now, so its place is given up and the queue goes on, starting with it.
     public bool Unsteer(string topicId, QueuedMessage steer)
     {
+        EndedStream? ended = null;
         lock (_streamLock)
         {
             if (RunningOf(topicId) is not { } running || running.Steers.RemoveAll(s => s.Message.Id == steer.Id) == 0)
@@ -465,10 +468,44 @@ public sealed class StreamService(
 
             _waitingSteerKeys.TryRemove(steer.Id, out _);
             running.Waiting.Insert(0, steer);
-            running.RemovePending();
             _queueRevision++;
-            return true;
+            if (running.EndedUnheard is { } turn)
+            {
+                running.EndedUnheard = null;
+                ended = GiveUpPlace(topicId, startsSteers: true, turn.Key);
+            }
+            else
+            {
+                running.RemovePending();
+            }
         }
+
+        Announce(ended);
+        return true;
+    }
+
+    // The agent was heard to be sent a steer: from now on the running turn's end draws it. If that turn
+    // ended while it was being sent, nothing runs now, and it is drawn at once, where the turn ended.
+    public void SteerHeard(string topicId, QueuedMessage steer)
+    {
+        EndedStream? ended = null;
+        lock (_streamLock)
+        {
+            if (RunningOf(topicId) is not { } running
+                || running.Steers.FirstOrDefault(s => s.Message.Id == steer.Id) is not { } waiting)
+            {
+                return;
+            }
+
+            waiting.Heard = true;
+            if (running.EndedUnheard is { } turn)
+            {
+                running.EndedUnheard = null;
+                ended = GoOn(topicId, running, running.Pending, startsSteers: true, turn.Key);
+            }
+        }
+
+        Announce(ended);
     }
 
     public ChannelReader<QueuedTurn> Dispatches => _dispatches.Reader;
@@ -636,7 +673,13 @@ public sealed class StreamService(
     private EndedStream? GiveUpPlace(string topicId, bool startsSteers, string? endedBy = null)
     {
         var running = RunningOf(topicId);
-        var remaining = running?.RemovePending() ?? 0;
+        return GoOn(topicId, running, running?.RemovePending() ?? 0, startsSteers, endedBy);
+    }
+
+    // What follows a place given up, `remaining` still pending: the steers waiting, the queue's head, or the
+    // stream's end.
+    private EndedStream? GoOn(string topicId, RunningQueue? running, int remaining, bool startsSteers, string? endedBy)
+    {
         if (startsSteers && running is not null)
         {
             remaining = StartSteers(topicId, running, remaining, endedBy);
@@ -684,6 +727,10 @@ public sealed class StreamService(
 
     // A turn ending with steers waiting: their turn is the next, already sent, and the reply splits here, so
     // every one's message is written now, in the order they were steered, before anything of their answer.
+    // Only a steer the agent was heard to be sent (or that it answered already): one still being sent may
+    // never reach it, and drawn here it would leave the agent waiting for it with the others. Such a steer
+    // (the last, since a steer is sent before the next is taken) is drawn once heard, or goes back to the
+    // queue (Unsteer); when nothing else was drawn, nothing runs until then (RunningQueue.EndedUnheard).
     // Those the agent has not answered go in together as one turn (user's decision, 2026-11-17), answered
     // under the first one's key; the agent is told which in the answer to this end (ReceiptFor), and ends
     // each of the others under its own key after that answer, so each keeps its pending place until then
@@ -693,7 +740,7 @@ public sealed class StreamService(
     private int StartSteers(string topicId, RunningQueue running, int remaining, string? endedBy)
     {
         List<string> together = [];
-        while (remaining > 0 && running.Steers.Count > 0)
+        while (remaining > 0 && running.Steers is [{ Heard: true } or { Answered: true }, ..])
         {
             var steer = running.Steers[0];
             running.Steers.RemoveAt(0);
@@ -724,6 +771,11 @@ public sealed class StreamService(
         {
             running.DrawnTogether = new DrawnSteers(endedBy, together);
             together.Skip(1).ToList().ForEach(key => running.Joined.Add(key));
+        }
+
+        if (together.Count == 0 && remaining > 0 && running.Steers.Count > 0)
+        {
+            running.EndedUnheard = new EndedTurn(endedBy);
         }
 
         return remaining;

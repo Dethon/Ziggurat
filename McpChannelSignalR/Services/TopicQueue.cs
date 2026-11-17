@@ -48,6 +48,10 @@ internal sealed class RunningQueue(StreamKey stream)
     // that end is counted but not drawn, since their one answer already ended on the page.
     public HashSet<string> Joined { get; } = [];
 
+    // The running turn ended while the steer meant to follow it was still being sent, and drew nothing: no
+    // turn runs until that steer is heard (drawn then) or not (back to the queue, which goes on).
+    public EndedTurn? EndedUnheard { get; set; }
+
     // The topic's owner, once they stopped sharing it while this stream ran: a message from anyone else
     // still being admitted then goes to its sender, never into the queue.
     public Account? PrivateTo { get; set; }
@@ -64,6 +68,8 @@ internal sealed class RunningQueue(StreamKey stream)
     public void AddPending() => _pending = (_pending ?? 0) + 1;
 
     public int RemovePending() => (_pending = _pending is { } count ? count - 1 : 0).Value;
+
+    public int Pending => _pending ?? 0;
 
     // A queued head's turn is the one turn left on the stream once it is taken, whatever went before.
     public void PendingOnlyTheHead() => _pending = 1;
@@ -82,9 +88,15 @@ internal sealed class WaitingSteer(QueuedMessage message)
 
     // Its turn ended already (the reply that said IsComplete came under its key).
     public bool Answered { get; set; }
+
+    // The agent was heard to be sent it (StreamService.SteerHeard), so it will reach it.
+    public bool Heard { get; set; }
 }
 
 internal sealed record DrawnSteers(string? EndedBy, IReadOnlyList<string> Keys);
+
+// A turn's end, by the key it came under.
+internal sealed record EndedTurn(string? Key);
 
 internal sealed class StoppedStream(StreamKey stream, IEnumerable<QueuedMessage> returned)
 {

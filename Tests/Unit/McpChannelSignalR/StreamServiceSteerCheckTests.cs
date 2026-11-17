@@ -68,13 +68,16 @@ public sealed class StreamServiceSteerCheckTests : IDisposable
         await ChunkIsWrittenWhileTheLockIsHeldAsync(steer.Id);
     }
 
-    // A queued message steered into the running turn, as SteerQueued takes it out of the queue.
+    // A queued message steered into the running turn, as SteerQueued takes it out of the queue and then
+    // hears it was sent.
     private QueuedMessage Steer()
     {
         var held = _streams.Hold(Topic)!.Value;
         _streams.Enqueue(held, Sender(Topic, 7, 42), new TurnMessage("steer me", null, null, null));
         var queued = _streams.QueueOf(Topic).Messages.Single();
-        return _streams.Steer(Topic, queued.Id, Fran).ShouldBeOfType<Steered>().Message;
+        var steer = _streams.Steer(Topic, queued.Id, Fran).ShouldBeOfType<Steered>().Message;
+        _streams.SteerHeard(Topic, steer);
+        return steer;
     }
 
     // Another topic's message being queued holds the stream lock (it reads the clock under it) while the

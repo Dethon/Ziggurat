@@ -681,16 +681,15 @@ public sealed class ChatHub(
                 return new SteerRefused(TopicRefusals.AlreadySent);
             }
 
+            // Only a steer heard is drawn at the running turn's end, so one nobody heard is always still
+            // waiting, and goes back to the queue.
             if (!await turns.SteerAsync(new VouchedSender(steer.Sender, vouched), steer, CancellationToken.None))
             {
-                if (streamService.Unsteer(topicId, steer))
-                {
-                    return new SteerRefused(TopicRefusals.NotLive);
-                }
-
-                await turns.EndUnheardAsync(steer.Sender);
+                streamService.Unsteer(topicId, steer);
+                return new SteerRefused(TopicRefusals.NotLive);
             }
 
+            streamService.SteerHeard(topicId, steer);
             return steering;
         });
         switch (outcome)

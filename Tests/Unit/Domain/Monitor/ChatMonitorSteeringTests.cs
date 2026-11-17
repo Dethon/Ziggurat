@@ -340,7 +340,12 @@ public class ChatMonitorSteeringTests
 
         // Two steers drawn together whose turn fails to set up: the error is answered once, every key ends,
         // and both messages are kept marked failed, for Retry to take.
-        TheirTurnFailsToSetUp
+        TheirTurnFailsToSetUp,
+
+        // Two steers pressed, the second's emit heard by nobody: the hub drew only what was heard (a steer
+        // still being sent is never drawn), so the agent is never told to wait for the second, and the first
+        // is answered alone while the second goes back to the queue.
+        TheSecondWasNeverHeard
     }
 
     [Theory]
@@ -349,6 +354,7 @@ public class ChatMonitorSteeringTests
     [InlineData(GatheringExit.StopBeforeTheirRunReachesTheHistory)]
     [InlineData(GatheringExit.ReachesTheTurnAfterTheStop)]
     [InlineData(GatheringExit.TheirTurnFailsToSetUp)]
+    [InlineData(GatheringExit.TheSecondWasNeverHeard)]
     public async Task EveryDrawnSteer_EndsOnce_AndIsInTheStoredLine_HoweverTheGatheringIsLeft(GatheringExit exit)
     {
         var lookUp = LocalTool.Held("look_up", "42");
@@ -359,7 +365,9 @@ public class ChatMonitorSteeringTests
         var cutEndHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var two = exit is GatheringExit.StopWhileTheyGather or GatheringExit.StopBeforeTheirRunReachesTheHistory
             or GatheringExit.TheirTurnFailsToSetUp;
-        var stopped = exit != GatheringExit.TheirTurnFailsToSetUp;
+        var failed = exit == GatheringExit.TheirTurnFailsToSetUp;
+        var answered = exit == GatheringExit.TheSecondWasNeverHeard;
+        var stopped = !failed && !answered;
         string[] drawn = two ? ["steer-1", "steer-2"] : ["steer-1"];
         await using var run = new ToolLoopRun(model, [lookUp], recall: recall, beforeRun: runs.BeforeRunAsync,
             receipts: SteeredTogetherAtTheCut(drawn),
@@ -377,6 +385,7 @@ public class ChatMonitorSteeringTests
         {
             GatheringExit.StopBeforeTheirRunReachesTheHistory => runs.Hold("and in red"),
             GatheringExit.TheirTurnFailsToSetUp => recall.Fail("and in red"),
+            GatheringExit.TheSecondWasNeverHeard => Task.CompletedTask,
             _ => recall.Hold(two ? "and in red" : "no, the other one")
         };
 
@@ -406,9 +415,12 @@ public class ChatMonitorSteeringTests
         await run.FinishAsync();
 
         string[] said = two ? ["user: no, the other one", "user: and in red"] : ["user: no, the other one"];
-        run.StoredLine().Skip(3).ShouldBe(stopped ? said : [.. said, $"assistant: {RefusalAnswers.SetupFailed}"]);
-        run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn() == !stopped && !m.IsInterrupted());
-        model.Requests.Count.ShouldBe(1);
+        run.StoredLine().Skip(3).ShouldBe(
+            failed ? [.. said, $"assistant: {RefusalAnswers.SetupFailed}"]
+            : answered ? [.. said, "assistant: Steered"]
+            : said);
+        run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn() == failed && !m.IsInterrupted());
+        model.Requests.Count.ShouldBe(answered ? 2 : 1);
         if (stopped)
         {
             // The stop ended every drawn key at the hub, which takes nothing after it; whatever the cancelled
@@ -418,10 +430,10 @@ public class ChatMonitorSteeringTests
         else
         {
             // Nothing is stopped, so the agent ends every key the hub holds a place for, once, and says what
-            // went wrong once, under the key their turn answers under.
+            // went wrong, if anything did, once, under the key their turn answers under.
             drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) == 1);
             run.Replies.Where(r => r.ContentType == ReplyContentType.Error && drawn.Contains(r.TurnKey))
-                .Select(r => (r.TurnKey, r.Content)).ShouldBe([("steer-1", RefusalAnswers.SetupFailed)]);
+                .Select(r => (r.TurnKey, r.Content)).ShouldBe(failed ? [("steer-1", RefusalAnswers.SetupFailed)] : []);
         }
     }
 
