@@ -5,7 +5,7 @@ had typed them. Letting go ends it. Right-clicking the tray icon closes it.
 
 It reaches Lemonade directly, so it works whenever Whisper is up, whether or not the rest of the
 stack is running. It ships as one executable with nothing to install, and costs nothing while you
-are not using it: no microphone held open, no model loaded, no window on screen.
+are not using it: the microphone is stopped between dictations, no model loaded, no window on screen.
 
 Words arrive while you are still talking. A dictation is cut into segments wherever you pause,
 each is sent as you go, and each transcript is typed the moment it comes back.

@@ -24,9 +24,67 @@ pub fn choose_device(available: &[String], fragment: &str) -> Result<Option<usiz
         })
 }
 
+/// The stream kept between dictations: set up, and stopped.
+///
+/// Setting a stream up is what costs the time — about 350 ms on a wireless headset, measured on
+/// the Arctis Nova Pro Wireless, against under 20 ms to start one that already is. So one is
+/// prepared ahead of each dictation and only started when a binding goes down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Prepared<'a> {
+    /// The name of the device it was set up on.
+    pub device: &'a str,
+    /// It reported an error since — typically the device going away under it.
+    pub failed: bool,
+}
+
+/// What a key-down does to get audio flowing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Start {
+    /// Start the prepared stream.
+    Resume,
+    /// Set a new one up, as the slow path.
+    Build,
+}
+
+/// Whether the prepared stream can be started, given the device the dictation wants now. Asked
+/// on every key-down rather than trusted, because the default microphone changes underneath a
+/// stream that was prepared on another — a remote desktop session connecting, a headset switched
+/// off — and a stream on the wrong device records the wrong room, or nothing.
+pub fn how_to_start(prepared: Option<Prepared<'_>>, wanted: &str) -> Start {
+    match prepared {
+        Some(held) if !held.failed && held.device == wanted => Start::Resume,
+        _ => Start::Build,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_prepared_stream_on_the_microphone_wanted_now_is_only_started() {
+        let held = Prepared { device: "Microphone (Arctis Nova Pro Wireless)", failed: false };
+        assert_eq!(how_to_start(Some(held), "Microphone (Arctis Nova Pro Wireless)"), Start::Resume);
+    }
+
+    #[test]
+    fn with_nothing_prepared_the_stream_is_built() {
+        assert_eq!(how_to_start(None, "Remote Audio"), Start::Build);
+    }
+
+    #[test]
+    fn a_stream_prepared_on_another_microphone_is_built_again() {
+        // A remote desktop session connecting swaps the default microphone underneath a stream
+        // that was prepared on the old one, and a headset that went away leaves one behind.
+        let held = Prepared { device: "Microphone (Arctis Nova Pro Wireless)", failed: false };
+        assert_eq!(how_to_start(Some(held), "Remote Audio"), Start::Build);
+    }
+
+    #[test]
+    fn a_stream_that_reported_an_error_is_built_again() {
+        let held = Prepared { device: "Remote Audio", failed: true };
+        assert_eq!(how_to_start(Some(held), "Remote Audio"), Start::Build);
+    }
 
     fn devices() -> Vec<String> {
         vec![

@@ -44,11 +44,15 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
 - **The base URL is `/v1`, not `/api/v1`.** Lemonade serves both; health lives under `/api/v1`
   and the OpenAI-compatible routes under `/v1`. The wrong one parses fine and 404s only when
   somebody is mid-sentence. A test pins it.
-- **The capture opens on key-down with no pre-roll, and the cue plays after it opens.** Unlike the
-  satellite, this trades the first 50-200 ms of audio for not holding the device and not showing
-  Windows' permanent microphone indicator. The cue ordering is the whole mitigation, which is why
-  it means "speak now" rather than "key received". This is the choice most likely to want
-  revisiting after real use.
+- **The capture starts on key-down with no pre-roll, from a stream prepared while idle, and the
+  cue plays once audio is flowing.** Setting a WASAPI stream up cost about 350 ms on every press
+  on an Arctis Nova Pro Wireless, which was the whole delay a person heard before the cue and saw
+  before the red icon; starting one already set up costs under 20 ms. So `win/capture.rs` sets a
+  stream up at startup and after each dictation stops it rather than dropping it — stopped, it
+  delivers nothing and the microphone is not in use — and `audio::how_to_start` sets one up again
+  when the default device changed under it or it reported an error. Unlike the satellite there is
+  still no pre-roll, which is what keeps the device stopped and Windows' microphone indicator off
+  while idle; the open answers only once audio arrives, so the cue really means "speak now".
 - **No visible window is ever created.** A window that can take focus can break injection into the
   window underneath, which is why the tray is the entire interface and the binary is built for the
   windows subsystem. The `HWND_MESSAGE` window the tray icon and the hook need is never shown,
@@ -148,8 +152,9 @@ tray crate) live as comments in `Cargo.toml`.
 
 ## Rough edges accepted on purpose
 
-- The first 50-200 ms of a dictation is lost to opening the device, so speaking instantly clips a
-  leading plosive.
+- Whatever is said before the cue is lost: a few milliseconds with a prepared stream, but a
+  remote desktop microphone delivers nothing for about half a second after its first start, and a
+  changed default device has to be set up from nothing again.
 - Whisper capitalises the start of every segment it is given, so a sentence cut mid-way can read
   slightly oddly at the join. Prompt chaining is what limits the damage, not a fix for it.
 - The energy detector will cut on a long deliberate pause mid-sentence.

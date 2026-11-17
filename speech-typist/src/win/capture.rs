@@ -1,18 +1,33 @@
-//! The microphone, opened on key-down and closed on key-up.
+//! The microphone: prepared while idle, started on key-down, stopped on key-up.
 //!
-//! There is deliberately no pre-roll ring, unlike the satellite: this trades the first 50-200 ms
-//! of a dictation for not holding the device and not showing Windows' permanent microphone
-//! indicator. That is the choice most likely to want revisiting after real use.
+//! Setting a WASAPI stream up costs about 350 ms on a wireless headset, every time, and that was
+//! the whole delay between pressing the key and hearing the cue. Starting a stream that is already
+//! set up costs under 20 ms. So a stream is prepared at startup and kept after each dictation —
+//! set up but stopped, which delivers no audio and does not light Windows' microphone indicator —
+//! and a key-down only starts it. [`crate::audio::how_to_start`] decides when it has to be set up
+//! again instead.
+//!
+//! Opening answers once audio is actually flowing, not when the call returns, because the cue
+//! that follows means "speak now": a remote desktop session's microphone, for one, delivers
+//! nothing for half a second after it starts.
 //!
 //! cpal's stream is not `Send` on WASAPI, so it lives on a thread of its own that takes commands.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::Arc;
+use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tokio::sync::mpsc::Sender as EventSender;
 
-use crate::audio::choose_device;
+use crate::audio::{choose_device, how_to_start, Prepared, Start};
 use crate::host::{CaptureFormat, HostError, HostEvent};
+
+/// How long a started stream may take to deliver its first audio before it is given up on. A
+/// remote desktop microphone takes about 500 ms on its first start; a stream that is silent for
+/// longer than this is treated as dead and set up again.
+const FIRST_AUDIO: Duration = Duration::from_millis(1_000);
 
 enum Command {
     Open(Sender<Result<CaptureFormat, HostError>>),
@@ -44,54 +59,125 @@ impl Capture {
     }
 }
 
+/// A stream that is set up, running or stopped. Holding it is what keeps it set up; dropping it
+/// releases the device.
+struct Held {
+    stream: cpal::Stream,
+    device: String,
+    format: CaptureFormat,
+    /// Set by the stream's error callback — the device going away under it, typically.
+    failed: Arc<AtomicBool>,
+    /// Armed before each start; the audio callback disarms it and says so on `flowing`.
+    armed: Arc<AtomicBool>,
+    flowing: Receiver<()>,
+}
+
+impl Held {
+    /// Starts it, and answers whether audio arrived within [`FIRST_AUDIO`].
+    fn start(&self) -> bool {
+        while self.flowing.try_recv().is_ok() {}
+        self.armed.store(true, Ordering::SeqCst);
+        if self.stream.play().is_err() {
+            return false;
+        }
+        self.flowing.recv_timeout(FIRST_AUDIO).is_ok()
+    }
+}
+
 fn run(orders: Receiver<Command>, device_name: String, events: EventSender<HostEvent>) {
-    // Holding the stream is what keeps the device open; dropping it is what closes it. There is
-    // nothing else to read it for.
-    let mut held: Option<cpal::Stream> = None;
+    // Prepared at startup, so the first dictation is as quick as every other one. A failure here
+    // is not reported: the key-down that needs the microphone tries again, and says why.
+    let mut held = resolve(&cpal::default_host(), &device_name)
+        .and_then(|device| build(device, events.clone()))
+        .ok();
     while let Ok(command) = orders.recv() {
         match command {
             Command::Open(reply) => {
-                drop(held.take());
-                let answer = match build(&device_name, events.clone()) {
-                    Ok((stream, format)) => {
-                        held = Some(stream);
-                        Ok(format)
-                    }
-                    Err(error) => Err(error),
-                };
-                let _ = reply.send(answer);
+                let _ = reply.send(open(&mut held, &device_name, &events));
             }
-            Command::Close => drop(held.take()),
+            // Stopped rather than dropped, so the next key-down only has to start it. A stream
+            // that cannot even be stopped is let go; the next key-down sets one up again.
+            Command::Close => {
+                if held.as_ref().is_some_and(|held| held.stream.pause().is_err()) {
+                    held = None;
+                }
+            }
         }
     }
 }
 
-fn build(
+fn open(
+    held: &mut Option<Held>,
     device_name: &str,
-    events: EventSender<HostEvent>,
-) -> Result<(cpal::Stream, CaptureFormat), HostError> {
-    let host = cpal::default_host();
-    let device = resolve(&host, device_name)?;
+    events: &EventSender<HostEvent>,
+) -> Result<CaptureFormat, HostError> {
+    let device = resolve(&cpal::default_host(), device_name)?;
+    let wanted = device.name().unwrap_or_default();
+    let prepared = held.as_ref().map(|held| Prepared {
+        device: &held.device,
+        failed: held.failed.load(Ordering::SeqCst),
+    });
+    if how_to_start(prepared, &wanted) == Start::Resume {
+        let started = held.as_ref().expect("resumed only when one is held");
+        if started.start() {
+            return Ok(started.format);
+        }
+    }
+
+    // Released before the new one is set up, so the device is never asked for twice.
+    drop(held.take());
+    let fresh = build(device, events.clone())?;
+    // Silent past the wait is not refused: the device is open, and refusing would only turn a
+    // slow microphone into a failed dictation.
+    if !fresh.start() && fresh.failed.load(Ordering::SeqCst) {
+        return Err(HostError("the microphone stopped as soon as it started".into()));
+    }
+    let format = fresh.format;
+    *held = Some(fresh);
+    Ok(format)
+}
+
+fn build(device: cpal::Device, events: EventSender<HostEvent>) -> Result<Held, HostError> {
+    let name = device.name().unwrap_or_default();
     let config = device
         .default_input_config()
         .map_err(|e| HostError(format!("the microphone has no usable input format: {e}")))?;
     let format = CaptureFormat { sample_rate: config.sample_rate().0 };
     let channels = config.channels() as usize;
 
-    // Nowhere to report this to: the callback is on a real-time audio thread with no route to
-    // the tray. A stream that dies mid-dictation shows up as the dictation producing no words,
-    // which the person can see, and as the next key-down opening the device again.
-    let on_error = |_| {};
+    let failed = Arc::new(AtomicBool::new(false));
+    let armed = Arc::new(AtomicBool::new(false));
+    let (signal, flowing) = channel();
+    // The callback is on a real-time audio thread with no route to the tray, so an error is only
+    // remembered: the next key-down sees it and sets up a stream again.
+    let on_error = {
+        let failed = failed.clone();
+        move |_| failed.store(true, Ordering::SeqCst)
+    };
+    let first = {
+        let armed = armed.clone();
+        move || {
+            if armed.swap(false, Ordering::SeqCst) {
+                let _ = signal.send(());
+            }
+        }
+    };
     let stream = match config.sample_format() {
         cpal::SampleFormat::I16 => device.build_input_stream(
             &config.into(),
-            move |data: &[i16], _: &_| forward(&events, downmix_i16(data, channels)),
+            move |data: &[i16], _: &_| {
+                first();
+                forward(&events, downmix_i16(data, channels))
+            },
             on_error,
             None,
         ),
         cpal::SampleFormat::F32 => device.build_input_stream(
             &config.into(),
-            move |data: &[f32], _: &_| forward(&events, downmix_f32(data, channels)),
+            move |data: &[f32], _: &_| {
+                first();
+                forward(&events, downmix_f32(data, channels))
+            },
             on_error,
             None,
         ),
@@ -99,8 +185,7 @@ fn build(
     }
     .map_err(|e| HostError(format!("could not open the microphone: {e}")))?;
 
-    stream.play().map_err(|e| HostError(format!("could not start the microphone: {e}")))?;
-    Ok((stream, format))
+    Ok(Held { stream, device: name, format, failed, armed, flowing })
 }
 
 fn resolve(host: &cpal::Host, device_name: &str) -> Result<cpal::Device, HostError> {
