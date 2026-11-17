@@ -387,12 +387,14 @@ internal sealed class ConversationGroup(
             await queue.DisposeAsync();
             await pumpCts.CancelAsync();
             await reader;
-            // Anything still queued when the group ends is dropped by that end — a /clear or
-            // /cancel dispatched ahead of it, a setup failure, a shutdown. Dropping is the
-            // decided semantics (the command's immediacy is its point); vanishing silently is
-            // not, so each dropped turn is named — whether the pump had already queued it or
-            // it still sits unread in the grouping's channel. The pump is done, so between
-            // them these two drains cover everything.
+            // Anything the pump queued before the group ended is dropped by that end — a /clear
+            // or /cancel dispatched behind it, a setup failure, a shutdown — unless a stop drew it
+            // (KeepDrawnAsync). Dropping is the decided semantics (the command's immediacy is its
+            // point); vanishing silently is not, so each dropped turn is named. What the pump never
+            // read was sent after whatever ended the group: the grouping hands it to a fresh group
+            // as the context's end completes it, so the drain of the grouping below finds something
+            // only when the group ended some other way. The pump is done, so between them these two
+            // drains cover everything.
             while (pending.Reader.TryRead(out var dropped))
             {
                 if (!dropped.Refused)
@@ -407,6 +409,7 @@ internal sealed class ConversationGroup(
             }
 
             await KeepDrawnAsync(unstarted, unsettled);
+            _context?.End();
         }
     }
 
@@ -1251,6 +1254,13 @@ internal sealed class ConversationGroup(
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
         AdmittedTurn x, IReadOnlyList<AdmittedTurn> messages, TurnSteering steering)
     {
+        // The group before this one may still be keeping the turn its stop cut: this conversation goes on
+        // from there, never from before it.
+        if (_context is { Predecessor.IsCompleted: false } context)
+        {
+            await context.Predecessor.WaitAsync(_turnCt);
+        }
+
         var state = _state is { } established ? await RebuildIfStaleAsync(established) : await EnsureEstablishedAsync(x);
         var targets = await ResolveTurnTargetsAsync(x, state);
         // FirstReply times the turn from the moment it starts to its first delivered reply

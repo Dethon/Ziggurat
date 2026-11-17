@@ -108,6 +108,35 @@ public class ChatThreadResolverTests
         secondContext.ShouldNotBeSameAs(firstContext);
     }
 
+    // A context let go of by a stop or a clear may still have its group tearing down; the next one resolved
+    // under the key carries that group's end as its predecessor, until it ended.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Resolve_AfterTheKeysContextWasLetGo_WaitsForThatGroupsEnd_UntilItEnded(bool cleared)
+    {
+        var resolver = new ChatThreadResolver();
+        var key = new AgentKey("1:1");
+        var first = resolver.Resolve(key);
+        if (cleared)
+        {
+            await resolver.ClearAsync(key);
+        }
+        else
+        {
+            resolver.Cancel(key, first);
+        }
+
+        var next = resolver.Resolve(key);
+        next.Predecessor.IsCompleted.ShouldBeFalse();
+
+        first.End();
+        await next.Predecessor.WaitAsync(TimeSpan.FromSeconds(60));
+        resolver.Cancel(key, next);
+        next.End();
+        await Eventually.Until(() => resolver.Resolve(key).Predecessor.IsCompleted, "the ended group to be forgotten");
+    }
+
     [Fact]
     public void Resolve_AfterDispose_Throws()
     {

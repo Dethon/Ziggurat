@@ -94,8 +94,9 @@ public class ChatMonitor(
             var groups = merged
                 .GroupByStreaming(
                     (x, _) => ValueTask.FromResult(new AgentKey(x.Message.ConversationId, x.Message.AgentId)),
-                    // A message can race into a group just as its teardown completes it; the
-                    // write is refused, and the refusal must name the turn like any other drop.
+                    // What a group had not read as its teardown completed it (a message sent right
+                    // behind a stop) is routed again, to a fresh group; one that group refuses too is
+                    // dropped, and named like any other drop.
                     x => ConversationGroup.LogDroppedTurn(logger, x.Message),
                     cancellationToken)
                 .Select(group => ProcessChatThread(group.Key, group, cancellationToken))

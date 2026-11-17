@@ -7,6 +7,10 @@ namespace Domain.Agents;
 public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = null) : IDisposable
 {
     private readonly ConcurrentDictionary<AgentKey, ChatThreadContext> _contexts = [];
+
+    // A context let go of (Cancel, ClearAsync) whose group has not ended yet, by its key: the next one resolved
+    // under that key waits for it. Gone once it ended.
+    private readonly ConcurrentDictionary<AgentKey, Task> _ending = [];
     private readonly Lock _lock = new();
     private int _isDisposed;
 
@@ -37,7 +41,10 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
                 return existing;
             }
 
-            var context = new ChatThreadContext();
+            var context = new ChatThreadContext
+            {
+                Predecessor = _ending.TryGetValue(key, out var ending) ? ending : Task.CompletedTask
+            };
             _contexts[key] = context;
             return context;
         }
@@ -63,10 +70,20 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
             }
 
             _contexts.Remove(key, out _);
+            Ending(key, expected);
         }
 
         // Outside the lock: disposing runs the group's completion callback.
         expected.Dispose();
+    }
+
+    // Called under _lock, with the context just taken out, so a context resolved after it waits for it.
+    private void Ending(AgentKey key, ChatThreadContext context)
+    {
+        var ended = context.Ended;
+        _ending[key] = ended;
+        _ = ended.ContinueWith(
+            _ => _ending.TryRemove(new KeyValuePair<AgentKey, Task>(key, ended)), TaskScheduler.Default);
     }
 
     // The turn on the conversation is over, however it ended: a rewrite may be made again. The history
@@ -100,10 +117,16 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
         // group is routine after a restart; in both cases the user asked for the history to be
         // gone. The store delete is one idempotent key delete, so doing it either way costs a
         // round trip and never leaves the cleared history behind.
-        if (_contexts.Remove(key, out var context))
+        ChatThreadContext? context;
+        lock (_lock)
         {
-            context.Dispose();
+            if (_contexts.Remove(key, out context))
+            {
+                Ending(key, context);
+            }
         }
+
+        context?.Dispose();
 
         await DeletePersistedStateAsync(key);
     }

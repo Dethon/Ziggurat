@@ -406,6 +406,8 @@ internal sealed class ScriptedModel(params IReadOnlyList<AIContent>[] steps) : I
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         await Task.Yield();
+        // A request on a turn already stopped never reaches the provider, as a real client's would not.
+        cancellationToken.ThrowIfCancellationRequested();
         int step;
         TaskCompletionSource? held;
         bool fails;
@@ -445,7 +447,7 @@ internal sealed class LocalTool
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private LocalTool(string name, string result, bool held)
+    private LocalTool(string name, string result, bool held, bool pastAStop = false)
     {
         if (!held)
         {
@@ -457,7 +459,7 @@ internal sealed class LocalTool
                 async (CancellationToken ct) =>
                 {
                     _started.TrySetResult();
-                    await _finish.Task.WaitAsync(ct);
+                    await _finish.Task.WaitAsync(pastAStop ? CancellationToken.None : ct);
                     return result;
                 },
                 name),
@@ -467,6 +469,10 @@ internal sealed class LocalTool
     public static LocalTool Answering(string name, string result) => new(name, result, held: false);
 
     public static LocalTool Held(string name, string result) => new(name, result, held: true);
+
+    // Held, and slow to hear a stop: it returns only once the test says, as a call already out on the wire
+    // comes back when it does, so the stopped turn is still being torn down until then.
+    public static LocalTool HeldPastAStop(string name, string result) => new(name, result, held: true, pastAStop: true);
 
     public AIFunction Tool { get; }
 
