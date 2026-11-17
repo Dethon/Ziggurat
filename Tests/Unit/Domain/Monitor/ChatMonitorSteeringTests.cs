@@ -532,6 +532,58 @@ public class ChatMonitorSteeringTests
         ToolLoopRun.Render(model.Requests[2]).TakeLast(2).ShouldBe(["user: no, the other one", "user: and in red"]);
     }
 
+    // A steer the agent refuses only after the hub drew it together with another (the agent admits its messages
+    // on its own time): the gathering waits for each drawn steer, so the refusal is said before the turn of the
+    // others begins, under the refused steer's own key and ending it, and the answer comes after it, as for a
+    // steer refused as it arrived (m1, m2, error(m2), answer).
+    [Fact]
+    public async Task ASteerRefusedAfterTheHubDrewItTogether_IsAnsweredBeforeTheOthersTurnBegins()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        var pumpHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releasePump = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var run = new ToolLoopRun(model, [lookUp], receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"),
+            holdReply: async reply =>
+            {
+                if (reply is { TurnKey: "held", IsComplete: true })
+                {
+                    pumpHeld.TrySetResult();
+                    await releasePump.Task.WaitAsync(TimeSpan.FromSeconds(60));
+                }
+            });
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Channel.WriteUnsigned(new ChannelMessage
+        {
+            ConversationId = ToolLoopRun.ConversationId, Content = "held", Sender = "nobody", ChannelId = "signalr",
+            AgentId = ToolLoopRun.AgentId, TurnKey = "held"
+        });
+        await pumpHeld.Task.WaitAsync(TimeSpan.FromSeconds(60));
+        // Unsigned, so refused as the agent admits it, which is only once the pump is let go.
+        run.Channel.WriteUnsigned(new ChannelMessage
+        {
+            ConversationId = ToolLoopRun.ConversationId, Content = "and in red", Sender = "Fran", ChannelId = "signalr",
+            AgentId = ToolLoopRun.AgentId, Steer = true, TurnKey = "steer-2"
+        });
+        lookUp.Finish();
+        await Eventually.Until(
+            () => run.Replies.Any(r => r.IsComplete && ToolLoopRun.IsTheFirstTurns(r)), "the cut turn to end");
+        releasePump.SetResult();
+        await run.FinishAsync();
+
+        var after = run.Replies.SkipWhile(r => !(r.IsComplete && ToolLoopRun.IsTheFirstTurns(r))).Skip(1)
+            .Where(r => r.TurnKey != "held")
+            .Select(r => (r.TurnKey, r.ContentType, r.IsComplete)).ToList();
+        after.ShouldBe([
+            ("steer-2", ReplyContentType.Error, false), ("steer-2", ReplyContentType.StreamComplete, true),
+            ("steer-1", ReplyContentType.Text, false), ("steer-1", ReplyContentType.StreamComplete, true)
+        ]);
+        run.StoredLine().Skip(3).ShouldBe(["user: no, the other one", "assistant: Steered"]);
+    }
+
     // A stop's cancel tells the agent which steers it drew and which it handed back: a hub that names what it
     // returned (none, here) returns every steer it has not drawn, so one it does not name was drawn and is
     // kept; one it names is in its sender's composer and is not; and a hub from before, which names nothing,

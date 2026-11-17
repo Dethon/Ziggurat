@@ -114,6 +114,52 @@ public sealed class QueuedSendTests
         ]);
     }
 
+    // One of two messages steered together refused by the agent after the hub drew them: its refusal comes
+    // right under the steers, before their one answer, and the page draws it there, the answer after it, as
+    // for a steer refused as it arrived.
+    [Fact]
+    public async Task TwoSteersDrawnTogether_TheSecondRefusedLate_AreDrawnWithTheRefusal_ThenTheAnswer()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var reply = new GatedChatStream();
+        transport.Answer("SendMessage", _ => reply.Chunks());
+        transport.Answer("EnqueueMessage", true);
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "first"));
+        await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "the other one"));
+        await TestChat.Eventually(() => transport.Calls.Count(call => call.MethodName == "EnqueueMessage") == 1);
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "and in red"));
+        await TestChat.Eventually(() => transport.Calls.Count(call => call.MethodName == "EnqueueMessage") == 2);
+        var queuedAs = transport.Calls.Where(call => call.MethodName == "EnqueueMessage")
+            .Select(call => (string?)call.Arguments[2]).ToList();
+        var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
+
+        reply.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-1" });
+        reply.Write(new ChatStreamMessage
+        {
+            Content = "the other one", UserMessage = new UserMessageInfo("fran", DateTimeOffset.UtcNow, "Fran", queuedAs[0])
+        });
+        reply.Write(new ChatStreamMessage
+        {
+            Content = "and in red", UserMessage = new UserMessageInfo("fran", DateTimeOffset.UtcNow, "Fran", queuedAs[1])
+        });
+        reply.Write(new ChatStreamMessage { Error = "You were disabled.", IsComplete = true });
+        reply.Write(new ChatStreamMessage { Content = "The other one.", MessageId = "m-2" });
+        reply.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-2" });
+        reply.Release();
+        await replyEnding;
+
+        Shown(client).ShouldBe([
+            "user: first", "assistant: thinking", "user: the other one", "user: and in red",
+            "assistant: You were disabled.", "assistant: The other one."
+        ]);
+        client.Messages.State.MessagesByTopic["topic-1"].Select(m => m.IsError)
+            .ShouldBe([false, false, false, false, true, false]);
+    }
+
     // The same words sent earlier and loaded with the history carry no send's id; a queued message is
     // known by its own, so it is drawn even when its words repeat one already on the page.
     [Fact]

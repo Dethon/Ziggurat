@@ -1495,6 +1495,41 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         ]);
     }
 
+    // A steer the agent refuses only after the end drew it together with another: the agent says so before the
+    // others' turn begins (it waits for every steer drawn with them), so the page is shown the refusal right
+    // under the steers, then their one answer, as for a steer refused as it arrived. The refusal's end is the
+    // refused steer's own, and ends its place; the answer's end ends the rest, and the queue goes on.
+    [Fact]
+    public async Task ASteerRefusedAfterTheEndDrewItTogether_IsDrawnUnderTheSteers_BeforeTheirAnswer()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var first = TurnKeyOf("first");
+        (await fran.EnqueueMessage(TopicId, "steer one", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer two", "c-3", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "older", "c-4", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer one"));
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer two"));
+        await AgentWasSentAsync("steer two");
+        var (one, two) = (TurnKeyOf("steer one"), TurnKeyOf("steer two"));
+
+        (await EndTurnThroughTheToolAsync(first)).SteeredTogether.ShouldBe([one, two]);
+        await RefuseTurnAsync("you were disabled", two);
+        await StreamAsync("one alone", one);
+        await FinishTurnAsync(" then", one);
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+
+        wire.Said().ShouldBe([
+            "user: first",
+            "user: steer one", "user: steer two", "error: you were disabled",
+            "agent: one alone", "agent:  then",
+            "user: older", "agent: answer to older"
+        ]);
+    }
+
     // Only the running turn's own person steers it: never another member's turn, nor a turn an agent
     // started for a schedule; and only the message's sender steers with it. Refused, it keeps its place.
     [Theory]
