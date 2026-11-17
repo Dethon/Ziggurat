@@ -385,6 +385,28 @@ public class ChannelInboxTests
         (await Poll(inbox, new PollerCursor("agent-1", batch!.Value))).Items.ShouldBe(["c2"]);
     }
 
+    // A hub restarted while the agent kept its connection: the agent still names the last batch the old hub
+    // gave it. The new hub's numbers never meet it, so a batch the new hub hands it and whose answer dies is
+    // still delivered again, never taken as received.
+    [Fact]
+    public async Task ABatchNumberAnEarlierInboxHandedOut_IsNeverOneALaterInboxHandsOut()
+    {
+        var clock = new FakeTimeProvider();
+        var before = new ChannelInbox(clock);
+        await Poll(before, new PollerCursor("agent-1", 0));
+        before.Enqueue(Message("c1"));
+        var (_, received) = await Poll(before, new PollerCursor("agent-1", 0));
+
+        clock.Advance(TimeSpan.FromSeconds(30));
+        var restarted = new ChannelInbox(clock);
+        await Poll(restarted, new PollerCursor("agent-1", received!.Value));
+        restarted.Enqueue(Message("c2"));
+        (await Poll(restarted, new PollerCursor("agent-1", received.Value))).Items.ShouldBe(["c2"]);
+
+        // That answer died: the agent still names the old hub's batch.
+        (await Poll(restarted, new PollerCursor("agent-1", received.Value))).Items.ShouldBe(["c2"]);
+    }
+
     private static async Task<(IReadOnlyList<string> Items, long? Batch)> Poll(ChannelInbox inbox, PollerCursor? cursor) =>
         await inbox.ReceiveAsync(
             Subscriber, TimeSpan.Zero,

@@ -277,9 +277,10 @@ public sealed class ChannelInbox(
         private bool _retired;
 
         // The last batch drained for a poller that names itself, until that poller's next poll says whether its
-        // answer arrived. Numbered per subscriber, from 1.
+        // answer arrived. Numbered per subscriber from the clock, not from one, so a poller still naming a batch
+        // of an inbox before this one (the server restarted under it) never names one of this inbox's.
         private (string Poller, long Number, IReadOnlyList<ChannelInboxItem> Items)? _handedOut;
-        private long _batches;
+        private long _batches = createdAt.UtcTicks;
 
         public bool TryTouch(DateTimeOffset now)
         {
