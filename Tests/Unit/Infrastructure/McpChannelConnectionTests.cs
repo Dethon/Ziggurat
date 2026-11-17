@@ -139,4 +139,23 @@ public class McpChannelConnectionTests
             break;
         }
     }
+
+    // A stop that handed nothing back still says so, as an empty list: the agent reads it as a hub that
+    // accounts for every steer it was sent, so a steer it does not name was drawn and is kept, where a
+    // cancel naming nothing at all (a hub from before) leaves it dropping whatever waited.
+    [Fact]
+    public async Task HandleCancelNotification_KeepsAnEmptyListOfReturnedKeys_ApartFromNone()
+    {
+        var sut = new McpChannelConnection("ch-3");
+        sut.HandleChannelCancelNotification(JsonSerializer.SerializeToElement(
+            new ChannelCancelNotification { ConversationId = "conv-77", ReturnedTurnKeys = [] },
+            ChannelProtocol.SerializerOptions));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
+        {
+            msg.ReturnedTurnKeys.ShouldNotBeNull().ShouldBeEmpty();
+            break;
+        }
+    }
 }

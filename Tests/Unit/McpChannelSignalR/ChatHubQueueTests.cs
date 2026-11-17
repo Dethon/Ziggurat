@@ -1403,7 +1403,9 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         if (afterTheyWentIn)
         {
             atTheCut!.SteeredTogether.ShouldBe(steers);
-            (cancel.ReturnedTurnKeys ?? []).ShouldBeEmpty();
+            // Named, though empty: the agent keeps a steer a stop's cancel does not name only when the cancel
+            // names what it returned at all.
+            cancel.ReturnedTurnKeys.ShouldNotBeNull().ShouldBeEmpty();
             taken.ShouldBeEmpty();
             wire.Said().ShouldBe(["user: first", "user: steer one", "user: steer two"]);
         }

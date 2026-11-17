@@ -403,6 +403,41 @@ public class ChatMonitorSteeringTests
         drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) <= 1);
     }
 
+    // A stop's cancel tells the agent which steers it drew and which it handed back: a hub that names what it
+    // returned (none, here) returns every steer it has not drawn, so one it does not name was drawn and is
+    // kept; one it names is in its sender's composer and is not; and a hub from before, which names nothing,
+    // leaves the agent dropping whatever waited, as it always did, rather than keep what it may have returned.
+    [Theory]
+    [InlineData("a hub from before", false)]
+    [InlineData("nothing returned", true)]
+    [InlineData("the steer returned", false)]
+    public async Task AStopBeforeALoneSteersTurnStarts_KeepsIt_OnlyWhenTheCancelSaysItWasNotHandedBack(
+        string cancel, bool kept)
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        var recall = new HeldRecall();
+        await using var run = new ToolLoopRun(model, [lookUp], recall: recall);
+        var setUp = recall.Hold("no, the other one");
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await setUp;
+        run.Stop(returned: cancel switch
+        {
+            "a hub from before" => null,
+            "nothing returned" => [],
+            _ => ["steer-1"]
+        });
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe(kept ? ["user: no, the other one"] : []);
+        model.Requests.Count.ShouldBe(1);
+    }
+
     // Asked of every message as its turn is set up, as memory recall is, and of every run before it reaches the
     // agent: a message the test names holds its turn there until the turn is cancelled.
     private sealed class HeldRecall : IMemoryRecallHook
