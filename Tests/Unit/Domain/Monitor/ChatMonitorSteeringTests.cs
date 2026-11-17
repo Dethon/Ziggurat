@@ -421,6 +421,15 @@ public class ChatMonitorSteeringTests
             : said);
         run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn() == failed && !m.IsInterrupted());
         model.Requests.Count.ShouldBe(answered ? 2 : 1);
+
+        // Read back as a reload draws it, after the cut turn: each message its own entry, one after another;
+        // stopped, no answer under them, as for any stopped turn; failed, the one error, drawn as an error
+        // (a failed turn's reply), with its Retry.
+        var shown = Transcript.Shown(run.Line()).Skip(2).ToList();
+        ToolLoopRun.Render(shown).ShouldBe(run.StoredLine().Skip(3));
+        shown.Select(m => m.Role == ChatRole.Assistant && m.IsFailedTurn())
+            .ShouldBe([.. said.Select(_ => false), .. failed ? [true] : answered ? [false] : Array.Empty<bool>()]);
+        shown.Select(m => m.GetEntryId()).Distinct().Count().ShouldBe(shown.Count);
         if (stopped)
         {
             // The stop ended every drawn key at the hub, which takes nothing after it; whatever the cancelled
@@ -458,6 +467,11 @@ public class ChatMonitorSteeringTests
         await Eventually.Until(
             () => run.Replies.Any(r => r is { IsComplete: true, TurnKey: "steer-2" }), "the steers' turn to fail");
         run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn());
+        // Reloaded, both messages one after another, then the one error, drawn as a failed turn's.
+        var failedShown = Transcript.Shown(run.Line()).Skip(2).ToList();
+        ToolLoopRun.Render(failedShown).ShouldBe(
+            ["user: no, the other one", "user: and in red", "assistant: An error occurred: the provider failed"]);
+        failedShown.Select(m => m.Role == ChatRole.Assistant && m.IsFailedTurn()).ShouldBe([false, false, true]);
         var names = run.Line().Skip(3).Take(2).Select(m => m.GetEntryId()).ToList();
 
         run.Send("and in red");
