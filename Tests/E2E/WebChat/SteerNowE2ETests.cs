@@ -72,4 +72,77 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
             await DrainPendingApprovalsAsync(page);
         }
     }
+
+    // Two messages steered into the same reply go in together: both are drawn where the reply was cut, one
+    // after the other, and answered once. Each asks for a word of its own, so a single answer naming both
+    // shows the model was asked once with both in view; answered one by one, the first would be answered
+    // before the second was drawn. A fresh load of the conversation reads the same.
+    [SkippableFact]
+    public async Task TwoSteersIntoOneReply_AreDrawnTogether_AndAnsweredOnce()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+        var topic = $"Together {tag}";
+        var oneWords = $"Reply with the word ONE{tag}. Do not call any tools.";
+        var twoWords = $"And in the same reply, after it, the word TWO{tag}. Do not call any tools.";
+
+        try
+        {
+            await HoldOnAnApprovalAsync(page,
+                $"{topic}: IMPORTANT: You MUST call a tool right now, before writing anything. Use your file " +
+                $"search/glob tool to find all files with pattern **/*. Only once the tool has returned, reply " +
+                $"with the word AFTER{tag} and nothing else. this is a test");
+
+            foreach (var (words, word) in new[] { (oneWords, $"ONE{tag}"), (twoWords, $"TWO{tag}") })
+            {
+                await SendAsync(page, words);
+                var chip = page.Locator("[data-testid=queue-chip]", new PageLocatorOptions { HasText = word });
+                var steer = chip.Locator("[data-testid=queue-chip-steer]");
+                await Assertions.Expect(steer).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+                await steer.DispatchEventAsync("click");
+                await Assertions.Expect(chip.Locator("[data-testid=queue-chip-steering]"))
+                    .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+            }
+
+            await page.Locator(".btn-approve").ClickAsync();
+            await Assertions.Expect(page.Locator("[data-testid=queue-chip]"))
+                .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 180_000 });
+            await WaitForAsync(page, () => AnswerTo(page, $"TWO{tag}"), "the steers to be answered");
+            await IdleAsync(page);
+
+            AnsweredOnceAfterBoth(await Conversation(page), topic, oneWords, twoWords, tag);
+
+            var fresh = await page.Context.NewPageAsync();
+            await GotoWebChatAsync(fresh, fixture.WebChatUrl);
+            await SelectAgentAsync(fresh);
+            await OpenTopicPastTheOverlayAsync(fresh, topic);
+            await UserMessage(fresh, $"TWO{tag}").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+            await WaitForAsync(fresh, () => AnswerTo(fresh, $"TWO{tag}"), "the answer to be loaded");
+            AnsweredOnceAfterBoth(await Conversation(fresh), topic, oneWords, twoWords, tag);
+        }
+        finally
+        {
+            await DrainPendingApprovalsAsync(page);
+        }
+    }
+
+    // The steers one after the other, right after the cut reply, then one answer naming both words.
+    private static void AnsweredOnceAfterBoth(List<string> said, string topic, string oneWords, string twoWords, string tag)
+    {
+        var all = string.Join("\n", said);
+        var first = said.FindIndex(line => line.StartsWith("user:") && line.Contains($"{topic}:"));
+        var one = said.IndexOf($"user: {oneWords}");
+        var two = said.IndexOf($"user: {twoWords}");
+        first.ShouldBeGreaterThanOrEqualTo(0, all);
+        one.ShouldBeGreaterThan(first, all);
+        two.ShouldBe(one + 1, all);
+        said.Skip(first + 1).Take(one - first - 1).ShouldAllBe(line => line.StartsWith("assistant:"), all);
+        var answers = said.Skip(two + 1).ToList();
+        answers.ShouldHaveSingleItem(all).ShouldStartWith("assistant:", Case.Sensitive, all);
+        answers[0].ShouldContain($"ONE{tag}", Case.Sensitive, all);
+        answers[0].ShouldContain($"TWO{tag}", Case.Sensitive, all);
+    }
 }
