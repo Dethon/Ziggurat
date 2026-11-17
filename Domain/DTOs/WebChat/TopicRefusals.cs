@@ -52,6 +52,10 @@ public static class TopicRefusals
     // sending again will not help.
     public const string SignedOut = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
 
+    // A message naming a file kept for another conversation: a page names files by id, and an id is no
+    // proof the sender holds the file here.
+    public const string NotYourFiles = "This message names a file that was not added to this conversation, so it was not sent.";
+
     // A queued message whose sending failed after it was taken from the queue: said so its turn ends
     // rather than hold the stream open for good.
     public const string NotSent = "This message could not be sent.";

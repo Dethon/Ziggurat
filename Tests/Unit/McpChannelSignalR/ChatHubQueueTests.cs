@@ -909,6 +909,40 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // A page names its files by id, and an id is no proof of holding the file: one the upload store keeps
+    // for another conversation is somebody else's, or the sender's from a topic the agent's line here
+    // must not reach. Refused as the message is queued, before it waits, and nothing of it is queued.
+    [Fact]
+    public async Task AQueuedMessageNamingAnotherConversationsFile_IsRefused_AndNotQueued()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var theirs = await UploadAsync(elsewhere: true);
+
+        var refusal = await Should.ThrowAsync<HubException>(() => fran.EnqueueMessage(TopicId, "look", "c-2", null, [theirs]));
+
+        refusal.Message.ShouldBe(TopicRefusals.NotYourFiles);
+        (await fran.GetQueue(TopicId)).Items.ShouldBeEmpty();
+        await FinishTurnAsync("answer one");
+        await wire.Ended;
+        (await SentSoFarAsync()).ShouldBe(["first"]);
+    }
+
+    // The same rule for a send that opens a turn: refused before its message is written or emitted.
+    [Fact]
+    public async Task ASendNamingAnotherConversationsFile_IsRefused_BeforeAnythingIsEmitted()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var theirs = await UploadAsync(elsewhere: true);
+
+        var wire = Read(fran.SendMessage(TopicId, "look", "c-1", null, [theirs], CancellationToken.None));
+        await wire.Ended;
+
+        wire.Said().ShouldBe([$"error: {TopicRefusals.NotYourFiles}"]);
+        (await SentSoFarAsync()).ShouldBeEmpty();
+    }
+
     // The same file may be named by the conversation (a message re-run with its files, which a rewrite
     // put aside) or by another queued message: removing one message leaves it to them.
     [Theory]
@@ -940,26 +974,6 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             await FinishTurnAsync("answer two");
         }
 
-        await wire.Ended;
-    }
-
-    // A page names its files by id, and nothing checked the id was this conversation's when the message
-    // was queued: removing it deletes nothing another conversation keeps.
-    [Fact]
-    public async Task ARemovedMessageNamingAnotherConversationsFile_LeavesThatFileAlone()
-    {
-        var fran = HubFor(new SignedInCaller());
-        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
-        await AgentWasSentAsync("first");
-        var theirs = await _attachmentStore.SaveAsync(
-            new AgentKey("9:99", "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
-            CancellationToken.None);
-        (await fran.EnqueueMessage(TopicId, "look", "c-2", null, [theirs])).ShouldBeTrue();
-
-        await fran.RemoveQueued(TopicId, (await fran.GetQueue(TopicId)).Items.ShouldHaveSingleItem().Id);
-
-        _attachmentStore.Find(theirs.Id).ShouldNotBeNull();
-        await FinishTurnAsync("answer one");
         await wire.Ended;
     }
 
@@ -1558,10 +1572,10 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         }
     }
 
-    private Task<AttachmentReference> UploadAsync() =>
+    private Task<AttachmentReference> UploadAsync(bool elsewhere = false) =>
         _attachmentStore.SaveAsync(
-            new AgentKey(ConversationId, "jack"), "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]),
-            CancellationToken.None);
+            new AgentKey(elsewhere ? "8:99" : ConversationId, "jack"), "default", "photo.png", "image/png",
+            new MemoryStream([1, 2, 3]), CancellationToken.None);
 
     private static readonly AttachmentReference Photo = new()
     {

@@ -71,7 +71,7 @@ public sealed class PersonTurnsTests : IDisposable
 
         _hub = new ChatHub(
             _sessionService, _streamService, approvalService: null!, _emitter, catalog,
-            new Mock<IThreadStateStore>().Object, pushSubscriptionStore: null!, attachmentService: null!,
+            new Mock<IThreadStateStore>().Object, pushSubscriptionStore: null!, attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
             HubParts.Turns(_streamService, _emitter, _accounts),
             HubParts.News(_streamService, new Mock<IThreadStateStore>().Object, new Mock<IHubNotificationSender>().Object),

@@ -493,7 +493,7 @@ public sealed class ChatHub(
         // between picking a file and sending it: no turn is created, no agent is woken, and no
         // browser is shown a message that was never taken. The answer goes out on the same
         // stream-error path an undeliverable message uses, so every browser sees the same end.
-        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, cancellationToken) is { } refused)
+        if (await AdmissionRefusalAsync(session, configPatch, attachments, cancellationToken) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
             await foreach (var refusalChunk in
@@ -731,7 +731,7 @@ public sealed class ChatHub(
         string? refusal;
         try
         {
-            refusal = await CapabilityRefusalAsync(session.AgentId, turn.ConfigPatch, turn.Attachments, ct);
+            refusal = await AdmissionRefusalAsync(session, turn.ConfigPatch, turn.Attachments, ct);
             if (refusal is null && await turns.VouchingAsync(sender.UserId, sender.SessionId, ct) is NotVouched unvouched)
             {
                 refusal = unvouched.Refusal;
@@ -761,6 +761,25 @@ public sealed class ChatHub(
                 return (true, null);
         }
     }
+
+    // What refuses a message before anything of it is written, queued or emitted: a file it names that is
+    // not this conversation's, then a file its model cannot read.
+    private Task<string?> AdmissionRefusalAsync(
+        ChannelSession session,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
+        CancellationToken ct) =>
+        NamesAnotherConversationsFile(session, attachments)
+            ? Task.FromResult<string?>(TopicRefusals.NotYourFiles)
+            : CapabilityRefusalAsync(session.AgentId, configPatch, attachments, ct);
+
+    // A page names its files by id, and the agent fetches whatever a message names: a file kept for
+    // another conversation would reach this one's line, and its sender may not even see that one. An id
+    // the store holds nothing under is let through, as a file swept since it was picked always was: the
+    // agent is handed nothing for it and says so.
+    private bool NamesAnotherConversationsFile(ChannelSession session, IReadOnlyList<AttachmentReference>? attachments) =>
+        (attachments ?? []).Any(a => attachmentService.ConversationOf(a.Id) is { } held
+                                     && held.ConversationId != session.Identity.ConversationId);
 
     // The composer already blocks this case; this is the guard for the race where the model
     // changed between picking a file and sending it. The agent does not check a third time. The agent

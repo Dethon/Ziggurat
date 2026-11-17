@@ -51,7 +51,7 @@ public class ChatHubUnsharedStreamTests
             new ApprovalService(_streams, _sessions, _store.Object, new Mock<IHubNotificationSender>().Object,
                 new Mock<IPushNotificationService>().Object, new AccountConnections(), NullLogger<ApprovalService>.Instance),
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
-            new Mock<IAgentCatalog>().Object, _store.Object, pushSubscriptionStore: null!, attachmentService: null!,
+            new Mock<IAgentCatalog>().Object, _store.Object, pushSubscriptionStore: null!, attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
             HubParts.Turns(_streams, new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast), new VouchingAccounts()),
             HubParts.News(_streams, _store.Object, new Mock<IHubNotificationSender>().Object),

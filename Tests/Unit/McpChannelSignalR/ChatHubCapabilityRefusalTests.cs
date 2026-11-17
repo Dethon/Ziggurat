@@ -73,7 +73,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             _catalog,
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),

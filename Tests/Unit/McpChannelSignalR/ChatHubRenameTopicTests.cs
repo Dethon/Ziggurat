@@ -41,7 +41,7 @@ public class ChatHubRenameTopicTests
             new Mock<IAgentCatalog>().Object,
             _store.Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             _sender.Object,
             new RetentionSettings(),
             new DictationSettings(),

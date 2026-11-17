@@ -53,7 +53,7 @@ public class ChatHubCancelTopicTests : IDisposable
             new Mock<IAgentCatalog>().Object,
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
-            attachmentService: null!,
+            attachmentService: HubParts.NoUploads(),
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
