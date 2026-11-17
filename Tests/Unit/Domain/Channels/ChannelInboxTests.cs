@@ -317,6 +317,80 @@ public class ChannelInboxTests
         next.Select(i => i.Message!.ConversationId).ShouldBe(["c1", "c2", "c3"]);
     }
 
+    // A poll's answer can die on the wire after it left the inbox, which then had no way to know (only the
+    // write was left open). A poller that names itself and says what it last received closes that: the inbox
+    // keeps each batch it hands such a poller until that poller's next poll names it, and a poll naming an
+    // earlier one gets it again, first, ahead of anything that arrived since. Named, it is gone, and never
+    // delivered twice.
+    [Fact]
+    public async Task ABatchWhoseAnswerNeverReachedItsPoller_IsDeliveredAgain_FirstOnItsNextPoll()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await Poll(inbox, new PollerCursor("agent-1", 0));
+        inbox.Enqueue(Message("c1"));
+        inbox.Enqueue(Message("c2"));
+        var (lost, batch) = await Poll(inbox, new PollerCursor("agent-1", 0));
+        lost.ShouldBe(["c1", "c2"]);
+        batch.ShouldNotBeNull();
+
+        // The answer died on its way: the poller still names nothing it received.
+        inbox.Enqueue(Message("c3"));
+        var (again, againBatch) = await Poll(inbox, new PollerCursor("agent-1", 0));
+        again.ShouldBe(["c1", "c2", "c3"]);
+
+        // Received this time, and said so: nothing is delivered twice.
+        inbox.Enqueue(Message("c4"));
+        (await Poll(inbox, new PollerCursor("agent-1", againBatch!.Value))).Items.ShouldBe(["c4"]);
+    }
+
+    // Another poller (an agent started since, or a connection made afresh) is not handed a batch an earlier one
+    // was: that one may have taken it and answered it, so the old rule stands for it. A poller that names
+    // nothing (one from before) has every batch committed as it is drained.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ABatchHandedToAnotherPoller_IsNotDeliveredAgain(bool namesNothing)
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        PollerCursor? before = namesNothing ? null : new PollerCursor("agent-1", 0);
+        await Poll(inbox, before);
+        inbox.Enqueue(Message("c1"));
+        var (first, batch) = await Poll(inbox, before);
+        first.ShouldBe(["c1"]);
+        (batch is null).ShouldBe(namesNothing);
+
+        inbox.Enqueue(Message("c2"));
+        (await Poll(inbox, new PollerCursor("agent-2", 0))).Items.ShouldBe(["c2"]);
+    }
+
+    // The same answer as the existing hand-back: a poll that saw its own caller go before it answered puts the
+    // batch back, and nothing is kept as handed out.
+    [Fact]
+    public async Task ABatchHandedBackByItsOwnPoll_IsNotAlsoKeptAsHandedOut()
+    {
+        var inbox = new ChannelInbox(new FakeTimeProvider());
+        await Poll(inbox, new PollerCursor("agent-1", 0));
+        inbox.Enqueue(Message("c1"));
+        using var cts = new CancellationTokenSource();
+        await Should.ThrowAsync<OperationCanceledException>(() => inbox.ReceiveAsync(
+            Subscriber, TimeSpan.Zero, (items, _) =>
+            {
+                cts.Cancel();
+                return items;
+            }, cts.Token, new PollerCursor("agent-1", 0)));
+
+        var (again, batch) = await Poll(inbox, new PollerCursor("agent-1", 0));
+        again.ShouldBe(["c1"]);
+        inbox.Enqueue(Message("c2"));
+        (await Poll(inbox, new PollerCursor("agent-1", batch!.Value))).Items.ShouldBe(["c2"]);
+    }
+
+    private static async Task<(IReadOnlyList<string> Items, long? Batch)> Poll(ChannelInbox inbox, PollerCursor? cursor) =>
+        await inbox.ReceiveAsync(
+            Subscriber, TimeSpan.Zero,
+            (items, batch) => ((IReadOnlyList<string>)[.. items.Select(i => i.Message!.ConversationId)], batch),
+            CancellationToken.None, cursor);
+
     // The handback answers exactly one case: the drain succeeded and the request died while its
     // response was being built. Nothing else in a poll reaches it — every earlier cancellation check
     // refuses to drain at all — so this is the only test that keeps it from being deleted.

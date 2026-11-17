@@ -99,6 +99,14 @@ public sealed class McpChannelConnection(
     private CancellationTokenSource? _pumpCts;
     private Task? _pumpTask;
 
+    // Who this connection is to the channel's inbox, on every poll, and the last batch it received there (0
+    // before the first): a batch whose answer never arrived (the call failed, the link dropped as it came) is
+    // handed to this connection again on its next poll, a reconnect's included, and one that did arrive is
+    // never handed over twice. Per connection, never per process: a connection made afresh is another poller,
+    // which is not handed what an earlier one may have taken. Read and written by the one pump that runs.
+    private readonly string _poller = Guid.NewGuid().ToString("N");
+    private long _received;
+
     public string ChannelId { get; } = channelId;
 
     public bool AttachOnly { get; } = attachOnly;
@@ -373,7 +381,9 @@ public sealed class McpChannelConnection(
             new Dictionary<string, object?>
             {
                 ["subscriberId"] = subscriberId,
-                ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs
+                ["maxWaitMs"] = ChannelProtocol.DefaultReceiveWaitMs,
+                ["poller"] = _poller,
+                ["received"] = _received
             },
             cancellationToken: ct);
 
@@ -390,6 +400,12 @@ public sealed class McpChannelConnection(
         foreach (var item in items)
         {
             Dispatch(item);
+        }
+
+        // Named as received once every item of it is in hand; a channel from before numbers nothing.
+        if (batch?.Batch is { } number)
+        {
+            _received = number;
         }
 
         return items.Count > 0 || Stopwatch.GetElapsedTime(startedAt) >= _minHonouredWait;
