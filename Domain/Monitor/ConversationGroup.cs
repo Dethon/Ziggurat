@@ -301,6 +301,7 @@ internal sealed class ConversationGroup(
                     // timeout would break out of here with the group never completed, leaving
                     // every later message queued into a channel nobody reads.
                     await ObserveAbandonedWarmupAsync();
+                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
                 catch (HouseholdWithoutKeyException ex)
@@ -309,6 +310,7 @@ internal sealed class ConversationGroup(
                     // next message is built afresh and runs once the household has set a key.
                     await RefuseWithoutKeyAsync(x, ex.HouseholdId);
                     await EndFailedSetupAsync();
+                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
                 catch (AgentNotFoundException ex)
@@ -317,6 +319,7 @@ internal sealed class ConversationGroup(
                     // the next message is built afresh — once an owner adds the agent it answers.
                     await RefuseWithoutAgentAsync(x, ex);
                     await EndFailedSetupAsync();
+                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
                 catch (Exception ex)
@@ -338,6 +341,7 @@ internal sealed class ConversationGroup(
                     }
 
                     await EndFailedSetupAsync();
+                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
 
@@ -414,6 +418,10 @@ internal sealed class ConversationGroup(
             // leaving an unobserved task exception behind.
         }
     }
+
+    // The steers gathered into a turn that failed to set up: only the first is answered, as a turn's message.
+    private void LogDroppedTurns(IEnumerable<AdmittedTurn> dropped) =>
+        dropped.ToList().ForEach(turn => LogDroppedTurn(logger, turn.Message));
 
     internal static void LogDroppedTurn(ILogger logger, ChannelMessage message)
     {
@@ -1167,7 +1175,9 @@ internal sealed class ConversationGroup(
                 attachments,
                 (id, ct) => channel.FetchAttachmentAsync(id, ct),
                 state.DeliveryKey.ConversationId,
-                turn.TurnKey),
+                // Each message's own: steers that went in together are one turn of several messages,
+                // and files of one name sent with two of them must not land on each other.
+                message.TurnKey ?? turn.TurnKey),
             logger,
             _turnCt);
 
