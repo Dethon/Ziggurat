@@ -319,6 +319,100 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await wire.Ended;
     }
 
+    // Unsharing leaves its owner alone able to write in the topic: what other members left waiting in its
+    // queue is pulled out, never run, and handed to each of them wherever they are, as a topic they no
+    // longer write in cannot be where they take it from. The owner's own messages keep their place.
+    [Fact]
+    public async Task UnsharingATopic_PullsTheMembersQueuedMessages_AndHandsThemToThemAlone()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var told = TellsOfReturns();
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "fran two", "c-3", null)).ShouldBeTrue();
+
+        await ShareAsync(fran, shared: false);
+
+        (await fran.GetQueue(TopicId)).Items.Select(i => i.Content).ShouldBe(["fran two"]);
+        Snapshot(told).Single(t => t.Group == "account:marta").Notification.Unshared.ShouldBeTrue();
+        marta.TakeUnshared().Select(m => m.Content).ShouldBe(["marta one"]);
+        marta.TakeUnshared().ShouldBeEmpty();
+        fran.TakeUnshared().ShouldBeEmpty();
+        await FinishTurnAsync("answer one");
+        await AgentWasSentAsync("fran two");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+        (await SentSoFarAsync()).ShouldBe(["first", "fran two"]);
+    }
+
+    // Words a stop handed back to a member that they had not taken yet are theirs too, and the topic they
+    // were handed back in is no longer theirs to take them from.
+    [Fact]
+    public async Task UnsharingATopic_HandsAMemberTheWordsAStopReturnedThatTheyHadNotTaken()
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+        await fran.CancelTopic(TopicId);
+        await wire.Ended;
+
+        await ShareAsync(fran, shared: false);
+
+        marta.TakeUnshared().Select(m => m.Content).ShouldBe(["marta one"]);
+    }
+
+    // A member's message still being admitted as the owner unshares, or still being vouched for as the
+    // next to run, goes the same way: handed to them, never run, and the queue goes on with the owner's.
+    [Theory]
+    [InlineData("admitted")]
+    [InlineData("dispatched")]
+    public async Task AMembersMessageInFlightAsTheTopicIsUnshared_IsHandedToThem_AndNeverRun(string stage)
+    {
+        GivenTheTopic(owner: "fran", shared: true);
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        Task<bool>? admitting = null;
+        HeldAnswer vouching;
+        if (stage == "admitted")
+        {
+            vouching = _accounts.HoldNext();
+            admitting = marta.EnqueueMessage(TopicId, "marta one", "c-2", null);
+            await vouching.Asked;
+            (await fran.EnqueueMessage(TopicId, "fran two", "c-3", null)).ShouldBeTrue();
+        }
+        else
+        {
+            (await marta.EnqueueMessage(TopicId, "marta one", "c-2", null)).ShouldBeTrue();
+            (await fran.EnqueueMessage(TopicId, "fran two", "c-3", null)).ShouldBeTrue();
+            vouching = _accounts.HoldNext();
+            await FinishTurnAsync("answer one");
+            await vouching.Asked;
+        }
+
+        await ShareAsync(fran, shared: false);
+        vouching.Answer();
+        if (admitting is not null)
+        {
+            (await admitting).ShouldBeTrue();
+            await FinishTurnAsync("answer one");
+        }
+
+        await AgentWasSentAsync("fran two");
+        await FinishTurnAsync("answer two");
+        await wire.Ended;
+        await Eventually.Settle();
+        (await SentSoFarAsync()).ShouldBe(["first", "fran two"]);
+        marta.TakeUnshared().Select(m => m.Content).ShouldBe(["marta one"]);
+    }
+
     private async Task ShareAsync(ChatHub owner, bool shared)
     {
         _store.Setup(s => s.GetTopicAsync("home", "jack", 7, TopicId))

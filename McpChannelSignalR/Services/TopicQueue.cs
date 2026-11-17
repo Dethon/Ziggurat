@@ -39,6 +39,10 @@ internal sealed class RunningQueue(StreamKey stream)
     // rather than the queue's head, and a stop meanwhile returns them to their senders.
     public List<WaitingSteer> Steers { get; } = [];
 
+    // The topic's owner, once they stopped sharing it while this stream ran: a message from anyone else
+    // still being admitted then goes to its sender, never into the queue.
+    public Account? PrivateTo { get; set; }
+
     // The account whose own turn the stream is running: none for a turn an agent started (a
     // schedule's, a watch's), and none for a queued turn taken but not started yet. Only that person
     // may steer it.

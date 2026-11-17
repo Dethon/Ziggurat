@@ -229,4 +229,7 @@ public sealed class FakeChatMessagingService : IChatMessagingService
 
     public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId) =>
         Task.FromResult(new HubResult<IReadOnlyList<ReturnedMessage>>(true, []));
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeUnsharedAsync() =>
+        Task.FromResult(new HubResult<IReadOnlyList<ReturnedMessage>>(true, []));
 }

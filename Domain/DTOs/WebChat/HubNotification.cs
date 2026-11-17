@@ -115,5 +115,7 @@ public record QueueChangedNotification(
 // (ChatHub.TakeReturned) into its composer; any other finds them when the topic is next opened.
 // CorrelationIds are the sending pages' ids for them, so whichever page drew one as sent takes it off,
 // whether or not that page is the one to take the words.
+// Unshared: the topic stopped being shared with this person, so these are no longer taken from it but
+// from the hub by person (ChatHub.TakeUnshared), into whatever composer is on screen.
 public record QueueReturnedNotification(
-    string TopicId, string? SpaceSlug = null, IReadOnlyList<string>? CorrelationIds = null);
+    string TopicId, string? SpaceSlug = null, IReadOnlyList<string>? CorrelationIds = null, bool Unshared = false);

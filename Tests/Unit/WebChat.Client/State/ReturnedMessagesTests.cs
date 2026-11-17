@@ -129,6 +129,44 @@ public sealed class ReturnedMessagesTests
         ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued on one");
     }
 
+    // The owner stopped sharing the topic: the person's queued words go to whatever composer is on screen,
+    // since that topic is no longer theirs to write in, with a toast saying why. Words only: the files were
+    // added to that conversation, and no other would take them.
+    [Fact]
+    public async Task ToldATopicWasUnshared_TakesTheirWordsIntoTheComposerOnScreen_WithAToast()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)
+            [new ReturnedMessage("q1", "queued there", [Photo], null)]);
+
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", Unshared: true));
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("typed", client.Composer.State.Handed!).ShouldBe("queued there\n\ntyped");
+        client.Composer.State.For("topic-2").ShouldBeEmpty();
+        client.Toasts.State.Toasts.ShouldContain(t => t.Message.Contains("no longer shared"));
+        transport.Calls.ShouldNotContain(call => call.MethodName == "TakeReturned" && Equals(call.Arguments[0], "topic-1"));
+    }
+
+    // A person with no page open when it was unshared finds them as a page of theirs next becomes live.
+    [Fact]
+    public async Task BecomingLive_TakesWhatUnsharingHandedThem()
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        Seed(client, open: "topic-2");
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "TakeUnshared"));
+        transport.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[new ReturnedMessage("q1", "queued while away", [], null)]);
+
+        await transport.RaiseReconnectingAsync(null);
+        await transport.RaiseReconnectedAsync("connection-2");
+
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("queued while away");
+    }
+
     private static void Seed(ScriptedChatClient client, string open)
     {
         client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));

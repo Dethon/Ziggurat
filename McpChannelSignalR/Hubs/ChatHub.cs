@@ -719,6 +719,12 @@ public sealed class ChatHub(
         return [.. streamService.TakeReturned(topicId, SignedIn.Account).Select(m => m.ToReturned())];
     }
 
+    // The caller's messages that unsharing a topic took out of it — queued there, or handed back there by a
+    // stop and not taken — in the order they were queued, for whatever composer their page shows: asked by
+    // person, since the topic is no longer one they may take them from. Taken once.
+    public IReadOnlyList<ReturnedMessage> TakeUnshared() =>
+        [.. streamService.TakeUnshared(SignedIn.Account).Select(m => m.ToReturned())];
+
     private async Task<Withdrawn> WithdrawAsync(string topicId, string queuedId)
     {
         await SessionToReadAsync(topicId);
@@ -768,6 +774,9 @@ public sealed class ChatHub(
                 return (false, null);
             case Queueing.Returned:
                 await queueNews.TellReturnedOrLogAsync([(sender, turn.CorrelationId)]);
+                return (true, null);
+            case Queueing.Unshared:
+                await queueNews.TellUnsharedOrLogAsync([(sender, turn.CorrelationId)]);
                 return (true, null);
             default:
                 await queueNews.TellAsync(sender);
@@ -972,6 +981,22 @@ public sealed class ChatHub(
             TopicAudience.Space(SignedIn.TenantId, heardIn),
             "OnTopicChanged",
             new TopicChangedNotification(TopicChangeType.Updated, topicId, changed, heardIn));
+        if (shared)
+        {
+            streamService.Reshare(topicId);
+            return;
+        }
+
+        // Only the owner writes in it now: what members left queued in it, or a stop handed back to them
+        // there, goes to them wherever they are. Told after the topic's change, which takes it from their
+        // pages, so their words land in whatever composer is left on screen.
+        var unsharing = streamService.Unshare(topicId, SignedIn.Account);
+        if (unsharing.QueueChanged && sessionService.TryGetSession(topicId, out var session) && session is not null)
+        {
+            await queueNews.TellOrLogAsync(new QueueChange(topicId, session));
+        }
+
+        await queueNews.TellUnsharedOrLogAsync(unsharing.Moved.Select(m => (m.Sender, m.Message.CorrelationId)));
     }
 
     // On the server, so it covers conversations this client never loaded — which is every

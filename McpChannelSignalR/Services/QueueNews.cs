@@ -50,18 +50,26 @@ public sealed class QueueNews(
     // page takes the words. Told after the stop, which a failed telling must not fail: a page finds them
     // anyway as it next opens the topic.
     public Task TellReturnedOrLogAsync(IEnumerable<(SenderSnapshot Sender, string? CorrelationId)> returned) =>
+        TellReturnedOrLogAsync(returned, unshared: false);
+
+    // Messages unsharing the topic took out of it, told the same way to each of their senders, marked so
+    // their pages take them from the hub by person (ChatHub.TakeUnshared): the topic is no longer theirs.
+    public Task TellUnsharedOrLogAsync(IEnumerable<(SenderSnapshot Sender, string? CorrelationId)> moved) =>
+        TellReturnedOrLogAsync(moved, unshared: true);
+
+    private Task TellReturnedOrLogAsync(IEnumerable<(SenderSnapshot Sender, string? CorrelationId)> returned, bool unshared) =>
         Task.WhenAll(returned
             .GroupBy(r => r.Sender.UserId)
             .Select(theirs => TellReturnedOrLogAsync(
-                theirs.First().Sender, [.. theirs.Select(r => r.CorrelationId).OfType<string>()])));
+                theirs.First().Sender, [.. theirs.Select(r => r.CorrelationId).OfType<string>()], unshared)));
 
-    private async Task TellReturnedOrLogAsync(SenderSnapshot to, IReadOnlyList<string> sends)
+    private async Task TellReturnedOrLogAsync(SenderSnapshot to, IReadOnlyList<string> sends, bool unshared)
     {
         try
         {
             await hubSender.SendToGroupAsync(
                 TopicAudience.Account(to.UserId), "OnQueueReturned",
-                new QueueReturnedNotification(to.TopicId, to.SpaceSlug, sends.Count > 0 ? sends : null));
+                new QueueReturnedNotification(to.TopicId, to.SpaceSlug, sends.Count > 0 ? sends : null, unshared));
         }
         catch (Exception ex)
         {

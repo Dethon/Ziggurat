@@ -31,4 +31,5 @@ public interface IChatMessagingService
     Task<HubResult<ReturnedMessage>> TakeBackQueuedAsync(string topicId, string queuedId);
     Task<HubResult<Nothing>> SteerQueuedAsync(string topicId, string queuedId);
     Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId);
+    Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeUnsharedAsync();
 }

@@ -27,6 +27,11 @@ public sealed class StreamService(
     private readonly Dictionary<string, TopicQueue> _topics = new();
     private long _lastStreamId;
 
+    // Messages taken out of a topic as its owner stopped sharing it, by the member who sent them: kept by
+    // person rather than by topic, since the topic is no longer theirs to take them from. Under
+    // _streamLock, in memory as the queue is.
+    private readonly Dictionary<Account, List<QueuedMessage>> _unshared = new();
+
     // The keys of the steers sent and not drawn yet, every topic's, written under _streamLock and read
     // without it: every reply chunk asks whether it is a waiting steer's, and almost none is, so that
     // question takes the lock only for a chunk whose key is here. A steer's answer can only arrive
@@ -265,6 +270,7 @@ public sealed class StreamService(
     public Queueing Enqueue(StreamKey held, SenderSnapshot sender, TurnMessage turn)
     {
         EndedStream? ended;
+        Queueing outcome;
         lock (_streamLock)
         {
             var message = QueuedMessage.Of(sender, turn, time.GetUtcNow());
@@ -273,13 +279,24 @@ public sealed class StreamService(
                 return HandBackIfStopped(held, message);
             }
 
-            running.Waiting.Add(message);
-            _queueRevision++;
+            outcome = running.PrivateTo is { } owner && message.Sender.Principal.Account != owner
+                ? Queueing.Unshared
+                : Queueing.Queued;
+            if (outcome == Queueing.Unshared)
+            {
+                HandOver(message);
+            }
+            else
+            {
+                running.Waiting.Add(message);
+                _queueRevision++;
+            }
+
             ended = GiveUpPlace(held.TopicId, startsSteers: false);
         }
 
         Announce(ended);
-        return Queueing.Queued;
+        return outcome;
     }
 
     // A message admitted to a stream a stop took meanwhile goes back to its sender with the rest of that
@@ -781,14 +798,102 @@ public sealed class StreamService(
     }
 
     // A deleted topic: its stream cancelled, its queue dropped and whatever a stop returned in it
-    // forgotten, since nothing said in a deleted conversation is kept.
+    // forgotten, since nothing said in a deleted conversation is kept, nor anything unsharing it handed
+    // to its members.
     public void Forget(string topicId)
     {
         lock (_streamLock)
         {
             CancelStream(topicId);
             _topics.Remove(topicId);
+            _unshared.Values.ToList().ForEach(theirs => theirs.RemoveAll(m => m.Sender.TopicId == topicId));
+            _unshared.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList().ForEach(k => _unshared.Remove(k));
         }
+    }
+
+    // The topic's owner stopped sharing it: only they may write in it now. What anyone else left waiting in
+    // its queue — or about to start, a head still being vouched for, whose place is given up — and what a
+    // stop handed back to them there and they had not taken, is moved to them by person, and anything of
+    // theirs still being admitted to the running stream follows (RunningQueue.PrivateTo). A steer already
+    // sent is left to the agent. Answers what moved.
+    public Unsharing Unshare(string topicId, Account owner)
+    {
+        EndedStream? ended = null;
+        List<QueuedMessage> moved = [];
+        var queueChanged = false;
+        lock (_streamLock)
+        {
+            if (_topics.GetValueOrDefault(topicId) is not { } topic)
+            {
+                return new Unsharing([], false);
+            }
+
+            if (topic.Running is { } running)
+            {
+                running.PrivateTo = owner;
+                var waiting = TakeAll(running.Waiting, owner);
+                var dispatching = TakeAll(running.Dispatching, owner);
+                moved.AddRange([.. waiting, .. dispatching]);
+                queueChanged = moved.Count > 0;
+                if (queueChanged)
+                {
+                    _queueRevision++;
+                }
+
+                ended = dispatching.Select(_ => GiveUpPlace(topicId, startsSteers: false)).LastOrDefault(e => e is not null);
+            }
+
+            moved.AddRange(TakeAll(topic.Returned, owner));
+            moved.ForEach(HandOver);
+            DropIfEmpty(topicId, topic);
+        }
+
+        Announce(ended);
+        return new Unsharing(moved, queueChanged);
+    }
+
+    // Shared again: a member's message admitted from now on is queued as anyone's.
+    public void Reshare(string topicId)
+    {
+        lock (_streamLock)
+        {
+            if (RunningOf(topicId) is { } running)
+            {
+                running.PrivateTo = null;
+            }
+        }
+    }
+
+    // What unsharing handed to this person, in the order it was queued, handed over once: whichever of
+    // their pages asks first.
+    public IReadOnlyList<QueuedMessage> TakeUnshared(Account by)
+    {
+        lock (_streamLock)
+        {
+            return _unshared.Remove(by, out var theirs) ? theirs : [];
+        }
+    }
+
+    private static List<QueuedMessage> TakeAll(List<QueuedMessage> from, Account owner)
+    {
+        var others = from.Where(m => m.Sender.Principal.Account != owner).ToList();
+        from.RemoveAll(others.Contains);
+        return others;
+    }
+
+    private void HandOver(QueuedMessage message)
+    {
+        if (message.Sender.Principal.Account is not { } sender)
+        {
+            return;
+        }
+
+        if (!_unshared.TryGetValue(sender, out var theirs))
+        {
+            _unshared[sender] = theirs = [];
+        }
+
+        theirs.Add(message);
     }
 
     public void CancelStream(string topicId)

@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
@@ -6,6 +7,7 @@ using WebChat.Client.State.Composer;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Queue;
+using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
 namespace WebChat.Client.State.Effects;
@@ -22,6 +24,12 @@ public sealed class ReturnedMessagesEffect : IDisposable
     private readonly Dictionary<string, IReadOnlyList<ReturnedMessage>> _held = new();
     private readonly IDisposable _returned;
     private readonly IDisposable _shown;
+    private readonly IDisposable _unshared;
+    private readonly IDisposable _live;
+
+    // Said where the words land, which is not where they were queued.
+    public const string UnsharedToast =
+        "A conversation is no longer shared with you, so what you had queued there is back in your message box.";
 
     public ReturnedMessagesEffect(
         Dispatcher dispatcher, TopicsStore topics, ConnectionStore connection, IChatMessagingService messagingService,
@@ -50,6 +58,50 @@ public sealed class ReturnedMessagesEffect : IDisposable
         // comes back.
         _shown = ShownTopicCatchUp.Subscribe(dispatcher, topics, connection,
             (topicId, moment) => TakeAsync(topicId).LogFaults(_logger, moment));
+
+        // What unsharing handed this person is no topic's to wait for: taken as soon as told, and by every
+        // page as it becomes live, the first time too, so a person with no page open then finds it on the
+        // next one.
+        _unshared = dispatcher.RegisterHandler<QueueUnshared>(a =>
+        {
+            if (a.CorrelationIds is { Count: > 0 } sent)
+            {
+                _dispatcher.Dispatch(new TakeOffSentMessages(a.TopicId, sent));
+            }
+
+            TakeUnsharedAsync(a.TopicId).LogFaults(_logger, nameof(QueueUnshared));
+        });
+        _live = connection.StateObservable
+            .Where(state => state.Status == ConnectionStatus.Connected)
+            .Select(state => state.Epoch)
+            .DistinctUntilChanged()
+            .Subscribe(_ => TakeUnsharedAsync(unsharedTopicId: null).LogFaults(_logger, "unshared messages"));
+    }
+
+    // Into whatever composer is on screen, the words alone: the files were added to the unshared topic's
+    // conversation, and no other would take them (TopicRefusals.NotYourFiles). Not that topic's composer,
+    // should it still be on screen, since its person may no longer write there.
+    private async Task TakeUnsharedAsync(string? unsharedTopicId)
+    {
+        IReadOnlyList<ReturnedMessage> taken;
+        try
+        {
+            if (await _messagingService.TakeUnsharedAsync() is not { IsLive: true, Value: { Count: > 0 } answered })
+            {
+                return;
+            }
+
+            taken = answered;
+        }
+        catch (HubException refused)
+        {
+            _logger.LogInformation("Unshared messages not taken: {Reason}", refused.Message);
+            return;
+        }
+
+        var onScreen = _topics.State.SelectedTopicId is { } selected && selected != unsharedTopicId ? selected : "";
+        _dispatcher.Dispatch(new ShowError(UnsharedToast));
+        _dispatcher.Dispatch(new ReturnToComposer(onScreen, [.. taken.Select(m => m with { Attachments = [] })]));
     }
 
     // Quiet when nothing could be taken: the hub keeps them, and the next open of the topic asks again.
@@ -100,5 +152,7 @@ public sealed class ReturnedMessagesEffect : IDisposable
     {
         _returned.Dispose();
         _shown.Dispose();
+        _unshared.Dispose();
+        _live.Dispose();
     }
 }

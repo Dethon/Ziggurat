@@ -24,8 +24,16 @@ public enum Queueing
 {
     Queued,
     Returned,
-    NotRunning
+    NotRunning,
+
+    // Handed to its sender as someone the topic's owner stopped sharing it with while it was admitted.
+    Unshared
 }
+
+// What unsharing a topic moved out of it, to each of the members it was no longer shared with: their
+// queued messages and what a stop had handed back to them there. QueueChanged: the queue the topic's
+// pages show lost some of them.
+public sealed record Unsharing(IReadOnlyList<QueuedMessage> Moved, bool QueueChanged);
 
 // What became of a person's send that opened the stream, once vouched for: started on it, handed back to
 // its sender because a stop ended that stream while it was being vouched for, or dropped by that stop — a

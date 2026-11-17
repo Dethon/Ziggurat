@@ -51,4 +51,7 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
 
     public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeReturnedAsync(string topicId) =>
         liveConnection.InvokeAsync<IReadOnlyList<ReturnedMessage>>("TakeReturned", topicId);
+
+    public Task<HubResult<IReadOnlyList<ReturnedMessage>>> TakeUnsharedAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<ReturnedMessage>>("TakeUnshared");
 }

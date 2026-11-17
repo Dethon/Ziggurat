@@ -202,6 +202,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
                 $"/api/attachments/{args[0]}?ticket=download-1", DateTimeOffset.UtcNow.AddMinutes(15)));
         connection.Answer("EnqueueMessage", false);
         connection.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)[]);
+        connection.Answer("TakeUnshared", (IReadOnlyList<ReturnedMessage>)[]);
         connection.Answer("RespondToApprovalAsync", true);
     }
 
