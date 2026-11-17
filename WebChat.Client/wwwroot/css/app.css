@@ -1817,11 +1817,15 @@ h1, h2, h3 {
     list-style: none;
 }
 
+/* One height for every chip, whether it offers actions or not: a steering chip, or another person's,
+   would otherwise sit shorter than the reader's own above or below it. */
 .queue-chip {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+    min-height: calc(1.75rem + 0.7rem + 2px);
+    box-sizing: border-box;
     padding: 0.35rem 0.6rem;
     border: 1px dashed var(--input-border);
     border-radius: 10px;
