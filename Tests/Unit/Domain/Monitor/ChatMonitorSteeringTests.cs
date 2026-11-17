@@ -339,7 +339,10 @@ public class ChatMonitorSteeringTests
         // history, which then decides nothing about it.
         StopBeforeTheirRunReachesTheHistory,
 
-        // The steer reached the agent before the stop, which the group heard before it took the steer.
+        // The steer reached the agent before the stop, which the group heard before it took the steer: the loop
+        // takes it from the pending turns after the stop (the reader hands over what it buffered even once the
+        // token fired), and keeps it there. The other way out, the group's end draining it, is
+        // ADrawnSteerStillPendingWhenTheStopBreaksOffAnotherTurnsSetUp_IsKept_ByTheGroupsEnd.
         ReachesTheTurnAfterTheStop,
 
         // Two steers drawn together whose turn fails to set up: the error is answered once, every key ends,
@@ -457,6 +460,38 @@ public class ChatMonitorSteeringTests
             run.Replies.Where(r => r.ContentType == ReplyContentType.Error && drawn.Contains(r.TurnKey))
                 .Select(r => (r.TurnKey, r.Content)).ShouldBe(failed ? [("steer-1", RefusalAnswers.SetupFailed)] : []);
         }
+    }
+
+    // A drawn steer leaves the group by one of two ways once a stop lands: the loop takes it from the pending
+    // turns after the stop (EveryDrawnSteer…'s ReachesTheTurnAfterTheStop row), or the loop is set up on another
+    // turn as the stop lands and breaks off there, and the end of the group drains it from the pending turns.
+    // This row is the second: two steers drawn together with a fire between them, which stops the gathering at
+    // the first, so the second waits behind the fire while the first's turn is set up. Both are kept, the
+    // fire is not (nobody drew it), and nothing runs after the stop.
+    [Fact]
+    public async Task ADrawnSteerStillPendingWhenTheStopBreaksOffAnotherTurnsSetUp_IsKept_ByTheGroupsEnd()
+    {
+        var lookUp = LocalTool.Held("look_up", "42");
+        var model = new ScriptedModel([lookUp.Call("call-1")], [new TextContent("Steered")]);
+        var recall = new HeldRecall();
+        await using var run = new ToolLoopRun(model, [lookUp], recall: recall,
+            receipts: SteeredTogetherAtTheCut("steer-1", "steer-2"));
+        var setUp = recall.Hold("no, the other one");
+
+        run.Send("look it up");
+        await lookUp.Started;
+        run.Send("no, the other one", steer: true, turnKey: "steer-1");
+        run.Fire("check the oven");
+        run.Send("and in red", steer: true, turnKey: "steer-2");
+        await run.AdmittedSoFarAsync();
+        lookUp.Finish();
+        await setUp;
+        run.Stop(returned: []);
+        await run.FinishAsync();
+
+        run.StoredLine().Skip(3).ShouldBe(["user: no, the other one", "user: and in red"]);
+        model.Requests.Count.ShouldBe(1);
+        ToolLoopRun.Render(Transcript.Shown(run.Line()).Skip(2)).ShouldBe(["user: no, the other one", "user: and in red"]);
     }
 
     // Steers that went in together and failed are kept failed, both of them; the page's Retry sends the last
