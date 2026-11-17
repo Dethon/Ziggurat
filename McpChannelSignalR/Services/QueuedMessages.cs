@@ -11,7 +11,7 @@ public sealed record QueuedMessage(string Id, SenderSnapshot Sender, TurnMessage
         new(Guid.NewGuid().ToString("N"), sender, message, queuedAt);
 
     public ReturnedMessage ToReturned() =>
-        new(Id, Message.Content, Message.Attachments ?? [], Message.ConfigPatch);
+        new(Id, Message.Content, Message.Attachments ?? [], Message.ConfigPatch, Message.CorrelationId);
 
     public QueuedMessageItem ToItem() =>
         new(Id, Message.Content, Message.Attachments?.Count ?? 0, Sender.UserId, Sender.DisplayName, QueuedAt);

@@ -4,6 +4,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Connection;
+using WebChat.Client.State.Messages;
 using WebChat.Client.State.Queue;
 using WebChat.Client.State.Topics;
 
@@ -32,6 +33,13 @@ public sealed class ReturnedMessagesEffect : IDisposable
         _logger = logger;
         _returned = dispatcher.RegisterHandler<QueueReturned>(a =>
         {
+            // Whichever page takes the words, the one that drew a send as sent takes it off: it was never
+            // taken, so left there it would read as sent and be in the composer too.
+            if (a.CorrelationIds is { Count: > 0 } sent)
+            {
+                _dispatcher.Dispatch(new TakeOffSentMessages(a.TopicId, sent));
+            }
+
             if (_topics.State.SelectedTopicId == a.TopicId)
             {
                 TakeAsync(a.TopicId).LogFaults(_logger, nameof(QueueReturned));
@@ -78,6 +86,11 @@ public sealed class ReturnedMessagesEffect : IDisposable
             }
 
             _held.Remove(topicId);
+        }
+
+        if (waiting.Select(m => m.CorrelationId).OfType<string>().ToList() is { Count: > 0 } drawn)
+        {
+            _dispatcher.Dispatch(new TakeOffSentMessages(topicId, drawn));
         }
 
         _dispatcher.Dispatch(new ReturnToComposer(topicId, waiting));

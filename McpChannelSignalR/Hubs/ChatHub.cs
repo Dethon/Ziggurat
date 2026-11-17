@@ -478,7 +478,7 @@ public sealed class ChatHub(
                 stream, cancellationToken);
             if (refusal is not null)
             {
-                yield return new ChatStreamMessage { Error = refusal };
+                yield return new ChatStreamMessage { Error = refusal, RefusedSend = true };
             }
 
             await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
@@ -532,7 +532,7 @@ public sealed class ChatHub(
         {
             if (started == SendStart.Returned)
             {
-                await queueNews.TellReturnedOrLogAsync([sender]);
+                await queueNews.TellReturnedOrLogAsync([(sender, turn.CorrelationId)]);
             }
 
             yield break;
@@ -767,7 +767,7 @@ public sealed class ChatHub(
             case Queueing.NotRunning:
                 return (false, null);
             case Queueing.Returned:
-                await queueNews.TellReturnedOrLogAsync([sender]);
+                await queueNews.TellReturnedOrLogAsync([(sender, turn.CorrelationId)]);
                 return (true, null);
             default:
                 await queueNews.TellAsync(sender);
@@ -869,7 +869,7 @@ public sealed class ChatHub(
         if (returned.Count > 0)
         {
             await queueNews.TellOrLogAsync(returned[0].Sender);
-            await queueNews.TellReturnedOrLogAsync(returned.Select(m => m.Sender));
+            await queueNews.TellReturnedOrLogAsync(returned.Select(m => (m.Sender, m.Message.CorrelationId)));
         }
 
         // The turn the prompt belonged to is gone, so the prompt goes with it. Left pending it

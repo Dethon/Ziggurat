@@ -286,6 +286,105 @@ public sealed class QueuedSendTests
         ]);
     }
 
+    // A hub that says the refusal is of the send itself (queued behind a reply the page had not heard
+    // start, and refused as it was queued): the page drew the message as sent, so it takes it off again,
+    // tells the refusal and puts its words and files back in the composer, as for one EnqueueMessage
+    // refused. The other member's reply is left whole, read on the send's own wire or on a resume's.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ASendRefusedAsItWasQueued_IsTakenOffThePage_AndItsWordsAndFilesGoBackToTheComposer(bool resumeHoldsTheTopic)
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var wire = new GatedChatStream { Opening = null };
+        var reply = resumeHoldsTheTopic ? new GatedChatStream { Opening = null } : wire;
+        transport.Answer("SendMessage", _ => wire.Chunks());
+        transport.Answer("GetStreamState", new StreamState(
+            true, [new ChatStreamMessage { Content = "thinking", MessageId = "m-1" }], "m-1", "first", "marta"));
+        transport.Answer("ResumeStreamFrom", _ => reply.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second", [Photo]));
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
+        Shown(client).ShouldBe(["user: second"]);
+        if (resumeHoldsTheTopic)
+        {
+            transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
+            await TestChat.Eventually(() =>
+                client.Streaming.State.StreamingByTopic.GetValueOrDefault("topic-1")?.Content == "thinking");
+        }
+
+        wire.Write(new ChatStreamMessage { Error = "This device was signed out", RefusedSend = true });
+        await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+        var replyEnding = client.Service<global::WebChat.Client.Services.Streaming.TopicStreams>().Snapshot("topic-1").Completion!;
+        if (!resumeHoldsTheTopic)
+        {
+            reply.Write(new ChatStreamMessage
+            {
+                Content = "first", UserMessage = new UserMessageInfo("marta", DateTimeOffset.UtcNow, "Marta", "marta-1")
+            });
+            reply.Write(new ChatStreamMessage { Content = "thinking", MessageId = "m-1" });
+        }
+        else
+        {
+            wire.Release();
+        }
+
+        reply.Write(new ChatStreamMessage { Content = " and done", MessageId = "m-1" });
+        reply.Write(new ChatStreamMessage { IsComplete = true, MessageId = "m-1" });
+        reply.Release();
+        await replyEnding;
+
+        Shown(client).ShouldNotContain("user: second");
+        Shown(client).ShouldNotContain("assistant: This device was signed out");
+        Shown(client).Last().ShouldBe("assistant: thinking and done");
+        client.Toasts.State.Toasts.ShouldContain(t => t.Message.Contains("signed out"));
+        global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("second");
+        client.Composer.State.For("topic-1").ShouldHaveSingleItem().Reference.ShouldBe(Photo);
+    }
+
+    // A send the page drew as sent that the hub then hands back, a stop having landed as it was queued or
+    // vouched for: the hub tells the sender's every page which sends those were, so the page that drew it
+    // takes it off again, whichever of the person's pages takes the words into its composer.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASendTheHubHandsBack_IsTakenOffThePageThatDrewIt(bool takenHere)
+    {
+        await using var client = new ScriptedChatClient();
+        var transport = await client.ConnectAsync();
+        SeedTopic(client);
+        client.Dispatcher.Dispatch(new SignedIn(new SignedInPerson("fran", "Fran", null, "home", ["member"])));
+        var wire = new GatedChatStream { Opening = null };
+        transport.Answer("SendMessage", _ => wire.Chunks());
+        client.Dispatcher.Dispatch(new SendMessage("topic-1", "second"));
+        await TestChat.Eventually(() => transport.Calls.Any(call => call.MethodName == "SendMessage"));
+        var sentAs = (string)transport.Calls.Single(call => call.MethodName == "SendMessage").Arguments[2]!;
+        Shown(client).ShouldBe(["user: second"]);
+        transport.Answer("TakeReturned", (IReadOnlyList<ReturnedMessage>)(takenHere
+            ? [new ReturnedMessage("q1", "second", [], null, sentAs)]
+            : []));
+
+        wire.Release();
+        transport.Raise("OnQueueReturned", new QueueReturnedNotification("topic-1", "default", [sentAs]));
+
+        await TestChat.Eventually(() => !Shown(client).Contains("user: second"));
+        if (takenHere)
+        {
+            await TestChat.Eventually(() => client.Composer.State.Handed is not null);
+            global::WebChat.Client.State.Composer.ComposerSelectors.Place("", client.Composer.State.Handed!).ShouldBe("second");
+        }
+    }
+
+    private static readonly AttachmentReference Photo = new()
+    {
+        Id = "7-42/abc",
+        FileName = "photo.png",
+        MediaType = "image/png",
+        SizeBytes = 4
+    };
+
     private static IReadOnlyList<QueueChip> Chips(ScriptedChatClient client) =>
         QueueSelectors.Chips(client.Service<QueueStore>().State, "topic-1", client.UserIdentity.State.SignedIn?.UserId);
 

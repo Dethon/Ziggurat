@@ -9,7 +9,7 @@ public record QueueChanged(QueueChangedNotification Notification) : IAction;
 
 // Only that there are some: the hub hands them to the first of the person's pages to ask, so they land
 // in one composer rather than in every page the person has open.
-public record QueueReturned(string TopicId) : IAction;
+public record QueueReturned(string TopicId, IReadOnlyList<string>? CorrelationIds = null) : IAction;
 
 // Taken back rather than changed where it waits: the hub never rewrites a queued message, so the
 // reworked words go out again as a new one.

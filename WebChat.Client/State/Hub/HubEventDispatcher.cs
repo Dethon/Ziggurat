@@ -26,7 +26,7 @@ public sealed class HubEventDispatcher(
         dispatcher.Dispatch(new QueueChanged(notification));
 
     public void HandleQueueReturned(QueueReturnedNotification notification) =>
-        dispatcher.Dispatch(new QueueReturned(notification.TopicId));
+        dispatcher.Dispatch(new QueueReturned(notification.TopicId, notification.CorrelationIds));
 
     public void HandleTopicChanged(TopicChangedNotification notification)
     {

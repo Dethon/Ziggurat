@@ -90,11 +90,13 @@ public record QueuedMessageItem(
 
 // A queued message handed back to its sender — taken back to be edited — as they queued it: its words,
 // its files as the upload store holds them, and the model and effort it was sent with.
+// CorrelationId is the sending page's own id for it, so a page that drew it as sent takes it off again.
 public record ReturnedMessage(
     string Id,
     string Content,
     IReadOnlyList<AttachmentReference> Attachments,
-    AgentConfigPatch? ConfigPatch);
+    AgentConfigPatch? ConfigPatch,
+    string? CorrelationId = null);
 
 // A topic's queue changed. The whole queue, in the order it will run, so a page replaces what it
 // showed; Revision orders two pushes sent close together, since they may arrive the other way round.
@@ -111,4 +113,7 @@ public record QueueChangedNotification(
     IReadOnlyList<QueuedMessageItem>? Steering = null);
 // A stop handed back messages this person queued on a topic: a page showing it takes them
 // (ChatHub.TakeReturned) into its composer; any other finds them when the topic is next opened.
-public record QueueReturnedNotification(string TopicId, string? SpaceSlug = null);
+// CorrelationIds are the sending pages' ids for them, so whichever page drew one as sent takes it off,
+// whether or not that page is the one to take the words.
+public record QueueReturnedNotification(
+    string TopicId, string? SpaceSlug = null, IReadOnlyList<string>? CorrelationIds = null);

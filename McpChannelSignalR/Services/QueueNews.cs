@@ -45,19 +45,23 @@ public sealed class QueueNews(
     }
 
     // Messages a stop handed back, told to each of their senders on every page they have open, whatever
-    // space it shows: only the sender's own pages may take them. Told after the stop, which a failed
-    // telling must not fail: a page finds them anyway as it next opens the topic.
-    public Task TellReturnedOrLogAsync(IEnumerable<SenderSnapshot> senders) =>
-        Task.WhenAll(senders
-            .DistinctBy(s => s.UserId)
-            .Select(TellReturnedOrLogAsync));
+    // space it shows: only the sender's own pages may take them. Each telling names the sends it hands
+    // back by the ids their pages sent them with, so a page that drew one as sent takes it off, whichever
+    // page takes the words. Told after the stop, which a failed telling must not fail: a page finds them
+    // anyway as it next opens the topic.
+    public Task TellReturnedOrLogAsync(IEnumerable<(SenderSnapshot Sender, string? CorrelationId)> returned) =>
+        Task.WhenAll(returned
+            .GroupBy(r => r.Sender.UserId)
+            .Select(theirs => TellReturnedOrLogAsync(
+                theirs.First().Sender, [.. theirs.Select(r => r.CorrelationId).OfType<string>()])));
 
-    private async Task TellReturnedOrLogAsync(SenderSnapshot to)
+    private async Task TellReturnedOrLogAsync(SenderSnapshot to, IReadOnlyList<string> sends)
     {
         try
         {
             await hubSender.SendToGroupAsync(
-                TopicAudience.Account(to.UserId), "OnQueueReturned", new QueueReturnedNotification(to.TopicId, to.SpaceSlug));
+                TopicAudience.Account(to.UserId), "OnQueueReturned",
+                new QueueReturnedNotification(to.TopicId, to.SpaceSlug, sends.Count > 0 ? sends : null));
         }
         catch (Exception ex)
         {

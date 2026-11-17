@@ -421,7 +421,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         next.Said().ShouldBe(["user: new", "agent: answer new"]);
         (await SentSoFarAsync()).ShouldBe(["first", "new"]);
-        Snapshot(told).ShouldContain(("account:fran", new QueueReturnedNotification(TopicId, "default")));
+        Snapshot(told).Select(Told).ShouldContain("account:fran topic-1 default c-2");
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second"]);
     }
 
@@ -502,10 +502,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         await marta.CancelTopic(TopicId);
         await wire.Ended;
 
-        Snapshot(told).OrderBy(t => t.Group).ShouldBe([
-            ("account:fran", new QueueReturnedNotification(TopicId, "default")),
-            ("account:marta", new QueueReturnedNotification(TopicId, "default"))
-        ]);
+        Snapshot(told).Select(Told).Order().ShouldBe(["account:fran topic-1 default c-2", "account:marta topic-1 default c-3"]);
         var taken = await Task.WhenAll(fran.TakeReturned(TopicId), franOnThePhone.TakeReturned(TopicId));
         taken.SelectMany(t => t).Select(m => m.Content).ShouldBe(["fran one"]);
         (await fran.TakeReturned(TopicId)).ShouldBeEmpty();
@@ -617,6 +614,7 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
     public async Task AStopWhileTheSendThatOpenedTheStreamIsBeingVouchedFor_SendsNothing_AndReturnsAPersonsMessage(
         bool reroll, string[] returned)
     {
+        var told = TellsOfReturns();
         var fran = HubFor(new SignedInCaller());
         var vouching = _accounts.HoldNext();
         var wire = Read(reroll
@@ -631,7 +629,53 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
 
         (await ArrivedSoFarAsync()).ShouldBe(["cancel"]);
         wire.Said().ShouldBeEmpty();
-        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(returned);
+        Snapshot(told).Select(Told).ShouldBe(reroll ? [] : ["account:fran topic-1 default c-1"]);
+        var taken = await fran.TakeReturned(TopicId);
+        taken.Select(m => m.Content).ShouldBe(returned);
+        taken.Select(m => m.CorrelationId).ShouldBe(reroll ? [] : ["c-1"]);
+    }
+
+    // A send from a page that had not heard the reply start is queued behind it, and a stop landing as it
+    // is admitted hands it back. That page drew it as sent, so the hub names the send in what it tells the
+    // sender's pages and in what it hands back, and the page takes it off again.
+    [Fact]
+    public async Task ASendQueuedAsAStopLands_IsHandedBack_NamingTheSendItWas()
+    {
+        var told = TellsOfReturns();
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var vouching = _accounts.HoldNext();
+        var martas = Read(marta.SendMessage(TopicId, "second", "c-2", null, null, CancellationToken.None));
+        await vouching.Asked;
+
+        await fran.CancelTopic(TopicId);
+        vouching.Answer();
+        await Task.WhenAll(wire.Ended, martas.Ended);
+
+        Snapshot(told).Select(Told).ShouldBe(["account:marta topic-1 default c-2"]);
+        (await marta.TakeReturned(TopicId)).ShouldHaveSingleItem().CorrelationId.ShouldBe("c-2");
+        (await SentSoFarAsync()).ShouldBe(["first"]);
+    }
+
+    // The same send refused as it is queued: its own wire says the refusal is of the send, not an answer
+    // in the reply it follows, so the page that drew it takes it off and gives its words back.
+    [Fact]
+    public async Task ASendQueuedBehindARunningReplyAndRefused_SaysItsWireRefusesTheSend()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var marta = HubFor(CallerAs("marta", "session-2"), "Marta");
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        _accounts.SignOut("session-2");
+
+        var martas = Read(marta.SendMessage(TopicId, "second", "c-2", null, null, CancellationToken.None));
+        await Eventually.Until(() => martas.Chunks().Any(c => c.Error is not null), "the send is refused");
+
+        martas.Chunks().Single(c => c.Error is not null).RefusedSend.ShouldBeTrue();
+        await FinishTurnAsync("answer one");
+        await Task.WhenAll(wire.Ended, martas.Ended);
     }
 
     // The agent may end the running turn just as the stop's cancel reaches it: by then the queue has gone
@@ -1658,6 +1702,10 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
             .Returns(Task.CompletedTask);
         return told;
     }
+
+    // A return's telling, as one line: whose pages, which topic and space, and which sends it names.
+    private static string Told((string Group, QueueReturnedNotification Notification) told) =>
+        $"{told.Group} {told.Notification.TopicId} {told.Notification.SpaceSlug} {string.Join(",", told.Notification.CorrelationIds ?? [])}";
 
     private static List<T> Snapshot<T>(List<T> told)
     {

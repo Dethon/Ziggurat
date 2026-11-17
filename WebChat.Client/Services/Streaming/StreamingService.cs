@@ -292,10 +292,10 @@ public sealed class StreamingService(
             topic.TopicId,
             new ChatMessageModel { Role = "assistant" },
             currentMessageId: null,
-            lease => ProcessStreamAsync(topic, chunks, lease));
+            lease => ProcessStreamAsync(topic, chunks, lease, outgoing));
         if (opened is null)
         {
-            _ = ShowRefusalsOfAsync(topic, chunks, outgoing.CorrelationId);
+            _ = ShowRefusalsOfAsync(topic, chunks, outgoing);
         }
     }
 
@@ -304,15 +304,19 @@ public sealed class StreamingService(
     // as it queued it behind another member's running reply — so it is drawn under the send's own
     // message, never at the end, where it would sit between that member's message and the reply to it.
     private async Task ShowRefusalsOfAsync(
-        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, string? correlationId)
+        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, Outgoing sent)
     {
         try
         {
             await foreach (var chunk in chunks)
             {
-                if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
+                if (chunk.RefusedSend && chunk.Error is { } refusal)
                 {
-                    ShowRefusalUnder(topic.TopicId, correlationId, error);
+                    GiveBack(sent, refusal);
+                }
+                else if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
+                {
+                    ShowRefusalUnder(topic.TopicId, sent.CorrelationId, error);
                 }
             }
         }
@@ -320,6 +324,22 @@ public sealed class StreamingService(
         {
             // The holder's wire answers for the reply; a drop on this one says nothing new.
         }
+    }
+
+    // A send the hub refused as it queued it was never taken: drawn as sent before the page knew a reply
+    // ran, it is taken off again, the refusal told, and its words and files go back to the composer, as
+    // for one EnqueueMessage refused.
+    private void GiveBack(Outgoing sent, string refusal)
+    {
+        var topicId = sent.Topic.TopicId;
+        dispatcher.Dispatch(new ShowError(refusal));
+        if (sent.CorrelationId is { } drawn)
+        {
+            dispatcher.Dispatch(new TakeOffSentMessages(topicId, [drawn]));
+        }
+
+        dispatcher.Dispatch(new ReturnToComposer(topicId,
+            [new ReturnedMessage(sent.CorrelationId ?? "", sent.Message, sent.Attachments ?? [], null, sent.CorrelationId)]));
     }
 
     private void ShowRefusalUnder(string topicId, string? correlationId, string error)
@@ -377,10 +397,12 @@ public sealed class StreamingService(
         return null;
     }
 
+    // Sending: the send whose own wire this is, when it is one, which a refusal of that send gives back.
     private async Task ProcessStreamAsync(
         StoredTopic topic,
         IAsyncEnumerable<ChatStreamMessage> chunks,
-        StreamLease lease)
+        StreamLease lease,
+        Outgoing? sending = null)
     {
         // The agent's stream can interleave chunks from different assistant messages: a later
         // message's tool-call display races ahead of an earlier message's content (which lags
@@ -399,6 +421,12 @@ public sealed class StreamingService(
                 if (chunk.ApprovalRequest is not null)
                 {
                     dispatcher.Dispatch(new ShowApproval(topic.TopicId, chunk.ApprovalRequest));
+                    continue;
+                }
+
+                if (chunk is { RefusedSend: true, Error: { } refusal } && sending is not null)
+                {
+                    GiveBack(sending, refusal);
                     continue;
                 }
 

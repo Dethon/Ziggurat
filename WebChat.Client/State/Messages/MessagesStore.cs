@@ -43,6 +43,10 @@ public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> 
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
+// The person's own messages this page drew as sent, by the correlation ids the page sent them with, that
+// the hub never took after all: handed back to the composer by a stop, or refused as they were queued.
+public record TakeOffSentMessages(string TopicId, IReadOnlyList<string> CorrelationIds) : IAction;
+
 // The message a retry sends again, taken back so the retry stands in its place.
 public record RemoveLastMessage(string TopicId) : IAction;
 
@@ -98,6 +102,15 @@ public sealed class MessagesStore : IDisposable
             },
 
         RemoveTrailingErrors => state,
+
+        TakeOffSentMessages a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => state with
+        {
+            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, (IReadOnlyList<ChatMessageModel>)msgs
+                .Where(m => m.Role != "user" || m.CorrelationId is null || !a.CorrelationIds.Contains(m.CorrelationId))
+                .ToList())
+        },
+
+        TakeOffSentMessages => state,
 
         RemoveLastMessage a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) && msgs.Count > 0 =>
             state with { MessagesByTopic = state.MessagesByTopic.With(a.TopicId, msgs.Take(msgs.Count - 1).ToList()) },
