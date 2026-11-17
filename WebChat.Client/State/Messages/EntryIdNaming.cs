@@ -46,6 +46,55 @@ public static class EntryIdNaming
         return history.LastOrDefault() is { NoReply: true } noReply ? [.. result, noReply.ToChatMessageModel()] : result;
     }
 
+    // The turns the history holds and the page never drew — another person's in a shared topic, begun
+    // and answered while this page's own send held the topic, which no wire brought here — put in where
+    // the history has them: each after the last message before it that the page shows. A person's
+    // message the page does not show brings its turn in, with the replies after it that the page does
+    // not show either; under one the page shows (drawn from a resume's buffer whose wire opened after
+    // the reply ended), a reply comes in only by an id no bubble carries, never an error, which is never
+    // named. So a reply the page drew and could not name is never drawn twice, and nothing the page shows
+    // is taken away or moved.
+    public static IReadOnlyList<ChatMessageModel> WithMissedTurns(
+        IReadOnlyList<ChatMessageModel> messages, IReadOnlyList<ChatHistoryMessage> history)
+    {
+        var shown = messages.Select(m => m.EntryId).OfType<string>().ToHashSet();
+        var missed = history
+            .Select((entry, at) => (Entry: entry, Turn: history.Take(at + 1).LastOrDefault(h => h.Role == "user")))
+            .Where(x => x.Entry is { NoReply: false, EntryId: { } id } && !shown.Contains(id)
+                        && x.Turn is { EntryId: { } turn }
+                        && (!shown.Contains(turn)
+                            || x.Entry is { Role: "assistant", IsError: false } && !AnswersShown(messages, turn)))
+            .Select(x => x.Entry)
+            .ToHashSet();
+        if (missed.Count == 0)
+        {
+            return messages;
+        }
+
+        var result = messages.ToList();
+        var insertAt = 0;
+        foreach (var entry in history)
+        {
+            if (entry.EntryId is { } id && shown.Contains(id))
+            {
+                insertAt = result.FindIndex(m => m.EntryId == id) + 1;
+            }
+            else if (missed.Contains(entry))
+            {
+                result.Insert(insertAt++, entry.ToChatMessageModel());
+            }
+        }
+
+        return result;
+    }
+
+    // Whether the page shows any reply under the person's message it named so: one it drew and could
+    // not name is still that turn's reply.
+    private static bool AnswersShown(IReadOnlyList<ChatMessageModel> messages, string turn) =>
+        messages.SkipWhile(m => m.EntryId != turn).Skip(1)
+            .TakeWhile(m => m.Role != "user")
+            .Any(m => m.Role == "assistant" && !m.IsError);
+
     private static int Find(ChatMessageModel message, IReadOnlyList<ChatHistoryMessage> history, HashSet<int> used, int last)
     {
         var free = Enumerable.Range(0, history.Count).Where(i => !used.Contains(i) && !history[i].NoReply).ToList();

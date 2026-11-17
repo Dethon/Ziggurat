@@ -179,6 +179,29 @@ public sealed class StreamingServiceTests : IDisposable
         MessagesFor(topic.TopicId).Select(m => m.EntryId).ShouldBe(["e1", "e2"]);
     }
 
+    // Another person's turn in a shared topic, begun and answered while this page's own send held the
+    // topic, reaches the page on no wire: the resume its start set going lost the topic to this send, and
+    // the send opened a stream of its own after that turn had ended, so nothing carried it. The history
+    // this page reads as its own reply ends holds it, and it goes in where the history has it.
+    [Fact]
+    public async Task SendMessageAsync_TheHistoryHoldsAnotherPersonsTurnThePageNeverDrew_ItIsDrawnInItsPlace()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "test", CorrelationId = "mine" }]));
+        _messagingService.EnqueueMessages(new ChatStreamMessage { Content = "OK", MessageId = "m2" });
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "Ana's", "ana", null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "OK", null, null, EntryId: "e2"),
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e3"),
+            new ChatHistoryMessage("m2", "assistant", "OK", null, null, EntryId: "e4"));
+
+        await SendAndDrainAsync(topic);
+
+        await Eventually.Until(() => MessagesFor(topic.TopicId).Any(m => m.Content == "Ana's"), "Ana's turn to be drawn");
+        MessagesFor(topic.TopicId).Select(m => m.EntryId).ShouldBe(["e1", "e2", "e3", "e4"]);
+    }
+
     // A stopped reply is kept by the agent after the stop ends the stream, so the first read can come too
     // early: the page asks again until what it streamed is named.
     [Fact]
@@ -802,6 +825,63 @@ public sealed class StreamingServiceTests : IDisposable
         await Eventually.Settle();
         MessagesFor(topic.TopicId).Where(m => m.IsError).Select(m => m.Content).ShouldBe([refusal]);
         _toastStore.State.Toasts.Select(t => t.Message).ShouldBe([refusal]);
+    }
+
+    // A reply over within milliseconds of its send — a fast model — is over before a resume that claimed
+    // the topic (the hub's OnStreamStarted for this very send, or the topic's selection) opens its wire,
+    // which then carries nothing: the stream it would follow has ended. The send's own wire carried the
+    // whole turn, and the page showed none of it until a reload.
+    [Fact]
+    public async Task SendMessageAsync_AResumeClaimedTheTopic_AndItsWireOpenedTooLate_TheSendsReplyIsShown()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "hello", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("msg-1", "assistant", "the send's reply", null, null, EntryId: "e2"));
+        _messagingService.HoldTheSendAnswer();
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "the send's reply", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = topic.TopicId });
+        var send = _service.SendMessageAsync(topic, "hello");
+
+        var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
+        _topicStreams.TryShowResumed(resumed, new ChatMessageModel { Role = "assistant" }, null).ShouldBeTrue();
+        _topicStreams.Read(resumed, _ => Task.CompletedTask);
+        _messagingService.LetTheSendAnswer();
+        await send;
+        resumed.Complete();
+
+        await Eventually.Until(
+            () => MessagesFor(topic.TopicId).Any(m => m is { Content: "the send's reply", EntryId: "e2" }),
+            "the send's reply to be shown and named, so its bubble has its actions");
+        await Eventually.Settle();
+        MessagesFor(topic.TopicId).Count(m => m.Content == "the send's reply").ShouldBe(1);
+    }
+
+    // The holder that did read the turn shows it; the send's wire adds no second copy.
+    [Fact]
+    public async Task SendMessageAsync_AResumeClaimedTheTopic_AndReadTheTurn_TheReplyIsShownOnce()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.HoldTheSendAnswer();
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "the reply", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = topic.TopicId });
+        var send = _service.SendMessageAsync(topic, "hello");
+
+        var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
+        _topicStreams.TryShowResumed(resumed, new ChatMessageModel { Role = "assistant" }, null).ShouldBeTrue();
+        _topicStreams.Read(resumed, _ => Task.CompletedTask);
+        _messagingService.LetTheSendAnswer();
+        await send;
+        resumed.Append(new ChatStreamMessage { Content = "the reply", MessageId = "msg-1" });
+        resumed.Complete();
+
+        await Eventually.Until(() => MessagesFor(topic.TopicId).Any(m => m.Content == "the reply"), "the reply to be shown");
+        await Eventually.Settle();
+        MessagesFor(topic.TopicId).Count(m => m.Content == "the reply").ShouldBe(1);
     }
 
     [Fact]

@@ -533,4 +533,24 @@ public sealed class StreamResumeServiceTests : IDisposable
     }
 
     #endregion
+
+    // Told another person's turn started, a page finds it already over by the time it asks — the stream
+    // gone, nothing to follow — and drew none of it: the history it holds goes in where it belongs.
+    [Fact]
+    public async Task TryResumeStreamAsync_ToldOfATurnAlreadyOver_DrawsItFromTheHistory()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "earlier", EntryId = "e1" }]));
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "earlier", null, null, EntryId: "e1"),
+            new ChatHistoryMessage(null, "user", "Ana's", "ana", null, EntryId: "e2"),
+            new ChatHistoryMessage("r1", "assistant", "OK", null, null, EntryId: "e3"));
+
+        await _resumeService.TryResumeStreamAsync(topic, toldOfATurn: true);
+
+        await Eventually.Until(
+            () => _messagesStore.State.MessagesByTopic[topic.TopicId].Any(m => m.Content == "Ana's"), "Ana's turn to be drawn");
+        _messagesStore.State.MessagesByTopic[topic.TopicId].Select(m => m.EntryId).ShouldBe(["e1", "e2", "e3"]);
+    }
 }
