@@ -183,7 +183,7 @@ pub trait Host: Send + Sync {
     /// business, and the core sees only how long this call takes.
     fn open_capture(&self) -> Result<CaptureFormat, HostError>;
 
-    /// Stops it: no more audio, and the microphone is no longer in use. Called on key-up, on the
+    /// Stops it: no more audio. Called on key-up, on the
     /// watchdog, and on any path that abandons a dictation.
     fn close_capture(&self);
 

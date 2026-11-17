@@ -230,7 +230,8 @@ fn run_message_loop(
     unsafe { RegisterClassW(&class) };
 
     // HWND_MESSAGE: never shown, never painted, cannot be focused. A window that can take focus
-    // can break injection into the window underneath, which is why there is no other one.
+    // can break injection into the window underneath, which is why the only other window, below,
+    // is never shown and cannot activate.
     let hwnd = unsafe {
         CreateWindowExW(
             WINDOW_EX_STYLE::default(),

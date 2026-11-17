@@ -3,8 +3,7 @@
 //! Setting a WASAPI stream up costs about 350 ms on a wireless headset, every time, and that was
 //! the whole delay between pressing the key and hearing the cue. Starting a stream that is already
 //! set up costs under 20 ms. So a stream is prepared at startup and kept after each dictation —
-//! set up but stopped, which delivers no audio and does not light Windows' microphone indicator —
-//! and a key-down only starts it. [`crate::audio::how_to_start`] decides when it has to be set up
+//! set up but stopped, which delivers no audio — and a key-down only starts it. [`crate::audio::how_to_start`] decides when it has to be set up
 //! again instead.
 //!
 //! Opening answers once audio is actually flowing, not when the call returns, because the cue
@@ -67,20 +66,30 @@ struct Held {
     format: CaptureFormat,
     /// Set by the stream's error callback — the device going away under it, typically.
     failed: Arc<AtomicBool>,
-    /// Armed before each start; the audio callback disarms it and says so on `flowing`.
+    /// Armed before each start; the audio callback disarms it and says so on `news`.
     armed: Arc<AtomicBool>,
-    flowing: Receiver<()>,
+    news: Receiver<News>,
+}
+
+/// What a start waits to hear.
+enum News {
+    Flowing,
+    Failed,
 }
 
 impl Held {
     /// Starts it, and answers whether audio arrived within [`FIRST_AUDIO`].
+    ///
+    /// cpal's `play` only queues the start for the stream's own thread and returns, so a start
+    /// that fails — a device that went away while the stream was stopped — is heard from the
+    /// error callback, which says so here rather than leaving this to wait out the whole second.
     fn start(&self) -> bool {
-        while self.flowing.try_recv().is_ok() {}
+        while self.news.try_recv().is_ok() {}
         self.armed.store(true, Ordering::SeqCst);
         if self.stream.play().is_err() {
             return false;
         }
-        self.flowing.recv_timeout(FIRST_AUDIO).is_ok()
+        matches!(self.news.recv_timeout(FIRST_AUDIO), Ok(News::Flowing))
     }
 }
 
@@ -147,18 +156,22 @@ fn build(device: cpal::Device, events: EventSender<HostEvent>) -> Result<Held, H
 
     let failed = Arc::new(AtomicBool::new(false));
     let armed = Arc::new(AtomicBool::new(false));
-    let (signal, flowing) = channel();
+    let (signal, news) = channel();
     // The callback is on a real-time audio thread with no route to the tray, so an error is only
-    // remembered: the next key-down sees it and sets up a stream again.
+    // remembered, and told to a start that is waiting: the key-down sets a stream up again.
     let on_error = {
         let failed = failed.clone();
-        move |_| failed.store(true, Ordering::SeqCst)
+        let signal = signal.clone();
+        move |_| {
+            failed.store(true, Ordering::SeqCst);
+            let _ = signal.send(News::Failed);
+        }
     };
     let first = {
         let armed = armed.clone();
         move || {
             if armed.swap(false, Ordering::SeqCst) {
-                let _ = signal.send(());
+                let _ = signal.send(News::Flowing);
             }
         }
     };
@@ -185,7 +198,7 @@ fn build(device: cpal::Device, events: EventSender<HostEvent>) -> Result<Held, H
     }
     .map_err(|e| HostError(format!("could not open the microphone: {e}")))?;
 
-    Ok(Held { stream, device: name, format, failed, armed, flowing })
+    Ok(Held { stream, device: name, format, failed, armed, news })
 }
 
 fn resolve(host: &cpal::Host, device_name: &str) -> Result<cpal::Device, HostError> {

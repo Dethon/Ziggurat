@@ -49,10 +49,11 @@ whole suite and must pass with no .NET project built and no Lemonade reachable.
   on an Arctis Nova Pro Wireless, which was the whole delay a person heard before the cue and saw
   before the red icon; starting one already set up costs under 20 ms. So `win/capture.rs` sets a
   stream up at startup and after each dictation stops it rather than dropping it — stopped, it
-  delivers nothing and the microphone is not in use — and `audio::how_to_start` sets one up again
-  when the default device changed under it or it reported an error. Unlike the satellite there is
-  still no pre-roll, which is what keeps the device stopped and Windows' microphone indicator off
-  while idle; the open answers only once audio arrives, so the cue really means "speak now".
+  delivers nothing — and `audio::how_to_start` sets one up again when the default device changed
+  under it or it reported an error. Unlike the satellite there is still no pre-roll, so the device
+  is never running while idle; the open answers only once audio arrives, so the cue really means
+  "speak now". Whether Windows' microphone indicator stays off for a stream that is set up but
+  stopped has not been observed yet; if it does not, this is the choice to revisit.
 - **No visible window is ever created.** A window that can take focus can break injection into the
   window underneath, which is why the tray is the entire interface and the binary is built for the
   windows subsystem. The `HWND_MESSAGE` window the tray icon and the hook need is never shown,
