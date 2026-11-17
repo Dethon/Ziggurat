@@ -7,7 +7,7 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 namespace Tests.E2E.WebChat;
 
 // Messages sent while a reply runs wait in the topic's queue, shown as chips above the composer, and
-// run one after the other once it ends — against the stack's real model. The queue is the topic's, so
+// run one after the other once it ends. The queue is the topic's, so
 // the person's other device opening the topic shows the same chips, and another member reading it shared
 // sees them named and read-only. The running reply is one held on a tool's approval, so it is still
 // running however long the queueing takes.

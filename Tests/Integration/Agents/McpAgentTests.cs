@@ -7,28 +7,21 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Agents.AI;
-using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-[Trait("Category", "Llm")]
 public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redisFixture)
-    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>
+    : IClassFixture<McpLibraryServerFixture>, IClassFixture<RedisFixture>, IAsyncLifetime
 {
-    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<McpAgentTests>()
-        .Build();
+    private FakeOpenRouter _model = null!;
 
-    private static OpenRouterChatClient CreateLlmClient()
-    {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
+    public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
-    }
+    public async Task DisposeAsync() => await _model.DisposeAsync();
+
+    private OpenRouterChatClient CreateLlmClient() => FakeTurn.Client(_model);
 
     private McpAgent CreateAgent(OpenRouterChatClient llmClient)
     {
@@ -45,30 +38,25 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
             callTokens: McpTestSecret.CallTokens);
     }
 
-    private Task<List<AiResponse>> RunAsync(
-        OpenRouterChatClient llmClient, string prompt, Func<IReadOnlyList<AiResponse>, bool> landed,
-        TimeSpan? budget = null) =>
-        LlmAttempt.TurnAsync(() => CreateAgent(llmClient), prompt, landed, budget);
+    private async Task<List<AiResponse>> CallAsync(string tool, string arguments)
+    {
+        _model.Script(FakeOpenRouter.CallingToolNamed(tool, arguments));
+        using var llmClient = CreateLlmClient();
+        await using var agent = CreateAgent(llmClient);
+        return await FakeTurn.RunAsync(agent, $"Use the {tool} tool.");
+    }
 
-    [SkippableFact]
+    [Fact]
     public async Task Agent_WithMoveFileTool_CanMoveFileWithinLibrary()
     {
-        // Arrange - Move tool requires both paths to be under library path
-        var llmClient = CreateLlmClient();
+        // Move requires both paths to be under the library path.
         mcpFixture.CreateLibraryStructure("AgentMoveDestination");
         mcpFixture.CreateLibraryFile(Path.Combine("AgentMoveSource", "agent-test-file.mkv"), "fake content");
-
-        // Act
         var sourcePath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveSource", "agent-test-file.mkv");
         var destPath = Path.Combine(mcpFixture.LibraryPath, "AgentMoveDestination", "agent-test-file.mkv");
-        var responses = await RunAsync(llmClient,
-            $"Use the fs_move tool with:\n" +
-            $"- sourcePath: {sourcePath}\n" +
-            $"- destinationPath: {destPath}\n" +
-            "IMPORTANT: Pass the paths exactly as written — do not shorten, rename, or invent paths.",
-            landed: _ => mcpFixture.FileExistsInLibrary(
-                Path.Combine("AgentMoveDestination", "agent-test-file.mkv")),
-            budget: TimeSpan.FromSeconds(180));
+
+        var responses = await CallAsync("fs_move",
+            new System.Text.Json.Nodes.JsonObject { ["sourcePath"] = sourcePath, ["destinationPath"] = destPath }.ToJsonString());
 
         // Assert
         responses.ShouldNotBeEmpty();
@@ -76,29 +64,23 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         mcpFixture.FileExistsInLibrary(Path.Combine("AgentMoveSource", "agent-test-file.mkv")).ShouldBeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Agent_WithFsDeleteTool_CanRemoveLeftoverDownloadDirectory()
     {
-        // Arrange - a leftover download directory whose torrent no longer exists
-        var llmClient = CreateLlmClient();
+        // A leftover download directory whose torrent no longer exists.
         const int downloadId = 99999;
         var downloadSubDir = Path.Combine(mcpFixture.DownloadPath, downloadId.ToString());
         Directory.CreateDirectory(downloadSubDir);
         await File.WriteAllTextAsync(Path.Combine(downloadSubDir, "leftover.nfo"), "info file");
 
-        // Act
-        var responses = await RunAsync(llmClient,
-            "Use the fs_delete tool with:\n" +
-            $"- path: downloads/{downloadId}\n" +
-            "IMPORTANT: Pass the path exactly as written.",
-            landed: _ => !Directory.Exists(downloadSubDir));
+        var responses = await CallAsync("fs_delete", $$"""{"path":"downloads/{{downloadId}}"}""");
 
         // Assert
         responses.ShouldNotBeEmpty();
         Directory.Exists(downloadSubDir).ShouldBeFalse();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Agent_ThreadSerialization_CanSerializeAndDeserializeThread()
     {
         // Arrange
@@ -132,7 +114,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         serializedJson.ShouldNotBeNullOrEmpty();
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Agent_ThreadSerialization_WithAgentKey_CanRestoreThread()
     {
         // Arrange
@@ -142,7 +124,7 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
         // Act - Create thread from AgentKey (simulating how ChatMonitor works). The restart is the
         // point of the test, so both agents live inside one attempt.
         var agentKeyJson = JsonSerializer.SerializeToElement(agentKey.ToString());
-        var (updates1, updates2) = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
+        var (updates1, updates2) = await LlmAttempt.WithinAsync(TimeSpan.FromSeconds(30), async ct =>
         {
             List<AgentResponseUpdate> first;
             await using (var agent = CreateAgent(llmClient))

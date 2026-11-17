@@ -21,7 +21,7 @@ public sealed class StreamResumeService(
     TopicsStore topicsStore,
     ILogger<StreamResumeService> logger) : IStreamResumeService
 {
-    public async Task TryResumeStreamAsync(StoredTopic topic)
+    public async Task TryResumeStreamAsync(StoredTopic topic, bool toldOfATurn = false)
     {
         // One question, not three. Nothing back means the topic is already resuming or already
         // streaming, and either way this resume has nothing to do.
@@ -44,6 +44,13 @@ public sealed class StreamResumeService(
             {
                 lease.Complete();
             }
+        }
+
+        // A turn over before this page asked about it — a reply in milliseconds — left nothing to follow,
+        // and no wire will bring it here.
+        if (!handedOver && toldOfATurn && pipeline.MessagesFor(topic.TopicId) is not null)
+        {
+            await streamingService.CatchUpWithHistoryAsync(topic);
         }
     }
 

@@ -82,7 +82,7 @@ answered unclearly twice, is still a refusal that ends it everywhere.
 the labelled answers against every prompt shape the tool actually speaks — a natural-language one, a
 bare tool-name suffix (`¿Apruebas turn_off?`), several tool names at once, and the `No entendí.`
 re-ask — because both questions ask about what the prompt *names* and whether a yes narrows it, and
-the original probe measured only the first shape. `ApprovalReaderJevTests` (`Category=Jev`) holds
+the original probe measured only the first shape. `ApprovalReaderJevTests` (an armed eval's `Tests/Eval/ModelChecks/`) holds
 every case to no wrong action; the re-ask ceiling is scoped to the two prompts it was measured
 against. Change a question's wording or the spoken prompt only with that test green, and re-probe
 rather than assuming a number carries across shapes.

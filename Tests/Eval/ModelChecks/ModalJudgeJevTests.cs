@@ -11,14 +11,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Integration.McpServers;
 
-namespace Tests.Integration.Clients;
+namespace Tests.Eval.ModelChecks;
 
 // The probe as a test: the labelled walls from .scratch/jev-modal-dismissal/probe/README.md run
 // through the real question builders and the real rule against live Jev, at the shipped bar. Every
 // listed pick and every `none` is pinned exactly, because a wrong click here is a wrong action on
-// somebody's page — the bar the feature is set for. Like Category=Llm it runs whenever a key is
-// present; a pass costs well under a cent.
-[Trait("Category", "Jev")]
+// somebody's page — the bar the feature is set for. It measures live Jev, so it is part of the eval
+// and runs only when one is armed (ZIGGURAT_EVAL=1).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class ModalJudgeJevTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -63,10 +64,11 @@ public class ModalJudgeJevTests
         verdicts.Single(v => v.Case.Controls.Contains("Aceptar y continuar")).Picked.ShouldBe("Aceptar y continuar");
     }
 
-    // The key the Jev tests share, or a skip: user secrets first, the environment second.
+    // The key the Jev tests share, or a skip: only on an armed eval, and only with a key.
     internal static string RequireKey()
     {
-        var apiKey = _configuration["openRouter:apiKey"];
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey;
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "openRouter:apiKey is not set in user secrets");
         return apiKey!;
     }

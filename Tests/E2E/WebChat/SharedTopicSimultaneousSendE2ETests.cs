@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
+using Shouldly;
 using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.WebChat;
@@ -48,12 +49,21 @@ public partial class SharedTopicSimultaneousSendE2ETests(WebChatE2EFixture fixtu
                 ? [SendAsync(ana, fromAna), SendAsync(carlos, fromCarlos)]
                 : [SendAsync(carlos, fromCarlos), SendAsync(ana, fromAna)]);
 
-            foreach (var page in new[] { ana, carlos })
+            foreach (var (who, page) in new[] { ("Ana", ana), ("Carlos", carlos) })
             {
                 foreach (var words in new[] { fromAna, fromCarlos })
                 {
-                    await Assertions.Expect(Shown(page, words))
-                        .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 90_000 });
+                    try
+                    {
+                        await Assertions.Expect(Shown(page, words))
+                            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 90_000 });
+                    }
+                    catch (PlaywrightException missing)
+                    {
+                        throw new ShouldAssertException(
+                            $"{who}'s page does not show \"{words}\" once. It shows:\n"
+                            + string.Join("\n", await QueueE2E.Conversation(page)), missing);
+                    }
                 }
             }
 
@@ -71,7 +81,7 @@ public partial class SharedTopicSimultaneousSendE2ETests(WebChatE2EFixture fixtu
             .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
     }
 
-    // A reply on a live model ends when it ends; a page cannot send in a topic while one streams.
+    // A page cannot send in a topic while a reply streams.
     private static Task IdleAsync(IPage page) =>
         Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Stop the reply" }))
             .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 120_000 });

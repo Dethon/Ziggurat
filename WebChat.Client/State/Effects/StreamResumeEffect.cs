@@ -69,7 +69,7 @@ public sealed class StreamResumeEffect : IDisposable
     // Detached on purpose: a resumed stream is long-lived, so awaiting it would mean awaiting
     // the conversation.
     private void Resume(StoredTopic topic) =>
-        _streamResumeService.TryResumeStreamAsync(topic).LogFaults(_logger, nameof(RemoteStreamStarted));
+        _streamResumeService.TryResumeStreamAsync(topic, toldOfATurn: true).LogFaults(_logger, nameof(RemoteStreamStarted));
 
     public void Dispose()
     {

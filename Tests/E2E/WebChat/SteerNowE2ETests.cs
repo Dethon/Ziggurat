@@ -6,7 +6,7 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
 
-// Steer now, against the stack's real model: a reply held on its tool's approval is steered with a
+// Steer now: a reply held on its tool's approval is steered with a
 // queued message, and once the tool has run the reply ends there, without asking the model again; the
 // steer follows it as the person's next message and is answered. The held approval is the tool
 // boundary: the steer is in before the tool returns, so the cut cannot miss it.

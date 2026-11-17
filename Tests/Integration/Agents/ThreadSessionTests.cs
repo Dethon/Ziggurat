@@ -1,32 +1,16 @@
 using Infrastructure.Agents;
-using Infrastructure.Agents.ChatClients;
-using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-[Trait("Category", "Llm")]
 public class ThreadSessionTests(ThreadSessionServerFixture fixture)
     : IClassFixture<ThreadSessionServerFixture>
 {
-    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<ThreadSessionTests>()
-        .Build();
-
-    private static OpenRouterChatClient CreateChatClient()
-    {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
-    }
-
-    [SkippableFact]
+    [Fact]
     public async Task CreateSession_InitializesWithToolsAndPrompts()
     {
         // Arrange
-        using var chatClient = CreateChatClient();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // Act

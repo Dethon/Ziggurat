@@ -284,10 +284,12 @@ public sealed class StreamingService(
         // Nothing back means a resume claimed the topic while this send was waiting, so the
         // reply is already being read. Both readers are on the topic's one stream server side,
         // so the one holding the topic delivers what this send asked for too — every chunk of a
-        // turn. Not what the hub answers instead of a turn: a refusal completes the topic's
-        // stream before the resume's wire is open, and "Session not found" is never on it, so
-        // this wire is still read for that. A new conversation's first message is this race
-        // every time, since selecting the topic starts a resume.
+        // turn, as long as its wire opened before the turn ended. Not what the hub answers instead
+        // of a turn: a refusal completes the topic's stream before the resume's wire is open, and
+        // "Session not found" is never on it, so this wire is still read for that — and for a reply
+        // over before the resume's wire opened, which that wire then never carries. A new
+        // conversation's first message is this race every time, since selecting the topic starts a
+        // resume, and the hub's OnStreamStarted for this very send starts another.
         var opened = topicStreams.TryOpen(
             topic.TopicId,
             new ChatMessageModel { Role = "assistant" },
@@ -295,17 +297,19 @@ public sealed class StreamingService(
             lease => ProcessStreamAsync(topic, chunks, lease, outgoing));
         if (opened is null)
         {
-            _ = ShowRefusalsOfAsync(topic, chunks, outgoing);
+            _ = ShowWhatTheHolderMissesAsync(topic, chunks, outgoing, topicStreams.Snapshot(topic.TopicId).Completion);
         }
     }
 
-    // The losing wire's errors, and nothing else: its content is the holder's to show, and the two
-    // wires share no numbering to merge chunks by. An error on it is this send's — the hub refusing it
-    // as it queued it behind another member's running reply — so it is drawn under the send's own
-    // message, never at the end, where it would sit between that member's message and the reply to it.
-    private async Task ShowRefusalsOfAsync(
-        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, Outgoing sent)
+    // The losing wire's errors at once, and its reply only if the holder never showed it: the two wires
+    // share no numbering to merge chunks by, so the holder's is the reply as long as it read the turn. An
+    // error on it is this send's — the hub refusing it as it queued it behind another member's running
+    // reply — so it is drawn under the send's own message, never at the end, where it would sit between
+    // that member's message and the reply to it.
+    private async Task ShowWhatTheHolderMissesAsync(
+        StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks, Outgoing sent, Task? holderEnded)
     {
+        var said = new List<ChatStreamMessage>();
         try
         {
             await foreach (var chunk in chunks)
@@ -318,12 +322,52 @@ public sealed class StreamingService(
                 {
                     ShowRefusalUnder(topic.TopicId, sent.CorrelationId, error);
                 }
+                else if (chunk is { UserMessage: null, ApprovalRequest: null, MessageId: not null }
+                         && (!string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning)
+                             || !string.IsNullOrEmpty(chunk.ToolCalls)))
+                {
+                    said.Add(chunk);
+                }
             }
         }
         catch
         {
             // The holder's wire answers for the reply; a drop on this one says nothing new.
+            return;
         }
+
+        if (said.Count == 0 || holderEnded is null)
+        {
+            return;
+        }
+
+        await holderEnded;
+        if (ShowMissedReply(topic.TopicId, said))
+        {
+            // The holder named what it drew as it ended, before this was drawn.
+            await LearnEntryIdsAsync(topic);
+        }
+    }
+
+    // What the holder never drew of this wire's reply, message by message: a message it showed is
+    // finalized under its id, and one still streaming under a newer holder is that holder's to show.
+    private bool ShowMissedReply(string topicId, IReadOnlyList<ChatStreamMessage> said)
+    {
+        if (topicsStore.State.Topics.All(t => t.TopicId != topicId)
+            || messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId) is null)
+        {
+            return false;
+        }
+
+        var current = topicStreams.Snapshot(topicId).CurrentMessageId;
+        var missed = said.GroupBy(chunk => chunk.MessageId!)
+            .Where(message => message.Key != current && !messagesStore.State.IsFinalized(topicId, message.Key))
+            .ToList();
+        missed.ForEach(message => dispatcher.Dispatch(new AddMessage(
+            topicId,
+            message.Aggregate(new ChatMessageModel { Role = "assistant" }, BufferRebuildUtility.AccumulateChunk),
+            message.Key)));
+        return missed.Count > 0;
     }
 
     // A send the hub refused as it queued it was never taken: drawn as sent before the page knew a reply
@@ -558,6 +602,8 @@ public sealed class StreamingService(
     private static readonly TimeSpan[] LearnAgainAfter =
         [TimeSpan.Zero, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4)];
 
+    public Task CatchUpWithHistoryAsync(StoredTopic topic) => LearnEntryIdsAsync(topic);
+
     private async Task LearnEntryIdsAsync(StoredTopic topic)
     {
         try
@@ -565,13 +611,14 @@ public sealed class StreamingService(
             foreach (var wait in LearnAgainAfter)
             {
                 await Task.Delay(wait);
+                var revision = messagesStore.State.Revision;
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
                 if (!history.IsLive)
                 {
                     return;
                 }
 
-                dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!));
+                dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!, revision));
                 if (messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, [])
                     .All(m => m.EntryId is not null || m.IsError || m.NoReply
                               || (string.IsNullOrEmpty(m.Content) && m.Attachments is not { Count: > 0 })))

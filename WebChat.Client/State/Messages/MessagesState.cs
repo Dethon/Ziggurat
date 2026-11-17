@@ -21,5 +21,10 @@ public sealed record MessagesState
         messageId is not null &&
         FinalizedMessageIdsByTopic.GetValueOrDefault(topicId)?.Contains(messageId) == true;
 
+    // Bumped by everything that takes a message away or redraws a topic from the history, anywhere: a
+    // history read is only put in whole (missed turns and all) when nothing like that happened since it was
+    // asked for, or a read from before a delete would put back what the person just removed.
+    public long Revision { get; init; }
+
     public static MessagesState Initial => new();
 }

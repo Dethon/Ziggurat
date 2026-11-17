@@ -5,28 +5,22 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
-using Microsoft.Extensions.Configuration;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-[Trait("Category", "Llm")]
+// The fake model calls the glob tool, as it answers the demand below, and the approval client decides.
 public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, RedisFixture redisFixture)
-    : IClassFixture<McpVaultServerFixture>, IClassFixture<RedisFixture>
+    : IClassFixture<McpVaultServerFixture>, IClassFixture<RedisFixture>, IAsyncLifetime
 {
-    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<McpAgentTests>()
-        .Build();
+    private FakeOpenRouter _model = null!;
 
-    private static OpenRouterChatClient CreateLlmClient()
-    {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
+    public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
 
-        return new OpenRouterChatClient(apiUrl, apiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
-    }
+    public async Task DisposeAsync() => await _model.DisposeAsync();
+
+    private OpenRouterChatClient CreateLlmClient() => FakeTurn.Client(_model);
 
     private McpAgent CreateAgent(ToolApprovalChatClient approvalClient)
     {
@@ -43,19 +37,11 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
             callTokens: McpTestSecret.CallTokens);
     }
 
-    // Only the stall retry here, not the bad-answer one: what these tests assert on is what the
-    // approval handler recorded, so a second turn would append to a list the assertions read.
-    private Task<List<AiResponse>> RunAsync(
-        ToolApprovalChatClient approvalClient, string prompt, TimeSpan? budget = null) =>
-        LlmAttempt.WithinAsync(budget ?? LlmAttempt.Budget, async ct =>
-        {
-            await using var agent = CreateAgent(approvalClient);
-            return await agent.RunStreamingAsync(prompt, cancellationToken: ct)
-                .ToUpdateAiResponsePairs()
-                .Where(x => x.Item2 is not null)
-                .Select(x => x.Item2!)
-                .ToListAsync(ct);
-        });
+    private async Task<List<AiResponse>> RunAsync(ToolApprovalChatClient approvalClient, string prompt)
+    {
+        await using var agent = CreateAgent(approvalClient);
+        return await FakeTurn.RunAsync(agent, prompt);
+    }
 
     [Fact]
     public async Task Agent_WithApprovalRequired_TerminatesWhenRejected()
@@ -99,6 +85,7 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
         rejectingHandler.RequestedApprovals.ShouldBeEmpty("Whitelisted tool should not require approval");
         var hasContent = responses.Any(r => !string.IsNullOrEmpty(r.Content) || !string.IsNullOrEmpty(r.ToolCalls));
         hasContent.ShouldBeTrue();
+        _model.Requests[^1].ToolOutputs.ShouldHaveSingleItem().ShouldContain("placeholder.txt");
     }
 
     private sealed class TestApprovalHandler(ToolApprovalResult result) : IToolApprovalHandler

@@ -20,23 +20,10 @@ public static class QueueE2E
         await input.PressAsync("Enter");
     }
 
-    // The model occasionally answers the demand with plain text and no tool call; then there is no reply
-    // held open to queue behind, so it is asked again once that one is over.
     public static async Task HoldOnAnApprovalAsync(IPage page, string demand)
     {
-        for (var attempt = 0; ; attempt++)
-        {
-            await SendAsync(page, demand);
-            try
-            {
-                await page.Locator(".approval-modal").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                return;
-            }
-            catch (TimeoutException) when (attempt < 2)
-            {
-                await IdleAsync(page);
-            }
-        }
+        await SendAsync(page, demand);
+        await page.Locator(".approval-modal").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
     }
 
     // The held approval's overlay can reach a page and covers the whole viewport, and rejecting it would
@@ -52,7 +39,6 @@ public static class QueueE2E
     public static ILocator UserMessage(IPage page, string words) =>
         page.Locator(".chat-message.user", new PageLocatorOptions { HasText = words });
 
-    // A reply on a live model ends when it ends.
     public static Task IdleAsync(IPage page) =>
         Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
             .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
@@ -68,7 +54,7 @@ public static class QueueE2E
                 + (n.querySelector('.message-content')?.innerText ?? '').trim())
             """)];
 
-    // Waits on the provider, turning down any approval that would hold a turn open meanwhile.
+    // Waits on the turn, turning down any approval that would hold a turn open meanwhile.
     public static async Task WaitForAsync(IPage page, Func<Task<bool>> done, string what)
     {
         var deadline = DateTime.UtcNow.AddMinutes(4);

@@ -7,8 +7,8 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
 
-// An approval on the real model, answered either way. Out of WebChatConversationE2ETests by length:
-// each case waits on the provider, and as one chain they were the run's longest on a slow day.
+// An approval, answered either way. Out of WebChatConversationE2ETests by length: as one chain with it
+// they were the run's longest.
 [Collection(WebChatE2ECollections.Approvals)]
 [Trait("Category", "E2E")]
 public class WebChatApprovalE2ETests(WebChatE2EFixture fixture)
@@ -28,25 +28,9 @@ public class WebChatApprovalE2ETests(WebChatE2EFixture fixture)
             var chatInput = page.Locator("textarea.chat-input");
             var approvalModal = page.Locator(".approval-modal");
 
-            // The model occasionally answers the demand with plain text and no tool call, and
-            // then there is no modal to wait for. Demand again — after the text reply finishes,
-            // because Enter is silently ignored while the topic is still streaming.
-            for (var attempt = 0; ; attempt++)
-            {
-                await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-                await chatInput.PressAsync("Enter");
-                try
-                {
-                    await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                    break;
-                }
-                catch (TimeoutException) when (attempt < 2)
-                {
-                    var streamingCancel = page.Locator("[data-testid=composer-cancel]");
-                    await Assertions.Expect(streamingCancel).ToBeHiddenAsync(
-                        new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-                }
-            }
+            await chatInput.FillAsync(QueueE2E.ToolDemand);
+            await chatInput.PressAsync("Enter");
+            await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
             var toolName = page.Locator(".tool-name");
             (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
@@ -109,8 +93,7 @@ public class WebChatApprovalE2ETests(WebChatE2EFixture fixture)
         }
         finally
         {
-            // The agent often retries the rejected tool, leaving a fresh server-side
-            // pending approval. Drain it so it can't pollute later tests' pages.
+            // A pending approval left server-side would be offered to later tests' pages.
             await DrainPendingApprovalsAsync(page);
         }
     }

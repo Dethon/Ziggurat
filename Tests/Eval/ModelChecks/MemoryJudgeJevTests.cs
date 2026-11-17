@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Eval.Harness;
 
-namespace Tests.Integration.Memory;
+namespace Tests.Eval.ModelChecks;
 
 // The probe's three labelled sets as a test, run through the real question builders against live
 // Jev with the shipped bars. Synthetic data only — no production conversation is ever added to
@@ -19,9 +19,10 @@ namespace Tests.Integration.Memory;
 // links right except the recorded conservative misses, which may only ever fail toward "not
 // linked": the Laura pair the probe missed, and the light-novels pair the probe answered "same"
 // at 0.32 — a coin flip under either wording, measured again on 2026-09-18, and a miss that
-// leaves both memories in place. Like Category=Llm it runs whenever a key is present, because a
-// pass costs cents.
-[Trait("Category", "Jev")]
+// leaves both memories in place. It measures live Jev, so it is part of the eval and runs only when
+// one is armed (ZIGGURAT_EVAL=1).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class MemoryJudgeJevTests
 {
     // Measured on 2026-09-18 against jev-1.13.0: 10 of 12 empty windows skipped. A floor below
@@ -130,7 +131,8 @@ public class MemoryJudgeJevTests
 
     private static async Task<(MemoryJudge, Cases)> SetupAsync()
     {
-        var apiKey = _configuration["openRouter:apiKey"];
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey;
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "openRouter:apiKey is not set in user secrets");
 
         var shipped = new ConfigurationBuilder()

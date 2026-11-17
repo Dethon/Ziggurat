@@ -16,10 +16,13 @@ using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
 
-namespace Tests.Integration.Memory;
+namespace Tests.Eval.ModelChecks;
 
-[Trait("Category", "Integration")]
-[Trait("Category", "Llm")]
+// Whether the shipped memory models still answer the memory prompts in the formats they ask for: a
+// measure of the real models, not of the code, so it is part of the eval and runs only when one is
+// armed (ZIGGURAT_EVAL=1). The parsing on our side is pinned against canned answers in Tests/Unit/Memory.
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -32,8 +35,10 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey is { Length: > 0 } key
+            ? key
+            : throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
         var model = _configuration["Memory:Extraction:Model"] ?? "~deepseek/deepseek-v4-flash-latest:nitro";
         return (apiUrl, apiKey, model);
@@ -144,8 +149,8 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
     }
 }
 
-[Trait("Category", "Integration")]
-[Trait("Category", "Llm")]
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -158,8 +163,10 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
 
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey is { Length: > 0 } key
+            ? key
+            : throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
         var model = _configuration["Memory:Dreaming:Model"] ?? "~deepseek/deepseek-v4-flash-latest:nitro";
         return (apiUrl, apiKey, model);
@@ -265,8 +272,8 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
     }
 }
 
-[Trait("Category", "Integration")]
-[Trait("Category", "Llm")]
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
@@ -279,8 +286,10 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey is { Length: > 0 } key
+            ? key
+            : throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
         var model = _configuration["Memory:Dreaming:Model"] ?? "~deepseek/deepseek-v4-flash-latest:nitro";
         return (apiUrl, apiKey, model);

@@ -38,8 +38,9 @@ public record SwitchMessageVersion(string TopicId, string Slot, int Index) : IAc
 // Somebody rewrote a conversation, so a page holding it reads it again (HistoryEditEffect).
 public record HistoryChanged(string TopicId) : IAction;
 
-// The history read once a streamed turn was stored, naming the bubbles the stream drew.
-public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> History) : IAction;
+// The history read once a streamed turn was stored, naming the bubbles the stream drew — and, read at
+// the state's Revision with nothing taken away since, putting in the turns no wire brought here.
+public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> History, long? Revision = null) : IAction;
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
@@ -66,7 +67,7 @@ public sealed class MessagesStore : IDisposable
     {
         _store = new Store<MessagesState>(MessagesState.Initial);
 
-        dispatcher.RegisterCatchAll(action => _store.Dispatch(action, Reduce));
+        dispatcher.RegisterCatchAll(action => _store.Dispatch(action, ReduceAndCount));
     }
 
     public MessagesState State => _store.State;
@@ -74,6 +75,28 @@ public sealed class MessagesStore : IDisposable
     public IObservable<MessagesState> StateObservable => _store.StateObservable;
 
     public void Dispose() => _store.Dispose();
+
+    // A reply a missed turn brought in is finalized like any drawn one, so a late chunk of it updates
+    // that bubble rather than drawing another.
+    private static MessagesState Learned(MessagesState state, string topicId, IReadOnlyList<ChatMessageModel> messages) =>
+        state with
+        {
+            MessagesByTopic = state.MessagesByTopic.With(topicId, messages),
+            FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.With(
+                topicId,
+                (IReadOnlySet<string>)(state.FinalizedMessageIdsByTopic.GetValueOrDefault(topicId) ?? new HashSet<string>())
+                    .Concat(messages.Select(m => m.MessageId).OfType<string>())
+                    .ToHashSet())
+        };
+
+    private static MessagesState ReduceAndCount(MessagesState state, IAction action)
+    {
+        var next = Reduce(state, action);
+        return action is MessagesLoaded or RemoveTrailingErrors or TakeOffSentMessages or RemoveLastMessage
+                   or ClearMessages or ClearAllMessages && !ReferenceEquals(next, state)
+            ? next with { Revision = state.Revision + 1 }
+            : next;
+    }
 
     private static MessagesState Reduce(MessagesState state, IAction action) => action switch
     {
@@ -128,10 +151,11 @@ public sealed class MessagesStore : IDisposable
             FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.Without(a.TopicId)
         },
 
-        EntryIdsLearned a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => state with
-        {
-            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, EntryIdNaming.Apply(msgs, a.History))
-        },
+        EntryIdsLearned a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => Learned(
+            state, a.TopicId,
+            a.Revision == state.Revision
+                ? EntryIdNaming.WithMissedTurns(EntryIdNaming.Apply(msgs, a.History), a.History)
+                : EntryIdNaming.Apply(msgs, a.History)),
 
         EntryIdsLearned => state,
 

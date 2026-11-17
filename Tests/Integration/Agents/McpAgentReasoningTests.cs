@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -8,7 +9,6 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Shouldly;
@@ -17,56 +17,27 @@ using Tests.Unit;
 
 namespace Tests.Integration.Agents;
 
-[Trait("Category", "Llm")]
-public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>
+// A turn's reasoning setting, read on the wire the fake model received and on what the agent streams
+// back from it: the fake streams a reasoning summary only to a request that asks for reasoning with a
+// summary, as an untranslated OpenAI endpoint does, so an agent that dropped either half streams none.
+public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<RedisFixture>, IAsyncLifetime
 {
-    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<McpAgentReasoningTests>()
-        .Build();
+    private FakeOpenRouter _model = null!;
 
-    // A dated build rather than the `~…-latest` alias, and no `:nitro`. Both were floating, and
-    // this test's subject is a flag the request carries: the alias follows whichever build
-    // DeepSeek ships and nitro sorts for throughput, so the endpoint that answered — and whether
-    // it honours `reasoning.effort: none` — changed between runs. A failure here has to mean the
-    // flag stopped reaching the wire, not that the router picked somewhere else this morning.
-    private const string PinnedModel = "deepseek/deepseek-v4-flash-0731";
+    public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
 
-    // `only` rather than `order`, per the routing rule: order disables sticky routing, and `only`
-    // pins the endpoint set without paying for it. Three rather than one, because a lone pin has
-    // no fallback: DeepInfra's shared pool for this model went `engine_overloaded` for longer than
-    // the client's whole 429 ladder (2026-09-03), and a provider outage is not what this test is
-    // about. Each of these was checked by hand to honour `reasoning.effort: none` on the Responses
-    // wire; DeepSeek's own endpoint is not here because the account's training guardrail excludes
-    // it.
-    private static readonly ProviderRouting _pinnedProvider = new() { Only = ["deepinfra", "novita", "parasail"] };
+    public async Task DisposeAsync() => await _model.DisposeAsync();
 
-    private static (string apiUrl, string apiKey, string model) GetConfig()
+    private async Task<string> ReasoningStreamedAsync(string? effort)
     {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        var model = _configuration["openRouter:reasoningModel"] ?? PinnedModel;
-        return (apiUrl, apiKey, model);
-    }
-
-    [SkippableFact]
-    public async Task Agent_WithReasoningEffortConfigured_StreamsReasoningContent()
-    {
-        // Drives a real OpenRouter call through McpAgent with reasoningEffort = "low"
-        // and asserts that the model returns reasoning content — proves the per-agent
-        // reasoning configuration actually reaches the wire and is honored end-to-end.
-        var (apiUrl, apiKey, model) = GetConfig();
-
-        using var openRouter = new OpenRouterChatClient(
-            apiUrl, apiKey, model, providerRouting: _pinnedProvider);
+        using var openRouter = FakeTurn.Client(_model);
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
-
         await using var agent = new McpAgent(
             TestAgentSpec.Default with
             {
                 DisplayName = "reasoning-agent",
-                UserId = "reasoning-test-user",
-                ReasoningEffort = "low"
+                UserId = $"reasoning-test-user-{Guid.NewGuid():N}",
+                ReasoningEffort = effort
             },
             openRouter,
             stateStore,
@@ -75,135 +46,47 @@ public class McpAgentReasoningTests(RedisFixture redisFixture) : IClassFixture<R
             [],
             []);
 
-        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var chunks = new List<string>();
+        await foreach (var update in agent.RunStreamingAsync(
+                           "Compare 9.11 and 9.9. Which is larger? Show your reasoning.", cancellationToken: cts.Token))
         {
-            var reasoningChunks = new List<string>();
-            await foreach (var update in agent.RunStreamingAsync(
-                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-                cancellationToken: ct))
-            {
-                foreach (var content in update.Contents.OfType<TextReasoningContent>())
-                {
-                    reasoningChunks.Add(content.Text);
-                }
-            }
+            chunks.AddRange(update.Contents.OfType<TextReasoningContent>().Select(content => content.Text));
+        }
 
-            return string.Concat(reasoningChunks);
-        });
-
-        reasoning.ShouldNotBeNullOrWhiteSpace(
-            "McpAgent should propagate reasoningEffort='low' to OpenRouter so the provider streams reasoning tokens back.");
+        return string.Concat(chunks);
     }
 
-    // The Responses wire hands an OpenAI model's reasoning back encrypted and empty unless the
-    // request asks for a summary; OpenRouter's translation for other providers (the deepseek test
-    // above) streams it regardless, so only an untranslated OpenAI endpoint can catch the summary
-    // request going missing.
-    private const string PinnedOpenAiModel = "openai/gpt-5.6-luna";
+    private JsonNode? ReasoningSent => _model.Requests.ShouldHaveSingleItem().Body["reasoning"];
 
-    // OpenAI and Azure both serve this model on the untranslated wire: probed by hand on
-    // 2026-10-04, every endpoint of both (openai, openai/flex, openai/fast, azure, azure/us,
-    // azure/eu) streamed `response.reasoning_summary_text.delta` on every call. Two rather than
-    // one so an OpenAI pool outage has somewhere to fall back. Amazon Bedrock, the model's other
-    // provider, is left out on purpose: it streamed no reasoning at all, summary or not, so a
-    // turn it served would fail this test whether or not the summary was asked for.
-    private static readonly ProviderRouting _pinnedOpenAiProvider = new() { Only = ["openai", "azure"] };
-
-    [SkippableFact]
-    public async Task Agent_OnTheUntranslatedOpenAiWire_StreamsReasoningContent()
+    [Fact]
+    public async Task Agent_WithReasoningEffortConfigured_StreamsReasoningContent()
     {
-        var (apiUrl, apiKey, _) = GetConfig();
+        var reasoning = await ReasoningStreamedAsync("low");
 
-        using var openRouter = new OpenRouterChatClient(
-            apiUrl, apiKey, PinnedOpenAiModel, providerRouting: _pinnedOpenAiProvider);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
-
-        // One turn that streams reasoning proves the summary was asked for; a turn that came back
-        // without any says nothing, since which endpoint served it is out of the test's hands. Each
-        // attempt gets a fresh agent so a retry is not sent the earlier turn as history.
-        var reasoning = await LlmAttempt.UntilAsync(
-            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
-            {
-                await using var agent = new McpAgent(
-                    TestAgentSpec.Default with
-                    {
-                        DisplayName = "openai-reasoning-agent",
-                        UserId = "openai-reasoning-test-user",
-                        ReasoningEffort = "medium"
-                    },
-                    openRouter,
-                    stateStore,
-                    NoOpMetricsPublisher.Instance,
-                    TimeProvider.System,
-                    [],
-                    []);
-
-                var reasoningChunks = new List<string>();
-                await foreach (var update in agent.RunStreamingAsync(
-                    "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-                    cancellationToken: ct))
-                {
-                    foreach (var content in update.Contents.OfType<TextReasoningContent>())
-                    {
-                        reasoningChunks.Add(content.Text);
-                    }
-                }
-
-                return string.Concat(reasoningChunks);
-            }),
-            reasoningText => !string.IsNullOrWhiteSpace(reasoningText));
-
+        ReasoningSent?["effort"]?.GetValue<string>().ShouldBe("low");
         reasoning.ShouldNotBeNullOrWhiteSpace(
+            "McpAgent should send reasoningEffort='low' with a summary request and stream the reasoning back.");
+    }
+
+    [Fact]
+    public async Task Agent_WithReasoningEffortConfigured_AsksForTheSummaryOnTheWire()
+    {
+        await ReasoningStreamedAsync("medium");
+
+        ReasoningSent?["summary"].ShouldNotBeNull(
             "An OpenAI model on the Responses wire returns readable reasoning only when the request " +
             "asks for a summary; McpAgent should ask for one whenever reasoning is enabled.");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task Agent_WithReasoningEffortNone_StreamsNoReasoningContent()
     {
-        // With reasoningEffort = "none", the provider should NOT stream reasoning tokens —
-        // proves that effort=none disables reasoning end-to-end (not just any non-null value
-        // forces it on).
-        var (apiUrl, apiKey, model) = GetConfig();
+        var reasoning = await ReasoningStreamedAsync("none");
 
-        using var openRouter = new OpenRouterChatClient(
-            apiUrl, apiKey, model, providerRouting: _pinnedProvider);
-        var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(10) }, TimeProvider.System);
-
-        await using var agent = new McpAgent(
-            TestAgentSpec.Default with
-            {
-                DisplayName = "no-effort-agent",
-                UserId = "no-effort-test-user",
-                ReasoningEffort = "none"
-            },
-            openRouter,
-            stateStore,
-            NoOpMetricsPublisher.Instance,
-            TimeProvider.System,
-            [],
-            []);
-
-        var reasoning = await LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct =>
-        {
-            var reasoningChunks = new List<string>();
-            await foreach (var update in agent.RunStreamingAsync(
-                "Compare 9.11 and 9.9. Which is larger? Show your reasoning.",
-                cancellationToken: ct))
-            {
-                foreach (var content in update.Contents.OfType<TextReasoningContent>())
-                {
-                    reasoningChunks.Add(content.Text);
-                }
-            }
-
-            return string.Concat(reasoningChunks);
-        });
-
-        reasoning.ShouldBeNullOrWhiteSpace(
-            "McpAgent with reasoningEffort='none' should suppress reasoning tokens.");
+        reasoning.ShouldBeNullOrWhiteSpace("McpAgent with reasoningEffort='none' should suppress reasoning tokens.");
+        ReasoningSent?["summary"].ShouldBeNull();
     }
-
 }
 
 // Runs without Docker: a fake IChatClient captures the ChatOptions McpAgent builds, so both

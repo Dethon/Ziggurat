@@ -7,10 +7,9 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
 
-// The chat's turns against the stack's real model: a reply, a stop, an approval either way, and a
-// message drawn as text. They change nothing of the household, so they run beside the chat cases that
-// read its name and agents rather than behind them; each waits on the provider, which is what made the
-// one collection that held them all the run's longest.
+// The chat's turns: a reply, a stop, an approval either way, and a message drawn as text. They change
+// nothing of the household, so they run beside the chat cases that read its name and agents rather
+// than behind them.
 [Collection(WebChatE2ECollections.Conversation)]
 [Trait("Category", "E2E")]
 public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
@@ -130,30 +129,20 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
         await chatInput.FillAsync("Hello, this is an E2E test message. Do not call any tools.");
         await chatInput.PressAsync("Enter");
 
-        // .First, because the agent often quotes the message back and then two bubbles carry the
-        // text — a strict-mode violation, which fails outright instead of waiting. The user's own
-        // bubble is the earlier of the two in document order.
+        // .First: a reply quoting the message back would put the text in two bubbles — a strict-mode
+        // violation, which fails outright instead of waiting. The user's own is the earlier of the two.
         var userMessage = page
             .Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" })
             .First;
         await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
 
-        // Wait for agent response — the assistant message element may appear early (with empty
-        // content during "thinking"), so poll until it has non-empty text. The model sometimes
-        // answers even a greeting with a tool call, and turning its approval down ends the turn with
-        // no text at all, so the message asks for none.
-        // The reply comes from a real model over the network, so what bounds this is the provider's
-        // worst case rather than the app's. Three minutes: a queued or slow generation ran past the
-        // old ninety seconds and reported it as an empty bubble, which reads as a broken client
-        // rather than as the wait it was. The loop still returns the moment text appears, so a
-        // normal run pays nothing for the larger cap.
+        // The assistant message element may appear early, with empty content, so this waits for text.
         await WaitForAssistantTextAsync(page);
     }
 
-    // The reply comes from a real model over the network, so what bounds this is the provider's
-    // worst case rather than the app's. Returns the moment text appears. An approval holds the turn
-    // until it is answered, so one is turned down as it comes; but that ends the turn with no text, so
-    // a caller asks the model not to call tools, and a turn that ended empty fails at once.
+    // Returns the moment text appears. An approval holds the turn until it is answered, so one is
+    // turned down as it comes; but that ends the turn with no text, so a turn that ended empty fails at
+    // once. The cap is generous because a loaded machine is slow, not because the model is.
     internal static async Task WaitForAssistantTextAsync(IPage page)
     {
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
@@ -184,8 +173,8 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
                 // Past the cap. Say which wait ran out, because "expected not to be empty" on its
                 // own has been read as the client failing to render a reply it did receive.
                 throw new TimeoutException(
-                    "No assistant text after 3 minutes. The reply comes from a real model here, so "
-                    + "this is a slow or failed generation rather than the chat client.", ex);
+                    "No assistant text after 3 minutes. The stack's model is the fake, which answers at once, "
+                    + "so the turn never reached it or its reply never reached the page.", ex);
             }
         }
     }

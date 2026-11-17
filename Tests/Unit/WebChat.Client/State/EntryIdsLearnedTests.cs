@@ -43,6 +43,129 @@ public class EntryIdsLearnedTests : IDisposable
         messages[2].CorrelationId.ShouldBe("c1");
     }
 
+    // Another person's turn in a shared topic that no wire brought here — begun and answered while this
+    // page's own send held the topic — is in the history: it goes in where the history has it, and
+    // nothing the page drew is taken away, its own message not yet stored included.
+    [Fact]
+    public void ATurnNoWireBroughtHere_GoesInWhereTheHistoryHasIt()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "earlier", EntryId = "e1" },
+            new ChatMessageModel { Role = "assistant", Content = "old answer", MessageId = "r0", EntryId = "e2" },
+            new ChatMessageModel { Role = "user", Content = "mine", CorrelationId = "c1" },
+            new ChatMessageModel { Role = "assistant", Content = "OK", MessageId = "r2" },
+            new ChatMessageModel { Role = "user", Content = "mine again", CorrelationId = "c2" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "earlier", "e1"),
+            History("assistant", "old answer", "e2", "r0"),
+            History("user", "Ana's", "e3"),
+            History("assistant", "OK", "e4", "r1"),
+            History("user", "mine", "e5"),
+            History("assistant", "OK", "e6", "r2")
+        ], _store.State.Revision));
+
+        var messages = _store.State.MessagesByTopic["t"];
+        messages.Select(m => m.Content).ShouldBe(["earlier", "old answer", "Ana's", "OK", "mine", "OK", "mine again"]);
+        messages.Select(m => m.EntryId).ShouldBe(["e1", "e2", "e3", "e4", "e5", "e6", null]);
+        _store.State.IsFinalized("t", "r1").ShouldBeTrue();
+    }
+
+    // A reply the page drew and could not name is no missed turn: only a person's message the page never
+    // drew brings anything in, so nothing is drawn twice.
+    [Fact]
+    public void AReplyThePageCouldNotName_IsNotDrawnAgain()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "e1" },
+            new ChatMessageModel { Role = "assistant", Content = "buenas, y m" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "hola", "e1"),
+            History("assistant", "buenas, y más", "e2", "r1")
+        ], _store.State.Revision));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["hola", "buenas, y m"]);
+    }
+
+    // A page that drew another person's message from a resume's buffer, whose wire then opened after the
+    // reply ended, holds the message and never the reply: the reply goes in under it.
+    [Fact]
+    public void AReplyNoWireBroughtUnderAMessageThePageShows_GoesInUnderIt()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "Ana's", EntryId = "e1" },
+            new ChatMessageModel { Role = "user", Content = "mine", CorrelationId = "c1" },
+            new ChatMessageModel { Role = "assistant", Content = "OK", MessageId = "r2" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "Ana's", "e1"),
+            History("assistant", "Sure", "e2", "r1"),
+            History("user", "mine", "e3"),
+            History("assistant", "OK", "e4", "r2")
+        ], _store.State.Revision));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["Ana's", "Sure", "mine", "OK"]);
+    }
+
+    // An error the page showed is never named, so the history's copy of it is no missed reply.
+    [Fact]
+    public void AnErrorThePageShowed_IsNotDrawnAgain()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "e1" },
+            new ChatMessageModel { Role = "assistant", Content = "It failed", IsError = true }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "hola", "e1"),
+            new ChatHistoryMessage(null, "assistant", "It failed", null, null, IsError: true, EntryId: "e2")
+        ], _store.State.Revision));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["hola", "It failed"]);
+    }
+
+    // A read asked for before the person deleted a turn arrives after the delete redrew the page: it still
+    // names what it can, and puts back nothing the delete took away.
+    [Fact]
+    public void AReadFromBeforeADelete_PutsNothingBack()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "keep", EntryId = "e1" },
+            new ChatMessageModel { Role = "assistant", Content = "kept", MessageId = "r0", EntryId = "e2" },
+            new ChatMessageModel { Role = "user", Content = "gone", EntryId = "e3" },
+            new ChatMessageModel { Role = "assistant", Content = "gone too", MessageId = "r1", EntryId = "e4" }
+        ]));
+        var asked = _store.State.Revision;
+
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "keep", EntryId = "e1" },
+            new ChatMessageModel { Role = "assistant", Content = "kept", MessageId = "r0", EntryId = "e2" }
+        ]));
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "keep", "e1"),
+            History("assistant", "kept", "e2", "r0"),
+            History("user", "gone", "e3"),
+            History("assistant", "gone too", "e4", "r1")
+        ], asked));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["keep", "kept"]);
+    }
+
     // The same words said twice are two messages: the later bubble takes the later entry.
     [Fact]
     public void RepeatedWords_AreNamedInOrder()

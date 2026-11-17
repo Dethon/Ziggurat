@@ -43,4 +43,7 @@ public interface IStreamingService
     bool TryShowResumedStream(StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId);
 
     Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null);
+
+    // Reads the history and names what the page drew, putting in any turn no wire brought here.
+    Task CatchUpWithHistoryAsync(StoredTopic topic);
 }

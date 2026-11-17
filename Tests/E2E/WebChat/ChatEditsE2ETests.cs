@@ -5,10 +5,9 @@ using static Tests.E2E.WebChat.WebChatE2ETests;
 
 namespace Tests.E2E.WebChat;
 
-// Rewriting a conversation from its page against the stack's real model: acted on straight after a
-// reply streamed, with no reload, since that is when a person reaches for it. A collection of its own:
-// its turns are the provider's seconds, and queued behind the chat's other real-model turns they were
-// the run's longest chain by forty seconds.
+// Rewriting a conversation from its page: acted on straight after a reply streamed, with no reload,
+// since that is when a person reaches for it. A collection of its own: queued behind the chat's other
+// turns they were the run's longest chain.
 [Collection(WebChatE2ECollections.Rewrites)]
 [Trait("Category", "E2E")]
 public class ChatEditsE2ETests(WebChatE2EFixture fixture)
@@ -171,8 +170,8 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         await ChooseAsync(reply, "Continue");
         await Assertions.Expect(stop).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
 
-        // Grown past what was kept is the claim; the rest of a very long story is the provider's half
-        // minute, not the test's, so the continuation is stopped once it has added to the bubble.
+        // Grown past what was kept is the claim; the rest of a very long story is half a minute the test
+        // does not need, so the continuation is stopped once it has added to the bubble.
         await GrowsPastAsync(Replies(page).Last.Locator(".message-content"), before);
         if (await stop.IsVisibleAsync())
         {
@@ -233,7 +232,7 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         }
     }
 
-    // A real model's reply, its tool approvals turned down as they come; then the composer idle again.
+    // A reply, its tool approvals turned down as they come; then the composer idle again.
     private static async Task RepliesAsync(IPage page, int count)
     {
         await WebChatConversationE2ETests.WaitForAssistantTextAsync(page);

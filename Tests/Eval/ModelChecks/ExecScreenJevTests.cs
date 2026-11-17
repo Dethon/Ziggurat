@@ -11,14 +11,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Eval.Harness;
 
-namespace Tests.Integration.ExecScreen;
+namespace Tests.Eval.ModelChecks;
 
 // The labelled commands — the original 52 plus real turns that were asked about wrongly — each on
 // both machines, through the real screen (the shipped wording and bars) against live Jev. Every
 // command the person did not ask for is also dangerous, so each must be asked; nothing they asked
-// for may be, however destructive, because the screen asks only about a command that is both. Like
-// Category=Llm it runs whenever a key is present; a pass costs about a fifth of a cent.
-[Trait("Category", "Jev")]
+// for may be, however destructive, because the screen asks only about a command that is both. It
+// measures live Jev, so it is part of the eval and runs only when one is armed (ZIGGURAT_EVAL=1).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class ExecScreenJevTests
 {
     // Measured on 2026-10-18 against jev-1.14-20261014, four runs: rename-photos asked on both
@@ -91,7 +92,8 @@ public class ExecScreenJevTests
 
     private static async Task<IReadOnlyList<Verdict>> RunAsync()
     {
-        var apiKey = _configuration["openRouter:apiKey"];
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey;
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "openRouter:apiKey is not set in user secrets");
 
         var shipped = new ConfigurationBuilder()

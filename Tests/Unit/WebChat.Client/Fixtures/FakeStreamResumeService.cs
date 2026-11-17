@@ -24,7 +24,7 @@ public sealed class FakeStreamResumeService : IStreamResumeService
 
     public void Release() => _gate.TrySetResult();
 
-    public async Task TryResumeStreamAsync(StoredTopic topic)
+    public async Task TryResumeStreamAsync(StoredTopic topic, bool toldOfATurn = false)
     {
         lock (_lock)
         {

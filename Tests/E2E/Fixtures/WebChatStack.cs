@@ -26,7 +26,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tests.Integration.Fixtures;
@@ -70,6 +69,7 @@ internal sealed partial class WebChatStack
     private IContainer? _accounts;
     private WebApplication? _whisper;
     private FakeKeyProviders? _keyProviders;
+    private FakeOpenRouter? _model;
     private int _caddyPort;
 
     private int _sliceIndex = -1;
@@ -112,9 +112,9 @@ internal sealed partial class WebChatStack
     // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
     public string SugaryMcpEndpoint { get; private set; } = "";
 
-    // How long the Sugary server waits on the agent's estimate before answering 504. An estimate is
-    // a real model's answer over the network, so it is bounded by the provider, as the chat E2E's
-    // reply is (three minutes), and not by the shipped two minutes meant for her phone.
+    // How long the Sugary server waits on the agent's estimate before answering 504: the chat E2E's
+    // reply cap (three minutes) rather than the shipped two minutes meant for her phone, so a turn
+    // slowed by a loaded machine fails as the agent's, not as the phone's timeout.
     public static TimeSpan SugaryTurnTimeout { get; } = TimeSpan.FromMinutes(3);
 
     // What the stubbed whisper answers, per test. No model and no GPU are involved: the browser,
@@ -222,6 +222,10 @@ internal sealed partial class WebChatStack
 
     // The key households' secrets are sealed under, made for this stack: the second household's own
     // OpenRouter key is sealed with it in the seeded store, and the service opens it with the same.
+    // Keys only the fake model sees: the deployment's, and the second household's own.
+    private const string DeploymentModelKey = "sk-or-v1-e2e-deployment";
+    private const string ElsewhereModelKey = "sk-or-v1-e2e-elsewhere";
+
     private static readonly string _masterKey = Convert.ToBase64String(SealingKey.Generate().Export());
     private readonly ConcurrentDictionary<(bool Elsewhere, Role Role), ConcurrentQueue<Seeded>> _pool = new();
     private Seeded? _probe;
@@ -324,7 +328,7 @@ internal sealed partial class WebChatStack
                     elsewhere, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(Agents), ct);
                 var elsewhereKeys = await config.SaveAsync(
                     elsewhere, HouseholdSections.KeysSchema,
-                    HouseholdSections.KeysSchema.Write(new KeysSection { OpenRouter = new OpenRouterKey(GetOpenRouterApiKey()!) }), ct);
+                    HouseholdSections.KeysSchema.Write(new KeysSection { OpenRouter = new OpenRouterKey(ElsewhereModelKey) }), ct);
                 if (elsewhereAgents is not SectionSave.Saved || elsewhereKeys is not SectionSave.Saved)
                 {
                     throw new InvalidOperationException($"the seeded store refused a section: {elsewhereAgents}, {elsewhereKeys}");
@@ -538,11 +542,6 @@ internal sealed partial class WebChatStack
 
     private static async Task BuildImagesAsync(CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(GetOpenRouterApiKey()))
-        {
-            return;
-        }
-
         var solutionRoot = TestHelpers.FindSolutionRoot();
 
         // Every leaf image is FROM base-sdk:latest, so this must complete first.
@@ -568,12 +567,6 @@ internal sealed partial class WebChatStack
 
     private async Task StartContainersAsync(CancellationToken ct)
     {
-        var apiKey = GetOpenRouterApiKey();
-        if (string.IsNullOrEmpty(apiKey))
-        {
-            return;
-        }
-
         var stackElapsed = Stopwatch.StartNew();
         _network = TestContainers.Network()
             .WithName($"e2e-webchat-{Guid.NewGuid():N}")
@@ -702,6 +695,10 @@ internal sealed partial class WebChatStack
         // first: the accounts service is told where they are.
         _keyProviders = await FakeKeyProviders.StartAsync(forContainers: true);
 
+        // The model, answered in this process by rule rather than by a provider that bills for every
+        // turn: the agent reaches it, and Jev under the same root, through the host's gateway.
+        _model = await FakeOpenRouter.StartAsync(forContainers: true);
+
         var seededStore = await E2ETrace.TimeAsync("seed:accounts", () => SeedAccountsStoreAsync(ct));
         _accounts = TestContainers.Container(E2EImages.Accounts.ImageName)
             // The store the stack's people were made in by this process (SeedAccountsStoreAsync), copied
@@ -765,7 +762,8 @@ internal sealed partial class WebChatStack
         // channels for telegram and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
             {
-              "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
+              "openRouter": { "apiUrl": "{{_model.ApiUrlOn("host.docker.internal")}}", "apiKey": "{{DeploymentModelKey}}" },
+              "typeSafe": { "apiUrl": "{{_model.RootOn("host.docker.internal")}}" },
               "redis": { "connectionString": "redis:6379" },
               "backCalls": { "lemonadeUrl": "http://lemonade:13305" },
               // Without these the model/effort menu never renders, so nothing in the suite ever
@@ -791,6 +789,7 @@ internal sealed partial class WebChatStack
             .WithNetwork(_network)
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
+            .WithExtraHost("host.docker.internal", "host-gateway")
             .WithResourceMapping(e2EAppSettings, "/app/appsettings.json")
             // Each server its own credential, as compose wires it: the agent holds them by host.
             .WithEnvironment("MCP__SECRETS__mcp-vault", McpTestSecret.For("mcp-vault"))
@@ -1019,27 +1018,6 @@ internal sealed partial class WebChatStack
         return new Uri(address).Port;
     }
 
-    private static string? GetOpenRouterApiKey()
-    {
-        var envKey = Environment.GetEnvironmentVariable("OPENROUTER__APIKEY");
-        if (!string.IsNullOrEmpty(envKey))
-        {
-            return envKey;
-        }
-
-        try
-        {
-            var config = new ConfigurationBuilder()
-                .AddUserSecrets("bae64127-c00e-4499-8325-0fb6b452133c")
-                .Build();
-            return config["OpenRouter:ApiKey"];
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     // Torn down together, because every second of this is wall clock: the last test has finished
     // and the run is not over until the containers are gone. Stopping seven of them in a line was
     // several seconds of the total spent after anything was still being tested. Nothing here waits
@@ -1049,6 +1027,7 @@ internal sealed partial class WebChatStack
         await Task.WhenAll(
             _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
             _keyProviders is null ? Task.CompletedTask : _keyProviders.DisposeAsync().AsTask(),
+            _model is null ? Task.CompletedTask : _model.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
             _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
             _accounts is null ? Task.CompletedTask : _accounts.DisposeAsync().AsTask(),
