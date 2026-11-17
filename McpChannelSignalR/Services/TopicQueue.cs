@@ -35,8 +35,9 @@ internal sealed class RunningQueue(StreamKey stream)
     public List<QueuedMessage> Dispatching { get; } = [];
 
     // Steers sent to the agent whose turns have not started, in the order they were sent: each counts
-    // as pending, so the running turn's end starts the first of them (writing its message there)
-    // rather than the queue's head, and a stop meanwhile returns them to their senders.
+    // as pending, so the running turn's end starts them (writing every one's message there, the ones the
+    // agent has not answered going in together as one turn) rather than the queue's head, and a stop
+    // meanwhile returns them to their senders.
     public List<WaitingSteer> Steers { get; } = [];
 
     // The steers the last turn's end drew together, for the answer to that end (ReplyReceipt.SteeredTogether),
