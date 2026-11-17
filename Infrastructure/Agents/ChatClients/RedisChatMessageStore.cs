@@ -277,9 +277,9 @@ public sealed class RedisChatMessageStore(
 
     // Messages no run took (the conversation group's: stopped before their turn started, or a turn that
     // could not be set up), at the end of the line. Failed, each is marked so, and what the person was told
-    // follows, as a failed turn is kept, so the retry of its last message takes its place. Kept, as a stopped
-    // turn is, only on the line this session left: a delete or a clear during the stop's teardown removed
-    // the conversation, which these would otherwise bring back.
+    // follows, as a failed turn is kept, so the retry of its last message takes its place. Kept only while the
+    // conversation is still there (StillThereAsync): a delete or a clear during the stop's teardown removed
+    // it, which these would otherwise bring back.
     public async Task KeepUnansweredAsync(AgentSession session, IReadOnlyList<ChatMessage> messages, string? failedWith)
     {
         if (messages.Count == 0)
@@ -300,7 +300,7 @@ public sealed class RedisChatMessageStore(
         await _lock.WaitAsync();
         try
         {
-            if (!await StillTheLineReadAsync(session))
+            if (!await StillThereAsync(session))
             {
                 return;
             }
@@ -350,6 +350,23 @@ public sealed class RedisChatMessageStore(
         var tail = await store.GetTailMessagesAsync(key!, 1);
         return await store.GetMessageCountAsync(key!) == read.Count
                && (read.LastEntryId is null || tail?.LastOrDefault()?.GetEntryId() == read.LastEntryId);
+    }
+
+    // The question a stopped turn's keep asks, asked of the conversation rather than of its last line: a
+    // topic's conversation is there while its topic is, any other while a line this session left non-empty
+    // still holds something. Not whether the line moved since — another writer may have moved it (a fire's
+    // group delivering into the conversation, an edit from the page), and the messages kept here are on the
+    // person's page all the same.
+    private async Task<bool> StillThereAsync(AgentSession session)
+    {
+        if (!TryGetStateKey(session, out var key))
+        {
+            return true;
+        }
+
+        return AgentKey.ChatConversationParts(key!) is { } parts
+            ? await store.GetTopicByChatIdAndThreadIdAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not null
+            : !_lineRead.TryGetValue(session, out var read) || read.Count == 0 || await store.GetMessageCountAsync(key!) > 0;
     }
 
     private async ValueTask ClearTurnInFlightAsync(AgentSession session)

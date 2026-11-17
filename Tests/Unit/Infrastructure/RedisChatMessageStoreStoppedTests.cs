@@ -104,23 +104,36 @@ public class RedisChatMessageStoreStoppedTests
     // Messages no run took (a stop's drawn messages, a turn that never set up) are kept at the end of the line
     // as the conversation group hands them over, after the stop's teardown: a conversation deleted or cleared
     // meanwhile keeps nothing of them, as a stopped turn keeps nothing, rather than be written again.
+    // Unlike a stopped turn's keep, not refused for a line another writer moved since (a fire's group delivering
+    // into the conversation): the messages are on the person's page all the same.
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task MessagesNoRunTook_AreKeptOnlyWhileTheConversationIsStillThere(bool removedMeanwhile)
+    [InlineData("left as it was")]
+    [InlineData("removed")]
+    [InlineData("added to by another")]
+    public async Task MessagesNoRunTook_AreKeptOnlyWhileTheConversationIsStillThere(string meanwhile)
     {
         _store.Setup(s => s.GetMessageCountAsync(Key)).ReturnsAsync(() => _stored.Count);
         _store.Setup(s => s.GetTailMessagesAsync(Key, 1)).ReturnsAsync(() => _stored.Count == 0 ? null : [_stored[^1]]);
         var (history, session) = await SessionAsync(Key);
         await RunAsync(history, session, new Scripted([new TextContent("ok")]), "hola");
-        if (removedMeanwhile)
+        switch (meanwhile)
         {
-            _stored.Clear();
+            case "removed":
+                _stored.Clear();
+                break;
+            case "added to by another":
+                _stored.Add(new ChatMessage(ChatRole.Assistant, "the oven is on"));
+                break;
         }
 
         await history.KeepUnansweredAsync(session, [new ChatMessage(ChatRole.User, "and in red")], null);
 
-        _stored.Select(m => m.Text).ShouldBe(removedMeanwhile ? [] : ["hola", "ok", "and in red"]);
+        _stored.Select(m => m.Text).ShouldBe(meanwhile switch
+        {
+            "removed" => [],
+            "added to by another" => ["hola", "ok", "the oven is on", "and in red"],
+            _ => ["hola", "ok", "and in red"]
+        });
     }
 
     // A conversation whose first message was stopped before any run read it: its topic deleted meanwhile is
