@@ -27,6 +27,16 @@ public enum Queueing
     NotRunning
 }
 
+// What became of a person's send that opened the stream, once vouched for: started on it, handed back to
+// its sender because a stop ended that stream while it was being vouched for, or dropped by that stop — a
+// reroll's message, already on the line, and a Continue's ask, nobody's words.
+public enum SendStart
+{
+    Started,
+    Returned,
+    Dropped
+}
+
 // The head of a queue, taken as the turn before it ended, on the stream it was taken from: a stream
 // stopped or replaced while its dispatch was being vouched for is not the one to write it on.
 public sealed record QueuedTurn(QueuedMessage Message, StreamKey Stream);

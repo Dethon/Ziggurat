@@ -521,18 +521,31 @@ public sealed class ChatHub(
             yield break;
         }
 
-        await turns.WriteMessageAsync(sender, turn);
+        // Written and emitted only while the stream it opened still runs: a stop while its sender was being
+        // vouched for ended it, and the message goes back to its sender rather than behind the cancel.
+        var started = await streamService.StartSendAsync(stream, sender, turn, async () =>
+        {
+            await turns.WriteMessageAsync(sender, turn);
+            await turns.EmitAsync(vouched, turn, cancellationToken);
+        });
+        if (started != SendStart.Started)
+        {
+            if (started == SendStart.Returned)
+            {
+                await queueNews.TellReturnedOrLogAsync([sender]);
+            }
+
+            yield break;
+        }
 
         // The other browsers on the topic - a member reading a shared one, the same person's phone -
-        // follow a stream they are told started, replaying the message just buffered; the one sending
-        // is streaming already and ignores it. Told as an agent-initiated turn's start is, to those
-        // who may see the topic. A message enqueued behind a running reply needs no telling: whoever
-        // follows the stream receives it on it.
+        // follow a stream they are told started, replaying the message buffered; the one sending is
+        // streaming already and ignores it. Told as an agent-initiated turn's start is, to those who may
+        // see the topic, once the turn has started, since a stop may have taken it back. A message
+        // enqueued behind a running reply needs no telling: whoever follows the stream receives it on it.
         await hubSender.SendToTopicAsync(
             await threadStore.TopicOfAsync(session), sender.SpaceSlug, "OnStreamStarted",
             new StreamStartedNotification(topicId, sender.SpaceSlug));
-
-        await streamService.InAgentOrderAsync(() => turns.EmitAsync(vouched, turn, cancellationToken));
 
         await foreach (var chunk in FollowAsync(topicId, carried, subscription, linkedToken, cancellationToken))
         {

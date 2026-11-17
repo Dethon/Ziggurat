@@ -608,6 +608,32 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(["second"]);
     }
 
+    // A person's own send that opened the stream, still being vouched for as they press Stop: it is not
+    // sent behind the cancel, with no stream left to answer on, but goes back to its sender as a queued
+    // message does. A reroll's message is on the line already, so it goes nowhere: nothing is sent.
+    [Theory]
+    [InlineData(false, new[] { "first" })]
+    [InlineData(true, new string[0])]
+    public async Task AStopWhileTheSendThatOpenedTheStreamIsBeingVouchedFor_SendsNothing_AndReturnsAPersonsMessage(
+        bool reroll, string[] returned)
+    {
+        var fran = HubFor(new SignedInCaller());
+        var vouching = _accounts.HoldNext();
+        var wire = Read(reroll
+            ? fran.SendRerun(TopicId, "first", "c-1", null, null, "entry-1", CancellationToken.None)
+            : fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await vouching.Asked;
+
+        await fran.CancelTopic(TopicId);
+        vouching.Answer();
+        await wire.Ended;
+        await Eventually.Settle();
+
+        (await ArrivedSoFarAsync()).ShouldBe(["cancel"]);
+        wire.Said().ShouldBeEmpty();
+        (await fran.TakeReturned(TopicId)).Select(m => m.Content).ShouldBe(returned);
+    }
+
     // The agent may end the running turn just as the stop's cancel reaches it: by then the queue has gone
     // back to its senders, so that turn's end starts nothing after the cancel.
     [Fact]

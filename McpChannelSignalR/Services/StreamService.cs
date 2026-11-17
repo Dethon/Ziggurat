@@ -442,6 +442,28 @@ public sealed class StreamService(
             return true;
         });
 
+    // A person's send that opened the stream, started by start (written and emitted) only while that stream
+    // still runs, in the order the agent hears of turns: a stop that ended it while its sender was being
+    // vouched for hands it back, as one being admitted to the queue is, rather than send it behind the
+    // cancel with no stream to answer on.
+    public Task<SendStart> StartSendAsync(StreamKey opened, SenderSnapshot sender, TurnMessage turn, Func<Task> start) =>
+        InAgentOrderAsync(async () =>
+        {
+            lock (_streamLock)
+            {
+                if (RunningOn(opened) is null)
+                {
+                    return turn.RerunOf is null && !turn.Continuation
+                           && HandBackIfStopped(opened, QueuedMessage.Of(sender, turn, time.GetUtcNow())) == Queueing.Returned
+                        ? SendStart.Returned
+                        : SendStart.Dropped;
+                }
+            }
+
+            await start();
+            return SendStart.Started;
+        });
+
     private bool Start(QueuedTurn turn)
     {
         lock (_streamLock)
