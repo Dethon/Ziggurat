@@ -11,14 +11,15 @@ using Shouldly;
 using Tests.Eval.Harness;
 using Tests.Unit.Domain.Prompts;
 
-namespace Tests.Integration.Skills;
+namespace Tests.Eval.ModelChecks;
 
 // The probe's skill half as a test: the labelled set beside it as data, run through the real
 // preloader and policy against live Jev over the seven shipped descriptions. What it pins is the
 // bar the feature is set for — no wrong preload — and a coverage floor measured on the day it
-// landed, so a Jev version bump or a description edit is checked in a minute for cents. Like
-// Category=Llm it runs whenever a key is present, because a pass costs well under a cent.
-[Trait("Category", "Jev")]
+// landed, so a Jev version bump or a description edit is checked in a minute for cents. It
+// measures live Jev, so it is part of the eval and runs only when one is armed (ZIGGURAT_EVAL=1).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class SkillPreloaderJevTests
 {
     // Measured on 2026-09-18 against jev-1.13.0 with the shipped descriptions: 32 of 34 cases
@@ -86,7 +87,8 @@ public class SkillPreloaderJevTests
 
     private static async Task<IReadOnlyList<Verdict>> RunAsync()
     {
-        var apiKey = _configuration["openRouter:apiKey"];
+        Skip.IfNot(EvalGate.IsArmed, EvalGate.Reason);
+        var apiKey = EvalGate.ApiKey;
         Skip.If(string.IsNullOrWhiteSpace(apiKey), "openRouter:apiKey is not set in user secrets");
 
         var shipped = new ConfigurationBuilder()

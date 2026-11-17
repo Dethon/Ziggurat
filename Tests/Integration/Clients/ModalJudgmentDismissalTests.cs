@@ -5,6 +5,7 @@ using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
 using Microsoft.Playwright;
 using Shouldly;
+using Tests.Eval.ModelChecks;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
 using Tests.Unit.Judgments;
@@ -156,9 +157,10 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
     }
 
     // The same wall against live Jev: with judgments off (no key) it is left standing, with them
-    // on it is dismissed and the envelope names the click. Skipped without a key like the probe.
-    [Trait("Category", "Jev")]
-    [Trait("Category", "External")]
+    // on it is dismissed and the envelope names the click. Live Jev is paid, so this runs only on an
+    // armed eval, like the probe.
+    [Trait("Category", "Eval")]
+    [Trait("Tier", "Full")]
     [SkippableFact]
     public async Task Navigate_TheWallAgainstLiveJev_IsLeftStandingWithoutAKeyAndDismissedWithOne()
     {

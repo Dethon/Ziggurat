@@ -8,31 +8,26 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Agents;
 
-[Trait("Category", "Llm")]
+// A parent hands a task to a subagent and gets its answer back, both turns answered by the fake model.
 public class SubAgentTests(RedisFixture redisFixture)
-    : IClassFixture<RedisFixture>
+    : IClassFixture<RedisFixture>, IAsyncLifetime
 {
-    private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<SubAgentTests>()
-        .Build();
+    private FakeOpenRouter _model = null!;
+
+    public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
+
+    public async Task DisposeAsync() => await _model.DisposeAsync();
 
     // What the parent would be running: a worker names no model of its own.
     private const string WorkerModel = "~deepseek/deepseek-v4-flash-latest:nitro";
 
-    private static OpenRouterConfig CreateOpenRouterConfig()
-    {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
-        var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
-        return new OpenRouterConfig { ApiUrl = apiUrl, ApiKey = apiKey };
-    }
+    private OpenRouterConfig CreateOpenRouterConfig() => new() { ApiUrl = _model.ApiUrl, ApiKey = "sk-or-fake" };
 
     private static MultiAgentFactory CreateFactory(OpenRouterConfig config)
     {
@@ -47,7 +42,7 @@ public class SubAgentTests(RedisFixture redisFixture)
             null);
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task SubAgent_CompletesTask_ReturnsResult()
     {
         var subAgentDef = new SubAgentDefinition
@@ -71,8 +66,7 @@ public class SubAgentTests(RedisFixture redisFixture)
 
         var toolFeature = new SubAgentToolFeature(registryOptions);
 
-        var llmClient = new OpenRouterChatClient(
-            openRouterConfig.ApiUrl, openRouterConfig.ApiKey, "~deepseek/deepseek-v4-flash-latest:nitro");
+        using var llmClient = FakeTurn.Client(_model);
         var stateStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5) }, TimeProvider.System);
         using var effectiveClient = new ToolApprovalChatClient(llmClient, approvalHandler, "conv-test", ["domain__subagents__*"]);
 
@@ -90,33 +84,21 @@ public class SubAgentTests(RedisFixture redisFixture)
             toolFeature.GetTools(featureConfig).ToList(),
             []);
 
-        static string Combined(IEnumerable<AiResponse> rs) =>
-            string.Join(" ", rs.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
+        // The parent calls the subagent, the subagent answers its task, and the parent is handed that.
+        _model.Script(
+            FakeOpenRouter.CallingToolNamed(SubAgentRunTool.Name,
+                """{"subAgentId":"echo-agent","prompt":"Echo: 'Hello from subagent'"}"""),
+            _ => FakeOpenRouter.Saying("Hello from subagent"));
 
-        // A real model now and then calls a tool nobody offered it ("start_loop") and reports the
-        // error instead; that is the provider's turn, not the subagent path, so it is asked again.
-        var responses = await LlmAttempt.UntilAsync(
-            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
-                .RunStreamingAsync(
-                    "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.",
-                    cancellationToken: ct)
-                .ToUpdateAiResponsePairs()
-                .Where(x => x.Item2 is not null)
-                .Select(x => x.Item2!)
-                .ToListAsync(ct)
-                .AsTask()),
-            rs => rs.Any(r => r.ToolCalls.Contains("run_subagent"))
-                  && Combined(rs).Contains("Hello from subagent", StringComparison.OrdinalIgnoreCase));
-
-        responses.ShouldNotBeEmpty();
+        var responses = await FakeTurn.RunAsync(agent, "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.");
 
         responses.ShouldContain(r => r.ToolCalls.Contains("run_subagent"),
             "The parent agent should have invoked the run_subagent tool");
-
-        Combined(responses).ShouldContain("Hello from subagent", Case.Insensitive);
+        _model.Requests[1].SystemPrompt.ShouldNotBeNull().ShouldContain("echo agent");
+        _model.Requests[^1].ToolOutputs.ShouldHaveSingleItem().ShouldContain("Hello from subagent");
     }
 
-    [SkippableFact]
+    [Fact]
     public async Task SubAgent_EphemeralState_NoRedisKeys()
     {
         var subAgentDef = new SubAgentDefinition
@@ -139,23 +121,14 @@ public class SubAgentTests(RedisFixture redisFixture)
             new SpawnContext("conv-1", "test-user", [], UsesOutposts: false, WorkerModel));
         var userMessage = new ChatMessage(ChatRole.User, "Say done");
 
-        // Two different provider failures, and each has its own retry here. WithinAsync covers a
-        // stream that stops sending bytes; UntilAsync covers a turn that completes promptly with
-        // nothing in it, which is what a full-suite run met — the subject is that the subagent
-        // writes no Redis keys, and a model that answered with silence says nothing either way.
-        var result = await LlmAttempt.UntilAsync(
-            async () =>
-            {
-                var response = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
-                    .RunStreamingAsync([userMessage], cancellationToken: ct)
-                    .ToUpdateAiResponsePairs()
-                    .Where(x => x.Item2 is not null)
-                    .Select(x => x.Item2!)
-                    .ToListAsync(ct)
-                    .AsTask());
-                return string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
-            },
-            usable: text => !string.IsNullOrEmpty(text));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var response = await agent
+            .RunStreamingAsync([userMessage], cancellationToken: cts.Token)
+            .ToUpdateAiResponsePairs()
+            .Where(x => x.Item2 is not null)
+            .Select(x => x.Item2!)
+            .ToListAsync(cts.Token);
+        var result = string.Join("", response.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
 
         var keysAfter = server.Keys(pattern: "*").ToList();
         keysAfter.Count.ShouldBe(keysBefore.Count,

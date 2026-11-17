@@ -7,19 +7,25 @@ using Shouldly;
 
 using Tests.Integration.Fixtures;
 
-namespace Tests.Integration.Agents;
+namespace Tests.Canary;
 
-[Trait("Category", "Llm")]
-public class OpenRouterToolCallingWithReasoningTests
+// One of the suite's two calls to a real paid API, kept so a change on OpenRouter's side — the
+// Responses wire, tool calling, reasoning — fails a routine run before it fails the deployment.
+// Everything else that talks to a model talks to FakeOpenRouter. It costs one cheap model's two calls
+// and skips on a machine with no key; keep it that small.
+[Trait("Category", "Canary")]
+public class OpenRouterCanaryTests
 {
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
-        .AddUserSecrets<OpenRouterToolCallingWithReasoningTests>()
+        .AddUserSecrets<OpenRouterCanaryTests>()
+        .AddEnvironmentVariables()
         .Build();
 
     private static (string apiUrl, string apiKey, string model) GetConfig()
     {
-        var apiKey = _configuration["openRouter:apiKey"]
-                     ?? throw new SkipException("openRouter:apiKey not set in user secrets");
+        var apiKey = _configuration["openRouter:apiKey"] is { Length: > 0 } key
+            ? key
+            : throw new SkipException("openRouter:apiKey not set in user secrets");
         var apiUrl = _configuration["openRouter:apiUrl"] ?? "https://openrouter.ai/api/v1/";
         var model = _configuration["openRouter:reasoningModel"] ?? "~deepseek/deepseek-v4-flash-latest:nitro";
         return (apiUrl, apiKey, model);
@@ -37,7 +43,8 @@ public class OpenRouterToolCallingWithReasoningTests
             MaximumIterationsPerRequest = 5
         };
 
-        var tool = AIFunctionFactory.Create(() => "ok", "TestTool", "Returns ok");
+        var called = 0;
+        var tool = AIFunctionFactory.Create(() => { Interlocked.Increment(ref called); return "ok"; }, "TestTool", "Returns ok");
         var options = new ChatOptions
         {
             Tools = [tool],
@@ -64,6 +71,8 @@ public class OpenRouterToolCallingWithReasoningTests
             });
 
             updates.ShouldNotBeEmpty();
+            called.ShouldBeGreaterThan(0, "the model never called the tool, so the tool round trip was not exercised");
+            string.Concat(updates.Select(u => u.Text)).ShouldNotBeNullOrWhiteSpace();
         }
         catch (ClientResultException ex)
         {

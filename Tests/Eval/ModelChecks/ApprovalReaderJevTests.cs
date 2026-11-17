@@ -11,7 +11,7 @@ using Shouldly;
 using Tests.Integration.Clients;
 using Tests.Integration.McpServers;
 
-namespace Tests.Integration.McpChannelVoice;
+namespace Tests.Eval.ModelChecks;
 
 // The probe as a test: the 32 labelled spoken answers from .scratch/jev-voice-approval/probe run
 // through the real reader — the shipped questions, bars and word list — against live Jev. What is
@@ -19,9 +19,10 @@ namespace Tests.Integration.McpChannelVoice;
 // approval here runs a tool on a permission the person did not give, and a wrong refusal costs
 // them the thing they asked for. A labelled yes or no that came back ambiguous is a re-ask, which
 // is what happened before Jev; their count is reported and floored at what was measured the day
-// this landed, so a question edit that loses ground is heard. Like Category=Llm it runs whenever
-// a key is present; a pass costs well under a cent.
-[Trait("Category", "Jev")]
+// this landed, so a question edit that loses ground is heard. It measures live Jev, so it is part
+// of the eval and runs only when one is armed (ZIGGURAT_EVAL=1).
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class ApprovalReaderJevTests
 {
     // Measured on 2026-09-18 against jev-1.13.0 with the shipped wording and bars
