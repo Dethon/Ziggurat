@@ -4,6 +4,7 @@ using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -335,7 +336,11 @@ public class ChatMonitorSteeringTests
         StopBeforeTheirRunReachesTheHistory,
 
         // The steer reached the agent before the stop, which the group heard before it took the steer.
-        ReachesTheTurnAfterTheStop
+        ReachesTheTurnAfterTheStop,
+
+        // Two steers drawn together whose turn fails to set up: the error is answered once, every key ends,
+        // and both messages are kept marked failed, for Retry to take.
+        TheirTurnFailsToSetUp
     }
 
     [Theory]
@@ -343,6 +348,7 @@ public class ChatMonitorSteeringTests
     [InlineData(GatheringExit.StopBeforeALoneSteersTurn)]
     [InlineData(GatheringExit.StopBeforeTheirRunReachesTheHistory)]
     [InlineData(GatheringExit.ReachesTheTurnAfterTheStop)]
+    [InlineData(GatheringExit.TheirTurnFailsToSetUp)]
     public async Task EveryDrawnSteer_EndsOnce_AndIsInTheStoredLine_HoweverTheGatheringIsLeft(GatheringExit exit)
     {
         var lookUp = LocalTool.Held("look_up", "42");
@@ -351,7 +357,9 @@ public class ChatMonitorSteeringTests
         var runs = new HeldRecall();
         var cutEnd = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var cutEndHeld = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var two = exit is GatheringExit.StopWhileTheyGather or GatheringExit.StopBeforeTheirRunReachesTheHistory;
+        var two = exit is GatheringExit.StopWhileTheyGather or GatheringExit.StopBeforeTheirRunReachesTheHistory
+            or GatheringExit.TheirTurnFailsToSetUp;
+        var stopped = exit != GatheringExit.TheirTurnFailsToSetUp;
         string[] drawn = two ? ["steer-1", "steer-2"] : ["steer-1"];
         await using var run = new ToolLoopRun(model, [lookUp], recall: recall, beforeRun: runs.BeforeRunAsync,
             receipts: SteeredTogetherAtTheCut(drawn),
@@ -365,9 +373,12 @@ public class ChatMonitorSteeringTests
                     await cutEnd.Task.WaitAsync(TimeSpan.FromSeconds(60));
                 }
             });
-        var setUp = exit == GatheringExit.StopBeforeTheirRunReachesTheHistory
-            ? runs.Hold("and in red")
-            : recall.Hold(two ? "and in red" : "no, the other one");
+        var setUp = exit switch
+        {
+            GatheringExit.StopBeforeTheirRunReachesTheHistory => runs.Hold("and in red"),
+            GatheringExit.TheirTurnFailsToSetUp => recall.Fail("and in red"),
+            _ => recall.Hold(two ? "and in red" : "no, the other one")
+        };
 
         run.Send("look it up");
         await lookUp.Started;
@@ -386,7 +397,7 @@ public class ChatMonitorSteeringTests
             await run.CancelHeardAsync();
             cutEnd.SetResult();
         }
-        else
+        else if (stopped)
         {
             await setUp;
             run.Stop(returned: []);
@@ -395,12 +406,23 @@ public class ChatMonitorSteeringTests
         await run.FinishAsync();
 
         string[] said = two ? ["user: no, the other one", "user: and in red"] : ["user: no, the other one"];
-        run.StoredLine().Skip(3).ShouldBe(said);
-        run.Line().Skip(3).ShouldAllBe(m => !m.IsFailedTurn() && !m.IsInterrupted());
+        run.StoredLine().Skip(3).ShouldBe(stopped ? said : [.. said, $"assistant: {RefusalAnswers.SetupFailed}"]);
+        run.Line().Skip(3).ShouldAllBe(m => m.IsFailedTurn() == !stopped && !m.IsInterrupted());
         model.Requests.Count.ShouldBe(1);
-        // The stop ended every drawn key at the hub, which takes nothing after it; whatever the cancelled
-        // turn still sends ends each key once at most.
-        drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) <= 1);
+        if (stopped)
+        {
+            // The stop ended every drawn key at the hub, which takes nothing after it; whatever the cancelled
+            // turn still sends ends each key once at most.
+            drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) <= 1);
+        }
+        else
+        {
+            // Nothing is stopped, so the agent ends every key the hub holds a place for, once, and says what
+            // went wrong once, under the key their turn answers under.
+            drawn.ShouldAllBe(key => run.Replies.Count(r => r.IsComplete && r.TurnKey == key) == 1);
+            run.Replies.Where(r => r.ContentType == ReplyContentType.Error && drawn.Contains(r.TurnKey))
+                .Select(r => (r.TurnKey, r.Content)).ShouldBe([("steer-1", RefusalAnswers.SetupFailed)]);
+        }
     }
 
     // A stop's cancel tells the agent which steers it drew and which it handed back: a hub that names what it
@@ -448,10 +470,24 @@ public class ChatMonitorSteeringTests
             _held.GetOrAdd(text, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously))
                 .Task.WaitAsync(TimeSpan.FromSeconds(60));
 
+        private readonly ConcurrentDictionary<string, byte> _failing = new();
+
+        // The message's recall fails, as a store recall reads may be down: its turn fails to set up.
+        public Task Fail(string text)
+        {
+            _failing[text] = 0;
+            return Task.CompletedTask;
+        }
+
         public async Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread,
             CancellationToken ct)
         {
+            if (_failing.ContainsKey(message.Text))
+            {
+                throw new InvalidOperationException("recall is down");
+            }
+
             if (_held.TryGetValue(message.Text, out var held))
             {
                 held.TrySetResult();

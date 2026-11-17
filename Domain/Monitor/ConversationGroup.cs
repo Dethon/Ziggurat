@@ -325,8 +325,8 @@ internal sealed class ConversationGroup(
                     // Refused before any model was asked. The group ends as a failed setup does, so the
                     // next message is built afresh and runs once the household has set a key.
                     await RefuseWithoutKeyAsync(x, ex.HouseholdId);
+                    await EndUnsetUpAsync(together, x.Message.Origin is null ? WithoutKeyAnswer : null);
                     await EndFailedSetupAsync();
-                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
                 catch (AgentNotFoundException ex)
@@ -334,8 +334,9 @@ internal sealed class ConversationGroup(
                     // The household has no agent of that id. Ends the group as a failed setup does, so
                     // the next message is built afresh — once an owner adds the agent it answers.
                     await RefuseWithoutAgentAsync(x, ex);
+                    await EndUnsetUpAsync(
+                        together, x.Channel.AttachOnly && x.Message.Origin is null ? NoAgentHereAnswer : null);
                     await EndFailedSetupAsync();
-                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
                 catch (Exception ex)
@@ -356,8 +357,8 @@ internal sealed class ConversationGroup(
                         await AnswerRefusedAsync(x.Channel, x.Message, RefusalAnswers.SetupFailed);
                     }
 
+                    await EndUnsetUpAsync(together, x.Message.Origin is null ? RefusalAnswers.SetupFailed : null);
                     await EndFailedSetupAsync();
-                    LogDroppedTurns(together.Skip(1));
                     break;
                 }
 
@@ -479,9 +480,54 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // The steers gathered into a turn that failed to set up: only the first is answered, as a turn's message.
     private void LogDroppedTurns(IEnumerable<AdmittedTurn> dropped) =>
         dropped.ToList().ForEach(turn => LogDroppedTurn(logger, turn.Message));
+
+    // A turn that could not be set up, its first message answered with `told` (or not at all, as a fire or a
+    // channel told nothing is). Steers the channel drew are on the person's page, so they are kept, each
+    // marked failed and then what was said, as a failed turn is kept, for a retry to take its place; and
+    // the channel holds a place for every steer it drew until its key ends, so each one past the first,
+    // which the answer did not end, is ended here, once, or the queue behind them would wait for good.
+    private async Task EndUnsetUpAsync(IReadOnlyList<AdmittedTurn> together, string? told)
+    {
+        if (together[0].Message.Steer && told is not null && _state is { } state)
+        {
+            try
+            {
+                await state.Agent.KeepUnansweredAsync(
+                    state.Thread, [.. together.Select(PersonsMessageOf)], told, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Keeping a turn that failed to set up failed for conversation {ConversationId}",
+                    agentKey.ConversationId);
+            }
+        }
+
+        foreach (var joined in together.Skip(1))
+        {
+            await EndTurnKeyAsync(joined);
+        }
+    }
+
+    private async Task EndTurnKeyAsync(AdmittedTurn turn)
+    {
+        try
+        {
+            await turn.Channel.SendReplyAsync(new SendReplyParams
+            {
+                ConversationId = turn.Message.ConversationId,
+                Content = string.Empty,
+                ContentType = ReplyContentType.StreamComplete,
+                IsComplete = true,
+                TurnKey = turn.Message.TurnKey
+            }, _groupCt);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Ending a steer's turn on {ChannelId} failed", turn.Channel.ChannelId);
+        }
+    }
 
     internal static void LogDroppedTurn(ILogger logger, ChannelMessage message)
     {

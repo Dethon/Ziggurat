@@ -1362,6 +1362,46 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         ]);
     }
 
+    // Steers drawn together whose turn fails to set up: the agent answers the failure once, under the first
+    // one's key, and ends the second's key on its own. The failure is drawn once under both messages, the
+    // second end draws nothing, and the queue goes on rather than wait for a turn that never comes.
+    [Fact]
+    public async Task SteersDrawnTogetherWhoseTurnFailsToSetUp_AreAnsweredOnce_AndTheQueueGoesOn()
+    {
+        var fran = HubFor(new SignedInCaller());
+        var wire = Read(fran.SendMessage(TopicId, "first", "c-1", null, null, CancellationToken.None));
+        await AgentWasSentAsync("first");
+        var first = TurnKeyOf("first");
+        (await fran.EnqueueMessage(TopicId, "older", "c-2", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer one", "c-3", null)).ShouldBeTrue();
+        (await fran.EnqueueMessage(TopicId, "steer two", "c-4", null)).ShouldBeTrue();
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer one"));
+        await fran.SteerQueued(TopicId, IdOf(await fran.GetQueue(TopicId), "steer two"));
+        await AgentWasSentAsync("steer two");
+        var (one, two) = (TurnKeyOf("steer one"), TurnKeyOf("steer two"));
+        await StreamAsync("cut short", first);
+        (await EndTurnThroughTheToolAsync(first)).SteeredTogether.ShouldBe([one, two]);
+
+        await RefuseTurnAsync("could not get ready", one);
+        await Eventually.Settle();
+        (await SentSoFarAsync()).ShouldBe(["first", "steer one", "steer two"]);
+        await EndRefusedTurnAsync(two);
+        await AgentWasSentAsync("older");
+        await FinishTurnAsync("answer to older");
+        await wire.Ended;
+
+        wire.Said().ShouldBe([
+            "user: first", "agent: cut short",
+            "user: steer one", "user: steer two", "error: could not get ready",
+            "user: older", "agent: answer to older"
+        ]);
+        var chunks = wire.Chunks().ToList();
+        var failed = chunks.FindIndex(c => c.Error == "could not get ready");
+        var older = chunks.FindIndex(c => c.UserMessage is not null && c.Content == "older");
+        // The error and the first key's end, as any refused turn is drawn; the second key's end draws nothing.
+        chunks.Skip(failed).Take(older - failed).Count(c => c.IsComplete).ShouldBe(2);
+    }
+
     // Stopped before the running turn's end was heard, every waiting steer goes back to its sender, the cancel
     // names each, and the end heard after it draws nothing together; stopped after that end drew them, none
     // goes back, since they are the turn the stop cancels, which the agent keeps as stopped.
