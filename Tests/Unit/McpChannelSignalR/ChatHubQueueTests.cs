@@ -1382,6 +1382,12 @@ public sealed class ChatHubQueueTests : IAsyncLifetime
         var steers = new[] { TurnKeyOf("steer one"), TurnKeyOf("steer two") };
 
         var atTheCut = afterTheyWentIn ? await EndTurnThroughTheToolAsync(first) : null;
+        if (afterTheyWentIn)
+        {
+            // Read off the wire before the stop ends it, so what the page was shown is all there.
+            await Eventually.Until(() => wire.Said().Contains("user: steer two"), "both steers are drawn at the cut");
+        }
+
         await fran.CancelTopic(TopicId);
         await wire.Ended;
         var heardAfter = afterTheyWentIn ? null : await EndTurnThroughTheToolAsync(first);
