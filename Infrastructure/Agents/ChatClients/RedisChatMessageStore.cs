@@ -52,8 +52,9 @@ public sealed class RedisChatMessageStore(
     // the one the line ends on, and a message whose name the line already holds elsewhere is a new one.
     private readonly ConditionalWeakTable<AgentSession, Rerun> _rerun = [];
 
-    // How the line ended when this turn read it, by session: a stopped turn is kept only on the line it
-    // read, never on one a delete or a clear removed under it.
+    // How the line ended when this session last read it or wrote to it, by session: a stopped turn, or
+    // messages no run took, are kept only on the line it left, never on one a delete or a clear removed
+    // under it.
     private readonly ConditionalWeakTable<AgentSession, LineRead> _lineRead = [];
 
     private sealed record LineRead(int Count, string? LastEntryId);
@@ -256,6 +257,7 @@ public sealed class RedisChatMessageStore(
             }
 
             await store.AppendMessagesAsync(redisKey, newMessages);
+            Wrote(context.Session, replaced, newMessages);
         }
         finally
         {
@@ -264,9 +266,20 @@ public sealed class RedisChatMessageStore(
         }
     }
 
+    // The line as this session leaves it: what it read, less the tail it dropped, then what it appended.
+    private void Wrote(AgentSession session, int dropped, IReadOnlyList<ChatMessage> appended)
+    {
+        if (_lineRead.TryGetValue(session, out var read) && appended.Count > 0)
+        {
+            _lineRead.AddOrUpdate(session, new LineRead(read.Count - dropped + appended.Count, appended[^1].GetEntryId()));
+        }
+    }
+
     // Messages no run took (the conversation group's: stopped before their turn started, or a turn that
     // could not be set up), at the end of the line. Failed, each is marked so, and what the person was told
-    // follows, as a failed turn is kept, so the retry of its last message takes its place.
+    // follows, as a failed turn is kept, so the retry of its last message takes its place. Kept, as a stopped
+    // turn is, only on the line this session left: a delete or a clear during the stop's teardown removed
+    // the conversation, which these would otherwise bring back.
     public async Task KeepUnansweredAsync(AgentSession session, IReadOnlyList<ChatMessage> messages, string? failedWith)
     {
         if (messages.Count == 0)
@@ -287,7 +300,13 @@ public sealed class RedisChatMessageStore(
         await _lock.WaitAsync();
         try
         {
+            if (!await StillTheLineReadAsync(session))
+            {
+                return;
+            }
+
             await store.AppendMessagesAsync(redisKey, kept);
+            Wrote(session, 0, kept);
         }
         finally
         {
@@ -313,15 +332,16 @@ public sealed class RedisChatMessageStore(
     }
 
     // A delete or a clear stops the reply and removes the conversation at once, so the stop is kept only
-    // while the line ends where the turn read it — and a first turn's only while its topic still holds it.
+    // while the line ends where the turn read it — and a first turn's, or one nothing read, only while its
+    // topic still holds it.
     private async Task<bool> StillTheLineReadAsync(AgentSession session)
     {
-        if (!_lineRead.TryGetValue(session, out var read) || !TryGetStateKey(session, out var key))
+        if (!TryGetStateKey(session, out var key))
         {
             return true;
         }
 
-        if (read.Count == 0)
+        if (!_lineRead.TryGetValue(session, out var read) || read.Count == 0)
         {
             return AgentKey.ChatConversationParts(key!) is not { } parts
                    || await store.GetTopicByChatIdAndThreadIdAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not null;

@@ -101,6 +101,44 @@ public class RedisChatMessageStoreStoppedTests
         _stored.ShouldBeEmpty();
     }
 
+    // Messages no run took (a stop's drawn messages, a turn that never set up) are kept at the end of the line
+    // as the conversation group hands them over, after the stop's teardown: a conversation deleted or cleared
+    // meanwhile keeps nothing of them, as a stopped turn keeps nothing, rather than be written again.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MessagesNoRunTook_AreKeptOnlyWhileTheConversationIsStillThere(bool removedMeanwhile)
+    {
+        _store.Setup(s => s.GetMessageCountAsync(Key)).ReturnsAsync(() => _stored.Count);
+        _store.Setup(s => s.GetTailMessagesAsync(Key, 1)).ReturnsAsync(() => _stored.Count == 0 ? null : [_stored[^1]]);
+        var (history, session) = await SessionAsync(Key);
+        await RunAsync(history, session, new Scripted([new TextContent("ok")]), "hola");
+        if (removedMeanwhile)
+        {
+            _stored.Clear();
+        }
+
+        await history.KeepUnansweredAsync(session, [new ChatMessage(ChatRole.User, "and in red")], null);
+
+        _stored.Select(m => m.Text).ShouldBe(removedMeanwhile ? [] : ["hola", "ok", "and in red"]);
+    }
+
+    // A conversation whose first message was stopped before any run read it: its topic deleted meanwhile is
+    // the conversation gone, as for a stopped first turn.
+    [Fact]
+    public async Task MessagesNoRunTook_OfAConversationNothingRead_AreNotKeptOnceItsTopicWasDeleted()
+    {
+        const string topicKey = "agent-key:jonas:7:42";
+        _store.Setup(s => s.AppendMessagesAsync(topicKey, It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback<string, IReadOnlyList<ChatMessage>>((_, messages) => _stored.AddRange(messages))
+            .Returns(Task.CompletedTask);
+        var (history, session) = await SessionAsync(topicKey);
+
+        await history.KeepUnansweredAsync(session, [new ChatMessage(ChatRole.User, "hola")], null);
+
+        _stored.ShouldBeEmpty();
+    }
+
     // The next turn's model reads what was said before the stop.
     [Fact]
     public async Task TheNextTurn_ReadsTheInterruptedReply()
@@ -183,6 +221,23 @@ public class RedisChatMessageStoreStoppedTests
             }
         }
         catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task<(RedisChatMessageStore History, AgentSession Session)> SessionAsync(string key)
+    {
+        var history = new RedisChatMessageStore(_store.Object);
+        var session = await new Scripted().AsAIAgent(new ChatClientAgentOptions { ChatHistoryProvider = history })
+            .CreateSessionAsync();
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, key);
+        return (history, session);
+    }
+
+    private static async Task RunAsync(RedisChatMessageStore history, AgentSession session, IChatClient client, string text)
+    {
+        var agent = client.AsAIAgent(new ChatClientAgentOptions { ChatHistoryProvider = history });
+        await foreach (var _ in agent.RunStreamingAsync([new ChatMessage(ChatRole.User, text)], session))
         {
         }
     }
