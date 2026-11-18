@@ -3,11 +3,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
-using Domain.DTOs.Sugary;
 using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using GlucoseTrend = Domain.DTOs.Sugary.GlucoseTrend;
 
 namespace Tests.Integration.McpServerTests;
 

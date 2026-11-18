@@ -10,7 +10,6 @@ import {
   band,
   formatGlucose,
   formatShare,
-  fromUnit,
   glucoseErrorMessage,
   HIGH,
   HIGHEST,
@@ -19,9 +18,12 @@ import {
   LOWEST,
   linkFailureText,
   PERIODS,
+  rangeDraft,
   rangeProblem,
   REGIONS,
+  retypeRange,
   shownRange,
+  switchRangeUnit,
   trendOf,
   UNIT_LABEL,
   VERY_HIGH,
@@ -282,7 +284,7 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
 // a choice where it follows several people, and otherwise its state, how she reads glucose and a way
 // out.
 function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }) {
-  const { t } = useSettings();
+  const { t, language } = useSettings();
   const toast = useToast();
   const [confirm, confirming] = useConfirm();
   const [error, setError] = useState<string | null>(null);
@@ -357,7 +359,10 @@ function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }
             <span className="item-name">{t("glucoseLinkedAs", { name: link.name ?? link.email })}</span>
             <span className="item-meta">{link.email}</span>
             {link.lastFailure ? (
-              <span className="item-meta glucose-link-failing">{linkFailureText(link.lastFailure, t)}</span>
+              <span className="item-meta glucose-link-failing">
+                {link.failingSince && `${t("glucoseFailingSince", { time: when(link.failingSince, language) })} `}
+                {linkFailureText(link.lastFailure, t)}
+              </span>
             ) : (
               <span className="item-meta glucose-link-ok">
                 <Icon name="checkCircle" size={16} /> {t("glucoseLinkWorking")}
@@ -468,25 +473,14 @@ function SettingsForm({ link, onSaved }: { link: GlucoseLink; onSaved: () => voi
   const { t } = useSettings();
   const toast = useToast();
   const recorded: GlucoseSettings = { unit: link.unit, targetLow: link.targetLow, targetHigh: link.targetHigh };
-  const [unit, setUnit] = useState(link.unit);
-  const [range, setRange] = useState(() => shownRange(link.targetLow, link.targetHigh, link.unit));
+  const [draft, setDraft] = useState(() => rangeDraft(link.targetLow, link.targetHigh, link.unit));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const values: GlucoseSettings = {
-    unit,
-    targetLow: fromUnit(Number(range.low.replace(",", ".")), unit),
-    targetHigh: fromUnit(Number(range.high.replace(",", ".")), unit),
-  };
+  const { unit } = draft;
+  const values: GlucoseSettings = { unit, targetLow: draft.low, targetHigh: draft.high };
   const shown = useShown(values);
   const changed = JSON.stringify(values) !== JSON.stringify(shown);
-  const wrong = range.low === "" || range.high === "" || rangeProblem(values.targetLow, values.targetHigh);
-
-  function switchUnit(next: GlucoseUnit) {
-    if (!wrong) {
-      setRange(shownRange(values.targetLow, values.targetHigh, next));
-    }
-    setUnit(next);
-  }
+  const wrong = rangeProblem(values.targetLow, values.targetHigh);
 
   async function save() {
     setBusy(true);
@@ -519,7 +513,7 @@ function SettingsForm({ link, onSaved }: { link: GlucoseLink; onSaved: () => voi
             type="button"
             className={unit === option ? "segment segment-on" : "segment"}
             aria-pressed={unit === option}
-            onClick={() => switchUnit(option)}
+            onClick={() => setDraft(switchRangeUnit(draft, option))}
           >
             {UNIT_LABEL[option]}
           </button>
@@ -535,8 +529,8 @@ function SettingsForm({ link, onSaved }: { link: GlucoseLink; onSaved: () => voi
             step={step}
             min={bound(LOWEST)}
             max={bound(HIGHEST)}
-            value={range.low}
-            onChange={(event) => setRange({ ...range, low: event.target.value })}
+            value={draft.lowText}
+            onChange={(event) => setDraft(retypeRange(draft, "low", event.target.value))}
           />
         </label>
         <label className="field">
@@ -547,8 +541,8 @@ function SettingsForm({ link, onSaved }: { link: GlucoseLink; onSaved: () => voi
             step={step}
             min={bound(LOWEST)}
             max={bound(HIGHEST)}
-            value={range.high}
-            onChange={(event) => setRange({ ...range, high: event.target.value })}
+            value={draft.highText}
+            onChange={(event) => setDraft(retypeRange(draft, "high", event.target.value))}
           />
         </label>
       </fieldset>

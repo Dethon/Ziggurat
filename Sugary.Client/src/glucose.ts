@@ -54,6 +54,38 @@ export function shownRange(low: number, high: number, unit: GlucoseUnit) {
   return { low: typed(low, unit), high: typed(high, unit) };
 }
 
+// Her range as the settings form holds it: mg/dL, changed only by what she types, with the text each
+// field shows. Re-deriving mg/dL from the shown text after a unit switch would move her range a
+// milligram (80 shown as 4.4 reads back as 79) and send that as her change.
+export interface RangeDraft {
+  unit: GlucoseUnit;
+  low: number;
+  high: number;
+  lowText: string;
+  highText: string;
+}
+
+export const rangeDraft = (low: number, high: number, unit: GlucoseUnit): RangeDraft => ({
+  unit,
+  low,
+  high,
+  lowText: typed(low, unit),
+  highText: typed(high, unit),
+});
+
+// A field she left empty stays empty in the other unit.
+export const switchRangeUnit = (draft: RangeDraft, unit: GlucoseUnit): RangeDraft => ({
+  ...draft,
+  unit,
+  lowText: Number.isFinite(draft.low) ? typed(draft.low, unit) : "",
+  highText: Number.isFinite(draft.high) ? typed(draft.high, unit) : "",
+});
+
+export function retypeRange(draft: RangeDraft, field: "low" | "high", text: string): RangeDraft {
+  const value = text.trim() === "" ? Number.NaN : fromUnit(Number(text.replace(",", ".")), draft.unit);
+  return { ...draft, [field]: value, [`${field}Text`]: text };
+}
+
 // A share of the time, in her language: whole percent, one decimal under one so a little is not 0.
 export function formatShare(share: number, language: Language): string {
   const digits = share > 0 && share < 0.01 ? 1 : 0;

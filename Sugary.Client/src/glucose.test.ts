@@ -11,13 +11,17 @@ import {
   glucoseErrorMessage,
   isStale,
   linkFailureText,
+  rangeDraft,
   rangeProblem,
+  retypeRange,
+  switchRangeUnit,
   shownRange,
   toUnit,
   trendOf,
   UNIT_LABEL,
   windowOf,
 } from "./glucose";
+import { HIGHEST, LOWEST } from "./glucose";
 import { dictionaries, translator } from "./i18n";
 
 const en = translator("en");
@@ -55,6 +59,22 @@ describe("her unit", () => {
     expect(shownRange(70, 180, "mmol")).toEqual({ low: "3.9", high: "10.0" });
     expect(shownRange(70, 180, "mgdl")).toEqual({ low: "70", high: "180" });
     expect(fromUnit(Number("3.9"), "mmol")).toBe(70);
+  });
+
+  // Her range is kept in mg/dL and only her typing changes it: switching the unit re-spells it, and a
+  // range shown rounded in mmol/L never comes back a milligram off (80 would read back as 79).
+  it("survives switching the unit back and forth for every whole mg/dL a range can hold", () => {
+    for (let low = LOWEST; low < HIGHEST; low++) {
+      const there = switchRangeUnit(rangeDraft(low, HIGHEST, "mgdl"), "mmol");
+      const back = switchRangeUnit(there, "mgdl");
+      expect([there.low, there.high, back.low, back.high]).toEqual([low, HIGHEST, low, HIGHEST]);
+    }
+  });
+
+  it("takes what she types in her unit, and only that field", () => {
+    const draft = retypeRange(rangeDraft(80, 140, "mmol"), "high", "8,5");
+    expect(draft).toEqual({ unit: "mmol", low: 80, high: 153, lowText: "4.4", highText: "8,5" });
+    expect(retypeRange(draft, "low", "").low).toBeNaN();
   });
 
   it("names the units the same in both languages", () => {
