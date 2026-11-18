@@ -116,3 +116,32 @@ ignoring conditions, a per-call semaphore (two fires), dropping the row-count gu
 resurrected), counting imports, any sensor instead of the last seen, the server's zone instead of the phone's,
 and not containing a throwing effect. The `Spec` guard alone survives its mutation (the count guard catches
 every rewrite that can race a fire); kept for a rewrite racing a first judgement.
+
+**Follow-up (2026-11-18): an undelivered fire is retried; an unreadable password is a link failing.**
+
+- **Reversed: "the episode is fired whatever its effects did".** A fire whose effects delivered nothing
+  (`GlucoseEffectsOutcome.AnyDelivered` false: the prompt gate-on-live with no agent polling — a deploy
+  reconnecting it — no announcement rung, or the effects throwing) now leaves that trigger's state
+  `FiredThisEpisode = false` (`HoldingSince` kept), so the next judgement that still finds the condition
+  holding fires again, and one that finds it left says nothing late. One attempt a judgement: a reading
+  trigger at the next poll (the clock's pass judges none), a sensor trigger at the next poll or clock pass
+  (so up to two a minute). Each undelivered attempt is logged (warning; a throw stays an error).
+  `LastFiredAt` is now stamped only by a fire that reached somebody, so `status.json` never says a watch
+  fired when nobody heard it. Unchanged: a fire that delivered anything fires its episode — a prompt nobody
+  took beside an announcement that rang is not retried (as specified, `AnyDelivered`). `GlucoseTriggers` is
+  untouched (it already fires from holding-and-unfired, the state a closed time window leaves).
+  Tests: `SugaryGlucoseWatchEngineTests` — `AFireThatReachedNobody_IsTriedAgainAtTheNextPoll_WhileTheConditionHolds`,
+  `…_WhoseConditionLeftBeforeTheRetry_IsNotFiredLate`, `ASensorFireThatReachedNobody_IsTriedAgainOnTheNextClockPass`,
+  `FailingEffects_AreContained_AndTriedAgainAtTheNextPoll` (was `…_AndTheEpisodeIsFired`), the once-watch
+  test now spent by the retry that reached somebody; `GlucoseWatchDelegationTests` asserts no `LastFiredAt`
+  for the fire no agent took. Red by mutation: no un-firing (6 red), un-firing but stamping `LastFiredAt` (4 red).
+- **A password the poller cannot open is recorded** (`GlucoseLinkFailure.CredentialsUnreadable`, app code
+  `credentials-unreadable`, ticket 06's "skips the link without writing anything" reversed), with
+  `FailingSince`, through the same `LinkedAt`/`PatientId`-guarded write as LibreLinkUp's failures, and the
+  observer told — so `link_failing` fires (on the clock too) and `no_readings` never does. The link stays live
+  on the doubling backoff (unlike `CredentialsRefused`), so the key put back recovers it with no re-link;
+  `PUT /link` clears it as any failure. The poll and watch loops are now registered with or without a sealing
+  key (a removed key used to stop them, leaving every link looking well); with no link the poller asks the
+  accounts service nothing. `SugaryServer` and `EvalSugaryLog` remove both loops (tests drive them). The app
+  words it in both languages and opens the link form for it. The race guard has no dedicated test on this
+  path (no network hook to interleave); it is the shared `Still` write the existing race tests pin.

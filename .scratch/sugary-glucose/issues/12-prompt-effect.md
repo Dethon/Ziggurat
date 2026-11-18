@@ -93,3 +93,13 @@ proven by mutation (numbers left on the read: 3 edit/replace tests red, home and
 token, the `userId` check off, the old keep-on-replace, a prompt counted delivered when nobody listened: 6 red).
 `Tests.Unit` plus the glucose-watch and both delegation classes 7643/7643 at HEAD after the hook's format; integration Sugary/delegation/scheduling/watch/conformance/contract 788 passed; eval
 harness, redelegation and thread-session 498 passed. Eval not run.
+
+**Follow-up (2026-11-18).** A prompt nobody took (gate-on-live, no agent polling) no longer spends the
+episode: the engine tries the fire again at its next judgement while the condition holds (ticket 11's
+follow-up). And the agent side is now proven: `GlucoseWatchAgentFireTests` drives a glucose fire from the
+real Sugary engine through the agent's channel connection into `ChatMonitor` with the shipped
+`agentDefaults` (`sugary` → the no-tools estimator) and the real `MultiAgentFactory` on `FakeOpenRouter`:
+the fire names the watch's agent (`Fire.AgentId` = `StoredGlucoseWatch.AgentId`, which `RouteToAgentAsync`
+keeps), so it runs as Jonas, acts for her (delegated), and its reply lands on the `deliverTo` channel and
+nothing on Sugary's. Nothing needed fixing; red by mutation with `AgentId` blanked (the estimator answered)
+and `DeliverTo` dropped.
