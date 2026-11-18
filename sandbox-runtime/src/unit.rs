@@ -236,6 +236,7 @@ fn pump(
 ) -> io::Result<(Ending, Option<i32>)> {
     let mut status: Option<i32> = None;
     let mut buffer = [0u8; 8192];
+    let watch = exit_watch(child);
 
     loop {
         if status.is_none() {
@@ -250,9 +251,12 @@ fn pump(
             return Ok((Ending::TimedOut, status));
         }
 
-        // The child's exit has no fd here, so a short poll keeps the wait for it prompt.
-        let wait_ms = (deadline - now).as_millis().min(50) as libc::c_int;
+        let watching = status.is_none() && watch.is_some();
+        let wait_ms = wait_ms(deadline, now, watching);
         let mut fds = vec![libc::pollfd { fd: connection.as_raw_fd(), events: libc::POLLRDHUP, revents: 0 }];
+        if let Some(w) = watch.as_ref().filter(|_| watching) {
+            fds.push(libc::pollfd { fd: w.as_raw_fd(), events: libc::POLLIN, revents: 0 });
+        }
         if let Some(o) = out.as_ref() {
             fds.push(libc::pollfd { fd: o.as_raw_fd(), events: libc::POLLIN, revents: 0 });
         }
@@ -275,6 +279,21 @@ fn pump(
         read_ready(&fds, out, stdout, &mut buffer);
         read_ready(&fds, err, stderr, &mut buffer);
     }
+}
+
+// The command's exit as a descriptor the poll can wait on (a pidfd), so a command whose pipes closed
+// before it exited is answered the moment it ends. None where the kernel offers none; the wait
+// then ticks instead.
+fn exit_watch(child: &Child) -> Option<std::os::fd::OwnedFd> {
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, child.id() as libc::pid_t, 0) };
+    (fd >= 0).then(|| unsafe { std::os::fd::OwnedFd::from_raw_fd(fd as libc::c_int) })
+}
+
+// How long one poll may wait: until the deadline when the command's exit can wake it, otherwise a
+// short tick, since nothing else would tell the loop the command is gone.
+fn wait_ms(deadline: Instant, now: Instant, watching_exit: bool) -> libc::c_int {
+    let left = deadline.saturating_duration_since(now).as_millis();
+    (if watching_exit { left } else { left.min(50) }).min(libc::c_int::MAX as u128) as libc::c_int
 }
 
 // Reads `stream` where the poll found it ready; one that is closed, or was not polled, is left.
@@ -335,6 +354,56 @@ mod tests {
 
         assert_eq!(deadline(now, 60).unwrap(), now + Duration::from_secs(60));
         assert!(deadline(now, u64::MAX).is_err());
+    }
+
+    fn readable(fd: &std::os::fd::OwnedFd, within_ms: libc::c_int) -> bool {
+        let mut pollfd = libc::pollfd { fd: fd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        unsafe { libc::poll(&mut pollfd, 1, within_ms) == 1 }
+    }
+
+    // The command's exit wakes the wait itself, so a command whose pipes closed before it exited is
+    // answered the moment it does, not on the next tick of a 50 ms poll.
+    #[test]
+    fn the_exit_watch_wakes_when_the_command_ends_and_not_before() {
+        let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let watch = exit_watch(&child).expect("pidfd_open");
+
+        let before = readable(&watch, 0);
+        child.kill().unwrap();
+        let after = readable(&watch, 5_000);
+        let _ = child.wait();
+
+        assert!(!before, "readable while the command still ran");
+        assert!(after, "not readable once the command ended");
+    }
+
+    #[test]
+    fn with_an_exit_watch_the_wait_runs_to_the_deadline_and_without_one_it_ticks() {
+        let now = Instant::now();
+
+        assert_eq!(wait_ms(now + Duration::from_secs(10), now, true), 10_000);
+        assert_eq!(wait_ms(now + Duration::from_secs(10), now, false), 50);
+        assert_eq!(wait_ms(now + Duration::from_millis(20), now, false), 20);
+    }
+
+    // A command that closed its output and went on running still ends the call with its own code.
+    #[test]
+    fn a_command_that_closed_its_pipes_early_still_answers_its_exit_code() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "exec >&- 2>&-; sleep 0.2; exit 7"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let (mut out, mut err) = (child.stdout.take(), child.stderr.take());
+        let (mut stdout, mut stderr) = (CappedOutput::new(1024), CappedOutput::new(1024));
+        let (connection, _server) = UnixStream::pair().unwrap();
+
+        let (ending, status) =
+            pump(&mut child, &mut out, &mut err, &mut stdout, &mut stderr, &connection, Instant::now() + Duration::from_secs(10)).unwrap();
+
+        assert!(matches!(ending, Ending::Finished));
+        assert_eq!(status, Some(7));
     }
 }
 
