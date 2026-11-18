@@ -147,7 +147,8 @@ request calls for it; only its name and one-line description stand in the base p
 claim** is what that description asserts: a request of a named kind gets it loaded. A **preload**
 is the host loading first: before the model's first call, `SkillsProvider` asks Jev (`ISkillPreloader`,
 `Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
-answer puts the body into the conversation — after the user message, persisted with the turn,
+answer puts the body into the conversation — after the user message, persisted with the turn
+(and sent ahead of it),
 never twice. ADR 0039 (refined 2026-09-18) is the decision; these are the rules the next section
 lands on. A turn addressed to the Lemonade chat host asks
 nothing, and neither does a worker it spawns. The Jev client holds that rule
@@ -162,7 +163,8 @@ parent turn's, written onto its request by the run tool from the `ConversationCo
   call leaves (`SkillLoadTool.AsPreloaded`, its call ids marked as the host's), which is what
   `LoadedIn`, the truncator and every reader of a thread see. The model is never sent that pair:
   `OpenRouterChatClient` writes it, last and on the copy that goes out, as one user-role message
-  after the request (`SkillPreloadNote`) — "[Loaded for this request before your first call, by
+  ahead of the request (`SkillPreloadNote`; after it until 2026-11-18, where the provider's cache
+  could never hold the ~9.4k tokens of the home skill and its index, the same on every such turn) — "[Loaded for this request before your first call, by
   the host: …]" and the wrapped body, then a part per read. A call the model did not make is an
   assistant turn it never took, and each model and provider made something different of one:
   Anthropic's were handed it with the host's reasoning dropped and carried on mid-turn (Haiku 5.5
@@ -171,7 +173,7 @@ parent turn's, written onto its request by the run tool from the `ConversationCo
   ids to nine characters. So there is no host-made reasoning and no rule about ids any more, and
   nothing per model. A `developer` or `system` item is not an alternative — OpenRouter hoists it
   to the head of the conversation for chat-completions hosts, which moves the cached prefix —
-  and neither is the pair placed before the request. Pairs stored by earlier builds are sent as
+  and neither is the pair placed before the request, which cost Haiku the right entity. Pairs stored by earlier builds are sent as
   the same note and never migrated. The note's wording was measured as written; changing it is a
   new measurement on every model, not an edit.
 - **A preload makes the reads the body's first line orders.** `SkillDeclaration.PreloadReads`

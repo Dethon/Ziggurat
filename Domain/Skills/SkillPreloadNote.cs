@@ -4,7 +4,7 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Skills;
 
-// A preload as a model is sent it: one user-role message after the request, a part per skill
+// A preload as a model is sent it: one user-role message ahead of the request, a part per skill
 // and per read, in place of the pair the thread records (`SkillLoadTool.AsPreloaded`). Written
 // onto the copy that goes to the wire, the way a turn's decoration is, and never stored — so
 // nothing that reads a thread for what a person said can find a skill body in their voice, and a
@@ -19,9 +19,15 @@ namespace Domain.Skills;
 // (HTTP 400), which the host then had to fabricate; Mistral reads nine characters of a call id.
 // A user-role message is the one item every provider passes through where it was put. A
 // `developer` or `system` item is not: OpenRouter hoists it to the head of the conversation for
-// the hosts it reaches over chat completions, which moves the cached prefix. The pair placed
-// before the request opened as well but cost the first action (Haiku named the right entity on 4
-// of 10 home turns against 10) and would sit in front of the message the turn is keyed on.
+// the hosts it reaches over chat completions, which moves the cached prefix.
+//
+// Ahead of the request since 2026-11-18, after it before: the note is the same bytes on every turn
+// that preloads the same skill (the home skill and its setup index, ~9.4k tokens) and the request
+// never is, so after it the note was never in the provider's cached prefix — a voice wake's first
+// call sent it uncached every time. The pair placed before the request had cost the first action
+// (Haiku named the right entity on 4 of 10 home turns against 10); the note in that place was
+// measured on the eval's home and voice families before it shipped. The message a turn is keyed
+// on is read off the record, not the wire, so the note in front of it changes nothing there.
 //
 // A separate message rather than more parts on the person's own: OpenRouter merges the two for
 // the hosts that want one user turn and leaves them apart for the rest, and where they stay
@@ -59,10 +65,28 @@ public static class SkillPreloadNote
             .GroupBy(r => r.CallId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Result, StringComparer.Ordinal);
 
-        return [.. messages.SelectMany(m => Sent(m, hostCalls, results))];
+        return messages
+            .SelectMany(m => Sent(m, hostCalls, results))
+            .Aggregate(new List<ChatMessage>(), Place);
     }
 
-    private static IEnumerable<ChatMessage> Sent(
+    // A note goes ahead of the request it was made for — the run of user messages it followed — so
+    // what is the same on every turn that preloads the same skill sits before what never is, and
+    // the provider's cached prefix reaches through it.
+    private static List<ChatMessage> Place(List<ChatMessage> sent, (ChatMessage Message, bool IsNote) next)
+    {
+        if (!next.IsNote)
+        {
+            sent.Add(next.Message);
+            return sent;
+        }
+
+        var request = sent.FindLastIndex(m => m.Role != ChatRole.User) + 1;
+        sent.Insert(request, next.Message);
+        return sent;
+    }
+
+    private static IEnumerable<(ChatMessage Message, bool IsNote)> Sent(
         ChatMessage message, IReadOnlySet<string> hostCalls, IReadOnlyDictionary<string, object?> results)
     {
         if (IsHostCallMessage(message))
@@ -72,12 +96,12 @@ public static class SkillPreloadNote
                 .Select(call => results.TryGetValue(call.CallId, out var result) ? Part(call, result) : null)
                 .OfType<AIContent>()
                 .ToList();
-            return parts.Count > 0 ? [new ChatMessage(ChatRole.User, parts)] : [];
+            return parts.Count > 0 ? [(new ChatMessage(ChatRole.User, parts), true)] : [];
         }
 
         if (!message.Contents.OfType<FunctionResultContent>().Any(r => hostCalls.Contains(r.CallId)))
         {
-            return [message];
+            return [(message, false)];
         }
 
         var kept = message.Contents
@@ -90,7 +114,7 @@ public static class SkillPreloadNote
 
         var rest = message.Clone();
         rest.Contents = kept;
-        return [rest];
+        return [(rest, false)];
     }
 
     // The host's calls stand alone on their message; a message that mixes one with a call a
