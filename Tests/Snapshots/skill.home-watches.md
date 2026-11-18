@@ -1,10 +1,10 @@
-# home-watches — description 119 / 120 tokens, body 1749 / 2200 tokens, served by mcp-homeassistant
+# home-watches — description 115 / 120 tokens, body 1749 / 2200 tokens, served by mcp-homeassistant
 
 ================================================================================================
 
 ---
 name: home-watches
-description: Writing, changing, pausing or removing a watch on the home: being told, or having something done, when a Home Assistant entity's state meets a condition ("warn me when the fridge passes 8", "close the blinds when it gets hot", "tell me when the washer finishes"). Not a person's glucose where glucose-watches is offered; not switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.
+description: Writing, changing, pausing or removing a watch on the home: being told, or having something done, when a Home Assistant entity's state meets a condition ("close the blinds when it gets hot", "tell me when the washer finishes"). Not a person's glucose or glucose sensor where glucose-watches is offered; not switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.
 ---
 
 A watch is a file: `domain__filesystem__text_create` on `/watchers/<id>/watch.json` (`<id>` is a descriptive slug you

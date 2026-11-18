@@ -1,10 +1,10 @@
-# glucose-watches — description 125 / 130 tokens, body 1473 / 1600 tokens, served by mcp-sugary
+# glucose-watches — description 127 / 130 tokens, body 1473 / 1600 tokens, served by mcp-sugary
 
 ================================================================================================
 
 ---
 name: glucose-watches
-description: Writing, changing, pausing or removing a watch on a person's blood glucose as the sensor Sugary reads it: being warned or woken when it goes under or over a level, falls or rises fast, is about to go low, or the sensor stops ("warn me if my sugar drops under 70", "wake me in the bedroom if it goes under 60 at night"), their own or someone's under `/sugary/people/`. A glucose watch is this skill's, never home-watches'. The watch.json shape, trigger kinds in mg/dL, effects, alarms, who sees it.
+description: Writing, changing, pausing or removing a watch on a person's glucose as Sugary reads their sensor: warned or woken when it goes under or over a level, falls or rises fast, is about to go low, or their glucose sensor stops sending readings ("warn me if my sugar drops under 70", "wake me in the bedroom if it goes under 60 at night", "tell me if my sensor stops"), their own or someone's under `/sugary/people/`. Never home-watches'. The watch.json shape, trigger kinds in mg/dL, effects, alarms, who sees it.
 ---
 
 A glucose watch is a file: `domain__filesystem__text_create` on `/watchers/<id>/watch.json` (`<id>` is a

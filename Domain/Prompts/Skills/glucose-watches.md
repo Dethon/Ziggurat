@@ -1,6 +1,6 @@
 ---
 name: glucose-watches
-description: Writing, changing, pausing or removing a watch on a person's blood glucose as the sensor Sugary reads it: being warned or woken when it goes under or over a level, falls or rises fast, is about to go low, or the sensor stops ("warn me if my sugar drops under 70", "wake me in the bedroom if it goes under 60 at night"), their own or someone's under `/sugary/people/`. A glucose watch is this skill's, never home-watches'. The watch.json shape, trigger kinds in mg/dL, effects, alarms, who sees it.
+description: Writing, changing, pausing or removing a watch on a person's glucose as Sugary reads their sensor: warned or woken when it goes under or over a level, falls or rises fast, is about to go low, or their glucose sensor stops sending readings ("warn me if my sugar drops under 70", "wake me in the bedroom if it goes under 60 at night", "tell me if my sensor stops"), their own or someone's under `/sugary/people/`. Never home-watches'. The watch.json shape, trigger kinds in mg/dL, effects, alarms, who sees it.
 # A watch on glucose is told apart from a home watch by its subject, a person's sensor, rather than by
 # the word "watch", so the advertisement names the kinds of request and the folder another person's
 # glucose is under; it costs more than a one-line description for that.

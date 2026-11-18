@@ -1,4 +1,4 @@
-# template.nabu — 7772 tokens across 18 sections and 7 skills
+# template.nabu — 7768 tokens across 18 sections and 7 skills
 
   core_directive           CoreDirective         644 / 650    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               56 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -21,7 +21,7 @@
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
   web-browsing             Skill                 121 / 130    body 1941 / 1950, served by mcp-websearch
-  home-watches             Skill                 119 / 120    body 1749 / 2200, served by mcp-homeassistant
+  home-watches             Skill                 115 / 120    body 1749 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3590 / 3600, served by mcp-homeassistant
   scheduling               Skill                 123 / 130    body 1109 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 712 / 900, served by mcp-timers
@@ -356,7 +356,7 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>home-watches</name>
-    <description>Writing, changing, pausing or removing a watch on the home: being told, or having something done, when a Home Assistant entity&apos;s state meets a condition (&quot;warn me when the fridge passes 8&quot;, &quot;close the blinds when it gets hot&quot;, &quot;tell me when the washer finishes&quot;). Not a person&apos;s glucose where glucose-watches is offered; not switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.</description>
+    <description>Writing, changing, pausing or removing a watch on the home: being told, or having something done, when a Home Assistant entity&apos;s state meets a condition (&quot;close the blinds when it gets hot&quot;, &quot;tell me when the washer finishes&quot;). Not a person&apos;s glucose or glucose sensor where glucose-watches is offered; not switching or reading a device now, an alarm, a reminder, a timer or music. The watch.json shape, trigger and effect kinds, delivery, once and enabled.</description>
   </skill>
   <skill>
     <name>obsidian-vault</name>
