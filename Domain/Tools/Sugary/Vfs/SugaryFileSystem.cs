@@ -345,9 +345,9 @@ public sealed partial class SugaryFileSystem(
                 + (others.Count == 0 ? "none" : string.Join(", ", others.Select(other => other.Folder))) + ".");
     }
 
-    // Everyone else of the reader's household, each under a folder of their own, when the household the
-    // call proved is the reader's and its people view lists the reader as granted everyone's log; null
-    // otherwise. Two people whose names make one folder are told apart in the order they joined.
+    // Everyone else of the reader's household, each under the folder SugaryPath.FoldersOf names them by,
+    // when the household the call proved is the reader's and its people view lists the reader as granted
+    // everyone's log; null otherwise.
     private async Task<IReadOnlyList<OtherLog>?> OthersAsync(Account reader, CancellationToken ct)
     {
         if (_household is not { } household || household.Id != reader.TenantId)
@@ -361,24 +361,9 @@ public sealed partial class SugaryFileSystem(
             return null;
         }
 
-        var taken = new HashSet<string>(StringComparer.Ordinal);
-        return people
-            .Where(person => person.UserId != reader.UserId)
-            .Select(person => new OtherLog(FreeFolder(SugaryPath.FolderOf(person.DisplayName), taken),
-                new Account(reader.TenantId, person.UserId)))
+        return SugaryPath.FoldersOf(people, reader.UserId)
+            .Select(other => new OtherLog(other.Folder, new Account(reader.TenantId, other.Person.UserId)))
             .ToList();
-    }
-
-    // The folder itself where nobody took it yet, else the first numbered one free.
-    private static string FreeFolder(string folder, HashSet<string> taken)
-    {
-        var candidate = folder;
-        for (var n = 2; !taken.Add(candidate); n++)
-        {
-            candidate = $"{folder}-{n}";
-        }
-
-        return candidate;
     }
 
     private static string PrefixOf(OtherLog other) => $"/{SugaryPath.PeopleDirName}/{other.Folder}";

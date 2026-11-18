@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Domain.DTOs.Household;
 
 namespace Domain.Tools.Sugary.Vfs;
 
@@ -74,6 +75,31 @@ public static class SugaryPath
             [PeopleDirName, var person, .. var rest] => new SugaryLocation(person, "/" + string.Join('/', rest)),
             _ => new SugaryLocation(null, path ?? "/")
         };
+    }
+
+    // Everyone of the household but the reader, each under the folder people/ shows them by: the display
+    // name as FolderOf makes it, two people whose names make one folder numbered in the order they joined.
+    // The one rule: the log lists people/ by it and a glucose watch names a person by it.
+    public static IReadOnlyList<(string Folder, SugaryPerson Person)> FoldersOf(
+        IReadOnlyList<SugaryPerson> people, string readerUserId)
+    {
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        return people
+            .Where(person => person.UserId != readerUserId)
+            .Select(person => (FreeFolder(FolderOf(person.DisplayName), taken), person))
+            .ToList();
+    }
+
+    // The folder itself where nobody took it yet, else the first numbered one free.
+    private static string FreeFolder(string folder, HashSet<string> taken)
+    {
+        var candidate = folder;
+        for (var n = 2; !taken.Add(candidate); n++)
+        {
+            candidate = $"{folder}-{n}";
+        }
+
+        return candidate;
     }
 
     // A display name as a folder under people/: its letters and digits lowercased, every other run of
