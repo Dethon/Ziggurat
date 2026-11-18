@@ -82,6 +82,17 @@ public class VfsExecTool(
                     $"'{path}' leaves {resolution.MountPoint} through '..'. Name the directory to run in by its own path.").ToNode();
             }
 
+            // One action file run by itself ends at the mount's own exec either way — in the sandbox
+            // the action file hands its words back to it through the bridge — so it goes straight
+            // there with the line the action file would have sent, and skips the namespace, the
+            // daemon and a bridge round trip per path component on the way.
+            if (OwnAction(resolution, command) is { } action)
+            {
+                return (await resolution.Backend.ExecAsync(resolution.RelativePath, action.Command, timeoutSeconds, cancellationToken))
+                    .Map(e => e with { Cwd = path })
+                    .ToNode();
+            }
+
             // Relative to the sandbox's root, as every path its backend takes is.
             var cwd = $"{ServedMount.PathOf(resolution.MountPoint).TrimStart('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
             return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), ToolCaller.Of(arguments), cancellationToken))
@@ -156,6 +167,14 @@ public class VfsExecTool(
         ExecReach.SandboxFor(registry.GetMounts(), resolution.MountPoint) is { } sandbox
         && registry.Resolve(sandbox.MountPoint, arguments).TryGetValue(out var resolved, out _)
             ? resolved.Backend as IBridgedExecBackend
+            : null;
+
+    // A bare action on a mount whose server publishes an exec of its own. A mount that publishes
+    // none (the vault) has no action to run, and one whose tools are not known is not guessed at.
+    private BareAction? OwnAction(FileSystemResolution resolution, string command) =>
+        ExecReach.MountAt(registry.GetMounts(), resolution.MountPoint) is { } mount
+        && mount.Capabilities.Contains(Key)
+            ? BareAction.Parse(command)
             : null;
 
     private static ToolPermission Permission(AIFunctionArguments? arguments) =>

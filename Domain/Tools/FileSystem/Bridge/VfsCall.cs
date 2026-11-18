@@ -281,18 +281,12 @@ public sealed class VfsCall
             return Logged(refused, path, VfsChange.Operations.Action);
         }
 
-        var command = string.Join(' ', argv.Select(ShellQuote).Prepend($"./{NameOf(path)}"));
+        var command = BareAction.Render(NameOf(path), argv);
         var answer = (await resolution.Backend.ExecAsync(resolution.RelativePath, command, null, ct)).TryGetValue(out var exec, out var error)
             ? new BridgeAnswer<BridgeActionResult>.Ok(new BridgeActionResult(exec.Stdout, exec.Stderr, exec.ExitCode))
             : BridgeAnswer<BridgeActionResult>.From(error);
         return Logged(answer, path, VfsChange.Operations.Action);
     }
-
-    // The quoting the mounts' tokenizer reads back as one word.
-    private static string ShellQuote(string word) =>
-        word.Length > 0 && word.All(c => char.IsAsciiLetterOrDigit(c) || "-_./=:,@%+".Contains(c))
-            ? word
-            : $"'{word.Replace("'", "'\\''")}'";
 
     // The target takes the source's content under a write's rules, and only then does the source go.
     // Across mounts the source is first asked whether the path may leave it (ADR 0015), as the
