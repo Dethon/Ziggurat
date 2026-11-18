@@ -72,6 +72,13 @@ Done in 5320d4416.
   (`HouseholdProofs.DelegationAsync`, `InternalCallers`), so it needs an accounts-side change (accept a
   `watch` delegation from `mcp-sugary`). The engine keeps the phones' saved zone.
 
+- **Open, not built: a household that turned Sugary off.** `ConversationGroup.FeatureRefusalAsync` refuses a
+  person's turn on channel `sugary` for such a household, but a fire (`AdmitFireAsync`) is not asked it, so a
+  glucose watch's prompt of that household still runs (its agent without `mcp-sugary`). Nothing else on the
+  agent keys on the `sugary` channel alone (no `audience-channels: sugary` section; Sugary's `send_reply` drops
+  a chunk for a turn key it did not open, so a fire delivering nowhere on Sugary is harmless). Whether the
+  engine should stop judging, or the agent refuse the fire, is a decision for whoever picks it up.
+
 Tests: `GlucoseWatchDelegationTests` (integration, the real Sugary server written through the agent's
 `McpFileSystemBackend` and signing transport, fired through the server's own effects and read off the agent's
 `McpChannelConnection`: a person's write, edit and delivery-keeping replace fire as them; a write with no
@@ -84,5 +91,5 @@ a failing announce contained), `GlucoseFireReportTests`, `DelegatedWritesTests` 
 `WatchDelegationTests` edit case. Red: the tests compiled red against missing types; afterwards each guard was
 proven by mutation (numbers left on the read: 3 edit/replace tests red, home and Sugary; `KeptFor` keeping any
 token, the `userId` check off, the old keep-on-replace, a prompt counted delivered when nobody listened: 6 red).
-`Tests.Unit` 7604/7604; integration Sugary/delegation/scheduling/watch/conformance/contract 788 passed; eval
+`Tests.Unit` plus the glucose-watch and both delegation classes 7643/7643 at HEAD after the hook's format; integration Sugary/delegation/scheduling/watch/conformance/contract 788 passed; eval
 harness, redelegation and thread-session 498 passed. Eval not run.
