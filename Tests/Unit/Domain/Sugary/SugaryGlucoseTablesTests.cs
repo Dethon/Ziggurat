@@ -41,7 +41,7 @@ public class SugaryGlucoseTablesTests
             .. Enumerable.Range(2, 8).Select(minute => Reading(minute, 100, GlucoseSource.Current, GlucoseTrend.Steady)),
             Reading(10, 200, GlucoseSource.Graph),
             Reading(15, 260, GlucoseSource.Graph),
-            // Forty minutes with nothing: the curve point stands for fifteen of them.
+            // Forty minutes with nothing: the curve point stands for twenty of them.
             Reading(20, 170, GlucoseSource.Graph),
             Reading(60, 120, GlucoseSource.ImportHourly),
             Reading(120, 90, GlucoseSource.Current)
@@ -90,20 +90,22 @@ public class SugaryGlucoseTablesTests
     {
         var answer = await Query(GlucoseQueries.Statistics(Since, Until, 80, 160));
 
-        // Covered: ten live minutes, two curve points of five, one of fifteen (its gap is forty) and an
-        // hourly mean of fifteen (the hour to the period's end) — 50 of the period's 120 minutes. The
+        // Covered: ten live minutes, two curve points of five, one of twenty (its gap is forty) and an
+        // hourly mean of twenty (the hour to the period's end) — 60 of the period's 120 minutes. The
         // readings before and after the period are not in it. Counted by rows, 50 would be 1 of 14.
+        // Below 54: 1 of 60; below 70: 2; 70–180: 8 + 20 + 20 = 48; her 80–160: 8 + 20 = 28; above
+        // 180: 5 + 5 = 10; above 250: 5. Mean (50 + 60 + 800 + 1000 + 1300 + 3400 + 2400) / 60 = 150.17.
         var row = Row(answer);
-        row["below_54_pct"]!.GetValue<double>().ShouldBe(2.0);
-        row["below_70_pct"]!.GetValue<double>().ShouldBe(4.0);
-        row["in_70_180_pct"]!.GetValue<double>().ShouldBe(76.0);
-        row["in_target_pct"]!.GetValue<double>().ShouldBe(46.0);
-        row["above_180_pct"]!.GetValue<double>().ShouldBe(20.0);
-        row["above_250_pct"]!.GetValue<double>().ShouldBe(10.0);
-        row["mean_mg_dl"]!.GetValue<double>().ShouldBe(151.2);
+        row["below_54_pct"]!.GetValue<double>().ShouldBe(1.7);
+        row["below_70_pct"]!.GetValue<double>().ShouldBe(3.3);
+        row["in_70_180_pct"]!.GetValue<double>().ShouldBe(80.0);
+        row["in_target_pct"]!.GetValue<double>().ShouldBe(46.7);
+        row["above_180_pct"]!.GetValue<double>().ShouldBe(16.7);
+        row["above_250_pct"]!.GetValue<double>().ShouldBe(8.3);
+        row["mean_mg_dl"]!.GetValue<double>().ShouldBe(150.2);
         row["gmi_pct"]!.GetValue<double>().ShouldBe(6.9);
-        row["cv_pct"]!.GetValue<double>().ShouldBe(33.8);
-        row["coverage_pct"]!.GetValue<double>().ShouldBe(41.7);
+        row["cv_pct"]!.GetValue<double>().ShouldBe(31.8);
+        row["coverage_pct"]!.GetValue<double>().ShouldBe(50.0);
     }
 
     [Fact]

@@ -4,16 +4,19 @@ namespace Domain.Tools.Sugary;
 // that run them against a seeded log are the same text.
 //
 // The clinic's figures are shares of time, not of rows. Readings come at uneven intervals — about one
-// a minute live, every five minutes on LibreLinkUp's curve, hourly from an import of long-term
+// a minute live, every fifteen minutes on LibreLinkUp's curve, hourly from an import of long-term
 // statistics — so a share of rows would weigh a stretch by how often it was read. Each reading stands
-// for the minutes until the next one, up to 15, and the period's end ends the last; a longer gap is
+// for the minutes until the next one, up to 20, and the period's end ends the last; a longer gap is
 // time not covered, an hourly mean's included. One weight serves every figure: time in each range,
 // the mean, the spread and the coverage. The app's GlucoseStatistics computes the same figures the
 // same way (its Cap), so what the agent says and what the app shows agree.
 public static class GlucoseQueries
 {
-    // The longest a reading stands for; a longer gap is time with no reading.
-    public const int MaxMinutesPerReading = 15;
+    // The longest a reading stands for; a longer gap is time with no reading. LibreLinkUp backfills a
+    // stretch the phone did not relay with a point every fifteen minutes, one often landing a minute
+    // late (2026-11-18, prod): at fifteen every late point read as a sliver of missing sensor, while a
+    // whole point missing is thirty and still a gap. The app's chart breaks its line at the same step.
+    public const int MaxMinutesPerReading = 20;
 
     // The README's period: the last fourteen days up to now, a clinic's usual window.
     public const string LastFourteenDays = "now() - interval 14 day";

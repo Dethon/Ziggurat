@@ -163,14 +163,17 @@ export interface Frame {
   high: number;
 }
 
-const QUARTER_HOUR = 15 * 60_000;
+// The longest step the line draws across. LibreLinkUp backfills a stretch the phone did not relay with
+// a point every fifteen minutes, one often landing a minute late; a whole point missing is thirty. The
+// server's statistics count a reading for the same twenty minutes at most (GlucoseQueries).
+const LONGEST_STEP = 20 * 60_000;
 const number = (value: number) => String(Number(value.toFixed(1)));
 
-// The line as SVG path data, one segment per stretch with readings: a step longer than fifteen minutes
+// The line as SVG path data, one segment per stretch with readings: a step longer than twenty minutes
 // (or two buckets, for means) is the sensor silent, and a line across it would draw values nobody read.
 // A value past the frame is held at its edge.
 export function curveSegments(points: readonly GlucosePoint[], bucketMinutes: number | null, frame: Frame): string[] {
-  const gap = Math.max(QUARTER_HOUR, 2 * (bucketMinutes ?? 0) * 60_000);
+  const gap = Math.max(LONGEST_STEP, 2 * (bucketMinutes ?? 0) * 60_000);
   const x = (at: number) => ((at - frame.from) / (frame.to - frame.from)) * frame.width;
   const y = (mgPerDl: number) => {
     const clamped = Math.min(frame.high, Math.max(frame.low, mgPerDl));

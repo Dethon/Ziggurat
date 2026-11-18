@@ -184,6 +184,35 @@ describe("the curve", () => {
     expect(segments).toHaveLength(2);
   });
 
+  // LibreLinkUp backfills a silent stretch with one point every fifteen minutes, a point often landing
+  // up to a minute late; only a whole point missing is the sensor silent.
+  it("keeps the backfilled curve whole when a point lands late", () => {
+    const segments = curveSegments(
+      [
+        { at: at(0), mgPerDl: 140 },
+        { at: at(15), mgPerDl: 140 },
+        { at: at(31), mgPerDl: 140 },
+        { at: at(46), mgPerDl: 140 },
+      ],
+      null,
+      frame,
+    );
+    expect(segments).toHaveLength(1);
+  });
+
+  it("breaks where a backfilled point is missing", () => {
+    const segments = curveSegments(
+      [
+        { at: at(0), mgPerDl: 140 },
+        { at: at(15), mgPerDl: 140 },
+        { at: at(45), mgPerDl: 140 },
+      ],
+      null,
+      frame,
+    );
+    expect(segments).toHaveLength(2);
+  });
+
   it("allows a longer step where points are bucket means", () => {
     const segments = curveSegments(
       [

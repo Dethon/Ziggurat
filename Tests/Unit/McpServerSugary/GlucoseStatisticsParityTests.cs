@@ -22,7 +22,7 @@ public class GlucoseStatisticsParityTests
     private const string Since = "TIMESTAMPTZ '2026-10-01 00:00:00'";
     private const string Until = "TIMESTAMPTZ '2026-10-01 02:00:00'";
 
-    // The README's hand-checked log: live minutes, five-minute curve points, a forty-minute gap and an
+    // The README's hand-checked log: live minutes, curve points, a forty-minute gap and an
     // hourly mean, with a reading on each side of the period.
     private static IReadOnlyList<LoggedGlucose> HandChecked() =>
     [
@@ -52,8 +52,8 @@ public class GlucoseStatisticsParityTests
                 random.Next(3) == 0 ? GlucoseSource.Graph : GlucoseSource.Current));
             seconds += random.Next(5) switch
             {
-                0 => random.Next(900, 1800),
-                1 => 900,
+                0 => random.Next(900, 2400),
+                1 => GlucoseQueries.MaxMinutesPerReading * 60,
                 _ => random.Next(20, 400)
             };
         }

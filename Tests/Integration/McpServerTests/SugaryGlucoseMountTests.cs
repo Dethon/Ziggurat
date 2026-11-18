@@ -80,7 +80,7 @@ public class SugaryGlucoseMountTests
             "TIMESTAMPTZ '2026-10-01 00:00:00'", "TIMESTAMPTZ '2026-10-01 02:00:00'", 80, 160));
 
         var row = rows.ShouldHaveSingleItem()!.AsArray();
-        row.Select(cell => cell!.GetValue<double>()).ShouldBe([2.0, 4.0, 76.0, 46.0, 20.0, 10.0, 151.2, 6.9, 33.8, 41.7]);
+        row.Select(cell => cell!.GetValue<double>()).ShouldBe([1.7, 3.3, 80.0, 46.7, 16.7, 8.3, 150.2, 6.9, 31.8, 50.0]);
     }
 
     [Fact]

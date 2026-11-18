@@ -77,16 +77,26 @@ public class GlucoseStatisticsTests
         figures.Cv!.Value.ShouldBe(Math.Sqrt((6 * 3906.25 + 10 * 1406.25) / 16) / 162.5, 1e-9);
     }
 
-    // A gap counts for nothing: each side of it stands for fifteen minutes at most.
+    // A gap counts for nothing: each side of it stands for twenty minutes at most.
     [Fact]
     public void AGap_IsNotCovered()
     {
-        var figures = Over(75, At(0, 100), At(60, 200));
+        var figures = Over(80, At(0, 100), At(60, 200));
 
-        figures.Coverage.ShouldBe(30.0 / 75, 1e-9);
+        figures.Coverage.ShouldBe(40.0 / 80, 1e-9);
         figures.Mean!.Value.ShouldBe(150, 1e-9);
         figures.InRange!.Value.ShouldBe(0.5, 1e-9);
         figures.High!.Value.ShouldBe(0.5, 1e-9);
+    }
+
+    // LibreLinkUp's curve has a point every fifteen minutes, often one landing a minute late: the
+    // minute it waited is still covered, or every late point read as a sliver of missing sensor.
+    [Fact]
+    public void ACurvePointLandingLate_LeavesNoGap()
+    {
+        var figures = Over(46, At(0, 100), At(16, 100), At(31, 100));
+
+        figures.Coverage.ShouldBe(1, 1e-9);
     }
 
     // The last reading stands only for what is left of the period.
@@ -107,7 +117,7 @@ public class GlucoseStatisticsTests
         var figures = Over(24 * 60, At(600, 120));
 
         figures.Count.ShouldBe(1);
-        figures.Coverage.ShouldBe(15.0 / 1440, 1e-9);
+        figures.Coverage.ShouldBe(20.0 / 1440, 1e-9);
         figures.Mean!.Value.ShouldBe(120, 1e-9);
         figures.InRange!.Value.ShouldBe(1, 1e-9);
         figures.Cv!.Value.ShouldBe(0, 1e-9);
