@@ -301,6 +301,23 @@ public class SugaryGlucoseWatchEngineTests
         (await harness.StatesAsync("falling")).ShouldBe([new GlucoseTriggerCondition(0, false, null, false)]);
     }
 
+    // A curve point filling a gap is judged on nothing: only the newest reading is, though the point does
+    // inform a rate's fit.
+    [Fact]
+    public async Task ABackFilledCurvePoint_IsNotJudged()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.KeepAsync(SugaryServer.Her, harness.Now - TimeSpan.FromMinutes(8), 50, GlucoseSource.Graph);
+        await harness.PollAsync(100);
+
+        harness.Effects.Fires.ShouldBeEmpty();
+        (await harness.StatesAsync("low")).ShouldBe([new GlucoseTriggerCondition(0, false, null, false)]);
+    }
+
     [Fact]
     public async Task NoReadings_CountsHerLastOwnReading_NotAnImportedOne()
     {

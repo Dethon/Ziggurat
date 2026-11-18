@@ -54,7 +54,7 @@ What was built:
   first judgement per trigger, stale newest, the clock leaving reading triggers alone, conditions incl.
   across midnight and weekday, `no_readings` vs link failure, `link_failing`, `ending` and a new sensor, the
   report's fields) on `FakeTimeProvider`; `Tests/Integration/McpServerTests/SugaryGlucoseWatchEngineTests.cs`
-  (18, a real Sugary store: fires and `LastFiredAt`, written-while-holding, restart through fresh engine
+  (19, a real Sugary store: a back-filled curve point not judged, fires and `LastFiredAt`, written-while-holding, restart through fresh engine
   instances (pending `for` kept, no re-fire), imports neither a trend nor a newest reading, disabled/spent
   untouched, `once` spent only when delivered, throwing effects contained, a watch rewritten (other spec,
   same spec) or removed during its fire not resurrected, poll and clock at once fire once, `link_failing` on
@@ -98,10 +98,19 @@ Decisions:
 - **One judgement per person at a time** (a semaphore per subject in the engine), so a poll and the clock's
   pass cannot both read an episode as unfired. The effects run inside it and inside the poller's slot.
 - A spec that no longer parses is logged and skipped.
+- **Back-filled curve points never trigger a judgement** (only the poll's newest reading is judged; pinned by
+  `ABackFilledCurvePoint_IsNotJudged`), but `graph` points inside the window do inform the trend's and the
+  forecast's fit, since they are her readings.
+- **Disabled and spent are the engine's query** (`Enabled && !Spent` on the columns), not `GlucoseTriggers`'s,
+  which takes no flag.
+- **Effects run inside the per-person lock and the poller's concurrency slot**: tickets 12 and 13 should hand a
+  fire on (enqueue a turn, start a ring) rather than await an agent's whole turn there.
 
-Red first: both suites were written before their code and were red on compile; the unit suite then passed
-whole, the engine suite was red on 13 of 18 until a short-circuit (`once && effects`) that skipped effects
-for every non-`once` watch was fixed. Mutations each turned their test red: firing on a first judgement,
+Red first, for the pure function only: `GlucoseTriggersTests` was written before `GlucoseTriggers` and was red
+on compile, then passed whole. The engine, its effects seam and its loop were written before
+`SugaryGlucoseWatchEngineTests`; that suite's first run was red on 13 of 18 from a real bug (a `once && effects`
+short-circuit that skipped the effects of every watch that was not `once`), fixed, and then every guard was
+proven by mutation. Mutations each turned their test red: firing on a first judgement,
 recording "not holding" for an unjudgeable trigger, widening freshness, judging `no_readings` on the clock,
 ignoring conditions, a per-call semaphore (two fires), dropping the row-count guard (same-spec rewrite
 resurrected), counting imports, any sensor instead of the last seen, the server's zone instead of the phone's,
