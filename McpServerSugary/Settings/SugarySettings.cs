@@ -76,11 +76,6 @@ public record SugarySettings : IMcpHostSettings
     public RetentionSettings Retention { get; init; } = new();
 }
 
-public record SugaryVoiceHubSettings
-{
-    public string BaseUrl { get; init; } = "http://agent:8080/internal/relay/voice/";
-}
-
 public record UploadSettings
 {
     // Inside the server's own volume, beside the database but never in it.
