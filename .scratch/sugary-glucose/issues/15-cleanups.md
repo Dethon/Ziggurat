@@ -17,8 +17,8 @@ Status: done
 
 ## Comments
 
-Done in four commits: 7bbc7c2b8 (folders), 7f6f3598e (ticket 09), d44574998 (one id across members),
-e3b81d3cd (Sugary off).
+Done in 7bbc7c2b8 (folders), 7f6f3598e (ticket 09), d44574998 and baf0e520f (one id across members),
+e3b81d3cd and 3ba6e5cdc (Sugary off).
 
 **1. Sugary off** (e3b81d3cd)
 
@@ -49,7 +49,10 @@ e3b81d3cd (Sugary off).
   "off" answer deletes; an unreadable one never does. A fire racing the delete writes nothing (the guarded save
   counts the rows it read). Consequence: `status.json` shows `holds: null` while off, and an `ending` already due
   at resume is not announced for that sensor.
-- **Deploy order:** accounts before Sugary. A Sugary of this change against an older accounts service gets 404 for
+- **Decision to confirm:** a low still going when Sugary is switched back on stays silent until the next
+  crossing (the ticket's "nothing late" read strictly). Reversing it is dropping `ForgetAsync`: the stored
+  "not holding" then makes the first poll back on fire.
+- **Deploy order:** base-sdk and accounts before Sugary. A Sugary of this change against an older accounts service gets 404 for
   the view and fails open: it polls and judges everyone, warns once, and asks again each minute.
 - **Not changed, for whoever decides:** `PenReminders` still pushes pen reminders to a household with Sugary off.
   The ticket names the poller, the engine and their fires only, the app still logs pens for such a household
@@ -63,7 +66,10 @@ e3b81d3cd (Sugary off).
   nothing; another household off: hers fires; unreadable: fires). `SugaryServer.SugaryOff` switches a household
   off, on, or makes the answer fail (`EveryHouseholdIn`'s new `sugaryOff`). Red first: all compiled red or failed
   before the code; then by mutation — no poller filter, no engine gate, no forgetting, rethrowing on failure,
-  and dropping only on a `keys` save each turned its test red.
+  and dropping only on a `keys` save each turned its test red. Follow-up (3ba6e5cdc): `SugaryOffHouseholdsTests`
+  (unit: not asked again within the minute after a failure, asked after; an outage said once and its end once;
+  its own cancellation rethrown) and `WhileOff_TheClocksPassForgetsWhatWasJudged_…` — in production only the
+  clock's pass reaches an off household's watches, since the poller asks nothing; both red under mutation.
 
 **2. One folder rule** (7bbc7c2b8): `SugaryPath.FoldersOf(people, readerUserId)` is the one rule; `SugaryFileSystem`
 and `SugaryWatchFileSystem` call it, `SugaryPeopleFolders` and `SugaryPeopleFoldersTests` are gone.
@@ -84,6 +90,10 @@ and `SugaryWatchFileSystem` call it, `SugaryPeopleFolders` and `SugaryPeopleFold
   (it did answer `Exists` false before, which is what let the home take the id). `HaWatchFileSystem` needs
   nothing: its listing hides nothing.
 - Cost: one extra stat per other member on each create of a new entry (one for `/watchers` today).
+- Follow-up (baf0e520f): a move or copy to the union's root asks nobody (the root stats as existing, which
+  refused it as "'' is taken"); and a test beside the real `HaWatchFileSystem` (its `InfoAsync` answers an id it
+  does not hold `Exists` false, spelled `low` or `/low`, so a glucose watch is created; an unreachable home
+  throws, which the union counts as away).
 - Tests: `UnionFileSystemTests` (6: refused saying nothing, refused with overwrite, a free id asks the others once,
   a member away does not stop it, a move onto a hidden id, a bridge write), `SugaryWatchFileSystemTests` (the
   stat, and a home watch under a hidden glucose id through the union), and
@@ -96,7 +106,7 @@ and `SugaryWatchFileSystem` call it, `SugaryPeopleFolders` and `SugaryPeopleFold
 place is said (the dashboard's operator view, or `mint-link`'s `household <id>`). Nothing else under
 `.scratch/sugary-glucose/` carried them.
 
-Runs: `Tests.Unit` 7624/7624. Integration — Sugary, accounts (`Tests.Integration.Accounts`), the server table
+Runs (at 3ba6e5cdc): `Tests.Unit` 7629/7629; the integration set below 1351/1351. Earlier, at e3b81d3cd: Integration — Sugary, accounts (`Tests.Integration.Accounts`), the server table
 and contracts (`Tests.Integration.McpServers`), VFS bridge and tools, glucose-watch delegation,
 `McpFileSystemBackend`: 1349/1350, the one failure `HouseholdListAdminTests.TheList_ShowsTheServersConnectedToTheAgentsRelay`,
 which passed alone and in the whole accounts suite (490/490) twice — unrelated to this change, a load flake.
