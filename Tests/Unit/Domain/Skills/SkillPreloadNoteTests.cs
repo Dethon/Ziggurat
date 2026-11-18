@@ -7,8 +7,9 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Skills;
 
-// What a model is sent for a preload: one user-role note after the request, never the pair the
-// thread records. A call the model did not make reads to it as its own turn already under way —
+// What a model is sent for a preload: one user-role note ahead of the request, never the pair the
+// thread records. Ahead, because the note is the same bytes on every turn that preloads the same
+// skill and the request never is: after it, the provider's cache could never hold the note. A call the model did not make reads to it as its own turn already under way —
 // Haiku 5.5 then skipped the word a spoken reply opens slow work with on every run, and
 // gpt-6-luna on six in ten (2026-10-10) — and it is the one assistant item no provider issued,
 // which is what each provider refused in its own way.
@@ -36,15 +37,15 @@ public class SkillPreloadNoteTests
         [.. message.Contents.Select(c => c.ShouldBeOfType<TextContent>().Text)];
 
     [Fact]
-    public void APreloadedSkillWithItsRead_IsSentAsOneUserNoteAfterTheRequest()
+    public void APreloadedSkillWithItsRead_IsSentAsOneUserNoteAheadOfTheRequest()
     {
         var thread = Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc"));
 
         var sent = SkillPreloadNote.AsSent(thread);
 
         sent.Select(m => m.Role.Value).ShouldBe(["user", "user"]);
-        sent[0].ShouldBeSameAs(thread[0]);
-        var parts = Texts(sent[1]);
+        sent[1].ShouldBeSameAs(thread[0]);
+        var parts = Texts(sent[0]);
         parts.Count.ShouldBe(2);
         parts[0].ShouldBe(
             "[Loaded for this request before your first call, by the host: the `home-assistant` skill. Do not load it again.]\n\n"
@@ -62,8 +63,8 @@ public class SkillPreloadNoteTests
     {
         var sent = SkillPreloadNote.AsSent(Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")));
 
-        sent[1].AdditionalProperties.ShouldBeNull();
-        sent[1].AuthorName.ShouldBeNull();
+        sent[0].AdditionalProperties.ShouldBeNull();
+        sent[0].AuthorName.ShouldBeNull();
         sent.SelectMany(m => m.Contents).ShouldAllBe(c => c is TextContent);
     }
 
@@ -78,7 +79,7 @@ public class SkillPreloadNoteTests
         var later = SkillPreloadNote.AsSent(Stored(thread));
 
         later.Select(m => m.Role.Value).ShouldBe(["user", "user"]);
-        Texts(later[1]).ShouldBe(Texts(live[1]));
+        Texts(later[0]).ShouldBe(Texts(live[0]));
     }
 
     // Threads stored before this shape hold the pair under two earlier id schemes, and the last
@@ -107,19 +108,20 @@ public class SkillPreloadNoteTests
                 new FunctionResultContent(readId, _index.DeepClone())
             ])
         ];
-        var expected = Texts(SkillPreloadNote.AsSent(Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")))[1]);
+        var expected = Texts(SkillPreloadNote.AsSent(Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")))[0]);
 
         var sent = SkillPreloadNote.AsSent(Stored(Turn(pair)));
 
         sent.Select(m => m.Role.Value).ShouldBe(["user", "user"]);
-        Texts(sent[1]).ShouldBe(expected);
+        Texts(sent[0]).ShouldBe(expected);
     }
 
     [Fact]
-    public void ALaterTurn_KeepsTheNoteWhereThePreloadWasRecorded()
+    public void ALaterTurn_KeepsTheNoteAheadOfTheRequestItWasMadeFor()
     {
         List<ChatMessage> thread =
         [
+            new(ChatRole.Assistant, "¿Algo más?"),
             .. Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")),
             new(ChatRole.Assistant, "Hecho."),
             new(ChatRole.User, "y ahora apágalo")
@@ -127,10 +129,53 @@ public class SkillPreloadNoteTests
 
         var sent = SkillPreloadNote.AsSent(thread);
 
-        sent.Select(m => m.Role.Value).ShouldBe(["user", "user", "assistant", "user"]);
+        sent.Select(m => m.Role.Value).ShouldBe(["assistant", "user", "user", "assistant", "user"]);
+        sent[0].ShouldBeSameAs(thread[0]);
         sent[1].Text.ShouldContain("the `home-assistant` skill");
-        sent[2].ShouldBeSameAs(thread[3]);
+        sent[2].ShouldBeSameAs(thread[1]);
         sent[3].ShouldBeSameAs(thread[4]);
+        sent[4].ShouldBeSameAs(thread[5]);
+    }
+
+    // Messages queued or steered together are one request, and the note goes ahead of all of them.
+    [Fact]
+    public void ARequestOfSeveralMessages_HasTheNoteAheadOfTheFirst()
+    {
+        List<ChatMessage> thread =
+        [
+            new(ChatRole.User, "enciende el aire del salón"),
+            new(ChatRole.User, "a veintidós grados"),
+            .. SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")
+        ];
+
+        var sent = SkillPreloadNote.AsSent(thread);
+
+        sent.Count.ShouldBe(3);
+        sent[0].Text.ShouldContain("the `home-assistant` skill");
+        sent[1].ShouldBeSameAs(thread[0]);
+        sent[2].ShouldBeSameAs(thread[1]);
+    }
+
+    // A turn that ended with no reply — stopped, refused — leaves its request and note with nothing
+    // after them; the next turn's note goes ahead of its own request, never ahead of the earlier
+    // note, which would move bytes a later request's cached prefix holds.
+    [Fact]
+    public void TwoPreloadedRequestsInARow_EachHaveTheirNoteAheadOfThem()
+    {
+        List<ChatMessage> thread =
+        [
+            .. Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")),
+            new(ChatRole.User, "y la luz"),
+            .. SkillLoadTool.AsPreloaded(HomePreload, "preload-def")
+        ];
+
+        var sent = SkillPreloadNote.AsSent(thread);
+
+        sent.Count.ShouldBe(4);
+        sent[0].Text.ShouldContain("the `home-assistant` skill");
+        sent[1].ShouldBeSameAs(thread[0]);
+        sent[2].Text.ShouldContain("the `home-assistant` skill");
+        sent[3].ShouldBeSameAs(thread[3]);
     }
 
     // A load the model made is its own turn, and stays the call and the result it left.

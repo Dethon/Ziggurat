@@ -37,13 +37,17 @@ public sealed class ArmedClock(DateTimeOffset start) : FakeTimeProvider(start)
     public override ITimer CreateTimer(
         TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
     {
+        // Registered with the provider first and counted after: a test that sees the count advances
+        // at once, and an advance between the two moved time under a timer the provider did not hold
+        // yet, which was then due a whole span later and never fired.
+        var inner = base.CreateTimer(callback, state, dueTime, period);
         lock (_gate)
         {
             _armed.Add(dueTime);
             _live.Add(dueTime);
         }
 
-        return new Tracked(base.CreateTimer(callback, state, dueTime, period), this, dueTime);
+        return new Tracked(inner, this, dueTime);
     }
 
     // Waits for the code under test to arm the wait this advance is meant to end, then ends it.

@@ -55,6 +55,20 @@ activation, so a tripped advisory repeats for the lifetime of the config, not on
 subagent inherits the value already resolved and trips none of its own. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction (each payer's client, `PaidChatClients`)
 and dreaming chat clients directly, so those two models skip the advisories entirely.
 
+**A session is the conversation's unless the agent shares one.** `session_id` is
+`<agent>:<conversation>` by default (`AgentSpecProjection`), so OpenRouter sticks one conversation
+to one provider and a new conversation is routed afresh. A voice wake is a conversation of its own,
+and each one landed on whichever provider ranked first, cold — three providers in five wakes on
+2026-11-18, while every wake sent the same ~14k-token static prefix that a provider holding it serves
+from cache across conversations. `sharedRoutingSessionMinutes` on a definition (template key
+`shared-routing-session-minutes`; the voice template and the home's Nabu, 30) makes it
+`<agent>:household:<household>:<window>` instead: every conversation of that agent in the household
+shares one sticky provider for the window, then the next window routes afresh. The window is ours
+because OpenRouter's is no bound — it releases a session only after 60 minutes with no request
+(each one resets it) or on a provider error, never for being slow — so a household that kept
+talking would be held on one provider for good. A conversation keeps the id it was built with. A
+subagent's stays fresh per spawn.
+
 **Anthropic's models are asked to cache; nobody else is.** Every other model here caches a
 repeated prefix by itself. Anthropic's cache nothing unless the request carries a directive, so
 `PrepareRequestBodyAsync` stamps one top-level `cache_control: {"type": "ephemeral"}` (five

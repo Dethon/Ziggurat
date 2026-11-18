@@ -26,7 +26,8 @@ internal static class AgentSpecProjection
         DeploymentEndpoints deployment,
         ILogger? logger,
         string? tenantId = null,
-        HouseholdAgents? household = null) => new()
+        HouseholdAgents? household = null,
+        TimeProvider? clock = null) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
             WithheldTools = new HashSet<string>(),
@@ -35,7 +36,7 @@ internal static class AgentSpecProjection
             PromptName = definition.Name,
             Description = definition.Description ?? "",
             MetricsAgentName = definition.Name,
-            RoutingSessionId = $"{definition.Id}:{agentKey.ConversationId}",
+            RoutingSessionId = RoutingSession(definition, agentKey, tenantId, clock ?? TimeProvider.System),
             ConversationId = agentKey.ConversationId,
             UserId = userId,
             Model = definition.Model,
@@ -74,6 +75,26 @@ internal static class AgentSpecProjection
             PatchableModels = patchableModels,
             LemonadeHostAddress = lemonadeHostAddress
         };
+
+    // A conversation keeps the session it was built with: a window that turns mid-conversation
+    // moves the next conversation, not this one, whose history is already on its provider.
+    private static string RoutingSession(
+        AgentDefinition definition, AgentKey agentKey, string? tenantId, TimeProvider clock)
+    {
+        if (definition.SharedRoutingSessionMinutes is not { } minutes)
+        {
+            return $"{definition.Id}:{agentKey.ConversationId}";
+        }
+
+        if (minutes <= 0)
+        {
+            throw new InvalidOperationException(
+                $"Agent '{definition.Id}': sharedRoutingSessionMinutes must be positive, not {minutes}");
+        }
+
+        var window = clock.GetUtcNow().ToUnixTimeSeconds() / (minutes * 60L);
+        return $"{definition.Id}:household:{tenantId ?? "deployment"}:{window}";
+    }
 
     public static AgentSpec ForSubAgent(
         SubAgentDefinition definition,

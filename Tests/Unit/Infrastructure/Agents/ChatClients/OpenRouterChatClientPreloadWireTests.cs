@@ -11,7 +11,7 @@ using Tests.Unit.Domain.Skills;
 
 namespace Tests.Unit.Infrastructure.Agents.ChatClients;
 
-// A preload as it reaches OpenRouter: a user-role note after the request and nothing else. The
+// A preload as it reaches OpenRouter: a user-role note ahead of the request and nothing else. The
 // thread records the pair a load leaves, and that pair used to be sent as it stood — an assistant
 // item no provider had issued, which each took in its own way. Anthropic's models were handed it
 // with the host's reasoning dropped and read a turn of their own already begun (Haiku 5.5 never
@@ -40,7 +40,7 @@ public class OpenRouterChatClientPreloadWireTests
     };
 
     [Fact]
-    public async Task APreload_ReachesTheWireAsAUserNoteAfterTheRequest_AndNoCallTheHostMade()
+    public async Task APreload_ReachesTheWireAsAUserNoteAheadOfTheRequest_AndNoCallTheHostMade()
     {
         var handler = new CapturingSseHandler();
         var sut = Client(handler);
@@ -51,8 +51,8 @@ public class OpenRouterChatClientPreloadWireTests
 
         var input = Input(handler);
         input.Select(Kind).ShouldBe(["user", "user"], customMessage: handler.CapturedBody);
-        Texts(input[0]).ShouldBe(["apaga el aire"]);
-        var note = Texts(input[1]);
+        Texts(input[1]).ShouldBe(["apaga el aire"]);
+        var note = Texts(input[0]);
         note.Count.ShouldBe(2);
         note[0].ShouldStartWith("[Loaded for this request before your first call, by the host: the `home-assistant` skill. Do not load it again.]");
         note[0].ShouldContain("Read the index, then call the house.");
@@ -96,13 +96,14 @@ public class OpenRouterChatClientPreloadWireTests
 
         var input = Input(handler);
         input.Select(Kind).ShouldBe(["user", "user", "assistant", "user"], customMessage: handler.CapturedBody);
-        Texts(input[1])[0].ShouldContain("the `home-assistant` skill");
+        Texts(input[0])[0].ShouldContain("the `home-assistant` skill");
+        Texts(input[1]).ShouldBe(["apaga el aire"]);
         handler.CapturedBody!.ShouldNotContain("host-reasoning-");
         handler.CapturedBody!.ShouldNotContain("preload-1a2b3c4d");
     }
 
-    // The note is written onto the copy that is sent, after everything that asks who is speaking:
-    // the last user-role message on the wire is the note, and the turn is still the person's.
+    // The note is written onto the copy that is sent, after everything that asks who is speaking,
+    // and it carries no sender: the turn is still the person's.
     [Fact]
     public async Task ATurnWithAPreload_IsStillBilledToThePersonWhoAsked()
     {
@@ -126,7 +127,7 @@ public class OpenRouterChatClientPreloadWireTests
         await sut.GetStreamingResponseAsync(messages).ToListAsync();
 
         sent.ShouldNotBeNull().Select(m => m.Role.Value).ShouldBe(["user", "user"]);
-        sent[1].GetSenderId().ShouldBeNull();
+        sent[0].GetSenderId().ShouldBeNull();
         metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem().Sender.ShouldBe("fran");
     }
 

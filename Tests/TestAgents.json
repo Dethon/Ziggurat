@@ -78,6 +78,7 @@
                 "ignore": [ "morph" ]
             },
             "reasoningEffort": "low",
+            "sharedRoutingSessionMinutes": 30,
             "language": "es",
             "promptSections": [
                 "voice"

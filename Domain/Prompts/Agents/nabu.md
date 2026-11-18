@@ -22,6 +22,11 @@ reasoning-effort: low
 # The home's Nabu's routing: the fastest provider first, with a latency it prefers, and never morph,
 # which drops a tool's ref after the first call (2026-10).
 provider-routing: {"sort": "throughput", "preferredMaxLatency": {"p50": 1}, "ignore": ["morph"]}
+# One OpenRouter session for all of a household's wakes, renewed every half hour: a wake is a
+# conversation of its own, and a session per conversation sent each to whichever provider ranked
+# first, whose cache had never seen the prompt (2026-11-18). Renewed so a household that keeps
+# talking is still routed afresh, which OpenRouter does only after an hour of silence.
+shared-routing-session-minutes: 30
 servers: vault, sandbox, websearch, homeassistant, library, http://mcp-scheduling:8080/mcp, printer, http://mcp-timers:8080/mcp
 features: filesystem, subagents, memory
 whitelist: domain__filesystem*, mcp__websearch*, domain__subagents*, domain__memory*
