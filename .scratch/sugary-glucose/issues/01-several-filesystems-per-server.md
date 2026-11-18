@@ -52,3 +52,17 @@ union's capabilities are the union of. Mounting is still per resource through
 `FileSystemServerResource.Describe`, and discovery reads it through the private
 `FileSystemResourceMetadata` record — `union` is one field on each.
 
+For tickets 03 and 10 (the watches filesystems):
+
+- **Registration order is the compatibility contract.** A call naming no filesystem reaches the
+  first `AddFileSystemTools<T>()`, so `HaFileSystem` and `SugaryFileSystem` must stay registered
+  first, with the watches filesystems after them.
+- **One backend type per filesystem on a server** — a second registration of the same type throws —
+  so `ha-watches` and `sugary-watches` each need a type of their own.
+- **No deploy ordering is needed**: a new agent falls back to the server's tools where a resource
+  publishes no `operations`, and an old agent already sends `filesystem` on every call.
+
+Tests run: `Tests.Unit` 7288 passed; `Tests.Integration` (no E2E/Canary/Eval/Smoke) 2188 passed,
+1 skipped (`CamoufoxFingerprintPinTests`, unrelated); the rest of the non-paid suite 476 passed,
+4 skipped (`ResearchJudgeCalibrationTests`, eval-gated). E2E, Eval and Smoke were not run.
+
