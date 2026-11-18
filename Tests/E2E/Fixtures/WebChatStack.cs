@@ -433,6 +433,19 @@ internal sealed partial class WebChatStack
     // that reaches an app past the proxy presents to act as that person.
     public async Task<Account> AccountForAsync(int userIndex) => (await SeededAsync(userIndex)).Account;
 
+    // The agent's log, for a failure whose cause is the agent's to say: the stack is shared, so a
+    // caller picks out its own lines.
+    public async Task<string> AgentLogAsync()
+    {
+        if (_agent is null)
+        {
+            return "";
+        }
+
+        var (stdout, stderr) = await _agent.GetLogsAsync();
+        return stdout + stderr;
+    }
+
     private Task<Seeded> SeededAsync(int userIndex) =>
         _sessions.GetOrAdd(userIndex, index => new Lazy<Task<Seeded>>(() => SeedAsync(NameOf(index)))).Value;
 

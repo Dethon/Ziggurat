@@ -116,6 +116,20 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             {
                 // Loaded before the turn was stored: load it again.
             }
+            catch (TimeoutException e)
+            {
+                // Never kept: the agent's own account of the stop is what says why.
+                var log = (await fixture.AgentLogAsync()).Split('\n')
+                    .Where(line => line.Contains("cancel", StringComparison.OrdinalIgnoreCase)
+                                   || line.Contains("stop", StringComparison.OrdinalIgnoreCase)
+                                   || line.Contains("approval", StringComparison.OrdinalIgnoreCase)
+                                   || line.Contains("returned", StringComparison.OrdinalIgnoreCase)
+                                   || line.Contains("fail", StringComparison.OrdinalIgnoreCase)
+                                   || line.Contains("warn", StringComparison.OrdinalIgnoreCase))
+                    .TakeLast(80);
+                throw new TimeoutException(
+                    $"The stopped turn was never kept ({words}). The agent's log:\n{string.Join('\n', log)}", e);
+            }
         }
     }
 }
