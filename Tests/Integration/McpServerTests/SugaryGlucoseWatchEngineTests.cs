@@ -553,6 +553,27 @@ public class SugaryGlucoseWatchEngineTests
         harness.Effects.Fires.ShouldHaveSingleItem();
     }
 
+    // As it runs: while off the poller asks nothing, so only the clock's pass reaches her watches, and that
+    // is where what was judged of them is forgotten.
+    [Fact]
+    public async Task WhileOff_TheClocksPassForgetsWhatWasJudged_SoALowStillGoingAtResumeFiresNothing()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.Engine.TickAsync(CancellationToken.None);
+        (await harness.StatesAsync("low")).ShouldBeEmpty();
+
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId, off: false);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+
+        harness.Effects.Fires.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ALowThatCameAndWentWhileOff_FiresNothingOnceBackOn()
     {

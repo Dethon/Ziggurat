@@ -156,7 +156,8 @@ is `HouseholdConfigQuery { householdId, callToken, assertion, delegation }`:
 - **Exception 2, Telegram reads every household's bots.** It long-polls its bots from startup,
   before any call could name a household, so `telegram-bots` takes no proof and answers every
   household's (a household whose secrets do not open is left out and logged, not fatal to the rest).
-  It is cached as one entry, dropped by any household's `keys` save.
+  It is cached as one entry, dropped by any household's `keys` save (and its `features` save, which
+  drops every across-households entry the reader keeps).
 - **Exception 3, Sugary learns which households turn it off.** Its glucose poller and watch engine
   wake for nobody's request (`SugaryOffHouseholds`, `.claude/rules/sugary.md`), so `sugary-off` takes
   no proof and answers the ids of every household whose features turn Sugary off, and nothing else of
