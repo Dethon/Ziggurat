@@ -20,6 +20,11 @@ public record SugarySettings : IMcpHostSettings
     // down the household's tunnel. No announce token: a relayed call never presents one.
     public SugaryVoiceHubSettings VoiceHub { get; init; } = new();
 
+    // Where a glucose watch's prompt is answered when the watch names no channel: the deployment's one
+    // default for every unprompted fire, the shared policy file the scheduler and the home's watches read
+    // too (Domain/delivery.json).
+    public DeliverySettings Delivery { get; init; } = new();
+
     // The SQLite file, in the server's own volume. Its directory is created on first start.
     public string DatabasePath { get; init; } = "/data/sugary.db";
 

@@ -15,6 +15,7 @@ public class ServiceNoticeTests
     [InlineData(ServiceSenders.Login, "You finished logging in")]
     [InlineData(ServiceSenders.Scheduler, "A scheduled task ran")]
     [InlineData(ServiceSenders.Watch, "A home watch fired")]
+    [InlineData(ServiceSenders.GlucoseWatch, "A glucose watch fired")]
     [InlineData(ServiceSenders.SugaryApp, "Sent from the Sugary app")]
     [InlineData(ChannelProtocol.SystemSender, "A notice from the system")]
     public void AServicesMessage_IsALineSayingWhatHappened(string service, string line)

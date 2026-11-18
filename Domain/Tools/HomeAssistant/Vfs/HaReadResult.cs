@@ -24,4 +24,15 @@ public static class HaReadResult
             Suggestion = truncated ? $"Use offset={start + take + 1} to continue reading." : null
         });
     }
+
+    // The text a numbered read was rendered from: each line's "<n>: " taken off where every line carries
+    // its own number in order from the first; any other text is answered as it is.
+    public static string Unnumbered(string content)
+    {
+        var lines = content.Split('\n');
+        var prefixes = lines.Select((_, i) => $"{i + 1}: ").ToList();
+        return lines.Zip(prefixes).All(l => l.First.StartsWith(l.Second, StringComparison.Ordinal))
+            ? string.Join("\n", lines.Zip(prefixes).Select(l => l.First[l.Second.Length..]))
+            : content;
+    }
 }

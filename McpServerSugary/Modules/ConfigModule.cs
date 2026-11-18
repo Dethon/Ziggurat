@@ -53,7 +53,11 @@ public static class ConfigModule
             .AddSingleton(new GlucoseCredentials(SealingKey.Parse(settings.SealingKey, "SealingKey")))
             // Every live link read once a period; her glucose watches are told after each poll.
             .AddSingleton(settings.Glucose)
-            .AddSingleton<IGlucoseWatchEffects, LoggedGlucoseWatchEffects>()
+            // A watch's prompts go to the agent on this server's channel; its announcements ring through
+            // the announce seam, which rings nowhere until it is wired.
+            .AddSingleton(settings.Delivery)
+            .AddSingleton<IGlucoseAnnounceEffect, UnwiredGlucoseAnnounce>()
+            .AddSingleton<IGlucoseWatchEffects, GlucoseWatchEffects>()
             .AddSingleton<GlucoseWatchEngine>()
             .AddSingleton<IGlucosePollObserver>(sp => sp.GetRequiredService<GlucoseWatchEngine>())
             .AddSingleton<GlucosePoller>()
@@ -119,6 +123,8 @@ public static class ConfigModule
             // A glucose alarm with no satellite to ring on rings on its person's channels, which only
             // the agent holds: raised in this inbox, settled here when it ended on a channel.
             .AddChannelAlerts()
+            // The glucose watches' delegations, for the agent's redelegate and retire-signing-keys.
+            .AddDelegationStore<GlucoseWatchDelegationStore>()
             .AddFileSystemTools<SugaryFileSystem>()
             .AddFileSystemResource<SugaryFileSystem>()
             // After the log, so a call naming no filesystem still reaches the log.

@@ -11,7 +11,10 @@ public static class ServiceSenders
     public const string Login = "login";
     public const string SugaryApp = "sugary-app";
 
-    private static readonly HashSet<string> _all = [Scheduler, Watch, Login, SugaryApp, ChannelProtocol.SystemSender];
+    // A glucose watch's prompt, which Sugary puts on its channel when the watch fires.
+    public const string GlucoseWatch = "glucose-watch";
+
+    private static readonly HashSet<string> _all = [Scheduler, Watch, Login, SugaryApp, GlucoseWatch, ChannelProtocol.SystemSender];
 
     public static bool IsService(string sender) => _all.Contains(sender);
 }

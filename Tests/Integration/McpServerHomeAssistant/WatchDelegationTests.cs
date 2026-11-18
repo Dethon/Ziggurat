@@ -86,6 +86,21 @@ public class WatchDelegationTests : IAsyncLifetime
             .Identity.Account.ShouldBe(_fran);
     }
 
+    // An edit is signed over the watch as the agent read it just before, with the edit laid on top: that
+    // read comes back with its lines numbered for the model, which is not a watch until they are taken off.
+    [Fact]
+    public async Task AWatchAPersonEdited_FiresAsThem_WithTheEditedPrompt()
+    {
+        await WriteAsync(TurnOf(_fran), backend => backend.CreateAsync(Path, _watch, false, true, CancellationToken.None));
+        await WriteAsync(TurnOf(_fran), backend => backend.EditAsync(Path,
+            [new TextEdit("Look into it", "Look into it at once")], CancellationToken.None));
+
+        var fire = await FireAsync("Look into it at once and warn Fran.");
+
+        (await TestDelegations.AdmitAsync(fire, "homeassistant")).ShouldBeOfType<FireAdmission.Delegated>()
+            .Identity.Account.ShouldBe(_fran);
+    }
+
     // Pausing it, rewording it, anything a turn acting for nobody writes leaves the watch nobody's.
     [Fact]
     public async Task AWatchRewrittenByATurnActingForNobody_FiresAsNobody()

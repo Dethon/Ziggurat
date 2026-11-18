@@ -325,7 +325,9 @@ internal class McpFileSystemBackend(
         delegated is null ? CallToolAsync(toolName, args, ct) : CallToolWithMetaAsync(toolName, args, delegated, ct);
 
     private async Task<string?> TextAtAsync(string path, CancellationToken ct) =>
-        await ReadAsync(path, null, null, ct) is FsResult<FsReadResult>.Ok { Value.Content: var content } ? content : null;
+        await ReadAsync(path, null, null, ct) is FsResult<FsReadResult>.Ok { Value.Content: var content }
+            ? DelegatedWrites.FileText(filesystemName, content)
+            : null;
 
     private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
     {

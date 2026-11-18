@@ -17,7 +17,7 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions, the glucose link, glucose readings and sensors are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person; a glucose reading's `(UserId, At)` and a sensor's `(UserId, Serial)`, with no key into the link, so unlinking keeps them. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys. A glucose watch (`GlucoseWatch`, key `(TenantId, Id)`, ids unique per household) and what the engine judged of each of its triggers (`GlucoseWatchState`, key `(TenantId, WatchId, TriggerIndex)`, cascading with the watch) are `IHousehold`: a watch is about one person's sensor (`SubjectUserId`) and written by somebody (`WriterUserId`), and who is shown it — its subject, its writer, a holder of everyone's log — is said in `SqliteGlucoseWatches.ListAsync`, not by a filter (`SugaryWatchFileSystem`, `sugary-watches` at `/watchers`).
 
-`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query), the glucose import (`GlucoseImport`, the named person's readings) and the glucose watch engine (`GlucoseWatchEngine`, each subject's armed watches, their states, readings, link, sensors and phones' zones, the household and subject spelled out).
+`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query), the glucose import (`GlucoseImport`, the named person's readings), the glucose watch engine (`GlucoseWatchEngine`, each subject's armed watches, their states, readings, link, sensors and phones' zones, the household and subject spelled out) and the glucose watches' delegation store (`GlucoseWatchDelegationStore`, every household's watches for the agent's `redelegate`, rewriting the delegation column alone).
 
 ## Rows from before
 
@@ -79,11 +79,26 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   while she is low: fires at the next crossing); one that cannot be judged keeps its row, or gets none.
   Time conditions are read on the zone her phones last saved (`HomeCalendar.OnSaved`, the pen reminders'
   rule), else the server's, and gate the fire, not the episode: a low that began before the window fires when
-  it opens if still low. One judgement per person at a time. A fire calls `IGlucoseWatchEffects` (a logging
-  no-op until tickets 12/13), whose throw is contained; the episode is fired whatever was delivered, a `once`
+  it opens if still low. One judgement per person at a time. A fire calls `IGlucoseWatchEffects` (`GlucoseWatchEffects`:
+  the watch's effects in order — a `prompt` composed by `FirePlanning` as a schedule's fire is, `GlucoseWatchFire`:
+  the watch's own words as what is asked, `GlucoseFireReport` beside them as the fire's report (what fired, the
+  reading in mg/dL and mmol/L, trend, rate or forecast, when on the zone the engine judged on, the unit she reads),
+  the principal the watch's `userId`, the subject's household, origin Watch with the id, sender
+  `ServiceSenders.GlucoseWatch`, and the delegation the watch keeps — emitted gate-on-live on Sugary's channel
+  and counted only when an agent took it, never awaited past that; an `announce` handed to
+  `IGlucoseAnnounceEffect`, `UnwiredGlucoseAnnounce` ringing nowhere until ticket 13), whose throw is contained; the episode is fired whatever was delivered, a `once`
   watch spent (`Spent`, `Enabled` false on the columns) only by a fire that reached somebody, and the states,
   `LastFiredAt` and spent are written in one transaction guarded on the watch's `Spec`, `Enabled`, `!Spent`
   and its state-row count being what was read, so a watch rewritten or removed meanwhile gets nothing.
+  **A watch's prompt runs as the person whose turn last wrote it**, on the agent's delegation
+  (`.claude/rules/service-identity.md`, "Deferred turns"): the agent signs one for a write to `sugary-watches`
+  (`DelegatedWrites`, described by `GlucoseWatchDelegation` as a `watch` — the home watch's description, since
+  the agent checks the same of both fires), the mount keeps it on the watch when it names this watch and the
+  writer (`GlucoseWatchDelegation.KeptFor`), every write replacing it and a write carrying none leaving the
+  watch nobody's. `userId` (who the fire is labelled for; the agent believes the delegation) is the writer,
+  the subject, or what the watch already said, else refused naming the field. The zone a fire's report and
+  time conditions use stays the phones' saved one: the accounts service takes a delegation as proof of a
+  household only for a schedule, from the scheduling server.
 - **Her glucose from Home Assistant** (`import-glucose`, `GlucoseImport`): an operator's one-off, `docker exec
   mcp-sugary dotnet McpServerSugary.dll import-glucose --ha <url> --token-file <path> --entity <sensor> --tenant
   <household id> --user <user id> [--days 90]`, reading the recorder's history, then the statistics' hourly means

@@ -387,8 +387,8 @@ closes within its 10 + 30 minutes) for a login.
 **Minted where the write leaves.** `SigningClientTransport` signs one for a call acting for a person,
 under `_meta["com.herfluffness/delegation"]` (`ChannelProtocol.DelegationMetaKey`), beside the call
 token, for exactly what the call writes: a filesystem write states its object under the agent-only
-`ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules or
-`ha-watches` (`/watchers`) create from its content, an edit by reading the file first and laying the edits over it as the
+`ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules,
+`ha-watches` or `sugary-watches` (both `/watchers`) create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
 reading the watch whose delivery it keeps, and named with the writing turn's agent), and
 `web_login` is a login handoff by its name, described off the call's own context and its `url`
@@ -408,14 +408,18 @@ model is told its time in, handed to each mount's backend by the session (`Threa
 (`CallTurn`), never verifying it: `ScheduleFileSystem` keeps it on `Schedule.Delegation` for every
 create, edit and move (a write carrying none clears it), `HaFileSystem` in the automation's metadata
 (`HaWatchMetadata.Delegation`, through `FileSystemCaller.Delegation`), `LoginHandoffs` on the
-`LiveHandoff`. Deleting the object deletes it. `Schedule.CreatedBy` is still recorded — who last
+`LiveHandoff`, `SugaryWatchFileSystem` on the glucose watch (`StoredGlucoseWatch.Delegation`, kept only when
+it names that watch and the writer). A watch mount numbers the lines of its reads, so what the agent read
+before an edit or a replace is taken without them (`DelegatedWrites.FileText`) — under them it parsed as no
+watch, and a person's edit of a home watch fired for nobody. Deleting the object deletes it. `Schedule.CreatedBy` is still recorded — who last
 wrote it, what redelegate offers for a schedule with none — and is never what a fire acts as.
 
 **Fired with what the object does now.** `FireDelegation(Token, Object)` rides
 `ChannelMessageNotification.Delegation`: the scheduler's from the stored schedule
 (`ScheduleFirePlanner`), the watch callback's looked up from the home at fire time
-(`WatchFiredEndpoint`, `HaWatches.GetAsync`; a home it cannot ask fires for nobody), both login
-wakes' from the handoff. A download's carries none.
+(`WatchFiredEndpoint`, `HaWatches.GetAsync`; a home it cannot ask fires for nobody), a glucose watch's
+from the watch Sugary keeps (`GlucoseWatchFire`, described by `GlucoseWatchDelegation` with the home watch's
+shape and kind, since the agent checks the same of both), both login wakes' from the handoff. A download's carries none.
 
 **Checked as the fire arrives**, in `ConversationGroup.AdmitAsync`, by `DelegationVerifier` (the
 agent's own `SigningKeyStore` — every key it still publishes — on the wall clock, and
@@ -468,8 +472,8 @@ the running agent's relay down its own tunnel and named by its household, one no
 not asked (`CommandServers`, `.claude/rules/tunnel.md`, "The key commands reach every household's
 servers the same way") — and
 ask the servers that keep delegations through `delegations_list` / `delegations_replace`
-(`DelegationStoreTools`, `AddDelegationStore<T>`, over an `IDelegationStore`: the scheduling and
-Home Assistant servers; behind the call-token gate, signed as nobody, and stripped from every model's
+(`DelegationStoreTools`, `AddDelegationStore<T>`, over an `IDelegationStore`: the scheduling,
+Home Assistant and Sugary servers; behind the call-token gate, signed as nobody, and stripped from every model's
 tool list by `ThreadSession`). `Redelegation` leaves the current key's delegations alone, re-signs
 without asking one an earlier published key signed for the object as it is now, and shows the
 operator — and signs a fresh one over what the object does now only on a yes — one it cannot believe

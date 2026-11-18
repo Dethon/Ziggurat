@@ -39,6 +39,10 @@ public sealed class SugaryWatchFileSystem(
     private Account? _reader;
     private ICallHousehold? _household;
 
+    // The delegation the agent signed for this call's write, which the watch keeps as who its prompts run
+    // as: none for a call that carried none, which leaves the watch nobody's.
+    private string? _delegation;
+
     // A shallow copy with the caller swapped, as HaWatchFileSystem does: every dependency comes along.
     public override FileSystemBackendBase For(FileSystemCaller caller)
     {
@@ -46,6 +50,7 @@ public sealed class SugaryWatchFileSystem(
         view._caller = caller.Conversation;
         view._reader = Principal.Of(caller.Conversation)?.Account;
         view._household = caller.Household;
+        view._delegation = caller.Delegation;
         return view;
     }
 
@@ -369,6 +374,15 @@ public sealed class SugaryWatchFileSystem(
                             ? [origin.Address is null ? origin.ChannelId : $"{origin.ChannelId}:{origin.Address}"]
                             : null);
         var userId = spec.UserId ?? existing?.UserId ?? writer.UserId;
+        if (userId != writer.UserId && userId != subject && userId != existing?.UserId)
+        {
+            return Fail<T>(ToolError.Codes.InvalidArgument,
+                $"userId '{userId}' is neither the person writing this watch nor the person whose glucose it watches: "
+                + "a glucose watch's fire runs for one of those two.",
+                $"Leave userId out for this person ({writer.UserId})"
+                + (subject == writer.UserId ? "." : $", or name the person it watches ({subject})."));
+        }
+
         spec = spec with { DeliverTo = deliverTo, UserId = userId };
 
         if (await ValidateTargetsAsync(writer, spec, ct) is { } badTarget)
@@ -387,7 +401,9 @@ public sealed class SugaryWatchFileSystem(
             Once = spec.Once,
             DeliverTo = deliverTo,
             UserId = userId,
-            Delegation = existing?.Delegation,
+            // Every write replaces it: the last writer's turn is who the prompts run as, and a write the
+            // agent signed nothing for leaves the watch nobody's.
+            Delegation = GlucoseWatchDelegation.KeptFor(_delegation, writer, id),
             CreatedAt = existing?.CreatedAt ?? time.GetUtcNow(),
             LastFiredAt = existing?.LastFiredAt,
             // A one-shot that fired stays spent while it is written off, and is armed again by a write

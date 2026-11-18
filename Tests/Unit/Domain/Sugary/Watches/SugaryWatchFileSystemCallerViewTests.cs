@@ -9,7 +9,8 @@ using Shouldly;
 namespace Tests.Unit.Domain.Sugary.Watches;
 
 // The registrar asks the mount for itself as one caller sees it, once per call: the view must carry
-// every dependency the server built the mount with, and differ only in who is calling.
+// every dependency the server built the mount with, and differ only in who is calling (and the
+// delegation the agent signed for that caller's write).
 public class SugaryWatchFileSystemCallerViewTests
 {
     private static readonly Account _her = new("household-home", "user-her");
@@ -24,12 +25,12 @@ public class SugaryWatchFileSystemCallerViewTests
             Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, new FakeTimeProvider());
         var household = Mock.Of<ICallHousehold>();
 
-        var view = mount.For(new FileSystemCaller(_turn, null, Household: household)).ShouldBeOfType<SugaryWatchFileSystem>();
+        var view = mount.For(new FileSystemCaller(_turn, null, "the-delegation", household)).ShouldBeOfType<SugaryWatchFileSystem>();
 
         var fields = typeof(SugaryWatchFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         var differing = fields.Where(f => !Equals(f.GetValue(mount), f.GetValue(view))).ToList();
 
-        differing.Select(f => f.GetValue(view)).ShouldBe([_turn, _her, household], ignoreOrder: true);
+        differing.Select(f => f.GetValue(view)).ShouldBe([_turn, _her, household, "the-delegation"], ignoreOrder: true);
         fields.Where(f => !differing.Contains(f) && f.GetValue(mount) is null).Select(f => f.Name).ShouldBeEmpty();
     }
 }

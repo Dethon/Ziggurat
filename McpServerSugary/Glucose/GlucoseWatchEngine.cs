@@ -84,10 +84,15 @@ public sealed class GlucoseWatchEngine(
                     .ToListAsync(ct))
                 .ToLookup(s => s.WatchId);
             var facts = await FactsAsync(db, person, poll, now, ct);
+            // What a fire tells the agent is in the unit she reads, her link's; mg/dL without one.
+            var unit = await db.GlucoseLinks.IgnoreQueryFilters().AsNoTracking()
+                .Where(l => l.UserId == person.UserId && l.TenantId == person.TenantId)
+                .Select(l => (GlucoseUnit?)l.Unit)
+                .FirstOrDefaultAsync(ct) ?? GlucoseUnit.Mgdl;
 
             foreach (var watch in watches)
             {
-                await JudgeAsync(person, watch, [.. states[watch.Id]], facts, ct);
+                await JudgeAsync(person, watch, [.. states[watch.Id]], facts, unit, ct);
             }
         }
         finally
@@ -147,7 +152,7 @@ public sealed class GlucoseWatchEngine(
 
     private async Task JudgeAsync(
         Account person, GlucoseWatch watch, IReadOnlyList<GlucoseWatchState> rows, GlucoseTriggerFacts facts,
-        CancellationToken ct)
+        GlucoseUnit unit, CancellationToken ct)
     {
         GlucoseWatchSpec spec;
         try
@@ -171,7 +176,11 @@ public sealed class GlucoseWatchEngine(
             return;
         }
 
-        var fired = new FiredGlucoseWatch(person, SqliteGlucoseWatches.ToStored(watch), spec);
+        var fired = new FiredGlucoseWatch(person, SqliteGlucoseWatches.ToStored(watch), spec)
+        {
+            Zone = facts.Zone,
+            Unit = unit
+        };
         var spent = false;
         foreach (var fire in judgement.Fired)
         {

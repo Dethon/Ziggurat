@@ -31,6 +31,7 @@ public static class ServiceNotice
             ServiceSenders.Login => "You finished logging in",
             ServiceSenders.Scheduler => "A scheduled task ran",
             ServiceSenders.Watch => "A home watch fired",
+            ServiceSenders.GlucoseWatch => "A glucose watch fired",
             ServiceSenders.SugaryApp => "Sent from the Sugary app",
             ChannelProtocol.SystemSender => "A notice from the system",
             _ => null

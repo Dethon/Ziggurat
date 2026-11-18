@@ -7,6 +7,7 @@ using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
+using Domain.Security;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Sugary.Watches;
@@ -431,6 +432,74 @@ public class SugaryWatchFileSystemTests
            "effects":[{"kind":"announce","text":"Glucose is low","target":{{target}}}]}
           """;
 
+    // The agent signs a delegation for the write a person's turn makes, and the watch keeps the one its
+    // last write carried: that is who its prompts run as.
+    [Fact]
+    public async Task AWrite_KeepsTheDelegationItCarried_AndAWriteCarryingNoneClearsIt()
+    {
+        var token = DelegationOf(Tradaly, "low", LowWatch);
+        Ok(await Mount(Tradaly, token).CreateAsync("low/watch.json", LowWatch, false, true, CancellationToken.None));
+        _store.Stored(Household, "low")!.Delegation.ShouldBe(token);
+
+        Ok(await Mount(Tradaly).EditAsync("low/watch.json", [new TextEdit("\"below\": 70", "\"below\": 65")], CancellationToken.None));
+
+        _store.Stored(Household, "low")!.Delegation.ShouldBeNull();
+    }
+
+    // A server keeps a delegation only for the object and the person it names: one for another watch,
+    // or for somebody other than the writer, would fire for nobody anyway, and kept it would hide that.
+    [Fact]
+    public async Task ADelegationNamingAnotherWatchOrAnotherPerson_IsNotKept()
+    {
+        Ok(await Mount(Tradaly, DelegationOf(Tradaly, "other", LowWatch))
+            .CreateAsync("low/watch.json", LowWatch, false, true, CancellationToken.None));
+        _store.Stored(Household, "low")!.Delegation.ShouldBeNull();
+
+        Ok(await Mount(Tradaly, DelegationOf(Dani, "low", LowWatch))
+            .CreateAsync("low/watch.json", LowWatch, true, true, CancellationToken.None));
+        _store.Stored(Household, "low")!.Delegation.ShouldBeNull();
+    }
+
+    // Who a fire runs as is the person writing it or the person it watches, and nobody else: a watch
+    // the agent fires for one person must not be made to say it is for a third.
+    [Fact]
+    public async Task UserId_NamingNeitherTheWriterNorTheSubject_IsRefusedNamingTheField()
+    {
+        var error = Error(await Union(Dethon).CreateAsync("low/watch.json",
+            LowFor("tradaly").Replace("\"effects\"", $"\"userId\":\"{Dani}\",\"effects\""), false, true, CancellationToken.None));
+
+        error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        error.Message.ShouldContain("userId");
+        _store.Stored(Household, "low").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(Dethon)]
+    [InlineData(Tradaly)]
+    public async Task UserId_MayBeTheWriterOrTheSubject(string userId)
+    {
+        Ok(await Union(Dethon).CreateAsync("low/watch.json",
+            LowFor("tradaly").Replace("\"effects\"", $"\"userId\":\"{userId}\",\"effects\""), false, true, CancellationToken.None));
+
+        _store.Stored(Household, "low")!.UserId.ShouldBe(userId);
+    }
+
+    // The file reads back with its userId, so the subject editing a watch somebody else set up on her
+    // writes that person's id back: what the watch already said is not refused.
+    [Fact]
+    public async Task AnEdit_KeepingTheWatchsUserId_IsNotRefused()
+    {
+        await CreateAsync(Dethon, "her-low", LowFor("tradaly"));
+
+        Ok(await Mount(Tradaly).EditAsync("her-low/watch.json", [new TextEdit("\"below\": 70", "\"below\": 75")], CancellationToken.None));
+
+        _store.Stored(Household, "her-low")!.UserId.ShouldBe(Dethon);
+    }
+
+    private static string DelegationOf(string person, string id, string content) =>
+        TestDelegations.For(new Account(Household, person), "signalr",
+            GlucoseWatchDelegation.OfWrite($"{id}/watch.json", content, null, "jonas", new ReplyTarget("signalr", "conversation-1"))!);
+
     private async Task<IReadOnlyList<string>> Ids(string reader) =>
         Ok(await Mount(reader).GlobAsync("", "*/", CancellationToken.None)).Entries.Select(e => e.TrimEnd('/')).ToList();
 
@@ -457,7 +526,7 @@ public class SugaryWatchFileSystemTests
                 : Mount(caller))
     ]);
 
-    private FileSystemBackendBase Mount(string reader)
+    private FileSystemBackendBase Mount(string reader, string? delegation = null)
     {
         var household = new Mock<ICallHousehold>();
         household.SetupGet(h => h.Id).Returns(Household);
@@ -468,7 +537,7 @@ public class SugaryWatchFileSystemTests
         return mount.For(new FileSystemCaller(
             new ConversationContext("jonas", "conversation-1", reader, new ReplyTarget("signalr", "conversation-1"),
                 Principal: new Principal("signalr", reader, new Account(Household, reader))),
-            null, Household: household.Object));
+            null, delegation, household.Object));
     }
 
     private static T Ok<T>(FsResult<T> result) where T : class =>
