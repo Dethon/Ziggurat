@@ -89,7 +89,8 @@ public static class ConfigModule
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             // A glucose alarm rings on the household's satellites through its own voice server,
             // reached through the relay as the timers server reaches it.
-            .AddHouseholdVoices(settings.VoiceHub.BaseUrl, settings.Mcp.Audience, settings.Mcp.SharedSecret, announceToken: "");
+            .AddHouseholdVoices(settings.VoiceHub.BaseUrl, settings.Mcp.Audience, settings.Mcp.SharedSecret, announceToken: "")
+            .AddSingleton<IGlucoseAnnounceEffect, GlucoseAnnounce>();
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)

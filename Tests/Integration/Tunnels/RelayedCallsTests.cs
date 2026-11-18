@@ -1,16 +1,20 @@
 using System.Net;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Sugary;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools;
+using Domain.Tools.Sugary.Watches;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
 using McpChannelVoice.Services;
+using McpServerSugary.Glucose;
 using McpServerSugary.Modules;
 using McpServerTimers.Modules;
 using McpServerTimers.Services;
@@ -237,6 +241,68 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
             }, CancellationToken.None));
         elsewhere.Rings.ShouldBe(0);
     }
+
+    // A glucose watch's announcement, as Sugary's container builds it, rings on the satellites of the
+    // household whose sensor it watches, through the relay — insistently when the watch gives no
+    // options, so the voice server holds it as ringing and the household's dismiss stops it.
+    [Fact]
+    public async Task AGlucoseWatchsAnnouncement_RingsAnAlarmOnItsHouseholdsSatelliteThroughTheRelay()
+    {
+        await using var voice = await StartVoiceAsync();
+        await using var sugary = SugaryServices();
+
+        var rang = await sugary.GetRequiredService<IGlucoseAnnounceEffect>().RingAsync(
+            LowWatch(new Account(_household, "user-her")),
+            new GlucoseAnnounceEffect("Glucose is low", new JsonObject { ["room"] = "Kitchen" }, null),
+            LowReport(), CancellationToken.None);
+
+        rang.ShouldBeTrue();
+        await Eventually.Until(() => voice.Rings > 0, "the alarm to ring on the kitchen's satellite");
+        var stopped = voice.Alerts.Acknowledge("kitchen-01").ShouldHaveSingleItem();
+        stopped.Text.ShouldBe("Glucose is low");
+        stopped.Kind.ShouldBe(AnnounceKind.Alarm);
+    }
+
+    // With only another household's voice server connected, a watch's alarm reaches none of its
+    // satellites: the relay never sends it to another's. Nothing listens on Sugary's channel here, so
+    // the fallback to channels rings nothing either.
+    [Fact]
+    public async Task AGlucoseWatchsAnnouncementWithOnlyAnotherHouseholdsVoiceConnected_RingsNoneOfItsSatellites()
+    {
+        await using var elsewhere = await StartVoiceAsync(await _accounts.SeedHouseholdAsync("Neighbours"));
+        await using var sugary = SugaryServices();
+
+        var rang = await sugary.GetRequiredService<IGlucoseAnnounceEffect>().RingAsync(
+            LowWatch(new Account(_household, "user-her")),
+            new GlucoseAnnounceEffect("Glucose is low", new JsonObject { ["room"] = "Kitchen" }, null),
+            LowReport(), CancellationToken.None);
+
+        rang.ShouldBeFalse();
+        await Eventually.Settle();
+        elsewhere.Rings.ShouldBe(0);
+    }
+
+    private static FiredGlucoseWatch LowWatch(Account subject)
+    {
+        var spec = new GlucoseWatchSpec
+        {
+            Name = "low",
+            Triggers = [new GlucoseLevelTrigger(GlucoseBound.Below, 70)],
+            Effects = [new GlucoseAnnounceEffect("Glucose is low", new JsonObject { ["room"] = "Kitchen" }, null)]
+        };
+        return new FiredGlucoseWatch(subject, new StoredGlucoseWatch
+        {
+            Id = "low",
+            SubjectUserId = subject.UserId,
+            WriterUserId = subject.UserId,
+            AgentId = "jonas",
+            Spec = spec.ToJson()
+        }, spec);
+    }
+
+    private static GlucoseTriggerFire LowReport() => new(
+        0, new GlucoseLevelTrigger(GlucoseBound.Below, 70), DateTimeOffset.UtcNow,
+        new SensorReading(DateTimeOffset.UtcNow, 62, GlucoseTrend.Falling), null, null, DateTimeOffset.UtcNow, null);
 
     public static TheoryData<string, string, string, bool, HttpStatusCode> RefusedForSugary => new()
     {
