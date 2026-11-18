@@ -35,11 +35,27 @@ public sealed class GlucoseAnnounce(
         ArgumentNullException.ThrowIfNull(effect);
         try
         {
-            if (effect.Target?.Deserialize<AnnounceTarget>(_json) is not { } target)
-            {
-                return await RingOnChannelsAsync(watch, effect, ct);
-            }
+            return await RingOnSatellitesAsync(watch, effect, ct) || await RingOnChannelsAsync(watch, effect, ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            // The hub answering wrongly — a satellite gone since the watch was written — or the channels
+            // failing rang nothing, which the engine is told so a `once` watch stays armed.
+            logger.LogWarning(ex, "Glucose watch {WatchId}'s alarm failed to ring", watch.Watch.Id);
+            return false;
+        }
+    }
 
+    // False when nothing there would hear it, and it is the channels' to ring.
+    private async Task<bool> RingOnSatellitesAsync(FiredGlucoseWatch watch, GlucoseAnnounceEffect effect, CancellationToken ct)
+    {
+        if (effect.Target?.Deserialize<AnnounceTarget>(_json) is not { } target)
+        {
+            return false;
+        }
+
+        try
+        {
             var rung = await voices.For(watch.Subject.TenantId).Announcer.StartAsync(new AnnounceRequest
             {
                 Target = target,
@@ -51,7 +67,7 @@ public sealed class GlucoseAnnounce(
             {
                 logger.LogInformation(
                     "Glucose watch {WatchId}'s satellites are all offline; ringing it on its people's channels", watch.Watch.Id);
-                return await RingOnChannelsAsync(watch, effect, ct);
+                return false;
             }
 
             logger.LogInformation("Glucose watch {WatchId} rang on its household's satellites", watch.Watch.Id);
@@ -63,13 +79,6 @@ public sealed class GlucoseAnnounce(
             // without power), so no satellite would be heard: it rings where one with no target rings.
             logger.LogWarning("Glucose watch {WatchId} could not reach its voice server ({Reason}); ringing it on its people's channels",
                 watch.Watch.Id, ex.Message);
-            return await RingOnChannelsAsync(watch, effect, ct);
-        }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
-        {
-            // The hub answering wrongly — a satellite gone since the watch was written — rang nothing,
-            // which the engine is told so a `once` watch stays armed.
-            logger.LogWarning(ex, "Glucose watch {WatchId}'s alarm failed to ring", watch.Watch.Id);
             return false;
         }
     }

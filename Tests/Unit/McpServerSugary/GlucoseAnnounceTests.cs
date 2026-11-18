@@ -167,6 +167,20 @@ public class GlucoseAnnounceTests
         _channels.Rung.ShouldBeEmpty();
     }
 
+    // However it came to the channels, their failing is a fire that rang nothing, never a throw.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChannelsFailing_RangNothingAndThrowsNothing(bool hubUnreachable)
+    {
+        _voices.Throw = new VoiceHubUnavailableException("The voice hub is unreachable: tunnel not open");
+        _channels.Takes = _ => throw new InvalidOperationException("the inbox is gone");
+
+        (await Announce().RingAsync(
+                Fired(), Effect(hubUnreachable ? """{"room": "Bedroom"}""" : null), Report(), CancellationToken.None))
+            .ShouldBeFalse();
+    }
+
     [Fact]
     public async Task ACancelledFire_IsTheAbortItIs()
     {

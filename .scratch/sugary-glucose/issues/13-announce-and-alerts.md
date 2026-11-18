@@ -73,11 +73,11 @@ integration tests resolve the seam from Sugary's own container, so they go red i
   WriterUserId)`), both rung whatever the other's came to.
 - **Answer**: true when the hub started it on at least one satellite, or any channel alert was taken by an
   agent. Any other failure (the hub answering wrongly — a satellite gone since the write, 404) is logged
-  and false, so a `once` watch stays armed; cancellation propagates.
+  and false, so a `once` watch stays armed — channels throwing too, however the fire came to them; cancellation propagates.
 - A channel alert Sugary rang ends by its Dismiss on a channel or rings out; `/timers ./dismiss` does not
   reach it (see above). A satellite alarm is stopped on the satellite or by `/timers ./dismiss`.
 
-Tests: `Tests/Unit/McpServerSugary/GlucoseAnnounceTests.cs` (11: target → subject's household, Alarm;
+Tests: `Tests/Unit/McpServerSugary/GlucoseAnnounceTests.cs` (13: channels throwing — after no target or an unreachable hub — is false, never a throw; target → subject's household, Alarm;
 insistent left out → timers' ring; given → hers; no target → channels, no hub asked; all offline → subject
 and writer; one satellite started is enough; hub unreachable → channels; writer rung though the subject's
 was taken; nothing taken → false; hub answering wrongly → false, no channels; cancellation propagates).
