@@ -69,6 +69,23 @@ for this, and each shape below is one that has already failed here.
   both edges: asking only whether a window has closed is answered instantly by one that has not
   opened yet.
 
+## Length
+
+- A simulated span is stepped at the coarsest step that still shows the claim. Thirteen hours of
+  polls a minute apart (780 round trips, twenty seconds) proved what polls five minutes apart
+  prove in one; the one-minute cadence is a claim of its own and gets its own short case
+- A class whose cases add up past ten seconds is a chain, even with no container in it: xUnit
+  offers threads in discovery order, so a long class late in it starts near the run's end and ends
+  it. Name it in `HeavyFirstCollectionOrderer`, or split it
+- An address meant to be unreachable is `DeadEnd.Url(...)`, a listener that hangs up, never a port
+  assumed closed. On this machine a connect to `127.0.0.1:1` is dropped, not refused, and waits out
+  the caller's whole connect timeout: the eval browser's proxy paid eight seconds a page, a failed
+  reconnect ten. A test that means to wait out a production bound says so in its name
+- A case whose time jumps between runs by a round number (2 s one run, 17 s the next) is waiting
+  out a timeout somewhere, not slowed by load: run it alone a few times and time its steps. The
+  eval's archive case paid fifteen seconds one run in four to a Chromium lifecycle wait that missed
+  its event — a defect in the browser code, which the test then pinned
+
 ## Containers
 
 - A container's bind mount comes from `HostMountDirectory.Claim(name)`, never a fresh temp
@@ -140,7 +157,14 @@ for this, and each shape below is one that has already failed here.
   run's length than what it does. A class that waits on a model turn or a browser goes into a
   collection whose chain is short, or into one of its own (for WebChat: a space name, with
   `CollectionSlices` raised). It never joins the longest chain. After adding one, compare its
-  collection's span in the run's `.trx` with the others'
+  collection's span in the run's `.trx` with the others'. A collection made for a feature is a
+  chain like any other: the queue's grew three classes of multi-turn cases and became the run's
+  longest by ten seconds, when a class of it on the shortest existing chain cost nothing
+- A sweep over an app's pages walks them in one page. Each `CreatePageAsync` boots the Blazor app
+  again, and the boot is most of what such a case costs: a theory with a page per route booted the
+  dashboard twelve times to check headers and widths one boot shows. Open the first page at its
+  address and reach the rest inside the app (its links, or `Blazor.navigateTo`), collecting what
+  fails across pages into one assertion
 - What a run spent its wall clock on is answerable rather than guessable: set `E2E_TRACE_FILE` and
   every fixture phase, container start and row-settle wait appends its seconds to that file
   (`E2ETrace`, a null check when the variable is unset). Read it beside the run's `.trx` — the trx
