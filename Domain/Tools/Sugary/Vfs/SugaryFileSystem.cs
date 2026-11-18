@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -29,7 +30,7 @@ namespace Domain.Tools.Sugary.Vfs;
 // the household under people/<name>/, with the same files. Who holds that grant is the household's
 // people view, asked through the household the call proved, and only a reader it lists as granted, of
 // that very household, sees people/; anyone else asking into it is refused, never shown an empty log.
-public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, ITableEngine engine) : FileSystemBackendBase
+public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, ITableEngine engine) : FileSystemBackendBase
 {
     public const string Name = "sugary";
 
@@ -363,18 +364,23 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
     private async Task<string> ReadmeAsync(Account owner, TimeZoneInfo zone, CancellationToken ct) =>
         SugaryReadme.For(zone, await log.GlucoseTargetsAsync(owner, ct));
 
-    // What a statement may read only by naming it, or by listing the database's tables.
-    private static readonly string[] _readsGlucose = ["glucose", "information_schema", "duckdb_", "show", "pragma"];
+    // Every table but glucose, by name. A statement that names some of these and never says glucose is
+    // the one kind that cannot need it.
+    [GeneratedRegex(@"\b(meals|items|doses|dose_meals|exercise|foods|periods|day_notes|sensors)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex OtherTable();
 
-    // Every table of the log, glucose only where the statement can reach it: a reading a minute is half a
-    // million rows a year, about 650 ms to load on every statement, a question about meals included.
-    // A table left out is absent, never empty, so a statement that names it in a way this misses fails
-    // rather than answering that there were no readings.
+    // Every table of the log, glucose left out only of a statement that names other tables and never
+    // glucose: a reading a minute is half a million rows a year, about 650 ms to load on every statement,
+    // a question about meals included. Anything else — a listing of what is there however it is asked
+    // (show, describe, the catalogs), a statement naming no table — gets it, since a listing without it
+    // would say she has no readings. A statement naming another table and also listing the catalog
+    // would miss it; a table left out is absent, never empty, so naming it some other way fails.
     private async Task<IReadOnlyList<Table>> TablesAsync(Account owner, TimeZoneInfo zone, string sql, CancellationToken ct)
     {
-        var glucose = _readsGlucose.Any(word => sql.Contains(word, StringComparison.OrdinalIgnoreCase))
-            ? [SugaryTables.Glucose(await log.GlucoseAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), zone)]
-            : Array.Empty<Table>();
+        var withoutGlucose = OtherTable().IsMatch(sql) && !sql.Contains("glucose", StringComparison.OrdinalIgnoreCase);
+        var glucose = withoutGlucose
+            ? Array.Empty<Table>()
+            : [SugaryTables.Glucose(await log.GlucoseAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), zone)];
         var meals = await log.MealsAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         var doses = await log.DosesAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         return

@@ -127,22 +127,32 @@ public class SugaryGlucoseTablesTests
         row["last_mg_dl"]!.GetValue<double>().ShouldBe(90);
     }
 
-    // A year of readings is half a million rows, so a statement about meals does not load them; one that
-    // names the table, or lists the database's tables, does.
+    // A year of readings is half a million rows, so a statement about the other tables alone does not load
+    // them; any other statement does — one that names glucose, and every way of listing what is there,
+    // since a listing that left glucose out would say she has no readings.
     [Theory]
-    [InlineData("select count(*) from meals", false)]
-    [InlineData("select count(*) from GLUCOSE", true)]
-    [InlineData("show tables", true)]
-    [InlineData("select table_name from information_schema.tables", true)]
-    public async Task TheReadings_AreLoadedOnlyForAStatementThatCanReachThem(string sql, bool loaded)
+    [InlineData("select count(*) from meals", false, false)]
+    [InlineData("select d.units from doses d join dose_meals using (dose_id) join meals using (meal_id)", false, false)]
+    [InlineData("select count(*) from GLUCOSE", true, false)]
+    [InlineData("select count(*) from meals m join glucose g on g.read_at > m.eaten_at", true, false)]
+    [InlineData("show tables", true, true)]
+    [InlineData("show all tables", true, true)]
+    [InlineData("describe", true, true)]
+    [InlineData("select table_name from information_schema.tables", true, true)]
+    [InlineData("select name from sqlite_master", true, true)]
+    [InlineData("select tablename from pg_catalog.pg_tables", true, true)]
+    [InlineData("select table_name from duckdb_tables()", true, true)]
+    [InlineData("select 42", true, false)]
+    public async Task TheReadings_AreLeftOutOnlyOfAStatementThatNamesOnlyOtherTables(string sql, bool loaded, bool lists)
     {
         var answer = await Query(sql);
 
-        answer["ok"]?.GetValue<bool>().ShouldNotBe(false);
+        answer["ok"]?.GetValue<bool>().ShouldNotBe(false, answer.ToJsonString());
         (_log.GlucoseReads > 0).ShouldBe(loaded);
-        if (sql.Contains("tables", StringComparison.Ordinal))
+        if (lists)
         {
-            answer["rows"]!.AsArray().Select(row => row![0]!.GetValue<string>()).ShouldContain("glucose");
+            answer["rows"]!.AsArray().SelectMany(row => row!.AsArray()).Select(cell => cell?.ToJsonString() ?? "")
+                .ShouldContain(cell => cell.Contains("glucose", StringComparison.Ordinal));
         }
     }
 
