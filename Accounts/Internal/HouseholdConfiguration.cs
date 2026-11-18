@@ -171,6 +171,29 @@ public static class HouseholdConfiguration
             return Results.Ok(new HouseholdLemonadeBoxes(boxes));
         });
 
+        // Which households turn Sugary off, asked with no household and no proof: Sugary's glucose poller and
+        // watch engine wake for nobody's request, so nothing they hold could prove one. The ids alone, of
+        // households that saved their features: one that never did has Sugary on, its default.
+        routes.MapPost(Path + HouseholdConfigProtocol.SugaryOffView, async (
+            HttpContext http, HouseholdConfigStore store, CancellationToken ct) =>
+        {
+            if (InternalCallers.Reading(http, HouseholdConfigProtocol.SugaryOffView).Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            var off = new List<string>();
+            foreach (var household in await store.HouseholdsWithAsync(HouseholdSections.Features, ct))
+            {
+                if ((await store.ReadAsync(household, HouseholdSections.FeaturesSchema, ct)) is { Sugary: false })
+                {
+                    off.Add(household);
+                }
+            }
+
+            return Results.Ok(new HouseholdsWithSugaryOff(off));
+        });
+
         // Every household's bots, asked with no household: the Telegram server polls them from its
         // start, before any call could prove one. A household whose secrets do not open is left out
         // rather than taking every other household's bots down with it.

@@ -161,6 +161,50 @@ public class SugaryGlucosePollerTests
         return new Harness(fake, server, clock, observer);
     }
 
+    // A household whose features turn Sugary off has its links asked nothing; another household's still
+    // are. Switched back on, a link is polled again at its next moment.
+    [Fact]
+    public async Task AHouseholdWithSugaryOff_IsNotPolled_AndIsAgainOnceBackOn()
+    {
+        await using var harness = await StartAsync();
+        Wear(harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García"), harness.Clock.GetUtcNow());
+        Wear(harness.Fake.AddAccount("nico@example.com", "pw").Follow("patient-2", "Nico", "Vecino"), harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        await harness.LinkAsync(SugaryServer.Neighbour, "nico@example.com", "pw", "patient-2");
+        await harness.NextPeriodAsync();
+        var herCalls = harness.GraphCalls("patient-1");
+        var neighbourCalls = harness.GraphCalls("patient-2");
+        herCalls.ShouldBe(1);
+
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        await harness.NextPeriodAsync(3);
+
+        harness.GraphCalls("patient-1").ShouldBe(herCalls);
+        harness.GraphCalls("patient-2").ShouldBe(neighbourCalls + 3);
+
+        // Seen again at the first sweep, as a new link is, and asked at its moment within the period after.
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId, off: false);
+        await harness.NextPeriodAsync(2);
+
+        harness.GraphCalls("patient-1").ShouldBe(herCalls + 1);
+    }
+
+    // Features that cannot be read just now are taken as on: her readings, and the alarms they feed, do
+    // not stop because the accounts service blinked.
+    [Fact]
+    public async Task FeaturesThatCannotBeReadJustNow_KeepEveryLinkPolled()
+    {
+        await using var harness = await StartAsync();
+        Wear(harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García"), harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Server.SugaryOff.Unreadable();
+
+        await harness.NextPeriodAsync(2);
+
+        harness.GraphCalls("patient-1").ShouldBe(2);
+    }
+
     private static double ValueAt(DateTimeOffset at) => Math.Round(120 + 50 * Math.Sin(at.ToUnixTimeSeconds() / 3600.0));
 
     private static DateTimeOffset ToTheSecond(DateTimeOffset at) => new(at.Ticks - at.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero);

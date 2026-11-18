@@ -57,6 +57,8 @@ public static class ConfigModule
             // the announce seam, which rings nowhere until it is wired.
             .AddSingleton(settings.Delivery)
             .AddSingleton<IGlucoseWatchEffects, GlucoseWatchEffects>()
+            // Which households turn Sugary off, for the poller and the engine, which hold no proof of one.
+            .AddSingleton<SugaryOffHouseholds>()
             .AddSingleton<GlucoseWatchEngine>()
             .AddSingleton<IGlucosePollObserver>(sp => sp.GetRequiredService<GlucoseWatchEngine>())
             .AddSingleton<GlucosePoller>()

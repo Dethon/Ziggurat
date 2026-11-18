@@ -16,12 +16,17 @@ namespace McpServerSugary.Glucose;
 // watch spent are then written together — only while the watch is still the one judged, so a watch
 // rewritten or removed meanwhile is never given back what was judged of the old one.
 //
+// A household whose features turn Sugary off has nothing judged and nothing fired (SugaryOffHouseholds),
+// and what was judged of its watches is forgotten, so once it is back on they are judged as if just
+// written: nothing that happened while off fires late, a low still going when it came back on included.
+//
 // Every watch's subject is somebody's, and the engine wakes for nobody's request, so the factory's
 // context is used and every query says IgnoreQueryFilters with the owner spelled out.
 public sealed class GlucoseWatchEngine(
     IDbContextFactory<SugaryDbContext> contexts,
     IGlucoseWatchEffects effects,
     HomeCalendar calendar,
+    SugaryOffHouseholds sugaryOff,
     TimeProvider clock,
     ILogger<GlucoseWatchEngine> logger) : IGlucosePollObserver
 {
@@ -69,6 +74,12 @@ public sealed class GlucoseWatchEngine(
         {
             var now = clock.GetUtcNow();
             await using var db = await contexts.CreateDbContextAsync(ct);
+            if (await sugaryOff.IsOffAsync(person.TenantId, ct))
+            {
+                await ForgetAsync(db, person, ct);
+                return;
+            }
+
             var watches = await db.GlucoseWatches.IgnoreQueryFilters().AsNoTracking()
                 .Where(w => w.TenantId == person.TenantId && w.SubjectUserId == person.UserId && w.Enabled && !w.Spent)
                 .OrderBy(w => w.Id)
@@ -100,6 +111,14 @@ public sealed class GlucoseWatchEngine(
             turn.Release();
         }
     }
+
+    // What was judged of her watches, gone while her household has Sugary off: a fire's guarded save
+    // counts the rows it read, so one racing this writes nothing.
+    private static Task ForgetAsync(SugaryDbContext db, Account person, CancellationToken ct) =>
+        db.GlucoseWatchStates.IgnoreQueryFilters()
+            .Where(s => s.TenantId == person.TenantId && db.GlucoseWatches.IgnoreQueryFilters()
+                .Any(w => w.TenantId == s.TenantId && w.Id == s.WatchId && w.SubjectUserId == person.UserId))
+            .ExecuteDeleteAsync(ct);
 
     // Her own readings only: an imported one is history brought in, and can be minutes old when Home
     // Assistant's history reaches now.

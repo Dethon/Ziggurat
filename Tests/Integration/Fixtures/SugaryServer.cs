@@ -42,6 +42,50 @@ public sealed class SugaryServer : IAsyncDisposable
         }
     }
 
+    // Which households turn Sugary off, as the accounts service would answer Sugary's poller and watch
+    // engine; a test switches one off and on again, or makes the answer fail.
+    public SugaryOffSwitch SugaryOff { get; private init; } = new();
+
+    public sealed class SugaryOffSwitch
+    {
+        private readonly Lock _gate = new();
+        private readonly HashSet<string> _off = new(StringComparer.Ordinal);
+        private bool _unreadable;
+
+        public void Off(string household, bool off = true)
+        {
+            lock (_gate)
+            {
+                if (off)
+                {
+                    _off.Add(household);
+                }
+                else
+                {
+                    _off.Remove(household);
+                }
+            }
+        }
+
+        public void Unreadable(bool unreadable = true)
+        {
+            lock (_gate)
+            {
+                _unreadable = unreadable;
+            }
+        }
+
+        public IReadOnlyList<string> Answer()
+        {
+            lock (_gate)
+            {
+                return _unreadable
+                    ? throw new HttpRequestException("The accounts service could not answer the sugary-off view (503)")
+                    : [.. _off];
+            }
+        }
+    }
+
     // The people the proxy's session check names, as opaque as the accounts service's own ids: two
     // of one household, who share its kitchen and keep their own logs, and one of another.
     public static readonly Account Her = new("household-home", "user-her");
@@ -102,6 +146,7 @@ public sealed class SugaryServer : IAsyncDisposable
         // assertion: what a photo sent to the sugary agent is checked against. Empty until a test
         // says, which is a household naming no sugary agent — as silent as nothing registered.
         List<HouseholdAgentName> householdAgents = [];
+        var sugaryOff = new SugaryOffSwitch();
         var server = await InMemoryMcpServer.StartAsync(
             collection =>
             {
@@ -113,7 +158,7 @@ public sealed class SugaryServer : IAsyncDisposable
                 collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
                     new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents,
                         householdZones?.ToDictionary(z => z.Key, z => TimeZoneInfo.FindSystemTimeZoneById(z.Value)),
-                        sugaryPeople)));
+                        sugaryPeople, sugaryOff.Answer)));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
@@ -135,7 +180,7 @@ public sealed class SugaryServer : IAsyncDisposable
                 services?.Invoke(collection);
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);
-        return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents };
+        return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents, SugaryOff = sugaryOff };
     }
 
     // A store migrated once per run, copied for each server whose file does not exist yet — a test

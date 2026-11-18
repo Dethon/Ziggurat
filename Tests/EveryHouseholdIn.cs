@@ -8,11 +8,17 @@ namespace Tests;
 // What a server makes of a real household's section, asked with what its call proved, is
 // CallHouseholdTests' (seam 4); a stack that only needs the zone its dates are read in takes this.
 // `agents` are every household's agents, for a stack whose schedules mount lists them; `sugaryPeople`
-// every household's people as Sugary's view answers them (nobody, and so nobody granted, by default).
+// every household's people as Sugary's view answers them (nobody, and so nobody granted, by default);
+// `sugaryOff` which households turn Sugary off (none by default), asked each time so a test can switch
+// one, or throw for an accounts service that cannot answer.
 internal sealed class EveryHouseholdIn(
     TimeZoneInfo zone, IReadOnlyList<HouseholdAgentName>? agents = null,
-    IReadOnlyDictionary<string, TimeZoneInfo>? zones = null, HouseholdSugaryPeople? sugaryPeople = null) : IHouseholdConfiguration
+    IReadOnlyDictionary<string, TimeZoneInfo>? zones = null, HouseholdSugaryPeople? sugaryPeople = null,
+    Func<IReadOnlyList<string>>? sugaryOff = null) : IHouseholdConfiguration
 {
+    public Task<IReadOnlyList<string>> HouseholdsWithSugaryOffAsync(CancellationToken ct) =>
+        Task.FromResult(sugaryOff?.Invoke() ?? []);
+
     public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
         throw new NotSupportedException("a shared server's stand-in answers no agent");
 

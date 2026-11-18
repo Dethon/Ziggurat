@@ -195,6 +195,38 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         people.People.ShouldBe([new SugaryPerson(dethon, "Dethon", true), new SugaryPerson(tradaly, "Tradaly", false)]);
     }
 
+    // Sugary's poller wakes for nobody's request: it asks which households turn Sugary off on its own
+    // credential, and with no Redis (as Sugary runs) keeps the answer for the lifetime alone; with one, a
+    // household's features saved drops it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Sugary_IsToldWhichHouseholdsTurnItOff_KeptForTheLifetimeOrUntilAFeaturesSave(bool listening)
+    {
+        await using var server = await StartAsync();
+        var casa = await server.SeedHouseholdAsync("Casa");
+        var other = await server.SeedHouseholdAsync("Other");
+        await SetAsync(server, casa, HouseholdSections.Features, """{ "sugary": false }""");
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var client = Client(server, Sugary, clock: clock, listening: listening);
+
+        var first = await client.HouseholdsWithSugaryOffAsync(CancellationToken.None);
+        await SetAsync(server, other, HouseholdSections.Features, """{ "sugary": false }""");
+
+        first.ShouldBe([casa]);
+        if (listening)
+        {
+            await Eventually.Until(async () => (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).Count == 2,
+                "the other household's features save to drop what was kept");
+        }
+        else
+        {
+            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa]);
+            clock.Advance(_lifetime + TimeSpan.FromSeconds(1));
+            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa, other], ignoreOrder: true);
+        }
+    }
+
     [Fact]
     public async Task TheAgent_ReadsAnyHouseholdByIdWithItsOwnToken()
     {

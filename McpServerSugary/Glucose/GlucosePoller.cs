@@ -16,7 +16,8 @@ namespace McpServerSugary.Glucose;
 // a time. What LibreLinkUp answered is the link's state; how long to wait after a failure is this
 // process's, kept per link: a refused password stops the link until she links again (asking every
 // minute is what gets an account locked), a rate limit waits what the service said, and anything else
-// is asked about less and less often while it lasts.
+// is asked about less and less often while it lasts. A household whose features turn Sugary off has its
+// links asked nothing (SugaryOffHouseholds); switched back on, each is asked at its next moment.
 //
 // Every owner's links and readings are read here, so the factory's context is used and every query
 // says IgnoreQueryFilters with the owner spelled out.
@@ -25,6 +26,7 @@ public sealed class GlucosePoller(
     LibreLinkUpClient libreLinkUp,
     GlucoseCredentials credentials,
     IGlucosePollObserver observer,
+    SugaryOffHouseholds sugaryOff,
     GlucoseSettings settings,
     TimeProvider clock,
     ILogger<GlucosePoller> logger)
@@ -48,7 +50,8 @@ public sealed class GlucosePoller(
     // those polls are done. A link seen for the first time is polled at its next moment.
     public async Task PollDueAsync(CancellationToken ct)
     {
-        var links = await LiveLinksAsync(ct);
+        var off = await sugaryOff.OffAsync(ct);
+        var links = (await LiveLinksAsync(ct)).Where(link => !off.Contains(link.Key.TenantId)).ToList();
         var now = clock.GetUtcNow();
         var live = links.Select(link => link.Key).ToHashSet();
         foreach (var gone in _paces.Keys.Where(key => !live.Contains(key)))

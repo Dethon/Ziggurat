@@ -494,6 +494,116 @@ public class SugaryGlucoseWatchEngineTests
         harness.Effects.Fires.ShouldHaveSingleItem();
     }
 
+    // A household that turned Sugary off has no glucose watches judged: no fire however low she goes, on a
+    // poll or on the clock.
+    [Fact]
+    public async Task WhileSugaryIsOff_NothingIsJudgedOrFired()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.WatchAsync("failing", """{"trigger":"sensor","state":"link_failing","for":{"minutes":5}}""");
+        await using (var db = harness.Factory())
+        {
+            db.GlucoseLinks.Add(new GlucoseLink
+            {
+                UserId = SugaryServer.Her.UserId, TenantId = SugaryServer.Her.TenantId, PatientId = "p", LinkedAt = _start - TimeSpan.FromDays(1),
+                LastSuccessAt = _start - TimeSpan.FromMinutes(1), LastFailure = GlucoseLinkFailure.CredentialsRefused, FailingSince = _start
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await harness.PollAsync(100);
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+        harness.Clock.Advance(TimeSpan.FromMinutes(10));
+        await harness.Engine.TickAsync(CancellationToken.None);
+
+        harness.Effects.Fires.ShouldBeEmpty();
+        (await harness.RowAsync("low"))!.LastFiredAt.ShouldBeNull();
+    }
+
+    // Back on, the watches are judged at the next poll as if just written: what happened while off fires
+    // nothing late — a low still going when it came back on included — and the next crossing fires as
+    // before.
+    [Fact]
+    public async Task SugaryBackOn_ResumesAtTheNextPoll_WithNothingFiredLate()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+        (await harness.StatesAsync("low")).ShouldHaveSingleItem().Holding.ShouldBe(false);
+
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(62);
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId, off: false);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(61);
+
+        harness.Effects.Fires.ShouldBeEmpty();
+        (await harness.StatesAsync("low")).ShouldHaveSingleItem().Holding.ShouldBe(true);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(90);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(65);
+        harness.Effects.Fires.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task ALowThatCameAndWentWhileOff_FiresNothingOnceBackOn()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(100);
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId, off: false);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(100);
+
+        harness.Effects.Fires.ShouldBeEmpty();
+    }
+
+    // Another household turning Sugary off changes nothing for hers.
+    [Fact]
+    public async Task AnotherHouseholdOff_LeavesHersJudged()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        harness.Server.SugaryOff.Off(SugaryServer.Neighbour.TenantId);
+
+        await harness.PollAsync(100);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+
+        harness.Effects.Fires.ShouldHaveSingleItem();
+    }
+
+    // A medical alarm must not go silent because the accounts service blinked: features that cannot be
+    // read just now are taken as on.
+    [Fact]
+    public async Task FeaturesThatCannotBeReadJustNow_KeepTheWatchesJudged()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        harness.Server.SugaryOff.Unreadable();
+
+        await harness.PollAsync(100);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(60);
+
+        harness.Effects.Fires.ShouldHaveSingleItem();
+    }
+
     // A refused password is never polled again, so its `for` runs out on the clock.
     [Fact]
     public async Task LinkFailing_FiresOnTheClock_ForALinkNoPollAsksAgain()
