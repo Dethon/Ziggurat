@@ -8,9 +8,17 @@ namespace Tests.Integration.Fixtures;
 // across test processes by a lock file (as PortClaims claims ports) and emptied for its next holder.
 // The directory itself is never deleted: one made again is another inode, which the old staging no
 // longer shows the container.
+//
+// They live in the user's cache, not in /tmp. A reboot empties /tmp, and Docker Desktop, starting again,
+// makes every source path it remembers that is missing — as root — so the first run after a reboot
+// found its mount root root's and every claim refused (112 failures, every container test at once).
 public sealed class HostMountDirectory : IDisposable
 {
-    private static readonly string _machineRoot = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ziggurat-test-mounts");
+    private static readonly string _machineRoot = System.IO.Path.Combine(
+        Environment.GetEnvironmentVariable("XDG_CACHE_HOME") is { Length: > 0 } cache
+            ? cache
+            : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache"),
+        "ziggurat-test-mounts");
 
     private readonly FileStream _claim;
 
