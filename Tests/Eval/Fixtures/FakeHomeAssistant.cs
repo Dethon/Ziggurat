@@ -124,22 +124,30 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         $@"(^|/)({HaCatalog.ClassOf(KitchenSpeakerEntityId)}\.)?{HaCatalog.ObjectOf(KitchenSpeakerEntityId)}_\(";
 
 
-    // Laura's glucose, with a state_class so it has statistics, and the living room's temperature
-    // and blinds: the entities the watch scenarios watch and act on. The glucose reads well inside
-    // the range every scenario names, so a crossing is never already past at creation.
+    // Laura's glucose, with a state_class so it has statistics, and the living room's temperature,
+    // humidity and blinds and the kitchen's fridge and freezer: the entities the watch scenarios watch
+    // and act on. Each reads well inside the range every scenario names, so a crossing is never already
+    // past at creation. Laura's glucose is watched only by Nabu, which dials no Sugary: an agent that
+    // does has her glucose as Sugary reads it, and a watch on it is a glucose watch, not the home's.
     public const string GlucoseEntityId = "sensor.glucosa_laura";
     public const string SalonTemperatureEntityId = "sensor.temperatura_salon";
+    public const string SalonHumidityEntityId = "sensor.humedad_salon";
     public const string SalonBlindsEntityId = "cover.persianas_salon";
+    public const string FridgeTemperatureEntityId = "sensor.temperatura_nevera";
+    public const string FreezerTemperatureEntityId = "sensor.temperatura_congelador";
 
-    // One watch already in the home — Laura's sugar below 70, warning on Telegram — so a scenario
-    // about pausing, changing or removing a watch has one to act on, and one about creating shows
-    // as the count moving from one to two.
-    public const string SugarWatchId = "glucosa-laura-baja";
-    public const string SugarWatchName = "Glucosa de Laura por debajo de 70";
-    public static readonly string SugarWatchEntityId = new FakeAutomation(
-        HaWatchAutomation.AutomationId(SugarWatchId), new JsonObject { ["alias"] = SugarWatchName }).EntityId;
+    // One watch already in the home — the living room's humidity above 70, warning on Telegram — so a
+    // scenario about pausing, changing or removing a watch has one to act on, and one about creating
+    // shows as the count moving from one to two. Not a glucose one: beside Sugary's glucose watches
+    // that would be a watch the agent should never have written on the home.
+    public const string SeededWatchId = "humedad-salon-alta";
+    public const string SeededWatchName = "Humedad del salón por encima de 70";
+    public static readonly string SeededWatchEntityId = new FakeAutomation(
+        HaWatchAutomation.AutomationId(SeededWatchId), new JsonObject { ["alias"] = SeededWatchName }).EntityId;
 
-    public static readonly string SugarWatchPathPattern = $@"^/watchers/{SugarWatchId}(/watch\.json)?/?$";
+    private const string SeededWatchPrompt = "La humedad del salón ha pasado de 70. Mira la tendencia y avisa a Fran.";
+
+    public static readonly string SeededWatchPathPattern = $@"^/watchers/{SeededWatchId}(/watch\.json)?/?$";
 
     // The home's automations, as the config API holds them: how many carry the assistant prefix
     // is the watch count a scenario declares as its change, the way it declares an alarm's.
@@ -173,16 +181,16 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
 
         // Rendered the way the mount renders one, so the seeded watch reads back through the same
         // projection a created one does.
-        var sugarWatchId = HaWatchAutomation.AutomationId(SugarWatchId);
-        var sugarWatch = HaWatchAutomation.Render(SugarWatchId, new HaWatchSpec
+        var seededWatchId = HaWatchAutomation.AutomationId(SeededWatchId);
+        var seededWatch = HaWatchAutomation.Render(SeededWatchId, new HaWatchSpec
         {
-            Name = SugarWatchName,
-            Triggers = [new JsonObject { ["trigger"] = "numeric_state", ["entity_id"] = GlucoseEntityId, ["below"] = 70 }],
-            Effects = [new HaPromptEffect("La glucosa de Laura ha bajado de 70. Mira la tendencia y avisa a Fran.")],
+            Name = SeededWatchName,
+            Triggers = [new JsonObject { ["trigger"] = "numeric_state", ["entity_id"] = SalonHumidityEntityId, ["above"] = 70 }],
+            Effects = [new HaPromptEffect(SeededWatchPrompt)],
             DeliverTo = ["telegram"]
-        }, new HaWatchMetadata("jonas", [new HaPromptEffect("La glucosa de Laura ha bajado de 70. Mira la tendencia y avisa a Fran.")],
+        }, new HaWatchMetadata("jonas", [new HaPromptEffect(SeededWatchPrompt)],
             false, ["telegram"], null, new DateTimeOffset(2026, 8, 16, 9, 0, 0, TimeSpan.Zero)));
-        _automations[sugarWatchId] = new FakeAutomation(sugarWatchId, sugarWatch);
+        _automations[seededWatchId] = new FakeAutomation(seededWatchId, seededWatch);
     }
 
     // What the websocket side did to the calendar, recorded beside the REST calls so a scenario
@@ -564,9 +572,9 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
         {
             ["areas"] = new JsonArray(
                 Area(KitchenAreaSlug, "Cocina", KitchenLightEntityId, WashingMachineEntityId,
-                    KitchenSpeakerEntityId, KitchenTvEntityId),
-                Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonBlindsEntityId,
-                    TvRemoteEntityId),
+                    KitchenSpeakerEntityId, KitchenTvEntityId, FridgeTemperatureEntityId, FreezerTemperatureEntityId),
+                Area("salon", "Salón", AirConditionerEntityId, SalonTemperatureEntityId, SalonHumidityEntityId,
+                    SalonBlindsEntityId, TvRemoteEntityId),
                 Area(StudyAreaSlug, "Estudio", VacuumEntityId))
         }.ToJsonString();
 
@@ -649,6 +657,18 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
             ["state_class"] = "measurement", ["unit_of_measurement"] = "mg/dL", ["device_class"] = "blood_glucose_concentration"
         }),
         new(SalonTemperatureEntityId, "23.4", "Temperatura Salón", new JsonObject
+        {
+            ["state_class"] = "measurement", ["unit_of_measurement"] = "°C", ["device_class"] = "temperature"
+        }),
+        new(SalonHumidityEntityId, "55", "Humedad Salón", new JsonObject
+        {
+            ["state_class"] = "measurement", ["unit_of_measurement"] = "%", ["device_class"] = "humidity"
+        }),
+        new(FridgeTemperatureEntityId, "4.1", "Temperatura Nevera", new JsonObject
+        {
+            ["state_class"] = "measurement", ["unit_of_measurement"] = "°C", ["device_class"] = "temperature"
+        }),
+        new(FreezerTemperatureEntityId, "-18.2", "Temperatura Congelador", new JsonObject
         {
             ["state_class"] = "measurement", ["unit_of_measurement"] = "°C", ["device_class"] = "temperature"
         }),

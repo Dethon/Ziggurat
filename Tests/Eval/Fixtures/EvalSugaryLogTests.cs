@@ -1,9 +1,12 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Voice;
 using Domain.Extensions;
 using Domain.Prompts;
+using Domain.Tools.Sugary;
 using McpServerSugary.Modules;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,9 +31,11 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
     {
         Directory.CreateDirectory(_directory);
         var settings = EvalSugaryLog.Settings(_directory);
-        // As the eval stack runs it, with no accounts service: her household keeps the home's zone.
-        _server = await InMemoryMcpServer.StartAsync(services => services.ConfigureSugary(settings)
-            .Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(ConfigModule.HomeZone(settings)))));
+        // As the eval stack runs it for a household that lets the run's person read everyone's log, with a
+        // bedroom among its satellites: what the glucose watch scenarios that need either declare.
+        _server = await InMemoryMcpServer.StartAsync(services => EvalSugaryLog.Configure(
+            services, settings, EvalSugaryLog.EveryoneReadable,
+            new FakeVoiceHub([.. EvalStack.Roster, new SatelliteDescriptor("bedroom-01", "bedroom")])));
         await EvalSugaryLog.SeedAsync(_server.App.Services);
     }
 
@@ -85,11 +90,107 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
         names.ShouldContain("Yogur natural");
     }
 
+    // Any whole week of her readings is three quarters in range, whichever clock its edges are drawn on,
+    // so the analysis scenario's answer is one figure; the week the scenario names is read here through
+    // the README's own statement, which is what a model is told to copy.
+    [Theory]
+    [InlineData("TIMESTAMPTZ '2026-08-10 00:00:00'", "TIMESTAMPTZ '2026-08-17 00:00:00'")]
+    [InlineData("TIMESTAMPTZ '2026-08-10 00:00:00+00'", "TIMESTAMPTZ '2026-08-17 00:00:00+00'")]
+    public async Task TheSeededGlucose_AnyWholeWeek_IsThreeQuartersInRange(string since, string until)
+    {
+        var rows = await QueryAsync(GlucoseQueries.Statistics(since, until, 70, 180));
+        var columns = await ColumnsAsync(GlucoseQueries.Statistics(since, until, 70, 180));
+
+        var row = rows.ShouldHaveSingleItem();
+        double.Parse(row[columns.IndexOf("in_70_180_pct")]!, CultureInfo.InvariantCulture)
+            .ShouldBe(EvalSugaryLog.TimeInRangePercent);
+        double.Parse(row[columns.IndexOf("coverage_pct")]!, CultureInfo.InvariantCulture).ShouldBe(100);
+    }
+
+    // The newest reading is past 180 and climbing, which the mmol scenario's crossing note is about.
+    [Fact]
+    public async Task HerNewestReading_IsAlreadyPast180_AndRising()
+    {
+        var newest = await QueryAsync("select mg_dl, trend from glucose order by read_at desc limit 1");
+
+        newest.ShouldHaveSingleItem().ShouldBe([EvalSugaryLog.NewestMgPerDl.ToString(CultureInfo.InvariantCulture), "rising"]);
+    }
+
+    // A watch on Laura's glucose by the person the household let read everyone's log is stored as hers,
+    // and the snapshot a scenario declares its change against says so.
+    [Fact]
+    public async Task AWatchOnLaurasGlucose_IsStoredForHer_AndTheSnapshotNamesHerAndItsTrigger()
+    {
+        var answer = await CreateWatchAsync("laura-low", $$"""
+            {"name": "Laura low", "triggers": [{"trigger": "glucose", "below": 70, "person": "{{EvalSugaryLog.LauraFolder}}"}],
+             "effects": [{"kind": "prompt", "prompt": "Laura went low."}]}
+            """);
+
+        answer["ok"]?.GetValue<bool>().ShouldNotBe(false, answer.ToJsonString());
+        var snapshot = await EvalSugaryLog.SnapshotAsync(_server.App.Services);
+        snapshot[EvalSugaryLog.WatchCountKey].ShouldBe("1");
+        snapshot[EvalSugaryLog.SubjectKey("laura-low")].ShouldBe(EvalSugaryLog.LauraUserId);
+        snapshot[EvalSugaryLog.TriggersKey("laura-low")].ShouldBe("glucose below 70");
+    }
+
+    // The bedroom alarm's target is resolved against the run's hub, which knows the room.
+    [Fact]
+    public async Task AnAlarmInTheBedroom_IsAccepted_AndALevelInMmolIsRoundedInTheSnapshot()
+    {
+        var answer = await CreateWatchAsync("night-low", """
+            {"name": "Night low", "triggers": [{"trigger": "glucose", "below": 60.04}],
+             "conditions": [{"condition": "time", "after": "23:00", "before": "07:00"}],
+             "effects": [{"kind": "announce", "text": "Glucose is low", "target": {"room": "bedroom"}, "insistent": {}}]}
+            """);
+
+        answer["ok"]?.GetValue<bool>().ShouldNotBe(false, answer.ToJsonString());
+        (await EvalSugaryLog.SnapshotAsync(_server.App.Services))[EvalSugaryLog.TriggersKey("night-low")]
+            .ShouldBe("glucose below 60");
+    }
+
+    private async Task<JsonNode> CreateWatchAsync(string id, string content)
+    {
+        var answer = await _server.Client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = "fs_create",
+            Arguments = new Dictionary<string, JsonElement>
+            {
+                ["filesystem"] = JsonSerializer.SerializeToElement("sugary-watches"),
+                ["path"] = JsonSerializer.SerializeToElement($"{id}/watch.json"),
+                ["content"] = JsonSerializer.SerializeToElement(content)
+            },
+            Meta = Meta()
+        });
+        return JsonNode.Parse(string.Join("", answer.Content.OfType<TextContentBlock>().Select(block => block.Text)))!;
+    }
+
+    private async Task<List<string>> ColumnsAsync(string sql)
+    {
+        var json = await CallQueryAsync(sql);
+        return [.. json["columns"]!.AsArray().Select(column => column!["name"]?.GetValue<string>() ?? column.ToString())];
+    }
+
+    private static JsonObject Meta()
+    {
+        var turn = EvalRun.Turn(SugaryScenarios.HerLogIsReadThroughTheSkill, "conversation-1").GetConversationContext()!;
+        return new JsonObject
+        {
+            [ChannelProtocol.ConversationContextMetaKey] =
+                JsonSerializer.SerializeToNode(turn, ChannelProtocol.SerializerOptions)
+        };
+    }
+
     // Asked as a scenario's turn asks it: the turn's context on `_meta`, built as a run builds it, so
     // the account the mount reads by is the one the log was seeded under.
     private async Task<List<string?[]>> QueryAsync(string sql)
     {
-        var turn = EvalRun.Turn(SugaryScenarios.HerLogIsReadThroughTheSkill, "conversation-1").GetConversationContext()!;
+        var json = await CallQueryAsync(sql);
+        return [.. (json["rows"] ?? throw new InvalidOperationException(json.ToJsonString())).AsArray()
+            .Select(row => row!.AsArray().Select(cell => cell?.ToString()).ToArray())];
+    }
+
+    private async Task<JsonNode> CallQueryAsync(string sql)
+    {
         var answer = await _server.Client.CallToolAsync(new CallToolRequestParams
         {
             Name = "fs_query",
@@ -98,14 +199,8 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
                 ["path"] = JsonSerializer.SerializeToElement("/"),
                 ["sql"] = JsonSerializer.SerializeToElement(sql)
             },
-            Meta = new JsonObject
-            {
-                [ChannelProtocol.ConversationContextMetaKey] =
-                    JsonSerializer.SerializeToNode(turn, ChannelProtocol.SerializerOptions)
-            }
+            Meta = Meta()
         });
-        var json = JsonNode.Parse(string.Join("", answer.Content.OfType<TextContentBlock>().Select(block => block.Text)))!;
-        return [.. (json["rows"] ?? throw new InvalidOperationException(json.ToJsonString())).AsArray()
-            .Select(row => row!.AsArray().Select(cell => cell?.ToString()).ToArray())];
+        return JsonNode.Parse(string.Join("", answer.Content.OfType<TextContentBlock>().Select(block => block.Text)))!;
     }
 }

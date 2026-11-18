@@ -436,12 +436,12 @@ public class FakeHomeAssistantTests
     {
         var home = new FakeHomeAssistant();
         var before = home.Snapshot();
-        var key = FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below");
+        var key = FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SeededWatchEntityId, "above");
         before[key].ShouldBe("70");
 
         var result = await WatchMount(home).EditAsync(
-            RelativeToWatchers($"/watchers/{FakeHomeAssistant.SugarWatchId}/watch.json"),
-            [new Domain.DTOs.TextEdit("\"below\": 70", "\"below\": 65")], CancellationToken.None);
+            RelativeToWatchers($"/watchers/{FakeHomeAssistant.SeededWatchId}/watch.json"),
+            [new Domain.DTOs.TextEdit("\"above\": 70", "\"above\": 65")], CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsEditResult>.Ok>();
         var after = home.Snapshot();

@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Voice;
 using Infrastructure.Agents.Skills;
 
@@ -94,6 +95,14 @@ public sealed record Scenario
 
     // What the files the turn touched must say afterwards.
     public IReadOnlyList<FileExpectation> Files { get; init; } = [];
+
+    // The household's people as Sugary's view lists them, and who of them reads everyone's log. Empty,
+    // the run's person reads only their own: what /sugary/people and a watch on another person's
+    // glucose depend on, and what a scenario about somebody else's log must not get by default.
+    public IReadOnlyList<SugaryPerson> SugaryPeople { get; init; } = [];
+
+    // The household's satellites, where the stack's two rooms are not the house the scenario is about.
+    public IReadOnlyList<SatelliteDescriptor>? Satellites { get; init; }
 
     // What the answer itself must look like. Declared only where the reply is part of the
     // contract: most scenarios are about which tool ran, and a limit invented to fill this in

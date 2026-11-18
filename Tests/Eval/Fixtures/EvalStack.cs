@@ -70,7 +70,9 @@ public sealed class EvalStack : IAsyncDisposable
     private IPlaywright? _playwright;
     private IBrowser? _browser;
 
-    public FakeVoiceHub VoiceHub { get; } = new(Roster);
+    // The household's satellites, the stack's roster unless the scenario names its own: a glucose alarm
+    // in the bedroom needs a house with one, and every other family keeps the two rooms it was measured on.
+    public FakeVoiceHub VoiceHub { get; private init; } = new(Roster);
 
     // The home behind the Home Assistant server: what a scenario reads to ask whether the change
     // it wanted happened, and whether anything else moved.
@@ -125,6 +127,16 @@ public sealed class EvalStack : IAsyncDisposable
     // Where Sugary's database and uploads rest for this run, deleted with the stack.
     private string? _sugaryPath;
 
+    // Sugary's services, when the run stood it up: where its glucose watches are read for the snapshot.
+    private IServiceProvider? _sugary;
+
+    // What the turn could change, read before and after it: the home's entities and watches, and the
+    // glucose watches Sugary keeps beside them when the run has Sugary.
+    public async Task<IReadOnlyDictionary<string, string>> SnapshotAsync() =>
+        _sugary is null
+            ? Home.Snapshot()
+            : new Dictionary<string, string>([.. Home.Snapshot(), .. await EvalSugaryLog.SnapshotAsync(_sugary)]);
+
     // The agent's exec bridge, hosted the way the deployment hosts it: the sandbox's daemons call
     // it for every file operation a command makes on the other mounts. One instance, registered
     // into the agent's services over the one AddAgent made, so the tokens the exec tool mints are
@@ -139,6 +151,7 @@ public sealed class EvalStack : IAsyncDisposable
         // arm every timer with its full duration left.
         var stack = new EvalStack
         {
+            VoiceHub = new FakeVoiceHub([.. scenario.Satellites ?? Roster]),
             Workers = new CannedSubAgents(scenario.WorkerAnswer),
             Memory = new EvalMemory(scenario.Remembered),
             Clock = new FakeTimeProvider(
@@ -193,7 +206,7 @@ public sealed class EvalStack : IAsyncDisposable
 
         if (dialled.Contains(Sugary))
         {
-            hosted[Sugary] = await stack.StartSugaryAsync();
+            hosted[Sugary] = await stack.StartSugaryAsync(scenario);
         }
 
         stack.BuildAgentServices(shipped, recording, scenario, hosted);
@@ -426,7 +439,7 @@ public sealed class EvalStack : IAsyncDisposable
     // own: the sugary agent's estimating prompt and its skill are served from here, so a stack
     // without it would measure the agent with neither. Her log is seeded through the server's
     // store, so /sugary renders it as it renders hers.
-    private async Task<string> StartSugaryAsync()
+    private async Task<string> StartSugaryAsync(Scenario scenario)
     {
         _sugaryPath = Path.Combine(Path.GetTempPath(), $"eval-sugary-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_sugaryPath);
@@ -434,14 +447,11 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        var settings = EvalSugaryLog.Settings(_sugaryPath);
-        builder.Services.ConfigureSugary(settings);
-        // No accounts service: her household keeps the home's zone, as on the deployment.
-        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-            new EveryHouseholdIn(McpServerSugary.Modules.ConfigModule.HomeZone(settings))));
+        EvalSugaryLog.Configure(builder.Services, EvalSugaryLog.Settings(_sugaryPath), scenario.SugaryPeople, VoiceHub);
 
         var endpoint = await StartAsync(builder, port);
-        await EvalSugaryLog.SeedAsync(_servers[^1].Services);
+        _sugary = _servers[^1].Services;
+        await EvalSugaryLog.SeedAsync(_sugary);
 
         return endpoint;
     }

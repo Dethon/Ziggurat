@@ -67,7 +67,7 @@ public static class EvalRun
 
         // Taken after the stack is up and before the turn goes out, so what the diff reports is
         // what this turn did rather than what arming the scenario did.
-        recording.StateBefore = stack.Home.Snapshot();
+        recording.StateBefore = await stack.SnapshotAsync();
         recording.FilesBefore = EvalVault.Read(stack.VaultPath);
 
         // A stalled provider costs the run rather than the suite. The scenario's own budget, and
@@ -105,7 +105,7 @@ public static class EvalRun
         }
         recording.Elapsed = clock.Elapsed;
         recording.AttachmentsServed = stack.Attachments.Served;
-        recording.StateAfter = stack.Home.Snapshot();
+        recording.StateAfter = await stack.SnapshotAsync();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = scenario.Workers == WorkerMode.Real
             ? Delegation.Heard(recording.Calls)
