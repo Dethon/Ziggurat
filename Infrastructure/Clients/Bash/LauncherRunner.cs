@@ -50,7 +50,7 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
             CommandCwd.EffectiveTimeoutSeconds(options, timeoutSeconds),
             options.OutputCapBytes,
             options.Environment ?? new Dictionary<string, string>(),
-            bridge is not null && !string.IsNullOrEmpty(bridgeUrl) ? new LauncherBridge(bridgeUrl, bridge.Token) : null,
+            bridge is not null && !string.IsNullOrEmpty(bridgeUrl) ? new LauncherBridge(bridgeUrl, bridge.Token, bridge.Served) : null,
             adopt.Count > 0 ? adopt : null);
 
         string? answer = null;
@@ -131,7 +131,7 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         LauncherBridge? Bridge,
         IReadOnlyList<string>? Adopt);
 
-    private sealed record LauncherBridge(string Url, string Token);
+    private sealed record LauncherBridge(string Url, string Token, IReadOnlyList<string>? Served);
 
     private sealed record LauncherAnswer(
         string? Stdout,

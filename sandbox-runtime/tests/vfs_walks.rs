@@ -72,3 +72,44 @@ fn a_file_read_twice_is_fetched_once() {
 
     assert_eq!(vfs.bridge().calls().iter().filter(|c| c.starts_with("read ")).count(), 1);
 }
+
+// The root is the daemon's own: a directory whatever the mounts say, so the kernel's first stat of
+// the mount costs no round trip — out through the home's tunnel and back, on prod.
+#[test]
+fn the_root_is_a_directory_without_asking() {
+    let vfs = Vfs::new(FakeBridge::with(&[("/vault", FakeNode::Dir)]));
+
+    assert_eq!(vfs.getattr(ROOT).unwrap().kind, Kind::Dir);
+    assert!(vfs.bridge().calls().is_empty(), "asked {:?}", vfs.bridge().calls());
+}
+
+// The agent names the served mounts with the call, so the root is never listed: not at start, where
+// it held up the command by a round trip, and not after a write dropped the call's cache.
+#[test]
+fn the_served_names_given_at_start_answer_the_root_for_the_whole_call() {
+    let vfs = Vfs::new(FakeBridge::with(&[
+        ("/vault", FakeNode::Dir),
+        ("/vault/a.md", FakeNode::File(b"a".to_vec(), true)),
+        ("/timers", FakeNode::Dir),
+    ]))
+    .with_served(vec!["timers".into(), "vault".into()]);
+
+    assert_eq!(vfs.served().unwrap(), ["timers", "vault"]);
+    let vault = vfs.lookup(ROOT, "vault").unwrap();
+    assert_eq!(vault.kind, Kind::Dir);
+    assert_eq!(vfs.lookup(ROOT, "nope"), Err(libc::ENOENT));
+    let (_, fh) = vfs.create(vault.ino, "b.md").unwrap();
+    vfs.release(fh);
+    vfs.finish();
+    let names: Vec<String> = vfs.readdir(ROOT).unwrap().into_iter().map(|e| e.name).collect();
+    vfs.lookup(ROOT, "vault").unwrap();
+
+    assert_eq!(names, ["timers", "vault"]);
+    let asked: Vec<String> = vfs
+        .bridge()
+        .calls()
+        .into_iter()
+        .filter(|c| c == "list /" || c.strip_prefix("attr /").is_some_and(|rest| !rest.contains('/')))
+        .collect();
+    assert!(asked.is_empty(), "asked {asked:?}");
+}

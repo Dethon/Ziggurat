@@ -138,7 +138,7 @@ public class VfsExecTool(
         using var revokedOnCancel = ct.Register(() => vfs.Revoke(call.Token));
         try
         {
-            var exec = await backend.ExecAsync(cwd, command, timeoutSeconds, new VfsBridgeGrant(call.Token), ct);
+            var exec = await backend.ExecAsync(cwd, command, timeoutSeconds, new VfsBridgeGrant(call.Token, call.ServedNames), ct);
             var record = vfs.Complete(call.Token);
             return exec.Map(e => e with
             {

@@ -33,6 +33,10 @@ pub struct ExecRequest {
 pub struct BridgeGrant {
     pub url: String,
     pub token: String,
+    /// The mounts the call serves, named by the agent: the daemon's root without a round trip.
+    /// Absent, the daemon lists the root through the bridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub served: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -90,8 +94,17 @@ mod tests {
 
         assert_eq!(
             request.bridge,
-            Some(BridgeGrant { url: "http://agent:8080/api/vfs-bridge".into(), token: "t".into() })
+            Some(BridgeGrant { url: "http://agent:8080/api/vfs-bridge".into(), token: "t".into(), served: None })
         );
+    }
+
+    #[test]
+    fn a_bridge_may_name_the_mounts_it_serves() {
+        let line = r#"{"command":"ls","cwd":"/","timeoutSeconds":5,"outputCapBytes":10,"env":{},"bridge":{"url":"u","token":"t","served":["timers","vault"]}}"#;
+
+        let request: ExecRequest = serde_json::from_str(line).unwrap();
+
+        assert_eq!(request.bridge.unwrap().served, Some(vec!["timers".to_string(), "vault".to_string()]));
     }
 
     #[test]

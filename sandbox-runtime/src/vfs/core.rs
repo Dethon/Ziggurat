@@ -191,6 +191,10 @@ pub struct Vfs<B: Bridge> {
     /// anyone being able to read it, and it learns which action it is from its own path.
     helper: Arc<Vec<u8>>,
     release_grace: Duration,
+    /// The served mounts, where the agent named them with the call: the root's listing for the
+    /// whole call, never asked of the bridge and never dropped with the cache — the set of mounts
+    /// a call serves does not change under it.
+    root: Option<Listing>,
 }
 
 impl<B: Bridge> Vfs<B> {
@@ -205,7 +209,16 @@ impl<B: Bridge> Vfs<B> {
             sealed: AtomicBool::new(false),
             helper: Arc::new(Vec::new()),
             release_grace: RELEASE_GRACE,
+            root: None,
         }
+    }
+
+    /// The names the agent serves at the root, given with the call so that listing the root costs
+    /// no round trip — at start, where the command waits for it, or ever after.
+    pub fn with_served(mut self, names: Vec<String>) -> Self {
+        let entries = names.into_iter().map(|name| super::bridge::Entry { name, kind: Kind::Dir }).collect();
+        self.root = Some(Listing { entries, truncated: false });
+        self
     }
 
     /// How long the end of the command waits for the kernel's late releases.
@@ -240,7 +253,11 @@ impl<B: Bridge> Vfs<B> {
                 if state.held_dirs.contains(&parent_path) {
                     return Err(libc::ENOENT);
                 }
-                if let Some(listing) = state.listings.get(&parent_path).filter(|l| !l.truncated) {
+                let listed = match self.root.as_ref().filter(|_| parent_path == "/") {
+                    Some(root) => Some(root),
+                    None => state.listings.get(&parent_path),
+                };
+                if let Some(listing) = listed.filter(|l| !l.truncated) {
                     if !listing.entries.iter().any(|e| e.name == name) {
                         return Err(libc::ENOENT);
                     }
@@ -712,6 +729,10 @@ impl<B: Bridge> Vfs<B> {
     }
 
     fn attr(&self, path: &str) -> Result<Attr, Errno> {
+        // The root is the daemon's, and a served mount is a directory at it.
+        if path == "/" || (parent(path) == "/" && self.root.as_ref().is_some_and(|root| root.entries.iter().any(|e| e.name == name(path)))) {
+            return Ok(Attr { kind: Kind::Dir, size: None });
+        }
         if let Some(attr) = self.lock().attrs.get(path) {
             return Ok(attr.clone());
         }
@@ -721,6 +742,9 @@ impl<B: Bridge> Vfs<B> {
     }
 
     fn listing(&self, path: &str) -> Result<Listing, Errno> {
+        if let Some(root) = self.root.as_ref().filter(|_| path == "/") {
+            return Ok(root.clone());
+        }
         if let Some(listing) = self.lock().listings.get(path) {
             return Ok(listing.clone());
         }

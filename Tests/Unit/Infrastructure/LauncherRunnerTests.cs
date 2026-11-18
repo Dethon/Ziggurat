@@ -100,11 +100,12 @@ public class LauncherRunnerTests : IDisposable
             """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""");
 
         await Runner(bridgeUrl: "http://agent:8080/api/vfs-bridge")
-            .RunAsync("", "ls /vault", null, new VfsBridgeGrant("tok-1"), CancellationToken.None);
+            .RunAsync("", "ls /vault", null, new VfsBridgeGrant("tok-1", ["timers", "vault"]), CancellationToken.None);
 
         var bridge = JsonNode.Parse(await launcher)!["bridge"]!;
         bridge["url"]!.GetValue<string>().ShouldBe("http://agent:8080/api/vfs-bridge");
         bridge["token"]!.GetValue<string>().ShouldBe("tok-1");
+        bridge["served"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["timers", "vault"]);
     }
 
     [SkippableTheory]

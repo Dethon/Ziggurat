@@ -72,6 +72,7 @@ impl Served {
             mountpoint: MOUNTPOINT.into(),
             run_as: daemon_uid,
             action_socket: Some(crate::vfs::actions::SOCKET.into()),
+            served: grant.served.clone(),
         };
         writeln!(stdin, "{}", serde_json::to_string(&config).expect("serializes"))?;
         stdin.flush()?;

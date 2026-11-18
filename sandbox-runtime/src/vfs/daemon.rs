@@ -28,6 +28,9 @@ pub struct DaemonConfig {
     /// Where action helpers reach this daemon; absent, no action can run from a script.
     #[serde(default)]
     pub action_socket: Option<String>,
+    /// The served mounts as the agent named them; absent, the root is listed through the bridge.
+    #[serde(default)]
+    pub served: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -47,7 +50,11 @@ pub fn run() -> io::Result<()> {
         .map(|exe| exe.with_file_name("vfs-action"))
         .and_then(std::fs::read)
         .unwrap_or_default();
-    let vfs = Arc::new(Vfs::new(bridge).with_helper(helper));
+    let vfs = Vfs::new(bridge).with_helper(helper);
+    let vfs = Arc::new(match config.served {
+        Some(names) => vfs.with_served(names),
+        None => vfs,
+    });
     // Asked once, while the unit is certainly this daemon's parent: asked again after the unit died
     // it would name whoever adopted the daemon, and every command in the container descends from that.
     let unit = unsafe { libc::getppid() };

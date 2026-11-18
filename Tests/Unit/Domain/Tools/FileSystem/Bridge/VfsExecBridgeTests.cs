@@ -56,6 +56,31 @@ public class VfsExecBridgeTests
         Encoding.UTF8.GetString(read!).ShouldBe("- [ ] TODO buy milk\n");
     }
 
+    // The grant names the mounts the call serves, so the daemon builds its root from it rather
+    // than asking the bridge for a listing before the command may start — a round trip out through
+    // the home's tunnel and back, on prod.
+    [Fact]
+    public async Task TheGrant_NamesTheMountsTheCallServes()
+    {
+        var (tool, sandbox) = Build((_, _) => Task.FromResult(BridgeFixtures.Ran("")));
+
+        await tool.RunAsync("/sandbox", "ls /vfs", arguments: BridgeFixtures.Whitelisted);
+
+        sandbox.GrantsSeen.Single().Served.ShouldBe(["timers", "vault"]);
+    }
+
+    // On the wire the names ride the same `_meta` entry as the token, and a grant from an agent
+    // that sends none still parses, leaving the daemon to list the root as before.
+    [Fact]
+    public void TheGrantsNames_SurviveTheCallsMeta()
+    {
+        var meta = new System.Text.Json.Nodes.JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant("t", ["vault"]).ToMeta() };
+        var bare = new System.Text.Json.Nodes.JsonObject { [VfsBridgeGrant.MetaKey] = new VfsBridgeGrant("t").ToMeta() };
+
+        VfsBridgeGrant.Parse(meta)!.Served.ShouldBe(["vault"]);
+        VfsBridgeGrant.Parse(bare)!.Served.ShouldBeNull();
+    }
+
     [Fact]
     public async Task ARenderedFile_IsReadWholeAndItsSizeIsLeftUnknown()
     {
