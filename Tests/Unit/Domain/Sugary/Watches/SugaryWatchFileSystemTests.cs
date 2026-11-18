@@ -10,11 +10,13 @@ using Domain.Exceptions;
 using Domain.Security;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
+using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Sugary.Watches;
 using Domain.Tools.Watches;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
+using Tests.Unit.Domain.HomeAssistant.Vfs;
 using Tests.Unit.Domain.Tools.FileSystem;
 
 namespace Tests.Unit.Domain.Sugary.Watches;
@@ -358,6 +360,30 @@ public class SugaryWatchFileSystemTests
         refused.Message.ShouldNotContain("glucose");
         refused.Message.ShouldNotContain("Tradaly");
         _home.Files.Keys.ShouldNotContain("low/watch.json");
+    }
+
+    // Beside the real home watches: the union asks the home about every new glucose watch's id, and an id
+    // it does not hold is free, so the glucose watch is created; a home watch still goes home.
+    [Fact]
+    public async Task BesideTheRealHomeWatches_AGlucoseWatchIsCreated_AndTheHomeAnswersItsIdFree()
+    {
+        var client = new FakeHaClient();
+        var time = new FakeTimeProvider(_now);
+        var home = new HaWatchFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+            caller: new ConversationContext("jonas", "conversation-1", Tradaly, new ReplyTarget("signalr", "conversation-1")));
+        var union = new UnionFileSystem(
+        [
+            new UnionFileSystem.Member("ha-watches", new FileSystemUnion(Watchers.RouteBy, [], Fallback: true), home),
+            new UnionFileSystem.Member(SugaryWatchFileSystem.Name, new FileSystemUnion(Watchers.RouteBy, [.. GlucoseTrigger.Kinds]),
+                Mount(Tradaly))
+        ]);
+
+        Ok(await home.InfoAsync("low", CancellationToken.None)).ShouldBe(new FsInfoResult { Exists = false, Path = "low" });
+        Ok(await home.InfoAsync("/low", CancellationToken.None)).Exists.ShouldBeFalse();
+        Ok(await union.CreateAsync("low/watch.json", LowWatch, false, true, CancellationToken.None)).Status.ShouldBe("created");
+
+        _store.Stored(Household, "low").ShouldNotBeNull();
+        client.UpsertedAutomations.ShouldBeEmpty();
     }
 
     [Fact]

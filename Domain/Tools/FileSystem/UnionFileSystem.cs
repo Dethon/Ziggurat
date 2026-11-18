@@ -290,7 +290,8 @@ public sealed class UnionFileSystem : IFileSystemBackend, ICallerBoundBackend
                 + "or be copied from one filesystem sharing this mount point to another. Read it and write it anew instead.");
         }
 
-        return destination is null && await TakenElsewhereAsync(destinationPath, member, ct) is { } taken
+        return destination is null && Entry(destinationPath).Length > 0
+                                   && await TakenElsewhereAsync(destinationPath, member, ct) is { } taken
             ? new FsResult<T>.Err(taken)
             : await operation(member.Backend);
     }

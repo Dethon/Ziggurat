@@ -229,6 +229,18 @@ public class UnionFileSystemTests
         _home.Files.Keys.ShouldContain("porch/watch.json");
     }
 
+    // The union's root is nobody's entry, so a destination there is no id to ask anybody about: the move
+    // is the source holder's to answer, as it was.
+    [Fact]
+    public async Task AMoveToTheRoot_AsksNobodyWhetherTheRootIsTaken()
+    {
+        var moved = await Union().MoveAsync("porch/watch.json", "/", CancellationToken.None);
+
+        _sugary.Probed.ShouldBeEmpty();
+        _home.Probed.ShouldBeEmpty();
+        (moved.TryGetValue(out _, out var error) ? null : error.ErrorCode).ShouldNotBe(ToolError.Codes.AlreadyExists);
+    }
+
     [Fact]
     public async Task ABridgeWriteOfAnIdAnotherMemberHides_IsRefused()
     {
