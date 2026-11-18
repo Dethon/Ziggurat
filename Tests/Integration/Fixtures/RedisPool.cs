@@ -73,7 +73,12 @@ internal sealed class RedisPool
         await ConnectionMultiplexer.ConnectAsync(
             $"{ConnectionStringFor(database)},abortConnect=false,allowAdmin=true");
 
-    public string ConnectionStringFor(int database) => $"{Endpoint},defaultDatabase={database}";
+    // The client's five-second response timeout is a deployment's judgement of a dead server. Here one
+    // Redis container answers every class of a run, and beside a second suite an EXPIRE waited 5.7 s
+    // for its answer, failing an embeddings ranking test on a timeout about the machine. So this
+    // run's strings, the ones handed to the code under test included, wait longer.
+    public string ConnectionStringFor(int database) =>
+        $"{Endpoint},defaultDatabase={database},syncTimeout=30000,asyncTimeout=30000";
 
     public void Return(int database) => _released.Enqueue(database);
 
