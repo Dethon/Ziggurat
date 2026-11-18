@@ -75,6 +75,19 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   `--token` is refused. Imported rows never reach `IGlucosePollObserver`: the command is a process with the
   store alone.
 
+- **What the Glucose tab reads** (`GlucoseEndpoints`, GETs, so never queued behind her writes): `/current`
+  is her newest reading with its arrow and `ageSeconds`, her link (null without one), `canLink` and the unit
+  and range she reads in (mg/dL and 70–180 without a link, since readings outlive it); `/readings?from&to`
+  (the last day by default, at most 90 days, `bad-window`/`window-too-long`) answers as read up to two days,
+  quarter-hour means up to sixteen, hourly beyond (`GlucoseCurve`), a bucket with no reading left out so the
+  app breaks the line; `/statistics?days=1|7|14|90` (`bad-period`) is `GlucoseStatistics`, the one
+  implementation: each reading weighs the minutes to the next, at most fifteen, so a gap counts for nothing
+  and mean and SD are of the time, not of the readings; shares are of the covered time, the bands under 70
+  and over 180 include under 54 and over 250, in range is her range; everything but count and coverage is
+  null with no readings. The app keeps every value in mg/dL and shows mmol/L as mg/dL / 18.016 to one
+  decimal (`glucose.ts`); its range is saved with `loaded` and `overRecord`, so a range shown rounded in
+  mmol/L goes back as recorded when untouched. A refusal's `code` reaches the app on `ApiError.code`.
+
 ## Turns, the mount and reminders
 
 - **Sugary turned off refuses the app.** The agent refuses a Sugary turn of a household whose features turn Sugary off (`RefusalAnswers.SugaryOff`), and the server answers the app's estimate or label **403** with the refusal's code (`RefusalAnswers.CodeOf`: `sugary-off`, `key-refused`, `out-of-credit`, `without-key`, `disabled`, …) whenever the agent refused the turn for the household; the app says each in the person's language with who can fix it (`errors.ts`), never the agent's English. Any other failure stays the 502 it was.

@@ -2588,3 +2588,266 @@ h1.marked .icon {
 .pen-reminders > span {
   flex: 1;
 }
+
+/* Her glucose */
+
+.notice-caution {
+  background: var(--color-caution-soft);
+  color: var(--color-caution);
+}
+
+.notice-caution .icon {
+  color: var(--color-caution);
+}
+
+.glucose-reading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Her number is the screen's headline, in ink: the band it sits in is said by the edge beside it and
+   the words under it, never by the number's colour alone. */
+.glucose-value {
+  font-size: 3.5rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.glucose-unit {
+  align-self: flex-end;
+  padding-bottom: 6px;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.glucose-trend {
+  display: inline-grid;
+  place-items: center;
+  margin-left: auto;
+  color: var(--color-ink);
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.glucose-meta {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.glucose-now.glucose-inRange {
+  border-left: 6px solid var(--color-good);
+}
+
+.glucose-now.glucose-low,
+.glucose-now.glucose-veryLow {
+  border-left: 6px solid var(--color-danger);
+}
+
+.glucose-now.glucose-high,
+.glucose-now.glucose-veryHigh {
+  border-left: 6px solid var(--color-caution);
+}
+
+.glucose-connection {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.glucose-connection > span {
+  flex: 1;
+}
+
+.glucose-stale .glucose-value,
+.glucose-stale .glucose-trend {
+  color: var(--color-muted);
+}
+
+.glucose-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.glucose-chart svg {
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.glucose-readout {
+  min-height: 1.4em;
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--color-muted);
+}
+
+.glucose-readout strong {
+  color: var(--color-ink);
+}
+
+.glucose-chart-band {
+  fill: var(--color-glucose-band);
+}
+
+.glucose-chart-edge {
+  stroke: var(--color-glucose-band-edge);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.glucose-chart-axis {
+  stroke: var(--color-line);
+  stroke-width: 1;
+}
+
+.glucose-chart-label {
+  fill: var(--color-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.glucose-chart-line {
+  fill: none;
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.glucose-chart-hover line {
+  stroke: var(--color-muted);
+  stroke-width: 1;
+}
+
+.glucose-chart-hover circle {
+  fill: var(--color-ink);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.glucose-bands {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.glucose-band {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px var(--space-2);
+  font-size: var(--text-meta);
+}
+
+.glucose-band-value {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.glucose-band-bar {
+  grid-column: 1 / -1;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-sponge);
+  overflow: hidden;
+}
+
+.glucose-band-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--color-muted);
+}
+
+.glucose-band-inRange .glucose-band-bar > span {
+  background: var(--color-good);
+}
+
+.glucose-band-low .glucose-band-bar > span,
+.glucose-band-veryLow .glucose-band-bar > span {
+  background: var(--color-danger);
+}
+
+.glucose-band-high .glucose-band-bar > span,
+.glucose-band-veryHigh .glucose-band-bar > span {
+  background: var(--color-caution);
+}
+
+.glucose-figures {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.glucose-figures dt {
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.glucose-figures dd {
+  margin: 2px 0 0;
+  font-size: var(--text-number);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.glucose-figure-note {
+  display: block;
+  font-size: var(--text-label);
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.glucose-linked {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.glucose-link-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-good);
+}
+
+.glucose-link-failing {
+  color: var(--color-caution);
+}
+
+.glucose-choose,
+.glucose-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.glucose-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.glucose-range legend {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-2);
+}
+
+/* Six tabs on a 360 px phone: a label never wraps, and a tab is never narrower than its label, so
+   "Despensa" takes the few pixels it needs from its neighbours rather than running into them. */
+.tab {
+  white-space: nowrap;
+}

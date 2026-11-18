@@ -1,3 +1,4 @@
+using Domain.DTOs.Sugary;
 using McpServerSugary.Glucose;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
@@ -26,6 +27,35 @@ public record GlucoseLinkDto(
     string? FailureDetail,
     DateTimeOffset? FailingSince);
 
+// Her newest reading and how old it was when asked, and everything the tab reads beside it: the link
+// (null when she has none; her readings outlive it), whether a link could be made here, and how she
+// reads glucose, defaulting to mg/dL against 70–180 without a link.
+public record GlucoseNowDto(
+    GlucoseReadingDto? Reading, GlucoseLinkDto? Link, bool CanLink, GlucoseUnit Unit, int TargetLow, int TargetHigh);
+
+public record GlucoseReadingDto(DateTimeOffset At, double MgPerDl, GlucoseTrend Trend, int AgeSeconds);
+
+// BucketMinutes is null where the points are the readings as kept.
+public record GlucoseCurveDto(DateTimeOffset From, DateTimeOffset To, int? BucketMinutes, IReadOnlyList<GlucosePoint> Points);
+
+// Shares are fractions of the time with readings, cumulative bands (GlucoseStatistics); null with none.
+public record GlucoseStatisticsDto(
+    int Days,
+    DateTimeOffset From,
+    DateTimeOffset To,
+    int TargetLow,
+    int TargetHigh,
+    int Count,
+    double Coverage,
+    double? Mean,
+    double? Gmi,
+    double? Cv,
+    double? VeryLow,
+    double? Low,
+    double? InRange,
+    double? High,
+    double? VeryHigh);
+
 public record LinkGlucoseRequest(string? Email, string? Password, string? Region);
 
 public record ChooseConnectionRequest(string? PatientId);
@@ -38,7 +68,8 @@ public record GlucoseSettingsRequest(
 // The LibreLinkUp account her glucose comes from. Every refusal carries a `code` the app words in her
 // language: linking-off, missing-credentials, unknown-region, credentials-refused, step-required (with
 // `component`), no-connections, rate-limited (with `retryAfterSeconds` where LibreLinkUp said),
-// unavailable, not-linked, unknown-connection, unknown-unit, bad-range.
+// unavailable, not-linked, unknown-connection, unknown-unit, bad-range; and for what she reads,
+// bad-window, window-too-long, bad-period.
 public static class GlucoseEndpoints
 {
     public static void MapGlucoseEndpoints(this IEndpointRouteBuilder api)
@@ -50,6 +81,80 @@ public static class GlucoseEndpoints
         glucose.MapPut("/link/connection", ChooseAsync);
         glucose.MapPut("/settings", SaveSettingsAsync);
         glucose.MapDelete("/link", UnlinkAsync);
+        glucose.MapGet("/current", CurrentAsync);
+        glucose.MapGet("/readings", ReadingsAsync);
+        glucose.MapGet("/statistics", StatisticsAsync);
+    }
+
+    // The periods the tab offers; the clinic's report is fourteen days, ninety the longest kept view.
+    private static readonly int[] _periods = [1, 7, 14, 90];
+
+    private static async Task<GlucoseNowDto> CurrentAsync(
+        SugaryDbContext db, GlucoseCredentials credentials, TimeProvider clock, CancellationToken ct)
+    {
+        var link = await LinkOf(db, ct);
+        var newest = await db.GlucoseReadings.AsNoTracking().OrderByDescending(r => r.At).FirstOrDefaultAsync(ct);
+        var reading = newest is null
+            ? null
+            : new GlucoseReadingDto(newest.At, newest.MgPerDl, newest.Trend,
+                (int)Math.Max(0, (clock.GetUtcNow() - newest.At).TotalSeconds));
+        return new GlucoseNowDto(
+            reading,
+            link is null ? null : ToDto(link),
+            credentials.CanSeal,
+            link?.Unit ?? GlucoseUnit.Mgdl,
+            link?.TargetLow ?? GlucoseRange.DefaultLow,
+            link?.TargetHigh ?? GlucoseRange.DefaultHigh);
+    }
+
+    // The last day's with no window named.
+    private static async Task<IResult> ReadingsAsync(
+        DateTimeOffset? from, DateTimeOffset? to, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var end = to ?? clock.GetUtcNow();
+        var start = from ?? end.AddDays(-1);
+        if (start >= end)
+        {
+            return Refuse(StatusCodes.Status400BadRequest, "bad-window", "A window starts before it ends.");
+        }
+
+        if (end - start > GlucoseCurve.LongestWindow)
+        {
+            return Refuse(StatusCodes.Status400BadRequest, "window-too-long", "A window is ninety days at most.");
+        }
+
+        var bucket = GlucoseCurve.BucketFor(end - start);
+        var readings = await ReadingsIn(db, start, end, ct);
+        return Results.Ok(new GlucoseCurveDto(
+            start, end, bucket is { } size ? (int)size.TotalMinutes : null, GlucoseCurve.Of(readings, bucket)));
+    }
+
+    private static async Task<IResult> StatisticsAsync(int? days, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        var period = days ?? 14;
+        if (!_periods.Contains(period))
+        {
+            return Refuse(StatusCodes.Status400BadRequest, "bad-period", "Figures are over 1, 7, 14 or 90 days.");
+        }
+
+        var to = clock.GetUtcNow();
+        var from = to.AddDays(-period);
+        var link = await LinkOf(db, ct);
+        var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
+        var figures = GlucoseStatistics.Of(await ReadingsIn(db, from, to, ct), from, to, low, high);
+        return Results.Ok(new GlucoseStatisticsDto(
+            period, from, to, low, high, figures.Count, figures.Coverage, figures.Mean, figures.Gmi, figures.Cv,
+            figures.VeryLow, figures.Low, figures.InRange, figures.High, figures.VeryHigh));
+    }
+
+    private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(
+        SugaryDbContext db, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    {
+        var rows = await db.GlucoseReadings.AsNoTracking()
+            .Where(r => r.At >= from && r.At < to)
+            .Select(r => new { r.At, r.MgPerDl })
+            .ToListAsync(ct);
+        return [.. rows.Select(r => new SensorReading(r.At, r.MgPerDl, GlucoseTrend.Unknown))];
     }
 
     private static async Task<IResult> ReadAsync(SugaryDbContext db, GlucoseCredentials credentials, CancellationToken ct) =>

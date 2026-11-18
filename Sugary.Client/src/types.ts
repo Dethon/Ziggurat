@@ -214,3 +214,94 @@ export interface SessionState {
   // Who the phone is signed in as (their account's id); none when the app opened offline.
   person?: string | null;
 }
+
+// Her glucose, always mg/dL on the wire; mmol/L is only how she reads it (glucose.ts).
+export type GlucoseUnit = "mgdl" | "mmol";
+export type GlucoseTrend = "unknown" | "fallingFast" | "falling" | "steady" | "rising" | "risingFast";
+
+export interface GlucoseConnection {
+  patientId: string;
+  name: string;
+}
+
+// The LibreLinkUp account her readings come from; never its password. lastFailure is a code the app
+// words: credentials-refused, step-required, rate-limited or unavailable.
+export interface GlucoseLink {
+  email: string;
+  region: string | null;
+  patientId: string | null;
+  name: string | null;
+  connections: GlucoseConnection[];
+  unit: GlucoseUnit;
+  targetLow: number;
+  targetHigh: number;
+  linkedAt: string;
+  lastSuccessAt: string | null;
+  lastFailure: string | null;
+  failureDetail: string | null;
+  failingSince: string | null;
+}
+
+export interface GlucoseReading {
+  at: string;
+  mgPerDl: number;
+  trend: GlucoseTrend;
+  // How old it was when the server answered.
+  ageSeconds: number;
+}
+
+// The tab's head: her newest reading, her link (null without one; her readings outlive it), whether
+// one can be made on this server, and how she reads glucose.
+export interface GlucoseNow {
+  reading: GlucoseReading | null;
+  link: GlucoseLink | null;
+  canLink: boolean;
+  unit: GlucoseUnit;
+  targetLow: number;
+  targetHigh: number;
+}
+
+export interface GlucosePoint {
+  at: string;
+  mgPerDl: number;
+}
+
+// Points as read, or bucket means where bucketMinutes is set; a silent stretch has none.
+export interface GlucoseCurve {
+  from: string;
+  to: string;
+  bucketMinutes: number | null;
+  points: GlucosePoint[];
+}
+
+// Shares are fractions of the time with readings; the bands below 70 and above 180 include the very
+// low and very high ones. Null with no readings.
+export interface GlucoseStatistics {
+  days: number;
+  from: string;
+  to: string;
+  targetLow: number;
+  targetHigh: number;
+  count: number;
+  coverage: number;
+  mean: number | null;
+  gmi: number | null;
+  cv: number | null;
+  veryLow: number | null;
+  low: number | null;
+  inRange: number | null;
+  high: number | null;
+  veryHigh: number | null;
+}
+
+export interface LinkGlucose {
+  email: string;
+  password: string;
+  region: string | null;
+}
+
+export interface GlucoseSettings {
+  unit: GlucoseUnit;
+  targetLow: number;
+  targetHigh: number;
+}

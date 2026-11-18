@@ -7,6 +7,7 @@ import { pendingOutcomes } from "./log";
 import { resync } from "./push";
 import { CycleScreen } from "./screens/CycleScreen";
 import { FoodsScreen } from "./screens/FoodsScreen";
+import { GlucoseScreen } from "./screens/GlucoseScreen";
 import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -16,11 +17,12 @@ import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
 import { useTypingMark } from "./typing";
 
-export type Tab = "meal" | "log" | "cycle" | "foods" | "settings";
+export type Tab = "meal" | "log" | "glucose" | "cycle" | "foods" | "settings";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
   { id: "meal", label: "tabMeal", icon: "plate" },
   { id: "log", label: "tabLog", icon: "book" },
+  { id: "glucose", label: "tabGlucose", icon: "curve" },
   { id: "cycle", label: "tabCycle", icon: "drop" },
   { id: "foods", label: "tabFoods", icon: "jar" },
   { id: "settings", label: "tabSettings", icon: "sliders" },
@@ -100,6 +102,7 @@ function Shell({ session }: { session: SessionState }) {
           />
         </div>
         {tab === "log" && <LogScreen estimates={session.estimates} labels={session.labels} onChanged={() => void refreshPending()} />}
+        {tab === "glucose" && <GlucoseScreen />}
         {tab === "cycle" && <CycleScreen />}
         {tab === "foods" && (
           <FoodsScreen
