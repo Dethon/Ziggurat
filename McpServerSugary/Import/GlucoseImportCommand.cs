@@ -19,7 +19,7 @@ namespace McpServerSugary.Import;
 // already references), so the history and statistics reads are the ones the HA mount runs. The
 // long-lived token opens the whole home, so it is read from a file and never taken as an argument —
 // a shell's history and the process list keep those — and no line this prints carries an argument's
-// value but the entity's, the URL's and the token file's path.
+// value but the entity's and the URL's.
 public static class GlucoseImportCommand
 {
     public const string Verb = "import-glucose";
@@ -113,6 +113,7 @@ public static class GlucoseImportCommand
             : null;
     }
 
+    // The path is never said back: a token pasted where its file belonged would be printed.
     private static string ReadToken(string path)
     {
         string token;
@@ -122,9 +123,9 @@ public static class GlucoseImportCommand
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            throw new ImportException($"the token file {path} cannot be read ({ex.GetType().Name}).");
+            throw new ImportException($"the token file cannot be read ({ex.GetType().Name}).");
         }
 
-        return token.Length > 0 ? token : throw new ImportException($"the token file {path} is empty.");
+        return token.Length > 0 ? token : throw new ImportException("the token file is empty.");
     }
 }

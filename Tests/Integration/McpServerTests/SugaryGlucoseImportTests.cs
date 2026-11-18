@@ -66,11 +66,13 @@ public sealed class SugaryGlucoseImportTests : IAsyncLifetime
         "--tenant", person.TenantId, "--user", person.UserId, .. extra
     ];
 
-    private async Task<(int Exit, string Output)> ImportAsync(params string[] arguments)
+    private Task<(int Exit, string Output)> ImportAsync(params string[] arguments) => ImportAtAsync(_now, arguments);
+
+    private async Task<(int Exit, string Output)> ImportAtAsync(DateTimeOffset now, params string[] arguments)
     {
         await using var output = new StringWriter();
         var exit = await SugaryCommand.RunAsync(
-            arguments, _server.Settings, output, CancellationToken.None, new FakeTimeProvider(_now));
+            arguments, _server.Settings, output, CancellationToken.None, new FakeTimeProvider(now));
         return (exit, output.ToString());
     }
 
@@ -121,6 +123,26 @@ public sealed class SugaryGlucoseImportTests : IAsyncLifetime
         secondOutput.ShouldContain("imported 0 readings and 0 hourly means");
         secondOutput.ShouldContain("skipped 4");
         (await ReadingsAsync(SugaryServer.Her)).Count.ShouldBe(4);
+    }
+
+    // A rerun is days later, so the span and every window's start have moved: still nothing new, and the
+    // shifted windows' opening states (the value a window starts in) are no readings either.
+    [Fact]
+    public async Task ARerunDaysLater_ImportsNothingNew()
+    {
+        Recorded((_now - TimeSpan.FromDays(40), "90"), (_now - TimeSpan.FromDays(24), "150"),
+            (_now - TimeSpan.FromDays(13), "120"), (Ago(1), "130"));
+        Compiled((_now - TimeSpan.FromDays(28), 140), (_now - TimeSpan.FromDays(26), 141));
+        await ImportHersAsync("--days", "30");
+        var first = await ReadingsAsync(SugaryServer.Her);
+
+        var (exit, output) = await ImportAtAsync(_now + TimeSpan.FromDays(3) + TimeSpan.FromMinutes(17), Arguments(SugaryServer.Her, "--days", "30"));
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("imported 0 readings and 0 hourly means");
+        (await ReadingsAsync(SugaryServer.Her)).Select(r => (r.At, r.MgPerDl, r.Source))
+            .ShouldBe(first.Select(r => (r.At, r.MgPerDl, r.Source)));
+        first.Count.ShouldBe(5);
     }
 
     // Home Assistant's recorder keeps a sensor's outage as states of their own; none is a reading.
@@ -289,6 +311,22 @@ public sealed class SugaryGlucoseImportTests : IAsyncLifetime
         exit.ShouldBe(2);
         output.ShouldContain("--token-file");
         output.ShouldNotContain("s3cr3t-value");
+        (await ReadingsAsync(SugaryServer.Her)).ShouldBeEmpty();
+    }
+
+    // A token pasted where its file's path belongs is no file, and is not said back either.
+    [Fact]
+    public async Task ATokenFileThatCannotBeRead_IsNotNamed()
+    {
+        Recorded((Ago(1), "100"));
+        var arguments = Arguments(SugaryServer.Her);
+        arguments[Array.IndexOf(arguments, TokenFile)] = "eyJhbGciOiJIUzI1NiJ9.pasted-token";
+
+        var (exit, output) = await ImportAsync(arguments);
+
+        exit.ShouldBe(1);
+        output.ShouldContain("token file cannot be read");
+        output.ShouldNotContain("pasted-token");
         (await ReadingsAsync(SugaryServer.Her)).ShouldBeEmpty();
     }
 
