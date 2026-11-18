@@ -37,7 +37,7 @@ Decisions and deviations:
 - **Imported readings never reach the watch engine, structurally:** the command builds a container with `AddSugaryStore` alone (no poller, no `IGlucosePollObserver`). For ticket 11: if the engine ever reads readings from the table on a clock pass (rather than what a poll hands it), it must leave out `import`/`import-hourly` rows, which can be minutes old when HA's history reaches now.
 - **Not guarded:** the tenant/user ids are not checked against the accounts service (the command has no call token); a typo writes rows nobody sees. Look the ids up first (below). A poll writing for her during the import cannot make a duplicate key unless LibreLinkUp's and HA's instants coincide to the tick.
 
-Prod (ai370), run once (checked read-only on 2026-11-18: the kit's `.env` has `LAN_BIND_ADDRESS=192.168.5.45`, so HA's 8123 is published on the LAN and `mcp-sugary` opened a TCP connection to `192.168.5.45:8123`; the database is `volumes/sugary/sugary.db` (`DatabasePath` `/data/sugary.db`); `PUID`/`PGID` are 1000, the ssh user's uid; the host has no `sqlite3`):
+Prod (the deployment host), run once (checked read-only on 2026-11-18: the kit's `.env` has `LAN_BIND_ADDRESS=<LAN address>`, so HA's 8123 is published on the LAN and `mcp-sugary` opened a TCP connection to `<LAN address>:8123`; the database is `volumes/sugary/sugary.db` (`DatabasePath` `/data/sugary.db`); `PUID`/`PGID` are 1000, the ssh user's uid; the host has no `sqlite3`):
 
 ```sh
 cd ~/ziggurat/docker-compose
@@ -47,13 +47,13 @@ install -m 600 /dev/stdin volumes/sugary/ha-token     # paste the token, Enter, 
 # her user id (32 hex): her account on the household's members page (or the dashboard's operator view)
 # the glucose entity: HA's Developer tools -> States, the LibreLink glucose sensor (unit mg/dL)
 docker exec mcp-sugary dotnet McpServerSugary.dll import-glucose \
-  --ha http://192.168.5.45:8123 --token-file /data/ha-token \
+  --ha http://<LAN address>:8123 --token-file /data/ha-token \
   --entity sensor.<her glucose sensor> \
-  --tenant 3b538b13ba740cf45cb7f712bf66339d --user <her user id>
+  --tenant <home household id> --user <her user id>
 rm volumes/sugary/ha-token
 ```
 
-The home household is `3b538b13ba740cf45cb7f712bf66339d`. Run it once the image with this commit is deployed; a rerun is harmless.
+The home household's id is on the dashboard's operator view (or printed as `household <id>` by `mint-link`). Run it once the image with this commit is deployed; a rerun is harmless.
 
 Follow-ups:
 
