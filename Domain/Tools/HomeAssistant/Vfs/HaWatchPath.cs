@@ -1,3 +1,5 @@
+using Domain.Tools.Watches;
+
 namespace Domain.Tools.HomeAssistant.Vfs;
 
 public enum HaWatchKind
@@ -11,8 +13,8 @@ public sealed record HaWatchNode(HaWatchKind Kind, string? WatchId = null);
 // `status.json` beside it.
 public static class HaWatchPath
 {
-    public const string WatchFileName = "watch.json";
-    public const string StatusFileName = "status.json";
+    public const string WatchFileName = Watchers.WatchFileName;
+    public const string StatusFileName = Watchers.StatusFileName;
 
     public static HaWatchNode Parse(string relativePath)
     {

@@ -244,18 +244,28 @@ public class McpSugaryServerTests
         rows.Select(row => row![0]!.GetValue<string>()).ShouldBe(["craving chocolate"]);
     }
 
-    // The only way to change her log is through Sugary itself, so the mount offers nothing that
-    // writes, moves or deletes; it is read as Parquet and asked with query.
+    // The only way to change her log is through Sugary itself, so the log's mount offers nothing that
+    // writes, moves or deletes; it is read as Parquet and asked with query. The server's writing tools are
+    // its glucose watches', at /watchers.
     [Fact]
     public async Task TheMount_OffersReadingAndNothingThatWrites()
     {
         await using var server = await SugaryServer.StartAsync();
 
+        var log = await server.Client.ReadResourceAsync("filesystem://sugary");
+        var watches = await server.Client.ReadResourceAsync("filesystem://sugary-watches");
         var tools = await server.Client.ListToolsAsync();
 
+        Operations(log).ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
+        Operations(watches).ShouldBe(
+            ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"], ignoreOrder: true);
         tools.Select(tool => tool.Name).Where(name => name.StartsWith("fs_", StringComparison.Ordinal))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
+            .ShouldBe(Operations(log).Union(Operations(watches)), ignoreOrder: true);
     }
+
+    private static IReadOnlyList<string> Operations(ReadResourceResult resource) =>
+        System.Text.Json.Nodes.JsonNode.Parse(string.Join("", resource.Contents.OfType<TextResourceContents>().Select(c => c.Text)))!
+            ["operations"]!.AsArray().Select(o => o!.GetValue<string>()).ToList();
 
     // The server holds the row cap to its bounds itself, whoever is calling.
     [Fact]

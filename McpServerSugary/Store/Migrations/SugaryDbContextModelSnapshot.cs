@@ -15,7 +15,7 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261118011051_GlucoseReadings";
+    public override string LastMigrationId => "20261118020726_GlucoseWatches";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -296,6 +296,94 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("GlucoseSensors");
             });
 
+        modelBuilder.Entity("McpServerSugary.Store.GlucoseWatch", b =>
+            {
+                b.Property<string>("TenantId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Id")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("AgentId")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Delegation")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DeliverTo")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("LastFiredAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Once")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Spec")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Spent")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("SubjectUserId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("UserId")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("WriterUserId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("TenantId", "Id");
+
+                b.HasIndex("TenantId");
+
+                b.HasIndex("TenantId", "SubjectUserId");
+
+                b.ToTable("GlucoseWatches");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.GlucoseWatchState", b =>
+            {
+                b.Property<string>("TenantId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("WatchId")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("TriggerIndex")
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("FiredThisEpisode")
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("Holding")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateTime?>("HoldingSince")
+                    .HasColumnType("TEXT");
+
+                b.HasKey("TenantId", "WatchId", "TriggerIndex");
+
+                b.HasIndex("TenantId");
+
+                b.ToTable("GlucoseWatchStates");
+            });
+
         modelBuilder.Entity("McpServerSugary.Store.Meal", b =>
             {
                 b.Property<Guid>("Id")
@@ -524,6 +612,15 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                     });
 
                 b.Navigation("Connections");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.GlucoseWatchState", b =>
+            {
+                b.HasOne("McpServerSugary.Store.GlucoseWatch", null)
+                    .WithMany()
+                    .HasForeignKey("TenantId", "WatchId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
             });
 
         modelBuilder.Entity("McpServerSugary.Store.Meal", b =>

@@ -8,6 +8,7 @@ using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Watches;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
@@ -28,7 +29,6 @@ public sealed class HaWatchFileSystem(
     ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
     public const string Name = "ha-watches";
-    public const string MountPointPath = "/watchers";
 
     // Shared with the home mount's setup index when the server hands one in, so both read the home's
     // watches through one instance; a test that builds the mount alone gets its own.
@@ -56,11 +56,11 @@ public sealed class HaWatchFileSystem(
 
     public override string FilesystemName => Name;
 
-    public override string MountPoint => MountPointPath;
+    public override string MountPoint => Watchers.MountPoint;
 
     // Every trigger Home Assistant knows is this member's: it claims no value and takes whatever no
     // other member claims.
-    public override FileSystemUnion? Union => new("/triggers/*/trigger", [], Fallback: true);
+    public override FileSystemUnion? Union => new(Watchers.RouteBy, [], Fallback: true);
 
     public override string DescribeMount =>
         "The home's watches: standing instructions the home runs when an entity meets a condition, "

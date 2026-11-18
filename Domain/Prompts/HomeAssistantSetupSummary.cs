@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools.HomeAssistant.Vfs;
+using Domain.Tools.Watches;
 
 namespace Domain.Prompts;
 
@@ -114,7 +115,7 @@ public class HomeAssistantSetupSummary(
             var listing = existing.Count == 0
                 ? "none yet"
                 : string.Join(", ", existing.Select(w => w.Spent ? $"`{w.Id}` (spent)" : w.Enabled ? $"`{w.Id}`" : $"`{w.Id}` (paused)"));
-            return $"watches: `{HaWatchFileSystem.MountPointPath}/<id>/watch.json` — {existing.Count} defined ({listing}); load the `home-watches` skill to write or change one.";
+            return $"watches: `{Watchers.MountPoint}/<id>/watch.json` — {existing.Count} defined ({listing}); load the `home-watches` skill to write or change one.";
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

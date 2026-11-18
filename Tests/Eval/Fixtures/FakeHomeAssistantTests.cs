@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
+using Domain.Tools.Watches;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.MusicAssistant;
 using McpServerHomeAssistant.Modules;
@@ -485,7 +486,7 @@ public class FakeHomeAssistantTests
     // router's, and it is stripped before the backend ever sees it.
     private static string Relative(string path) => path["/ha/".Length..];
 
-    private static string RelativeToWatchers(string path) => path[(HaWatchFileSystem.MountPointPath.Length + 1)..];
+    private static string RelativeToWatchers(string path) => path[(Watchers.MountPoint.Length + 1)..];
 
     private static IReadOnlyList<string> Paths(FsResult<FsGlobResult> result) =>
         result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;

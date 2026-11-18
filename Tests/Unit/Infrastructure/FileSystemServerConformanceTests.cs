@@ -12,6 +12,7 @@ using Domain.Tools.Printing;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Vfs;
+using Domain.Tools.Sugary.Watches;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
@@ -44,7 +45,8 @@ public class FileSystemServerConformanceTests
         { "vault", "vault", typeof(TextDiskFileSystem) },
         { "sandbox", "sandbox", typeof(SandboxFileSystem) },
         { "outpost", "outpost", typeof(OutpostFileSystem) },
-        { "sugary", "sugary", typeof(SugaryFileSystem) }
+        { "sugary", "sugary", typeof(SugaryFileSystem) },
+        { "sugary-watches", "sugary", typeof(SugaryWatchFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -102,7 +104,10 @@ public class FileSystemServerConformanceTests
             ],
             // Her log, rendered from the database on every read. Nothing that writes: the only way to
             // change it is through Sugary itself.
-            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"]
+            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"],
+            // Glucose watches, at /watchers beside the home's: the home watches' surface, kept in
+            // Sugary's store.
+            ["sugary-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent
@@ -122,7 +127,8 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = "home/sandbox_user",
             // The working directory it was started with: where files land and commands run.
             ["outpost"] = "home/someone/project",
-            ["sugary"] = null
+            ["sugary"] = null,
+            ["sugary-watches"] = null
         };
 
     // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
@@ -143,7 +149,8 @@ public class FileSystemServerConformanceTests
             // Never, exec or not. A person's attachments belong in the deployment's own container,
             // not on whichever of their machines happens to be switched on.
             ["outpost"] = false,
-            ["sugary"] = false
+            ["sugary"] = false,
+            ["sugary-watches"] = false
         };
 
     // How far each mount's shell reaches, which is what the exec screen asks before a command runs
@@ -163,7 +170,8 @@ public class FileSystemServerConformanceTests
             ["vault"] = null,
             ["sandbox"] = ShellReach.Contained,
             ["outpost"] = null,
-            ["sugary"] = null
+            ["sugary"] = null,
+            ["sugary-watches"] = null
         };
 
     // Where each mount is published, where that is not `/<name>`: an outpost is a separate machine
@@ -171,16 +179,18 @@ public class FileSystemServerConformanceTests
     private static string ExpectedMountPoint(string name, FileSystemBackendBase backend) => backend switch
     {
         OutpostFileSystem => $"outpost:{name}",
-        HaWatchFileSystem => "/watchers",
+        HaWatchFileSystem or SugaryWatchFileSystem => "/watchers",
         _ => $"/{name}"
     };
 
     // Which mounts share their mount point, and how a new entry finds its member. Written out, as
-    // the rest are. The home's watches take every watch whose triggers nobody else claims.
+    // the rest are. The home's watches take every watch whose triggers nobody else claims; Sugary's
+    // take the glucose kinds.
     private static readonly IReadOnlyDictionary<string, FileSystemUnion?> _unions =
         new Dictionary<string, FileSystemUnion?>(StringComparer.Ordinal)
         {
-            ["ha-watches"] = new("/triggers/*/trigger", [], Fallback: true)
+            ["ha-watches"] = new("/triggers/*/trigger", [], Fallback: true),
+            ["sugary-watches"] = new("/triggers/*/trigger", ["glucose", "glucose_trend", "glucose_forecast", "sensor"])
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -291,7 +301,9 @@ public class FileSystemServerConformanceTests
                 "/sandbox/home/sandbox_user"),
             ["outpost"] = new OutpostFileSystem(
                 "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
-            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>())
+            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>()),
+            ["sugary-watches"] = new SugaryWatchFileSystem(
+                Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System)
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server

@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Security.Sealing;
 using Domain.Tools.Sugary.Vfs;
+using Domain.Tools.Sugary.Watches;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Voice;
@@ -36,6 +37,11 @@ public static class ConfigModule
             .AddSingleton<ITableEngine, DuckDbTableEngine>()
             .AddSingleton(sp => new SugaryFileSystem(
                 sp.GetRequiredService<ISugaryLog>(), homeZone, sp.GetRequiredService<ITableEngine>()))
+            // Her glucose watches, at /watchers beside the home's, kept for the household.
+            .AddSingleton<IGlucoseWatches, SqliteGlucoseWatches>()
+            .AddSingleton(sp => new SugaryWatchFileSystem(
+                sp.GetRequiredService<IGlucoseWatches>(), sp.GetRequiredService<IHouseholdVoices>(), homeZone,
+                sp.GetRequiredService<TimeProvider>()))
             .AddSingleton(sp => new HomeCalendar(sp.GetRequiredService<TimeProvider>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
             // Her glucose, from the LibreLinkUp follower account she links: one client, keeping each
@@ -108,6 +114,9 @@ public static class ConfigModule
             .AddChannelAlerts()
             .AddFileSystemTools<SugaryFileSystem>()
             .AddFileSystemResource<SugaryFileSystem>()
+            // After the log, so a call naming no filesystem still reaches the log.
+            .AddFileSystemTools<SugaryWatchFileSystem>()
+            .AddFileSystemResource<SugaryWatchFileSystem>()
             .AddSkills(SugarySkill.Text)
             .WithPrompts<McpSystemPrompt>();
 

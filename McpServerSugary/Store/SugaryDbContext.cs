@@ -45,6 +45,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<GlucoseLink> GlucoseLinks => Set<GlucoseLink>();
     public DbSet<GlucoseReading> GlucoseReadings => Set<GlucoseReading>();
     public DbSet<GlucoseSensor> GlucoseSensors => Set<GlucoseSensor>();
+    public DbSet<GlucoseWatch> GlucoseWatches => Set<GlucoseWatch>();
+    public DbSet<GlucoseWatchState> GlucoseWatchStates => Set<GlucoseWatchState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -167,6 +169,29 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
             value => value.UtcDateTime,
             stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
 
+        // A watch is the household's, its id unique there; the engine reads each polled person's by
+        // subject. What it judged of a trigger goes with the watch.
+        var watch = modelBuilder.Entity<GlucoseWatch>();
+        watch.HasKey(w => new { w.TenantId, w.Id });
+        watch.HasIndex(w => new { w.TenantId, w.SubjectUserId });
+        watch.Property(w => w.SubjectUserId).HasMaxLength(OwnerIdLength);
+        watch.Property(w => w.WriterUserId).HasMaxLength(OwnerIdLength);
+        watch.Property(w => w.CreatedAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        watch.Property(w => w.LastFiredAt).HasConversion(
+            value => value.HasValue ? value.Value.UtcDateTime : (DateTime?)null,
+            stored => stored.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(stored.Value, DateTimeKind.Utc)) : null);
+
+        var watchState = modelBuilder.Entity<GlucoseWatchState>();
+        watchState.HasKey(s => new { s.TenantId, s.WatchId, s.TriggerIndex });
+        watchState.HasOne<GlucoseWatch>().WithMany()
+            .HasForeignKey(s => new { s.TenantId, s.WatchId })
+            .OnDelete(DeleteBehavior.Cascade);
+        watchState.Property(s => s.HoldingSince).HasConversion(
+            value => value.HasValue ? value.Value.UtcDateTime : (DateTime?)null,
+            stored => stored.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(stored.Value, DateTimeKind.Utc)) : null);
+
         Personal(meal);
         Personal(dose);
         Personal(pen);
@@ -179,6 +204,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(sensor);
         Household(food);
         Household(recipe);
+        Household(watch);
+        Household(watchState);
     }
 
     private void Personal<T>(EntityTypeBuilder<T> entity) where T : class, IPersonal

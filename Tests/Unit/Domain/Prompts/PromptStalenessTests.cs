@@ -8,6 +8,7 @@ using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Vfs;
 using Domain.Tools.Timers.Vfs;
+using Domain.Tools.Watches;
 using Infrastructure.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
@@ -34,7 +35,7 @@ public class PromptStalenessTests
         PrinterQueueFileSystem.Name,
         MediaLibraryDiskFileSystem.Name,
         SugaryFileSystem.Name,
-        HaWatchFileSystem.MountPointPath[1..],
+        Watchers.MountPoint[1..],
         "vault",
         "sandbox"
     ];
