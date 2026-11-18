@@ -201,32 +201,60 @@ public sealed class GlucoseWatchEngine(
             Unit = unit
         };
         var spent = false;
+        var unheard = new HashSet<int>();
+        // A loop, not a query: each fire's effects are awaited in turn, and a one-shot stops at the first
+        // that reached somebody, however many of its triggers fired together.
         foreach (var fire in judgement.Fired)
         {
-            // A one-shot does what it does once, however many of its triggers fired together.
             if (spent)
             {
                 break;
             }
 
             var outcome = await EffectsOfAsync(fired, fire, ct);
+            if (!outcome.AnyDelivered)
+            {
+                unheard.Add(fire.TriggerIndex);
+            }
+
             spent = watch.Once && outcome.AnyDelivered;
         }
 
-        await SaveAsync(watch, rows.Count, judgement, spent, facts.Now, ct);
+        await SaveAsync(watch, rows.Count, Unfired(judgement, unheard), spent, facts.Now, ct);
     }
 
-    // The episode counts as fired whatever its effects did, or a failing effect would be retried every
-    // minute; only a `once` watch waits for one that reached somebody.
+    // A fire that reached nobody — the agent away while it reconnects, every effect failing — leaves its
+    // episode unfired, so the next judgement that still finds the condition holding tries again (a reading
+    // trigger at the next poll, a sensor trigger at the next poll or clock pass: an attempt a judgement,
+    // never a tighter loop), and one that finds it left says nothing late. A low crossed during a deploy
+    // was lost for as long as she stayed low when the episode counted as fired whatever was delivered.
+    private static GlucoseJudgement Unfired(GlucoseJudgement judgement, IReadOnlySet<int> unheard) =>
+        unheard.Count == 0
+            ? judgement
+            : judgement with
+            {
+                States = [.. judgement.States.Select(s => unheard.Contains(s.TriggerIndex) ? s with { FiredThisEpisode = false } : s)],
+                Fired = [.. judgement.Fired.Where(f => !unheard.Contains(f.TriggerIndex))]
+            };
+
     private async Task<GlucoseEffectsOutcome> EffectsOfAsync(FiredGlucoseWatch watch, GlucoseTriggerFire fire, CancellationToken ct)
     {
         try
         {
-            return await effects.FireAsync(watch, fire, ct);
+            var outcome = await effects.FireAsync(watch, fire, ct);
+            if (!outcome.AnyDelivered)
+            {
+                logger.LogWarning(
+                    "Glucose watch {WatchId} of household {HouseholdId} fired on trigger {TriggerIndex} and reached nobody; tried again at its next judgement while it holds",
+                    watch.Watch.Id, watch.Subject.TenantId, fire.TriggerIndex);
+            }
+
+            return outcome;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "The effects of glucose watch {WatchId} of household {HouseholdId} failed on trigger {TriggerIndex}",
+            logger.LogError(ex,
+                "The effects of glucose watch {WatchId} of household {HouseholdId} failed on trigger {TriggerIndex}; tried again at its next judgement while it holds",
                 watch.Watch.Id, watch.Subject.TenantId, fire.TriggerIndex);
             return GlucoseEffectsOutcome.None;
         }

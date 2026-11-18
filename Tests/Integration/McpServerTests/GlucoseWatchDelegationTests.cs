@@ -163,7 +163,7 @@ public class GlucoseWatchDelegationTests
         await PollAsync(server, engine, start + TimeSpan.FromMinutes(1), 60);
         var armed = await StoredAsync(server, "once");
         (armed.Spent, armed.Enabled).ShouldBe((false, true));
-        armed.LastFiredAt.ShouldNotBeNull();
+        armed.LastFiredAt.ShouldBeNull();
 
         var agent = await server.AgentAsync();
         await PollAsync(server, engine, start + TimeSpan.FromMinutes(2), 100);

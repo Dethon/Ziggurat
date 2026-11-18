@@ -392,21 +392,110 @@ public class SugaryGlucoseWatchEngineTests
         harness.Clock.Advance(TimeSpan.FromMinutes(1));
         await harness.PollAsync(60);
         var row = (await harness.RowAsync("once")).ShouldNotBeNull();
-        (row.Spent, row.Enabled, row.LastFiredAt).ShouldBe((false, true, harness.Now));
+        (row.Spent, row.Enabled, row.LastFiredAt).ShouldBe((false, true, (DateTimeOffset?)null));
 
+        harness.Effects.Delivered = 1;
         harness.Clock.Advance(TimeSpan.FromMinutes(1));
         await harness.PollAsync(59);
-        harness.Effects.Fires.Count.ShouldBe(1, "the episode is fired, delivered or not");
-
-        harness.Clock.Advance(TimeSpan.FromMinutes(1));
-        await harness.PollAsync(100);
-        harness.Clock.Advance(TimeSpan.FromMinutes(1));
-        await harness.PollAsync(60);
-        harness.Effects.Fires.Count.ShouldBe(2);
+        harness.Effects.Fires.Count.ShouldBe(2, "a fire that reached nobody is tried again while she is still low");
+        row = (await harness.RowAsync("once")).ShouldNotBeNull();
+        (row.Spent, row.Enabled, row.LastFiredAt).ShouldBe((true, false, harness.Now));
     }
 
+    // The agent away at the crossing (a deploy reconnecting it): the prompt reached nobody, so the
+    // episode is not fired, and the next poll that still finds her low fires it. One attempt a poll.
     [Fact]
-    public async Task FailingEffects_AreContained_AndTheEpisodeIsFired()
+    public async Task AFireThatReachedNobody_IsTriedAgainAtTheNextPoll_WhileTheConditionHolds()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+
+        harness.Effects.Delivered = 0;
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(65);
+        var crossedAt = harness.Now;
+        harness.Effects.Fires.Count.ShouldBe(1);
+        (await harness.StatesAsync("low")).ShouldBe([new GlucoseTriggerCondition(0, true, crossedAt, false)]);
+        (await harness.RowAsync("low"))!.LastFiredAt.ShouldBeNull("nothing reached anybody");
+
+        // The clock's pass judges no reading trigger, so it tries nothing: the next attempt is the next poll.
+        await harness.Engine.TickAsync(CancellationToken.None);
+        harness.Effects.Fires.Count.ShouldBe(1);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(63);
+        harness.Effects.Fires.Count.ShouldBe(2, "still unheard, tried once more on this poll");
+
+        harness.Effects.Delivered = 1;
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(62);
+        var deliveredAt = harness.Now;
+        harness.Effects.Fires.Count.ShouldBe(3);
+        harness.Effects.Fires[^1].Report.Since.ShouldBe(crossedAt, "the episode is the one that began at the crossing");
+        (await harness.StatesAsync("low")).ShouldBe([new GlucoseTriggerCondition(0, true, crossedAt, true)]);
+        (await harness.RowAsync("low"))!.LastFiredAt.ShouldBe(deliveredAt);
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(61);
+        harness.Effects.Fires.Count.ShouldBe(3, "delivered, the episode is fired");
+    }
+
+    // A crossing nobody heard whose low ended before the next poll is not told late.
+    [Fact]
+    public async Task AFireThatReachedNobody_WhoseConditionLeftBeforeTheRetry_IsNotFiredLate()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
+        await harness.PollAsync(100);
+
+        harness.Effects.Delivered = 0;
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(65);
+        harness.Effects.Delivered = 1;
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(90);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.PollAsync(95);
+
+        harness.Effects.Fires.Count.ShouldBe(1);
+        (await harness.StatesAsync("low")).ShouldBe([new GlucoseTriggerCondition(0, false, null, false)]);
+        (await harness.RowAsync("low"))!.LastFiredAt.ShouldBeNull();
+    }
+
+    // A sensor trigger is judged on the clock too, so its fire nobody heard is tried again on the next pass.
+    [Fact]
+    public async Task ASensorFireThatReachedNobody_IsTriedAgainOnTheNextClockPass()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("failing", """{"trigger":"sensor","state":"link_failing","for":{"minutes":5}}""");
+        await using (var db = harness.Factory())
+        {
+            db.GlucoseLinks.Add(new GlucoseLink
+            {
+                UserId = SugaryServer.Her.UserId, TenantId = SugaryServer.Her.TenantId, PatientId = "p", LinkedAt = _start - TimeSpan.FromDays(1),
+                LastSuccessAt = _start - TimeSpan.FromMinutes(1), LastFailure = GlucoseLinkFailure.Unreachable, FailingSince = _start
+            });
+            await db.SaveChangesAsync();
+        }
+
+        await harness.Engine.TickAsync(CancellationToken.None);
+        harness.Effects.Delivered = 0;
+        harness.Clock.Advance(TimeSpan.FromMinutes(5));
+        await harness.Engine.TickAsync(CancellationToken.None);
+        harness.Effects.Delivered = 1;
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.Engine.TickAsync(CancellationToken.None);
+        harness.Clock.Advance(TimeSpan.FromMinutes(1));
+        await harness.Engine.TickAsync(CancellationToken.None);
+
+        harness.Effects.Fires.Count.ShouldBe(2);
+        harness.Effects.Fires.ShouldAllBe(f => f.Report.Since == _start);
+    }
+
+    // A throwing effect delivered nothing: contained, the other watches still fire, and it is tried again.
+    [Fact]
+    public async Task FailingEffects_AreContained_AndTriedAgainAtTheNextPoll()
     {
         await using var harness = await StartAsync();
         harness.Effects.ThrowsFor = "a";
@@ -419,8 +508,9 @@ public class SugaryGlucoseWatchEngineTests
         harness.Clock.Advance(TimeSpan.FromMinutes(1));
         await harness.PollAsync(60);
 
-        harness.Effects.FiredIds.ShouldBe(["a", "b"]);
-        (await harness.StatesAsync("a")).ShouldHaveSingleItem().FiredThisEpisode.ShouldBeTrue();
+        harness.Effects.FiredIds.ShouldBe(["a", "b", "a"]);
+        (await harness.StatesAsync("a")).ShouldHaveSingleItem().FiredThisEpisode.ShouldBeFalse();
+        (await harness.StatesAsync("b")).ShouldHaveSingleItem().FiredThisEpisode.ShouldBeTrue();
     }
 
     // A watch rewritten or removed while its fire was out is not given what was judged of the old one.
