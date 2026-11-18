@@ -116,6 +116,31 @@ public sealed class VfsCall
         };
     }
 
+    // Every step's attr is asked at once, and the listing beside them: on prod each would have been
+    // a round trip out through the home's tunnel, asked one after another by the kernel. Each step
+    // passes the gate its attr would; the walk stops at the first that is not there or not allowed,
+    // and lists only a directory it reached.
+    public async Task<BridgeAnswer<BridgeWalk>> WalkAsync(string path, CancellationToken ct)
+    {
+        var names = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var steps = names.Select((_, i) => "/" + string.Join('/', names.Take(i + 1))).ToList();
+        var attrs = steps.Select(step => AttrAsync(step, ct)).ToList();
+        var listing = steps.Count > 0 ? ListAsync(steps[^1], ct) : null;
+        await Task.WhenAll(attrs);
+
+        var listed = listing is null ? null : await listing;
+
+        var reached = steps.Zip(attrs, (step, attr) => (step, answer: attr.Result))
+            .TakeWhile(s => s.answer is BridgeAnswer<BridgeAttr>.Ok)
+            .Select(s => new BridgeWalkStep(s.step, ((BridgeAnswer<BridgeAttr>.Ok)s.answer).Value))
+            .ToList();
+        var listedDirectory = reached.Count == steps.Count && reached is [.., { Attr.Kind: BridgeKinds.Directory }]
+            ? (listed as BridgeAnswer<BridgeListing>.Ok)?.Value
+            : null;
+
+        return new BridgeAnswer<BridgeWalk>.Ok(new BridgeWalk(reached, listedDirectory));
+    }
+
     public async Task<BridgeAnswer<BridgeListing>> ListAsync(string path, CancellationToken ct)
     {
         if (IsRoot(path))

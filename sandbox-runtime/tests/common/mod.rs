@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Condvar, Mutex};
 
-use sandbox_runtime::vfs::bridge::{ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing};
+use sandbox_runtime::vfs::bridge::{ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing, Walk};
 
 #[derive(Clone)]
 pub enum FakeNode {
@@ -137,30 +137,32 @@ impl Bridge for FakeBridge {
         }
     }
 
-    fn list(&self, path: &str) -> Result<Listing, Errno> {
-        self.record(format!("list {path}"));
-        let prefix = if path == "/" { "/".to_string() } else { format!("{path}/") };
-        let nodes = self.nodes.lock().unwrap();
-        let entries: Vec<Entry> = nodes
-            .iter()
-            .filter(|(p, _)| p.starts_with(&prefix) && p.len() > prefix.len() && !p[prefix.len()..].contains('/'))
-            .map(|(p, node)| Entry {
-                name: p[prefix.len()..].to_string(),
-                kind: match node {
-                    FakeNode::Dir => Kind::Dir,
-                    FakeNode::Action => Kind::Action,
-                    FakeNode::File(..) => Kind::File,
-                },
-            })
-            .collect();
-        match *self.listing_cap.lock().unwrap() {
-            Some(cap) if entries.len() > cap => {
-                Ok(Listing { entries: entries.into_iter().take(cap).collect(), truncated: true })
-            }
-            _ => Ok(Listing { entries, truncated: false }),
+    // The agent's walk: each step's attr until one is not there, then the listing where the last
+    // step is a directory. Recorded as one request, which is what it is on the wire.
+    fn walk(&self, path: &str) -> Result<Walk, Errno> {
+        self.record(format!("walk {path}"));
+        let mut walk = Walk::default();
+        let mut at = String::new();
+        for name in path.split('/').filter(|n| !n.is_empty()) {
+            at = format!("{at}/{name}");
+            let attr = match self.nodes.lock().unwrap().get(&at) {
+                Some(FakeNode::Dir) => Attr { kind: Kind::Dir, size: None },
+                Some(FakeNode::Action) => Attr { kind: Kind::Action, size: None },
+                Some(FakeNode::File(content, sized)) => Attr { kind: Kind::File, size: sized.then_some(content.len() as u64) },
+                None => return Ok(walk),
+            };
+            walk.steps.push((at.clone(), attr));
         }
+        if walk.steps.last().is_some_and(|(_, attr)| attr.kind == Kind::Dir) {
+            walk.listing = Some(self.listing_of(path));
+        }
+        Ok(walk)
     }
 
+    fn list(&self, path: &str) -> Result<Listing, Errno> {
+        self.record(format!("list {path}"));
+        Ok(self.listing_of(path))
+    }
     fn write(&self, path: &str, content: &[u8], new: bool) -> Result<(), Errno> {
         self.wait_while_held();
         self.record(format!(
@@ -247,6 +249,31 @@ impl Bridge for FakeBridge {
             Some(FakeNode::File(content, _)) => Ok(content.clone()),
             Some(_) => Err(libc::EISDIR),
             None => Err(libc::ENOENT),
+        }
+    }
+}
+
+impl FakeBridge {
+    fn listing_of(&self, path: &str) -> Listing {
+        let prefix = if path == "/" { "/".to_string() } else { format!("{path}/") };
+        let nodes = self.nodes.lock().unwrap();
+        let entries: Vec<Entry> = nodes
+            .iter()
+            .filter(|(p, _)| p.starts_with(&prefix) && p.len() > prefix.len() && !p[prefix.len()..].contains('/'))
+            .map(|(p, node)| Entry {
+                name: p[prefix.len()..].to_string(),
+                kind: match node {
+                    FakeNode::Dir => Kind::Dir,
+                    FakeNode::Action => Kind::Action,
+                    FakeNode::File(..) => Kind::File,
+                },
+            })
+            .collect();
+        match *self.listing_cap.lock().unwrap() {
+            Some(cap) if entries.len() > cap => {
+                Listing { entries: entries.into_iter().take(cap).collect(), truncated: true }
+            }
+            _ => Listing { entries, truncated: false },
         }
     }
 }

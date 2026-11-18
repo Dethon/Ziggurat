@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::bridge::{errno_named, ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing, MAX_FILE};
+use super::bridge::{errno_named, ActionOutput, Attr, Bridge, Entry, Errno, Kind, Listing, Walk, MAX_FILE};
 
 pub struct HttpBridge {
     agent: ureq::Agent,
@@ -80,30 +80,21 @@ impl HttpBridge {
 
 impl Bridge for HttpBridge {
     fn attr(&self, path: &str) -> Result<Attr, Errno> {
-        let value = self.post_json("attr", path)?;
-        Ok(Attr {
-            kind: Kind::parse(value["kind"].as_str().unwrap_or("file")),
-            size: value["size"].as_u64(),
-        })
+        Ok(attr(&self.post_json("attr", path)?))
     }
 
     fn list(&self, path: &str) -> Result<Listing, Errno> {
-        let value = self.post_json("list", path)?;
-        let entries = value["entries"]
+        Ok(listing(&self.post_json("list", path)?))
+    }
+
+    fn walk(&self, path: &str) -> Result<Walk, Errno> {
+        let value = self.post_json("walk", path)?;
+        let steps = value["steps"]
             .as_array()
-            .map(|entries| {
-                entries
-                    .iter()
-                    .filter_map(|e| {
-                        Some(Entry {
-                            name: e["name"].as_str()?.to_string(),
-                            kind: Kind::parse(e["kind"].as_str().unwrap_or("file")),
-                        })
-                    })
-                    .collect()
-            })
+            .map(|steps| steps.iter().filter_map(|s| Some((s["path"].as_str()?.to_string(), attr(s)))).collect())
             .unwrap_or_default();
-        Ok(Listing { entries, truncated: value["truncated"].as_bool().unwrap_or(false) })
+        let listing = value["listing"].is_object().then(|| listing(&value["listing"]));
+        Ok(Walk { steps, listing })
     }
 
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno> {
@@ -138,4 +129,26 @@ impl Bridge for HttpBridge {
         self.post("write", &[("path", path), ("new", if new { "true" } else { "false" })], content)
             .map(|_| ())
     }
+}
+
+fn attr(value: &Value) -> Attr {
+    Attr { kind: Kind::parse(value["kind"].as_str().unwrap_or("file")), size: value["size"].as_u64() }
+}
+
+fn listing(value: &Value) -> Listing {
+    let entries = value["entries"]
+        .as_array()
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|e| {
+                    Some(Entry {
+                        name: e["name"].as_str()?.to_string(),
+                        kind: Kind::parse(e["kind"].as_str().unwrap_or("file")),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Listing { entries, truncated: value["truncated"].as_bool().unwrap_or(false) }
 }

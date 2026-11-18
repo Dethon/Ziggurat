@@ -40,7 +40,7 @@ public class VfsBridgeApiTests
         }), "/vault", null)),
         permission ?? BridgeFixtures.Everything, null, null);
 
-    public static TheoryData<string> Operations => ["attr", "list", "read", "write", "delete"];
+    public static TheoryData<string> Operations => ["attr", "list", "walk", "read", "write", "delete"];
 
     [Theory]
     [MemberData(nameof(Operations))]
@@ -111,6 +111,23 @@ public class VfsBridgeApiTests
         body["entries"]!.AsArray().Select(e => (e!["name"]!.GetValue<string>(), e["kind"]!.GetValue<string>()))
             .ShouldBe([("notes", "dir")]);
         body["truncated"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task AWalk_AnswersTheStepsAndTheListing()
+    {
+        var call = Mint();
+        await using var app = await StartAsync();
+        using var client = app.GetTestClient();
+
+        using var response = await client.SendAsync(Request("walk", "/vault/notes", call.Token));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body["steps"]!.AsArray().Select(s => (s!["path"]!.GetValue<string>(), s["kind"]!.GetValue<string>()))
+            .ShouldBe([("/vault", "dir"), ("/vault/notes", "dir")]);
+        body["listing"]!["entries"]!.AsArray().Select(e => (e!["name"]!.GetValue<string>(), e["kind"]!.GetValue<string>()))
+            .ShouldBe([("a.md", "file")]);
     }
 
     [Fact]

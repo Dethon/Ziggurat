@@ -117,7 +117,7 @@ fn execute(
     // The other mounts, served for this call only. A daemon that cannot mount costs the command its
     // view of them, never the command itself: it runs, and its stderr says why /vfs is missing.
     let (served, unserved) = match &request.bridge {
-        Some(grant) => match Served::start(grant, config.puid, config.pgid, config.daemon_uid) {
+        Some(grant) => match Served::start(grant, &request.cwd, config.puid, config.pgid, config.daemon_uid) {
             Ok(served) => (Some(served), None),
             Err(e) => (None, Some(format!("sandbox-launcher: the other mounts are not served to this command: {e}\n"))),
         },

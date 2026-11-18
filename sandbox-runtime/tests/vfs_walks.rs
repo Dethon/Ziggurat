@@ -113,3 +113,46 @@ fn the_served_names_given_at_start_answer_the_root_for_the_whole_call() {
         .collect();
     assert!(asked.is_empty(), "asked {asked:?}");
 }
+
+// The working directory is asked for once, before the command runs: every directory on the way, its
+// listing, and so what an action file there is. Reaching it and running `./turn_on` in it then
+// costs the kernel nothing more — each was a round trip out through the home's tunnel, one after
+// another, before the action itself.
+#[test]
+fn a_working_directory_walked_at_start_costs_nothing_more_to_reach_and_run_an_action_in() {
+    let vfs = Vfs::new(FakeBridge::with(&[
+        ("/ha", FakeNode::Dir),
+        ("/ha/entities", FakeNode::Dir),
+        ("/ha/entities/climate", FakeNode::Dir),
+        ("/ha/entities/climate/office", FakeNode::Dir),
+        ("/ha/entities/climate/office/turn_on", FakeNode::Action),
+        ("/ha/entities/climate/office/state.json", FakeNode::File(b"{}".to_vec(), false)),
+    ]))
+    .with_served(vec!["ha".into()]);
+
+    vfs.prefetch("/ha/entities/climate/office");
+    let office = ["ha", "entities", "climate", "office"].iter().fold(ROOT, |ino, name| {
+        let node = vfs.lookup(ino, name).unwrap();
+        vfs.getattr(node.ino).unwrap();
+        node.ino
+    });
+    let action = vfs.lookup(office, "turn_on").unwrap();
+    vfs.getattr(action.ino).unwrap();
+    assert_eq!(vfs.lookup(office, "missing"), Err(libc::ENOENT));
+
+    assert_eq!(action.kind, Kind::Action);
+    assert_eq!(vfs.bridge().calls(), ["walk /ha/entities/climate/office"]);
+}
+
+// A walk that could not be had changes nothing: the kernel asks step by step, as it always did.
+#[test]
+fn a_walk_into_nothing_leaves_the_kernel_to_ask() {
+    let vfs = Vfs::new(FakeBridge::with(&[("/ha", FakeNode::Dir)])).with_served(vec!["ha".into()]);
+
+    vfs.prefetch("/ha/nope");
+
+    assert_eq!(vfs.lookup(ROOT, "ha").map(|n| n.kind), Ok(Kind::Dir));
+    let ha = vfs.lookup(ROOT, "ha").unwrap().ino;
+    assert_eq!(vfs.lookup(ha, "nope"), Err(libc::ENOENT));
+    assert_eq!(vfs.bridge().calls(), ["walk /ha/nope", "attr /ha/nope"]);
+}

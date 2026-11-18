@@ -31,6 +31,10 @@ pub struct DaemonConfig {
     /// The served mounts as the agent named them; absent, the root is listed through the bridge.
     #[serde(default)]
     pub served: Option<Vec<String>>,
+    /// The command's working directory as a path under the mount, when it is one: asked for in one
+    /// walk before the command starts, so the kernel reaching it costs no round trip per step.
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -77,6 +81,9 @@ pub fn run() -> io::Result<()> {
     // the syscall filter are per thread, and a thread that kept them could exec back to root.
     give_up_root(config.run_as)?;
     // The first word from the bridge is read as nobody too: root parses nothing the agent sends.
+    if let Some(cwd) = &config.cwd {
+        vfs.prefetch(cwd);
+    }
     let served = vfs.served().unwrap_or_default();
     let session = session.spawn()?;
     if let Some(listener) = actions {

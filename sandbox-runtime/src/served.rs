@@ -39,7 +39,7 @@ pub struct Served {
 }
 
 impl Served {
-    pub fn start(grant: &BridgeGrant, uid: u32, gid: u32, daemon_uid: u32) -> io::Result<Served> {
+    pub fn start(grant: &BridgeGrant, cwd: &str, uid: u32, gid: u32, daemon_uid: u32) -> io::Result<Served> {
         unsafe {
             let target = CString::new(MOUNTPOINT).unwrap();
             // The namespace inherited the container's view, which may hold another exec's mount.
@@ -73,6 +73,7 @@ impl Served {
             run_as: daemon_uid,
             action_socket: Some(crate::vfs::actions::SOCKET.into()),
             served: grant.served.clone(),
+            cwd: under_mount(cwd),
         };
         writeln!(stdin, "{}", serde_json::to_string(&config).expect("serializes"))?;
         stdin.flush()?;
@@ -159,5 +160,32 @@ pub fn link(name: &str) -> bool {
                 || std::fs::read_link(&path).is_ok_and(|t| t == Path::new(&target))
         }
         Err(_) => false,
+    }
+}
+
+/// The command's working directory as the daemon names paths — `/ha/entities` for
+/// `/vfs/ha/entities` — or none where it is not under the mount.
+pub fn under_mount(cwd: &str) -> Option<String> {
+    cwd.strip_prefix(MOUNTPOINT)
+        .filter(|rest| rest.starts_with('/') && !rest.trim_matches('/').is_empty())
+        .map(|rest| rest.trim_end_matches('/').to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::under_mount;
+
+    #[test]
+    fn a_working_directory_under_the_mount_is_named_as_the_daemon_names_paths() {
+        assert_eq!(under_mount("/vfs/ha/entities/climate/office"), Some("/ha/entities/climate/office".into()));
+        assert_eq!(under_mount("/vfs/ha/"), Some("/ha".into()));
+    }
+
+    #[test]
+    fn a_working_directory_elsewhere_is_not_walked() {
+        assert_eq!(under_mount("/home/sandbox_user"), None);
+        assert_eq!(under_mount("/vfs"), None);
+        assert_eq!(under_mount("/vfs/"), None);
+        assert_eq!(under_mount("/vfsx/ha"), None);
     }
 }

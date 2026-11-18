@@ -173,6 +173,15 @@ impl State {
         self.deleted.iter().any(|d| is_within(path, d))
     }
 
+    /// A listing says what each entry is, so a walk that lists before it looks costs no attr fetch
+    /// for a directory or an action file — the kinds whose attr is their kind alone.
+    fn remember(&mut self, path: &str, listing: Listing) {
+        listing.entries.iter().filter(|e| e.kind != Kind::File).for_each(|e| {
+            self.attrs.entry(join(path, &e.name)).or_insert(Attr { kind: e.kind, size: None });
+        });
+        self.listings.insert(path.to_string(), listing);
+    }
+
     fn forget_answers(&mut self) {
         self.attrs.clear();
         self.listings.clear();
@@ -749,14 +758,28 @@ impl<B: Bridge> Vfs<B> {
             return Ok(listing.clone());
         }
         let listing = self.bridge.list(path)?;
-        let mut state = self.lock();
-        // A listing says what each entry is, so a walk that lists before it looks costs no attr
-        // fetch for a directory.
-        listing.entries.iter().filter(|e| e.kind == Kind::Dir).for_each(|e| {
-            state.attrs.entry(join(path, &e.name)).or_insert(Attr { kind: Kind::Dir, size: None });
-        });
-        state.listings.insert(path.to_string(), listing.clone());
+        self.lock().remember(path, listing.clone());
         Ok(listing)
+    }
+
+    /// The working directory, asked for in one request before the command runs: the attr of every
+    /// step on the way and its listing land in the call's cache as if each had been asked, so the
+    /// kernel reaching it — and running an action file there — costs no round trip of its own. A
+    /// walk that fails changes nothing; the kernel then asks as it always did.
+    pub fn prefetch(&self, path: &str) {
+        if path.trim_matches('/').is_empty() {
+            return;
+        }
+        let Ok(walk) = self.bridge.walk(path) else {
+            return;
+        };
+        let mut state = self.lock();
+        walk.steps.into_iter().for_each(|(step, attr)| {
+            state.attrs.entry(step).or_insert(attr);
+        });
+        if let Some(listing) = walk.listing {
+            state.remember(path, listing);
+        }
     }
 
     fn content(&self, path: &str) -> Result<Arc<Vec<u8>>, Errno> {
