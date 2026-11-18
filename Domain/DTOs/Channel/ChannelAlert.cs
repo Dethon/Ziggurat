@@ -3,11 +3,11 @@ using JetBrains.Annotations;
 
 namespace Domain.DTOs.Channel;
 
-// An insistent alert a server raises for one person — a timer with no satellite to ring on — and the
-// agent rings wherever that person is. Only the agent holds the channels and their credentials, so
-// the server puts it in its inbox like a fire; the agent offers it on every channel that can show
-// one (offer_alert) and settles it everywhere on the first dismissal (settle_alert), as an approval
-// settles (AlertRelay). No turn is run and no model is asked.
+// An insistent alert a server raises for one person — a timer or a glucose alarm with no satellite
+// to ring on — and the agent rings wherever that person is. Only the agent holds the channels and
+// their credentials, so the server puts it in its inbox like a fire; the agent offers it on every
+// channel that can show one (offer_alert) and settles it everywhere on the first dismissal
+// (settle_alert), as an approval settles (AlertRelay). No turn is run and no model is asked.
 [PublicAPI]
 public record ChannelAlertNotification
 {
@@ -19,13 +19,22 @@ public record ChannelAlertNotification
     // told, whose Telegram private chat it is put in, and whose dismissal counts.
     public required Account Owner { get; init; }
 
-    // What the person is told: the timer's text, or its id when it was given none.
+    // What the person is told: a timer's text, or its id when it was given none; an alarm's words.
     public required string Text { get; init; }
 
     public AnnounceKind Kind { get; init; } = AnnounceKind.Timer;
 
     // The agent of the turn that set it, which on Telegram says which bot speaks to the person.
     public string? AgentId { get; init; }
+}
+
+// What a server asks to ring on one person's channels: whose they are (and so which household's
+// alert it is, the household the verified call that set it named), what they are told, whether it
+// is a timer or an alarm, and the agent of the turn that set it.
+[PublicAPI]
+public sealed record ChannelAlertRequest(Account Owner, string Text, AnnounceKind Kind, string? AgentId)
+{
+    public string TenantId => Owner.TenantId;
 }
 
 // The alert was stopped where it was raised — ./dismiss ran — so wherever it still shows, it stops.

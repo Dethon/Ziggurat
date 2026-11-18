@@ -4,12 +4,14 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
 using McpChannelVoice.Services;
+using McpServerSugary.Modules;
 using McpServerTimers.Modules;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
@@ -32,6 +34,8 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
     private const string AgentCredential = "agent-credential";
     private const string Timers = "mcp-timers";
     private const string TimersCredential = "timers-mcp-secret";
+    private const string Sugary = "mcp-sugary";
+    private const string SugaryCredential = "sugary-mcp-secret";
 
     // TimerFireService's own poll cadence.
     private static readonly TimeSpan _poll = TimeSpan.FromSeconds(1);
@@ -54,7 +58,7 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
         _relay = await RelayHost.StartAsync(
             _accounts, AgentCredential, redis.ConnectionString,
             SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory }), _metrics,
-            sharedServers: new Dictionary<string, string> { [Timers] = TimersCredential });
+            sharedServers: new Dictionary<string, string> { [Timers] = TimersCredential, [Sugary] = SugaryCredential });
     }
 
     public async Task DisposeAsync()
@@ -192,6 +196,78 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
         created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
     }
 
+    // Sugary rings a glucose alarm on the household's satellites as the timers server rings a timer:
+    // through the relay, on its own credential, at the household it names. The hub's dismiss stops
+    // whatever rings there, whoever raised it, so "stop the timer" silences Sugary's alarm too.
+    [Fact]
+    public async Task SugarysAlarm_RingsOnTheHouseholdsVoiceServerThroughTheRelay_AndTheTimersDismissStopsIt()
+    {
+        await using var voice = await StartVoiceAsync();
+        await using var sugary = SugaryServices();
+        await using var timers = TimersServer();
+
+        var rung = await sugary.GetRequiredService<IHouseholdVoices>().For(_household).Announcer.StartAsync(new AnnounceRequest
+        {
+            Target = new AnnounceTarget { Room = "Kitchen" },
+            Text = "Glucose is low",
+            Kind = AnnounceKind.Alarm,
+            Insistent = new InsistentOptions { GapSeconds = 10, MaxRepeats = 12 }
+        }, CancellationToken.None);
+
+        rung.Satellites.ShouldHaveSingleItem().Id.ShouldBe("kitchen-01");
+        await Eventually.Until(() => voice.Rings > 0, "the alarm to ring on the kitchen's satellite");
+        var dismissed = (await As(timers, _household).ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+        dismissed.Stdout.ShouldContain("alarm \"Glucose is low\"");
+        voice.Alerts.Acknowledge("kitchen-01").ShouldBeEmpty();
+    }
+
+    // Sugary's alarm is its household's, and with only another household's voice server connected it
+    // reaches none: the relay never sends it to another's of the same name.
+    [Fact]
+    public async Task SugarysAlarmWithOnlyAnotherHouseholdsVoiceConnected_SaysTheHubIsUnreachable()
+    {
+        await using var elsewhere = await StartVoiceAsync(await _accounts.SeedHouseholdAsync("Neighbours"));
+        await using var sugary = SugaryServices();
+
+        await Should.ThrowAsync<VoiceHubUnavailableException>(() => sugary.GetRequiredService<IHouseholdVoices>()
+            .For(_household).Announcer.StartAsync(new AnnounceRequest
+            {
+                Target = new AnnounceTarget { Room = "Kitchen" }, Text = "Glucose is low", Kind = AnnounceKind.Alarm
+            }, CancellationToken.None));
+        elsewhere.Rings.ShouldBe(0);
+    }
+
+    public static TheoryData<string, string, string, bool, HttpStatusCode> RefusedForSugary => new()
+    {
+        { "the timers server's credential", TimersCredential, "api/voice/dismiss", true, HttpStatusCode.Unauthorized },
+        { "the voice server's mcp", SugaryCredential, "mcp", true, HttpStatusCode.Forbidden },
+        { "no household named", SugaryCredential, "api/voice/dismiss", false, HttpStatusCode.Forbidden }
+    };
+
+    [Theory]
+    [MemberData(nameof(RefusedForSugary))]
+    public async Task ACallFromSugaryTheRelayDoesNotLetThrough_IsRefusedAndNeverReachesTheServer(
+        string what, string credential, string path, bool namesTheHousehold, HttpStatusCode refusal)
+    {
+        await using var voice = await StartVoiceAsync();
+        voice.Alerts.Register(new AlertHandle(new CancellationTokenSource(), ["kitchen-01"], "pasta", AnnounceKind.Timer));
+        using var caller = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            $"{_relay.Address}{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/{path}");
+        request.Headers.Add(RelayedCallProtocol.CallerHeader, Sugary);
+        request.Headers.Add("Authorization", SharedSecret.Header(credential));
+        if (namesTheHousehold)
+        {
+            request.Headers.Add(RelayedCallProtocol.HouseholdHeader, _household);
+        }
+
+        var answer = await caller.SendAsync(request);
+
+        answer.StatusCode.ShouldBe(refusal, what);
+        voice.Alerts.Acknowledge("kitchen-01").ShouldHaveSingleItem();
+    }
+
     private async Task<TunnelledVoiceHub> StartVoiceAsync(string? household = null)
     {
         household ??= _household;
@@ -225,6 +301,19 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
             VoiceHub = new() { BaseUrl = $"{_relay.Address}{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/" }
         });
         services.AddSingleton<TimeProvider>(_clock);
+        return services.BuildServiceProvider();
+    }
+
+    // Sugary as it ships, told its hub is the relay's endpoint for the voice server, its own
+    // credential and the name the agent dials it at.
+    private ServiceProvider SugaryServices()
+    {
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureSugary(new McpServerSugary.Settings.SugarySettings
+        {
+            Mcp = new McpGateSettings { SharedSecret = SugaryCredential, Audience = Sugary },
+            VoiceHub = new() { BaseUrl = $"{_relay.Address}{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/" }
+        });
         return services.BuildServiceProvider();
     }
 

@@ -281,6 +281,10 @@ services:
       # Where the accounts service publishes the keys its assertions verify with: this app believes
       # the person X-Ziggurat-Assertion names, never the plain headers beside it.
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
+      # The household's voice server, which rings a glucose alarm on its satellites, has no address
+      # here: it is reached through the relay's endpoint on the agent, down its tunnel. The relay asks
+      # this server's name and its own credential above (the agent's MCP__SECRETS__mcp-sugary).
+      VOICEHUB__BASEURL: http://agent:8080/internal/relay/voice/
     networks:
       - jackbot
     depends_on:

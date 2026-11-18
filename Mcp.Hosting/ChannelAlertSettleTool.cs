@@ -1,19 +1,18 @@
 using System.ComponentModel;
 using Domain.DTOs.Channel;
-using McpServerTimers.Services;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 
-namespace McpServerTimers.McpTools;
+namespace Mcp.Hosting;
 
-// The agent's word that a timer's alert ended on the channels — dismissed on one of them, or rung
-// out — so ./dismiss no longer reports it as ringing. The one alert tool this server answers: it
-// raised the alert and shows it nowhere, so it is never offered one.
+// The agent's word that an alert this server raised ended on the channels — dismissed on one of
+// them, or rung out — so the server's own stop no longer reports it as ringing. The one alert tool a
+// raising server answers: it shows the alert nowhere, so it is never offered one.
 [McpServerToolType]
-public sealed class SettleAlertTool
+public sealed class ChannelAlertSettleTool
 {
     [McpServerTool(Name = ChannelProtocol.SettleAlertTool)]
-    [Description("A timer's alert ended on the person's channels, so it no longer rings")]
+    [Description("An alert this server raised ended on the person's channels, so it no longer rings")]
     public static string McpRun(
         [Description("The alert's own id")] string alertId,
         IServiceProvider services,

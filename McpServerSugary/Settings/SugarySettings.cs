@@ -14,6 +14,12 @@ public record SugarySettings : IMcpHostSettings
     // (ACCOUNTS__JWKSURL). The app resolves no identity, so nothing else here is read.
     public AccountsClientConfig Accounts { get; init; } = new();
 
+    // The household's voice server, which rings a glucose alarm on its satellites (VOICEHUB__BASEURL).
+    // It has no address on the deployment's network: it is reached through the relay's endpoint on
+    // the agent, which asks this server's name (Mcp:Audience) and its own credential above, and goes
+    // down the household's tunnel. No announce token: a relayed call never presents one.
+    public SugaryVoiceHubSettings VoiceHub { get; init; } = new();
+
     // The SQLite file, in the server's own volume. Its directory is created on first start.
     public string DatabasePath { get; init; } = "/data/sugary.db";
 
@@ -68,6 +74,11 @@ public record SugarySettings : IMcpHostSettings
     // The deployment's retention policy, read from Domain's retention.json like every host's: the
     // upload store keeps a photo as long as an attachment is kept anywhere (ADR-0020).
     public RetentionSettings Retention { get; init; } = new();
+}
+
+public record SugaryVoiceHubSettings
+{
+    public string BaseUrl { get; init; } = "http://agent:8080/internal/relay/voice/";
 }
 
 public record UploadSettings

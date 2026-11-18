@@ -27,7 +27,7 @@ paths:
 
 # Timers Architecture
 
-Countdown timers live in **`McpServerTimers`** (container `mcp-timers`, port 6016), a **shared server** (every household's) exposing `filesystem://timers` (mount `/timers`). Agents mount it via `mcpServerEndpoints`. It is **dual-role** (`.claude/rules/channels.md`): a timer with no satellite to ring on rings on its owner's channels, which only the agent holds, so the server is also a channel the agent dials (`channelEndpoints` id `timers`) — it raises alerts and never a turn. `TimerFileSystem` (`Domain/Tools/Timers/Vfs/`), the non-durable `InMemoryTimerStore`, `TimerFireService` (polls for due timers) and `ChannelAlerts` all run here.
+Countdown timers live in **`McpServerTimers`** (container `mcp-timers`, port 6016), a **shared server** (every household's) exposing `filesystem://timers` (mount `/timers`). Agents mount it via `mcpServerEndpoints`. It is **dual-role** (`.claude/rules/channels.md`): a timer with no satellite to ring on rings on its owner's channels, which only the agent holds, so the server is also a channel the agent dials (`channelEndpoints` id `timers`) — it raises alerts and never a turn. `TimerFileSystem` (`Domain/Tools/Timers/Vfs/`), the non-durable `InMemoryTimerStore`, `TimerFireService` (polls for due timers) and `ChannelAlerts` all run here — the last shared hosting (`Mcp.Hosting`, `AddChannelAlerts()` after `AddChannelServer`, with its `settle_alert`), keyed by a `ChannelAlertRequest` rather than a timer, which Sugary hosts too for a glucose alarm.
 
 ## A timer is its household's
 

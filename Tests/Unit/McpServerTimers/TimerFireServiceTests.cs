@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Infrastructure.Timers;
@@ -21,7 +22,7 @@ public class TimerFireServiceTests
 
     private sealed class NoChannels : IChannelAlerts
     {
-        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct) => Task.FromResult(false);
+        public Task<bool> RingAsync(ChannelAlertRequest alert, CancellationToken ct) => Task.FromResult(false);
 
         public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<DismissedAlert>>([]);
@@ -61,10 +62,11 @@ public class TimerFireServiceTests
             get { lock (_rung) { return _rung.ToList(); } }
         }
 
-        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct)
+        // What the person is told, which for a timer given no text is its id and "timer".
+        public Task<bool> RingAsync(ChannelAlertRequest alert, CancellationToken ct)
         {
             lock (_rung)
-            { _rung.Add(timer.Id); }
+            { _rung.Add(alert.Text); }
             return Task.FromResult(true);
         }
 
@@ -132,7 +134,7 @@ public class TimerFireServiceTests
     {
         var (channels, _) = await FireOneAsync(AnnouncementOutcome.Offline);
 
-        channels.Rung.ShouldBe(["pasta"]);
+        channels.Rung.ShouldBe(["pasta timer"]);
     }
 
     // The household's voice server itself is unreachable when it comes due — its kit restarting, the
@@ -143,7 +145,7 @@ public class TimerFireServiceTests
     {
         var (channels, _) = await FireOneAsync(new UnreachableAnnouncer(), voice => voice.Calls);
 
-        channels.Rung.ShouldBe(["pasta"]);
+        channels.Rung.ShouldBe(["pasta timer"]);
     }
 
     [Fact]

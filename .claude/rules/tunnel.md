@@ -470,8 +470,9 @@ every browse exchange, the home's included (`BrowsePagesTests`, in a real browse
 A shared deployment server reaches a household's own server through the relay's internal endpoint,
 `/internal/relay/<server name>/<the server's own path>` (`RelayedCallProtocol`, `RelayedCallsApi`,
 `RelayedCalls`), **never the network** — and the proxy routes nothing under `/internal`
-(`DeploymentConformanceTests`). Today one caller does: the timers server rings, dismisses and
-validates satellites on the household's voice server (`.claude/rules/timers.md`).
+(`DeploymentConformanceTests`). Two callers do: the timers server rings, dismisses and validates
+satellites on the household's voice server (`.claude/rules/timers.md`), and Sugary rings a glucose
+alarm there; both wire the hub's client with `AddHouseholdVoices` (`Infrastructure/Clients/Voice`).
 
 - **The caller is checked against what the agent already holds**: it names itself
   (`X-Ziggurat-Caller`, its own `Mcp:Audience` — the name the agent dials it at) and presents the
@@ -481,7 +482,7 @@ validates satellites on the household's voice server (`.claude/rules/timers.md`)
   is `RelayedCallCredential`, which a shared server adds when its base address is under the relay's
   path (`RelayedCallProtocol.IsRelayed`); a server dialled directly is presented neither.
 - **What it may reach is a list in `RelayedCalls`**, by caller, household server and path prefix
-  (`mcp-timers` → `voice` under `/api/voice`), checked on the path Kestrel normalised. A missing or
+  (`mcp-timers` and `mcp-sugary` → `voice` under `/api/voice`), checked on the path Kestrel normalised. A missing or
   wrong credential is 401, anything off the list 403; both are logged and published as an
   `ErrorEvent` (`RelayedCallRefused`), and neither forwards a byte.
 - **Every request names its household** (`X-Ziggurat-Household`, `RelayedCallProtocol.HouseholdHeader`)

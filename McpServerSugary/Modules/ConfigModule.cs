@@ -5,6 +5,7 @@ using Domain.Security.Sealing;
 using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
+using Infrastructure.Clients.Voice;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSugary.App;
@@ -66,7 +67,10 @@ public static class ConfigModule
             // hear a save on, so a saved zone reaches it when what it kept runs out.
             .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
             // Whether the session that subscribed a phone still lives, before a pen reminder is sent.
-            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret);
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            // A glucose alarm rings on the household's satellites through its own voice server,
+            // reached through the relay as the timers server reaches it.
+            .AddHouseholdVoices(settings.VoiceHub.BaseUrl, settings.Mcp.Audience, settings.Mcp.SharedSecret, announceToken: "");
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)
@@ -89,6 +93,9 @@ public static class ConfigModule
             // Gate-on-live: the app waits on its own request, so an estimate nobody is polling for
             // is answered as an error at once rather than buffered for an agent that may never come.
             .AddChannelServer(DeliveryPolicy.GateOnLive)
+            // A glucose alarm with no satellite to ring on rings on its person's channels, which only
+            // the agent holds: raised in this inbox, settled here when it ended on a channel.
+            .AddChannelAlerts()
             .AddFileSystemTools<SugaryFileSystem>()
             .AddFileSystemResource<SugaryFileSystem>()
             .AddSkills(SugarySkill.Text)
