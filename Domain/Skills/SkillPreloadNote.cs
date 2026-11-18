@@ -25,8 +25,9 @@ namespace Domain.Skills;
 // that preloads the same skill (the home skill and its setup index, ~9.4k tokens) and the request
 // never is, so after it the note was never in the provider's cached prefix — a voice wake's first
 // call sent it uncached every time. The pair placed before the request had cost the first action
-// (Haiku named the right entity on 4 of 10 home turns against 10); the note in that place was
-// measured on the eval's home and voice families before it shipped. The message a turn is keyed
+// (Haiku named the right entity on 4 of 10 home turns against 10); the note in that place held on
+// the eval's home and voice families: DeepSeek 98 of 103 runs against 99, and 39 of 48 against 41 on
+// the one-word scenarios alone; Haiku 101 of 103 against 97. The message a turn is keyed
 // on is read off the record, not the wire, so the note in front of it changes nothing there.
 //
 // A separate message rather than more parts on the person's own: OpenRouter merges the two for
