@@ -97,6 +97,47 @@ public class SandboxFileSystem(
         return view;
     }
 
+    // Every write names what it made to the runner, which hands it to the command's user before the
+    // next command: the server writes as a user of its own, and a command must be able to chmod a
+    // script a file tool wrote. The destination for a copy or a move — that is what is new.
+    private readonly PathJail _jail = new(root.BaseLibraryPath);
+
+    public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
+        bool createDirectories, CancellationToken ct) =>
+        Wrote(await base.CreateAsync(path, content, overwrite, createDirectories, ct), path);
+
+    public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
+        Wrote(await base.EditAsync(path, edits, ct), path);
+
+    public override async Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
+        bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Wrote(await base.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct), destinationPath);
+
+    public override async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
+        Wrote(await base.MoveAsync(sourcePath, destinationPath, ct), destinationPath);
+
+    public override async Task<FsResult<FsBlobWriteResult>> WriteBlobAsync(
+        string path, string contentBase64, long offset, bool overwrite, bool createDirectories, CancellationToken ct) =>
+        Wrote(await base.WriteBlobAsync(path, contentBase64, offset, overwrite, createDirectories, ct), path);
+
+    public override async Task<long> WriteChunksAsync(string path, IAsyncEnumerable<ReadOnlyMemory<byte>> chunks,
+        bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        var written = await base.WriteChunksAsync(path, chunks, overwrite, createDirectories, ct);
+        runner.Wrote(_jail.Combine(path));
+        return written;
+    }
+
+    private FsResult<T> Wrote<T>(FsResult<T> result, string path) where T : class
+    {
+        if (result is FsResult<T>.Ok)
+        {
+            runner.Wrote(_jail.Combine(path));
+        }
+
+        return result;
+    }
+
     public override Task<FsResult<FsExecResult>> ExecAsync(
         string path, string command, int? timeoutSeconds, CancellationToken ct) =>
         runner.RunAsync(path, command, timeoutSeconds, _bridge, ct);

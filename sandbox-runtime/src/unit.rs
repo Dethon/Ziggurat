@@ -57,7 +57,7 @@ pub fn run(config: &UnitConfig) -> i32 {
         return fail(&mut answer, &format!("cannot isolate the command: {e}"));
     }
 
-    crate::home::adopt(Path::new(&config.home), config.server_uid, config.puid, config.pgid);
+    crate::home::adopt(Path::new(&config.home), &request.adopt, config.server_uid, config.puid, config.pgid);
 
     match execute(config, &request, &connection, &mut answer) {
         Ok(Some(response)) => {

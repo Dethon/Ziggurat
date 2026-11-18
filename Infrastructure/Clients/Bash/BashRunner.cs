@@ -157,4 +157,9 @@ public class BashRunner(BashRunnerOptions options) : ICommandRunner
 
         return (sb.ToString(), truncated);
     }
+
+    // Commands run as the server's own user, so whatever the file tools wrote is already theirs.
+    public void Wrote(string fullPath)
+    {
+    }
 }

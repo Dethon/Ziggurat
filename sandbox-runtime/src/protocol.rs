@@ -20,6 +20,10 @@ pub struct ExecRequest {
     /// Where present, the call's other mounts are served at /vfs through the agent's bridge.
     #[serde(default)]
     pub bridge: Option<BridgeGrant>,
+    /// What the server's file tools wrote since the last command, as full container paths: handed
+    /// to PUID before this command runs (`home::adopt`).
+    #[serde(default)]
+    pub adopt: Vec<String>,
 }
 
 /// The call token, and where the bridge it opens answers. Handed to the call's daemon over its
@@ -66,6 +70,16 @@ mod tests {
         assert_eq!(request.timeout_seconds, 60);
         assert_eq!(request.env["HOME"], "/home/sandbox_user");
         assert_eq!(request.bridge, None);
+        assert!(request.adopt.is_empty());
+    }
+
+    #[test]
+    fn a_request_may_carry_what_the_file_tools_wrote() {
+        let line = r#"{"command":"ls","cwd":"/","timeoutSeconds":5,"outputCapBytes":10,"env":{},"adopt":["/home/sandbox_user/a.py"]}"#;
+
+        let request: ExecRequest = serde_json::from_str(line).unwrap();
+
+        assert_eq!(request.adopt, ["/home/sandbox_user/a.py"]);
     }
 
     #[test]
