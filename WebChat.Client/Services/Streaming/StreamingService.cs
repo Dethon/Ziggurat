@@ -606,10 +606,15 @@ public sealed class StreamingService(
         await topicService.MarkTopicReadAsync(topic.AgentId, topic.ChatId, topic.TopicId);
     }
 
-    // A turn the person stopped is kept by the agent after the stop ended its stream, so the first read
-    // can come before it: asked again, a little later each time, until what the page drew is named.
+    // A turn the person stopped is kept by the agent after the stop ended its stream, and any turn can be
+    // kept a while after its stream ends on a busy host, so the first read can come before it: asked
+    // again, a little later each time, until what the page drew is named. Six seconds of asking ran out
+    // before a loaded agent kept a reply, and the row read after it never got the reply's preview.
     private static readonly TimeSpan[] LearnAgainAfter =
-        [TimeSpan.Zero, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4)];
+    [
+        TimeSpan.Zero, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(16)
+    ];
 
     public Task CatchUpWithHistoryAsync(StoredTopic topic) => LearnEntryIdsAsync(topic);
 
