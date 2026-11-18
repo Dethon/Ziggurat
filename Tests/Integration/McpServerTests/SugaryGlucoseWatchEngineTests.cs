@@ -137,8 +137,11 @@ public class SugaryGlucoseWatchEngineTests
         public SugaryDbContext Factory() =>
             server.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>().CreateDbContext();
 
-        public async Task LinkAsync(Account person, string email, string password, string patientId)
+        public async Task LinkAsync(Account person, string email, string password, string patientId, string? key = null)
         {
+            var credentials = key is null
+                ? server.Services.GetRequiredService<GlucoseCredentials>()
+                : new GlucoseCredentials(SealingKey.Parse(key, "key"));
             await using (var db = Factory())
             {
                 db.GlucoseLinks.Add(new GlucoseLink
@@ -146,7 +149,7 @@ public class SugaryGlucoseWatchEngineTests
                     UserId = person.UserId,
                     TenantId = person.TenantId,
                     Email = email,
-                    SealedPassword = server.Services.GetRequiredService<GlucoseCredentials>().Seal(person, password),
+                    SealedPassword = credentials.Seal(person, password),
                     Region = "eu",
                     PatientId = patientId,
                     Connections = [new GlucoseConnectionOffered { PatientId = patientId, Name = "Ana García" }],
@@ -181,11 +184,6 @@ public class SugaryGlucoseWatchEngineTests
                 c.Replace(ServiceDescriptor.Singleton(sp => ActivatorUtilities.CreateInstance<GlucosePoller>(sp, (TimeProvider)clock)));
                 c.Replace(ServiceDescriptor.Singleton(sp => ActivatorUtilities.CreateInstance<GlucoseWatchEngine>(sp, (TimeProvider)clock)));
                 c.Replace(ServiceDescriptor.Singleton<IGlucoseWatchEffects>(effects));
-                foreach (var loop in c.Where(d => d.ServiceType == typeof(IHostedService)
-                                                  && (d.ImplementationType == typeof(GlucosePollLoop) || d.ImplementationType == typeof(GlucoseWatchLoop))).ToList())
-                {
-                    c.Remove(loop);
-                }
             });
         return new Harness(fake, server, clock, effects);
     }
@@ -742,6 +740,28 @@ public class SugaryGlucoseWatchEngineTests
         await harness.Engine.TickAsync(CancellationToken.None);
 
         harness.Effects.Fires.ShouldHaveSingleItem().Report.Since.ShouldBe(_start);
+    }
+
+    // A password the server cannot open (its sealing key changed) is a link failing, never a silent
+    // sensor: `link_failing` fires once its `for` has run, on the clock, and `no_readings` never does.
+    [Fact]
+    public async Task APasswordThatDoesNotOpen_IsALinkFailing_NeverASilentSensor()
+    {
+        await using var harness = await StartAsync();
+        await harness.WatchAsync("failing", """{"trigger":"sensor","state":"link_failing","for":{"minutes":30}}""");
+        await harness.WatchAsync("silent", """{"trigger":"sensor","state":"no_readings","for":{"minutes":20}}""");
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1",
+            key: Convert.ToBase64String(SealingKey.Generate().Export()));
+
+        foreach (var _ in Enumerable.Range(0, 45))
+        {
+            harness.Clock.Advance(TimeSpan.FromMinutes(1));
+            await harness.SweepAsync();
+            await harness.Engine.TickAsync(CancellationToken.None);
+        }
+
+        harness.Fake.Requests.ShouldBeEmpty();
+        harness.Effects.FiredIds.ShouldBe(["failing"]);
     }
 
     // The sensor on her is the latest started among those LibreLinkUp last listed.

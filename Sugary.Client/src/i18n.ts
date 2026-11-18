@@ -546,6 +546,8 @@ const en = {
   glucoseRelink: "Link again",
   glucoseLinkingOffNote: "Your readings stay, but this server can't link a new account.",
   linkCredentialsRefused: "LibreLinkUp did not accept that email and password. Check them and link the account again.",
+  linkCredentialsUnreadable:
+    "Sugary can no longer read the password it kept for this account, so it can't ask LibreLinkUp. Link the account again.",
   linkStepRequired:
     "LibreLinkUp is waiting for you. Open the LibreLinkUp app with this account, accept what it asks (usually new terms), then try again.",
   linkNoConnections:
@@ -1124,6 +1126,8 @@ const es: Strings = {
   glucoseRelink: "Vincular de nuevo",
   glucoseLinkingOffNote: "Tus lecturas se quedan, pero este servidor no puede vincular una cuenta nueva.",
   linkCredentialsRefused: "LibreLinkUp no ha aceptado ese correo y esa contraseña. Revísalos y vuelve a vincular la cuenta.",
+  linkCredentialsUnreadable:
+    "Sugary ya no puede leer la contraseña que guardó de esta cuenta, así que no puede preguntar a LibreLinkUp. Vuelve a vincular la cuenta.",
   linkStepRequired:
     "LibreLinkUp está esperando por ti. Abre la app de LibreLinkUp con esta cuenta, acepta lo que te pida (normalmente unas condiciones nuevas) y vuelve a intentarlo.",
   linkNoConnections:

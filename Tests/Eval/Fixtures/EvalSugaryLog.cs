@@ -5,12 +5,14 @@ using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.Tools.Sugary.Watches;
 using Infrastructure.Clients.Voice;
+using McpServerSugary.Glucose;
 using McpServerSugary.Modules;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
@@ -45,6 +47,15 @@ public static class EvalSugaryLog
         IServiceCollection services, SugarySettings settings, IReadOnlyList<SugaryPerson> people, FakeVoiceHub hub)
     {
         services.ConfigureSugary(settings);
+        // Nothing polls or judges on the clock in a run: its links are seeded, no LibreLinkUp answers, and
+        // a watch a turn writes is read back, never fired.
+        foreach (var loop in services.Where(d => d.ServiceType == typeof(IHostedService)
+                                                 && (d.ImplementationType == typeof(GlucosePollLoop)
+                                                     || d.ImplementationType == typeof(GlucoseWatchLoop))).ToList())
+        {
+            services.Remove(loop);
+        }
+
         services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
             new EveryHouseholdIn(ConfigModule.HomeZone(settings), sugaryPeople: new HouseholdSugaryPeople([.. people]))));
         services.AddHttpClient(VoiceHubHttp.ClientName).ConfigurePrimaryHttpMessageHandler(() => hub);

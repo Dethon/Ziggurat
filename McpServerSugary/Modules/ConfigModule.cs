@@ -105,13 +105,12 @@ public static class ConfigModule
                 .AddHostedService<PenReminderLoop>();
         }
 
-        // Without a sealing key no password opens, so there is nothing to poll.
-        if (!string.IsNullOrWhiteSpace(settings.SealingKey))
-        {
-            services
-                .AddHostedService<GlucosePollLoop>()
-                .AddHostedService<GlucoseWatchLoop>();
-        }
+        // With or without a sealing key: without one no password opens, and the poller says so on every
+        // link (CredentialsUnreadable) rather than leaving her link looking well and her watches on a
+        // failing link quiet. It asks LibreLinkUp nothing then, and nothing at all while nobody is linked.
+        services
+            .AddHostedService<GlucosePollLoop>()
+            .AddHostedService<GlucoseWatchLoop>();
 
         services
             .AddToolServer(settings, ToolResponse.Create)

@@ -50,8 +50,10 @@ public sealed class GlucosePoller(
     // those polls are done. A link seen for the first time is polled at its next moment.
     public async Task PollDueAsync(CancellationToken ct)
     {
-        var off = await sugaryOff.OffAsync(ct);
-        var links = (await LiveLinksAsync(ct)).Where(link => !off.Contains(link.Key.TenantId)).ToList();
+        var linked = await LiveLinksAsync(ct);
+        // Nobody linked asks the accounts service nothing: a deployment with no glucose pays nothing for it.
+        IReadOnlySet<string> off = linked.Count == 0 ? new HashSet<string>() : await sugaryOff.OffAsync(ct);
+        var links = linked.Where(link => !off.Contains(link.Key.TenantId)).ToList();
         var now = clock.GetUtcNow();
         var live = links.Select(link => link.Key).ToHashSet();
         foreach (var gone in _paces.Keys.Where(key => !live.Contains(key)))
@@ -108,16 +110,20 @@ public sealed class GlucosePoller(
     private async Task<GlucosePoll?> AskAsync(LiveLink link, Pace pace, CancellationToken ct)
     {
         var person = link.Key.Person;
+        // A password this server cannot open is the link failing, said as such: skipped with nothing
+        // written, a lost key left the app showing a working link and every watch on a failing link
+        // or a silent sensor quiet. It stays live, asked less and less often, so the key put back opens
+        // it with nothing to link again.
         if (credentials.Open(person, link.SealedPassword) is not { } password)
         {
             if (pace.WarnUnopenedOnce())
             {
                 logger.LogWarning(
-                    "The LibreLinkUp password of {User}'s link does not open with this server's sealing key; it is not polled until she links again",
+                    "The LibreLinkUp password of {User}'s link does not open with this server's sealing key; recorded as failing until she links again or the key is back",
                     link.Key.UserId);
             }
 
-            return null;
+            return (await RecordAsync(link, pace, GlucoseLinkFailure.CredentialsUnreadable, null, null, clock.GetUtcNow(), ct)).Poll;
         }
 
         // Never logged: the account is a record, and would print the password.
@@ -127,7 +133,7 @@ public sealed class GlucosePoller(
         return answer switch
         {
             LibreLinkUpAnswer<LibreLinkUpGraph>.Ok ok => await KeepAsync(link, pace, ok.Value, now, ct),
-            LibreLinkUpAnswer<LibreLinkUpGraph>.Failed failed => await RecordAsync(link, pace, failed.Failure, now, ct),
+            LibreLinkUpAnswer<LibreLinkUpGraph>.Failed failed => await FailedAsync(link, pace, failed.Failure, now, ct),
             _ => null
         };
     }
@@ -238,9 +244,9 @@ public sealed class GlucosePoller(
         }
     }
 
-    // The failure written onto the link, its start kept from the first failure of the run, and how long
-    // this link now waits.
-    private async Task<GlucosePoll?> RecordAsync(
+    // What LibreLinkUp's failure is on the link, and how long this link now waits: a rate limit what the
+    // service said, anything else less and less often.
+    private async Task<GlucosePoll?> FailedAsync(
         LiveLink link, Pace pace, LibreLinkUpFailure failure, DateTimeOffset now, CancellationToken ct)
     {
         var (kind, detail) = failure switch
@@ -251,7 +257,25 @@ public sealed class GlucosePoller(
             LibreLinkUpFailure.RateLimited => (GlucoseLinkFailure.RateLimited, (string?)null),
             _ => (GlucoseLinkFailure.Unreachable, (string?)null)
         };
+        var fixedWait = failure is LibreLinkUpFailure.RateLimited limited ? limited.RetryAfter ?? _rateLimitedWait : (TimeSpan?)null;
 
+        var (poll, wait) = await RecordAsync(link, pace, kind, detail, fixedWait, now, ct);
+        if (poll?.Link.FailingSince == now)
+        {
+            logger.LogWarning(
+                "LibreLinkUp gave the link of {User} no answer ({Failure}: {Reason}); asked again in {Wait}",
+                link.Key.UserId, kind, failure is LibreLinkUpFailure.Unreachable unreachable ? unreachable.Reason : detail, wait);
+        }
+
+        return poll;
+    }
+
+    // The failure written onto the link, its start kept from the first failure of the run, and how long
+    // this link now waits — only while the link is still the one the poll read, as an answer is.
+    private async Task<(GlucosePoll? Poll, TimeSpan Wait)> RecordAsync(
+        LiveLink link, Pace pace, GlucoseLinkFailure kind, string? detail, TimeSpan? fixedWait, DateTimeOffset now,
+        CancellationToken ct)
+    {
         await using var db = await contexts.CreateDbContextAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var written = await Still(db, link.Key).ExecuteUpdateAsync(set => set
@@ -261,7 +285,7 @@ public sealed class GlucosePoller(
         if (written == 0)
         {
             logger.LogDebug("The link of {User} changed while it was polled; the failure is dropped", link.Key.UserId);
-            return null;
+            return (null, TimeSpan.Zero);
         }
 
         var state = await Still(db, link.Key)
@@ -269,15 +293,8 @@ public sealed class GlucosePoller(
             .SingleAsync(ct);
         await transaction.CommitAsync(ct);
 
-        var wait = pace.Failed(failure, Period, _longestBackoff, _rateLimitedWait, now);
-        if (state.FailingSince == now)
-        {
-            logger.LogWarning(
-                "LibreLinkUp gave the link of {User} no answer ({Failure}: {Reason}); asked again in {Wait}",
-                link.Key.UserId, kind, failure is LibreLinkUpFailure.Unreachable unreachable ? unreachable.Reason : detail, wait);
-        }
-
-        return new GlucosePoll(link.Key.Person, [], state, null);
+        var wait = pace.Failed(fixedWait, Period, _longestBackoff, now);
+        return (new GlucosePoll(link.Key.Person, [], state, null), wait);
     }
 
     private static IQueryable<GlucoseLink> Still(SugaryDbContext db, LinkKey key) =>
@@ -346,15 +363,14 @@ public sealed class GlucosePoller(
             }
         }
 
-        public TimeSpan Failed(
-            LibreLinkUpFailure failure, TimeSpan period, TimeSpan longest, TimeSpan rateLimited, DateTimeOffset now)
+        // A wait the failure fixed (a rate limit's), else a period doubling with each failure in a row.
+        public TimeSpan Failed(TimeSpan? fixedWait, TimeSpan period, TimeSpan longest, DateTimeOffset now)
         {
             lock (_gate)
             {
                 _failures++;
-                var wait = failure is LibreLinkUpFailure.RateLimited limited
-                    ? limited.RetryAfter ?? rateLimited
-                    : TimeSpan.FromTicks(Math.Min(longest.Ticks, period.Ticks << Math.Min(_failures - 1, 20)));
+                var wait = fixedWait
+                    ?? TimeSpan.FromTicks(Math.Min(longest.Ticks, period.Ticks << Math.Min(_failures - 1, 20)));
                 _nextAt = _nextAt > now + wait ? _nextAt : now + wait;
                 return wait;
             }

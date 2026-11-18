@@ -124,6 +124,22 @@ public class SugaryGlucoseApiTests
         now["link"]!.AsObject().ContainsKey("sealedPassword").ShouldBeFalse();
     }
 
+    // A password the server could not open is said as its own failure, for the app to ask her to link again.
+    [Fact]
+    public async Task ALinkWhosePasswordDoesNotOpen_SaysSo()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await LinkAsync(server, SugaryServer.Her, link =>
+        {
+            link.LastFailure = GlucoseLinkFailure.CredentialsUnreadable;
+            link.FailingSince = DateTimeOffset.UtcNow.AddMinutes(-5);
+        });
+
+        var now = await GetAsync(server, "/api/glucose/current");
+
+        now["link"]!["lastFailure"]!.GetValue<string>().ShouldBe("credentials-unreadable");
+    }
+
     [Fact]
     public async Task ADay_IsAsRead_AndOnlyHers()
     {

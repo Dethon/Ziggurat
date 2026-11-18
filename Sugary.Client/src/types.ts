@@ -225,7 +225,8 @@ export interface GlucoseConnection {
 }
 
 // The LibreLinkUp account her readings come from; never its password. lastFailure is a code the app
-// words: credentials-refused, step-required, rate-limited or unavailable.
+// words: credentials-refused, step-required, rate-limited, unavailable or credentials-unreadable (this
+// server can no longer open the password it kept: she links again).
 export interface GlucoseLink {
   email: string;
   region: string | null;

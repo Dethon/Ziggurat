@@ -54,14 +54,14 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   `SEALINGKEY` from `.env`'s `SUGARY_SEALING_KEY`, the associated data her household's and her own id) and no
   route answers it. Without the key linking answers 503 `linking-off` and the rest of Sugary works. Every
   refusal carries a `code` the app words (`GlucoseEndpoints`).
-- **The poller** (`GlucosePoller`, its loop `GlucosePollLoop` only when there is a sealing key) asks every live
+- **The poller** (`GlucosePoller`, its loop `GlucosePollLoop`, key or no key) asks every live
   link — a person chosen, a password not refused — once per `Glucose:PollSeconds` (appsettings, 60), each at its
   own moment of the period (from its owner's id), at most four at a time. A link is first polled at its next
   moment. Every current reading is kept as `current` with its arrow (one at an instant she has is not kept
   again), then the curve as `graph`, a point within 2.5 minutes (`GlucoseReadingRules.Spacing`) of one she has
   skipped, so the curve fills only gaps. Readings, sensors and the link's state are written in
   one transaction, and only where `LinkedAt` and `PatientId` are still what the poll read: a poll out while she
-  linked again writes nothing. A refused password stops the link until she links again; a rate limit waits its
+  linked again writes nothing. A refused password stops the link until she links again. **A password this server cannot open** (the sealing key changed or removed, a link copied onto somebody else's) is recorded as the link failing, `CredentialsUnreadable` (the app's `credentials-unreadable`, which asks her to link again and opens the form), with `FailingSince` and through the same `LinkedAt`/`PatientId` guard, LibreLinkUp never asked: skipped with nothing written, it left the tab showing a working link and every `link_failing` watch quiet. It stays live on the doubling backoff below, so the key put back opens it at its next ask with nothing to link again; nobody linked asks the accounts service nothing; a rate limit waits its
   `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while
   it lasts, `FailingSince` kept from the first failure. **A household whose features turn Sugary off has its
   links asked nothing** (`SugaryOffHouseholds`, the accounts service's `sugary-off` view on Sugary's own
@@ -75,7 +75,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - **Her glucose watches are judged by the server** (`GlucoseWatchEngine`, the rules in `GlucoseTriggers`, Domain,
   pure): after each poll every trigger of the polled person's armed watches (`Enabled` and not `Spent`), a
   reading trigger only on a newest reading under ten minutes old, and once a minute on the clock
-  (`GlucoseWatchLoop`, only with a sealing key) the sensor's triggers of everyone's, since a link backing off or
+  (`GlucoseWatchLoop`, key or no key) the sensor's triggers of everyone's, since a link backing off or
   refused is asked rarely or never. Readings are her own (`current`, `graph`), never `import`/`import-hourly`.
   `no_readings` is judged on LibreLinkUp's last answer (`LastSuccessAt` minus her newest reading), never while
   the link fails; `link_failing` on `FailingSince`; `ending` on the latest-started sensor of those last seen,

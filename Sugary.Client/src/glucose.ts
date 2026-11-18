@@ -207,6 +207,8 @@ export function linkFailureText(code: string, t: Translate): string {
   switch (code) {
     case "credentials-refused":
       return t("linkCredentialsRefused");
+    case "credentials-unreadable":
+      return t("linkCredentialsUnreadable");
     case "step-required":
       return t("linkStepRequired");
     case "rate-limited":

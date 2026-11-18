@@ -8,6 +8,7 @@ using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
 using McpServerSugary.App;
 using McpServerSugary.Channel;
+using McpServerSugary.Glucose;
 using McpServerSugary.Modules;
 using McpServerSugary.Store;
 using Microsoft.Data.Sqlite;
@@ -15,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -175,6 +177,16 @@ public sealed class SugaryServer : IAsyncDisposable
                 // MigrationsMatchTheModelTests; a store copied from the template has nothing to migrate.
                 collection.ConfigureDbContext<SugaryDbContext>(options =>
                     options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+
+                // The glucose poller's and the watches' loops run on the wall clock, with or without a
+                // key: a test drives a poll or a pass itself, or adds a loop on its own clock, so nothing
+                // it seeded is rewritten behind it (a link it made would be found unreadable).
+                foreach (var loop in collection.Where(d => d.ServiceType == typeof(IHostedService)
+                                                           && (d.ImplementationType == typeof(GlucosePollLoop)
+                                                               || d.ImplementationType == typeof(GlucoseWatchLoop))).ToList())
+                {
+                    collection.Remove(loop);
+                }
 
                 // A test's own stand-ins, registered last so they win.
                 services?.Invoke(collection);

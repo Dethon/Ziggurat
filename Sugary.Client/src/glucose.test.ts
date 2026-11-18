@@ -214,6 +214,7 @@ describe("the link's failures", () => {
     ["step-required", "linkStepRequired"],
     ["rate-limited", "linkRateLimited"],
     ["unavailable", "linkUnavailable"],
+    ["credentials-unreadable", "linkCredentialsUnreadable"],
   ] as const)("a link failing with %s says what to do", (code, key) => {
     expect(linkFailureText(code, es)).toBe(es(key));
   });

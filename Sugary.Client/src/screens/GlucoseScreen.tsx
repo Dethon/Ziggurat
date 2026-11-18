@@ -314,7 +314,8 @@ function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }
     }
   }
 
-  const refused = link?.lastFailure === "credentials-refused";
+  // A password refused, or one this server can no longer open: either way she types it again.
+  const refused = link?.lastFailure === "credentials-refused" || link?.lastFailure === "credentials-unreadable";
   return (
     <section className="card setting" aria-labelledby="glucose-link-title">
       <div>

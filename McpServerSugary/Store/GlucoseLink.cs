@@ -56,7 +56,12 @@ public enum GlucoseLinkFailure
     StepRequired,
     VersionTooOld,
     RateLimited,
-    Unreachable
+    Unreachable,
+
+    // Not LibreLinkUp's answer but this server's: the sealed password does not open (the sealing key was
+    // changed or removed, or the link was copied onto someone else's), so nobody was asked. She links
+    // again; the key put back opens it at the next ask.
+    CredentialsUnreadable
 }
 
 public static class GlucoseRange

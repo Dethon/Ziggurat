@@ -373,6 +373,7 @@ public static class GlucoseEndpoints
         GlucoseLinkFailure.VersionTooOld => "unavailable",
         GlucoseLinkFailure.RateLimited => "rate-limited",
         GlucoseLinkFailure.Unreachable => "unavailable",
+        GlucoseLinkFailure.CredentialsUnreadable => "credentials-unreadable",
         _ => null
     };
 

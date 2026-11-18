@@ -139,20 +139,19 @@ public class SugaryGlucosePollerTests
         }
     }
 
-    private static async Task<Harness> StartAsync(bool withLoop = false)
+    private static async Task<Harness> StartAsync(bool withLoop = false, bool withKey = true)
     {
         var clock = new FakeTimeProvider(_start);
         var fake = await FakeLibreLinkUp.StartAsync(clock);
         var observer = new RecordingObserver();
         var server = await SugaryServer.StartAsync(
-            configure: s => s with { SealingKey = _key },
+            configure: s => s with { SealingKey = withKey ? _key : null },
             services: c =>
             {
                 c.Replace(ServiceDescriptor.Singleton(new LibreLinkUpClient(
                     LibreLinkUpClient.CreateHttp(), fake.Regions, clock, NullLogger<LibreLinkUpClient>.Instance)));
                 c.Replace(ServiceDescriptor.Singleton(sp => ActivatorUtilities.CreateInstance<GlucosePoller>(sp, (TimeProvider)clock)));
                 c.Replace(ServiceDescriptor.Singleton<IGlucosePollObserver>(observer));
-                c.Remove(c.Single(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(GlucosePollLoop)));
                 if (withLoop)
                 {
                     c.AddHostedService(sp => ActivatorUtilities.CreateInstance<GlucosePollLoop>(sp, (TimeProvider)clock));
@@ -614,10 +613,12 @@ public class SugaryGlucosePollerTests
         failed.Link.FailingSince.ShouldBe(harness.Clock.GetUtcNow());
     }
 
-    // A password sealed under another key (the key was changed) cannot be opened: the link is not
-    // polled, and nothing is written about it, since LibreLinkUp was never asked.
+    // A password sealed under another key (the key was changed, or the link copied onto somebody else's)
+    // cannot be opened: LibreLinkUp is never asked, and the link is recorded failing from its first ask
+    // so the app says to link it again and a watch on a failing link hears of it. It is asked again less
+    // and less often, its failure kept from the first.
     [Fact]
-    public async Task APasswordThatDoesNotOpen_IsNotPolled()
+    public async Task APasswordThatDoesNotOpen_IsRecordedAsALinkFailure_WithoutAskingLibreLinkUp()
     {
         await using var harness = await StartAsync();
         var connection = harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García");
@@ -625,12 +626,81 @@ public class SugaryGlucosePollerTests
         await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1",
             key: Convert.ToBase64String(SealingKey.Generate().Export()));
 
-        await harness.NextPeriodAsync(3);
+        await harness.NextPeriodAsync();
+        var firstAt = harness.Clock.GetUtcNow();
+        await harness.NextPeriodAsync(30);
 
         harness.Fake.Requests.ShouldBeEmpty();
         var link = await harness.LinkOfAsync(SugaryServer.Her);
         link.LastSuccessAt.ShouldBeNull();
+        link.LastFailure.ShouldBe(GlucoseLinkFailure.CredentialsUnreadable);
+        link.FailingSince.ShouldBe(firstAt);
+        link.FailureDetail.ShouldBeNull();
+        var told = harness.Observer.Polls;
+        told[0].Link.LastFailure.ShouldBe(GlucoseLinkFailure.CredentialsUnreadable);
+        told[0].Link.FailingSince.ShouldBe(firstAt);
+        told[0].Newest.ShouldBeNull();
+        told.Count.ShouldBeInRange(3, 8, "half an hour unreadable is looked at every fifteen minutes at most, not every minute");
+    }
+
+    // The key back (a restore, a configuration put right): the link opens at its next ask and answers,
+    // with nothing to link again.
+    [Fact]
+    public async Task APasswordThatOpensAgain_ClearsTheFailure()
+    {
+        await using var harness = await StartAsync();
+        var connection = harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García");
+        Wear(connection, harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1",
+            key: Convert.ToBase64String(SealingKey.Generate().Export()));
+        await harness.NextPeriodAsync(3);
+        (await harness.LinkOfAsync(SugaryServer.Her)).LastFailure.ShouldBe(GlucoseLinkFailure.CredentialsUnreadable);
+
+        await using (var db = harness.Factory())
+        {
+            var sealedAgain = harness.Server.Services.GetRequiredService<GlucoseCredentials>().Seal(SugaryServer.Her, "pw");
+            await db.GlucoseLinks.IgnoreQueryFilters().Where(l => l.UserId == SugaryServer.Her.UserId)
+                .ExecuteUpdateAsync(set => set.SetProperty(l => l.SealedPassword, sealedAgain));
+        }
+
+        Wear(connection, harness.Clock.GetUtcNow());
+        await harness.NextPeriodAsync(16);
+
+        var link = await harness.LinkOfAsync(SugaryServer.Her);
         link.LastFailure.ShouldBeNull();
+        link.FailingSince.ShouldBeNull();
+        link.LastSuccessAt.ShouldNotBeNull();
+        (await harness.ReadingsAsync(SugaryServer.Her)).ShouldNotBeEmpty();
+    }
+
+    // No key at all (removed from the deployment): no password opens, and every link says so rather
+    // than going quiet — the poller still runs, asking LibreLinkUp nothing.
+    [Fact]
+    public async Task WithNoSealingKey_EveryLinkIsRecordedUnreadable()
+    {
+        await using var harness = await StartAsync(withKey: false);
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1", key: _key);
+
+        await harness.NextPeriodAsync();
+
+        harness.Fake.Requests.ShouldBeEmpty();
+        (await harness.LinkOfAsync(SugaryServer.Her)).LastFailure.ShouldBe(GlucoseLinkFailure.CredentialsUnreadable);
+    }
+
+    [Fact]
+    public void TheLoop_RunsWithoutASealingKey()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(TimeProvider.System);
+        McpServerSugary.Modules.ConfigModule.ConfigureSugary(services, new McpServerSugary.Settings.SugarySettings
+        {
+            DatabasePath = Path.Combine(Path.GetTempPath(), "never-opened.db"),
+            Mcp = McpTestSecret.Gate
+        });
+
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(GlucosePollLoop));
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(GlucoseWatchLoop));
     }
 
     // A link with nobody chosen yet has nobody to read.
