@@ -13,11 +13,10 @@ import { MealScreen } from "./screens/MealScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useSettings } from "./settings";
 import { goNotice, goSignIn } from "./signin";
+import { hashOf, type Tab, tabOf } from "./tabs";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
 import { useTypingMark } from "./typing";
-
-export type Tab = "meal" | "log" | "glucose" | "cycle" | "foods" | "settings";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
   { id: "meal", label: "tabMeal", icon: "plate" },
@@ -62,7 +61,11 @@ export function App() {
 function Shell({ session }: { session: SessionState }) {
   const { t, language } = useSettings();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("meal");
+  const [tab, setTab] = useState<Tab>(() => tabOf(window.location.hash));
+  // Replaced, not pushed: the tabs are not pages, so Back leaves the app as it always has.
+  useEffect(() => {
+    window.history.replaceState(window.history.state, "", hashOf(tab));
+  }, [tab]);
   const adder = useRef<((item: DraftItem) => void) | null>(null);
   // Meals still waiting for how her glucose went, counted on the Log tab.
   const [pending, setPending] = useState(0);
