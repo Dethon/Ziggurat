@@ -49,6 +49,9 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "HouseholdMigrationCommandTests",
         "SugaryPeopleApiTests",
         "HouseholdChannelServersTests",
+        // Eighty-one hub cases, a quarter-second settle in most: twelve seconds in one class, and late
+        // in discovery order, so it started at 65 s and was the run's last class to finish.
+        "ChatHubQueueTests",
         "Lemonade",
     ];
 

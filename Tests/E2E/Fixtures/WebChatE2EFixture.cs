@@ -170,7 +170,8 @@ public class WebChatE2ESugaryCollection : ICollectionFixture<WebChatE2EFixture>;
 public class WebChatE2EAdminCollection : ICollectionFixture<WebChatE2EFixture>;
 
 // Two or more people of their own each, in a topic of their own: shared topics, a sees-all grant
-// withdrawn, a session ended elsewhere.
+// withdrawn, a session ended elsewhere. Steering a queued message into a held reply runs here too,
+// rather than behind the queue's own cases, whose chain it made the run's longest.
 [CollectionDefinition(WebChatE2ECollections.People)]
 public class WebChatE2EPeopleCollection : ICollectionFixture<WebChatE2EFixture>;
 
@@ -212,7 +213,7 @@ public class WebChatE2EDictationLongCollection : ICollectionFixture<WebChatE2EFi
 [CollectionDefinition(WebChatE2ECollections.Rewrites)]
 public class WebChatE2ERewritesCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// Messages queued behind a running reply: several turns in one case, so a chain of its own. The twenty-fourth, which fills the slices the stack has
+// Messages queued behind a running reply, and stopped there: several turns in one case, so a chain of its own. The twenty-fourth, which fills the slices the stack has
 // (WebChatCollectionSliceTests): a further collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Queue)]
 public class WebChatE2EQueueCollection : ICollectionFixture<WebChatE2EFixture>;

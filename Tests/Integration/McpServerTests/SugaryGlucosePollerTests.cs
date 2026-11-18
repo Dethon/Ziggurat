@@ -72,6 +72,13 @@ public class SugaryGlucosePollerTests
 
         public Task SweepAsync() => Poller.PollDueAsync(CancellationToken.None);
 
+        // A span on and one sweep: a link overdue by several periods is polled once.
+        public async Task LaterAsync(TimeSpan span)
+        {
+            clock.Advance(span);
+            await SweepAsync();
+        }
+
         // One period on, and whatever is due by then polled.
         public async Task NextPeriodAsync(int periods = 1)
         {
@@ -228,7 +235,9 @@ public class SugaryGlucosePollerTests
         link.FailingSince.ShouldBeNull();
     }
 
-    // Each poll sees the last twelve hours again; over a day the log keeps every moment once.
+    // Each poll sees the last twelve hours again; over a day the log keeps every moment once. Polled at
+    // the curve's own five minutes, so each current reading lands beside a curve point: thirteen hours
+    // of a poll a minute cost twenty seconds and said nothing more (a poll a minute is the next case).
     [Fact]
     public async Task ReadingsAccumulatePastTwelveHours_WithoutAMomentKeptTwice()
     {
@@ -237,12 +246,13 @@ public class SugaryGlucosePollerTests
         Wear(connection, harness.Clock.GetUtcNow());
         await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
 
+        var step = TimeSpan.FromMinutes(5);
         var shown = new List<DateTimeOffset>();
-        foreach (var _ in Enumerable.Range(0, 13 * 60))
+        foreach (var _ in Enumerable.Range(0, 13 * 12))
         {
-            Wear(connection, harness.Clock.GetUtcNow() + Harness.Period);
+            Wear(connection, harness.Clock.GetUtcNow() + step);
             shown.Add(connection.Latest!.Value.Point.At);
-            await harness.NextPeriodAsync();
+            await harness.LaterAsync(step);
         }
 
         var readings = await harness.ReadingsAsync(SugaryServer.Her);
