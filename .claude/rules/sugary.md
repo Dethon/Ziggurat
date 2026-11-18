@@ -15,7 +15,7 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 ## Who owns a row
 
-Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions and push subscriptions are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
+Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions and the glucose link are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
 
 `SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, and a push subscription changing hands.
 
@@ -31,8 +31,9 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - A route's `SugaryDbContext` parameter is **bound**, not resolved: `SugaryDbContext.BindAsync` (in `App/PersonsLog.cs`) opens the store for the request's `Person` and disposes it with the response. Minimal APIs prefer `BindAsync` to the container for a parameter, so a route cannot be handed the unowned context. A route that needs the person itself (an estimate, a label, a push subscription) takes `Person` too.
 - A push subscription's key is its endpoint, one browser: a browser that subscribes as somebody else becomes their phone (`UserId` reassigned), so her reminders stop reaching it.
 - Foods' and recipes' use counts come from the asking person's own meals.
-- **A person's log changes run one at a time** (`OneLogWriteAtATime`, on meals, doses, pens, exercise, periods and
-  day notes; never an estimate or a label, which wait on a model): a change is checked against the log as it is,
+- **A person's log changes run one at a time** (`OneLogWriteAtATime`, on meals, doses, pens, exercise, periods,
+  day notes and glucose; never an estimate or a label, which wait on a model; linking LibreLinkUp waits on its login,
+  so that route is marked `TakesItsOwnTurn` and takes her turn around its write alone, `TurnAsync`): a change is checked against the log as it is,
   so two phones tapping "my period started today" at once kept two periods, and a day's note written twice at once
   was a 500. A save the server refuses is read again on the page (`refusedBecause`), so the clash another phone made
   is said in her language rather than as a bad number.
@@ -46,6 +47,13 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   the minute and a note trimmed, so each field she left as it showed goes back as recorded (`overRecord`), or an
   untouched time would read as her change and another phone's change of it as a clash; the server compares a
   note, a name and a dose's meals as it would keep them. The household's pantry changes (`/foods`, `/recipes`) wait for each other across the household in the same queue (keyed by household), since two saves of one recipe at the same instant each read it before the other wrote (one change lost, or a 500).
+
+- **Her glucose link** (`GlucoseLink`, `/api/glucose`): `PUT /link` logs in and lists who the account follows
+  before anything is kept, so a refusal leaves the link she had; the region kept is the one LibreLinkUp found
+  the account at. The password is sealed (`GlucoseCredentials`, AES-GCM under `SealingKey`, compose's
+  `SEALINGKEY` from `.env`'s `SUGARY_SEALING_KEY`, the associated data her household's and her own id) and no
+  route answers it. Without the key linking answers 503 `linking-off` and the rest of Sugary works. Every
+  refusal carries a `code` the app words (`GlucoseEndpoints`).
 
 ## Turns, the mount and reminders
 

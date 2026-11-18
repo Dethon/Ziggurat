@@ -17,10 +17,13 @@ namespace McpServerSugary.App;
 // wait for each other across the household: a save is laid over the food or recipe as it is now
 // (StaleEdits), and two people saving one recipe at the same instant each read it before the other
 // wrote — one change was written away, or the save failed outright — and a food deleted while a
-// recipe that uses it was saved slipped past the check that keeps it.
+// recipe that uses it was saved slipped past the check that keeps it. A route that waits on somebody
+// else before it writes (linking her LibreLinkUp account logs in first) says so (TakesItsOwnTurn) and
+// takes her turn around its write alone (TurnAsync), so her meals are not held behind a slow login.
 public sealed class OneLogWriteAtATime
 {
-    private static readonly string[] _log = ["/meals", "/doses", "/pens", "/exercise", "/periods", "/day-notes"];
+    private static readonly string[] _log =
+        ["/meals", "/doses", "/pens", "/exercise", "/periods", "/day-notes", "/glucose"];
     private static readonly string[] _pantry = ["/foods", "/recipes"];
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _people = new(StringComparer.Ordinal);
@@ -30,27 +33,49 @@ public sealed class OneLogWriteAtATime
         {
             var http = context.HttpContext;
             if (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method)
+                || http.GetEndpoint()?.Metadata.GetMetadata<TakesItsOwnTurn>() is not null
                 || Person.Of(http) is not { } person
                 || KeyOf(http.Request.Path, person.Account) is not { } key)
             {
                 return await next(context);
             }
 
-            var turn = http.RequestServices.GetRequiredService<OneLogWriteAtATime>()
-                ._people.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-            await turn.WaitAsync(http.RequestAborted);
-            try
+            using (await http.RequestServices.GetRequiredService<OneLogWriteAtATime>().TakeAsync(key, http.RequestAborted))
             {
                 return await next(context);
             }
-            finally
+        });
+
+    // Her turn, for a route that took its own: held until disposed.
+    public Task<IDisposable> TurnAsync(Account person, CancellationToken ct) => TakeAsync(PersonKey(person), ct);
+
+    private async Task<IDisposable> TakeAsync(string key, CancellationToken ct)
+    {
+        var turn = _people.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await turn.WaitAsync(ct);
+        return new Held(turn);
+    }
+
+    private static string PersonKey(Account account) => $"{account.TenantId}:{account.UserId}";
+
+    private static string? KeyOf(PathString path, Account account) =>
+        _log.Any(group => path.StartsWithSegments("/api" + group)) ? PersonKey(account)
+        : _pantry.Any(group => path.StartsWithSegments("/api" + group)) ? $"{account.TenantId}:pantry"
+        : null;
+
+    private sealed class Held(SemaphoreSlim turn) : IDisposable
+    {
+        private int _released;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _released, 1) == 0)
             {
                 turn.Release();
             }
-        });
-
-    private static string? KeyOf(PathString path, Account account) =>
-        _log.Any(group => path.StartsWithSegments("/api" + group)) ? $"{account.TenantId}:{account.UserId}"
-        : _pantry.Any(group => path.StartsWithSegments("/api" + group)) ? $"{account.TenantId}:pantry"
-        : null;
+        }
+    }
 }
+
+// On a route of her log that takes her turn itself, around its write alone (OneLogWriteAtATime.TurnAsync).
+public sealed class TakesItsOwnTurn;

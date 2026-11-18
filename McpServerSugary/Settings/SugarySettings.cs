@@ -50,6 +50,11 @@ public record SugarySettings : IMcpHostSettings
     // no reminders and none are sent.
     public WebPushConfig WebPush { get; init; } = new();
 
+    // The base64 of 32 random bytes (SEALINGKEY, .env's SUGARY_SEALING_KEY) that a linked LibreLinkUp
+    // account's password is sealed under. Empty is no glucose linking: the app is told so and the rest
+    // of Sugary works; malformed stops startup.
+    public string SealingKey { get; init; } = "";
+
     // The hour on the home's clock from which a pen's reminder is sent: not in the night, and early
     // enough to pick up a new pen on the way out.
     public int PenReminderHour { get; init; } = 9;

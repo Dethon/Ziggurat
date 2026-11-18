@@ -7,7 +7,8 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per session of exercise, one row per period, one row per noted day, enums,
+// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per session of exercise, one row per period, one row per noted day, one row per linked
+// glucose account and per person it follows, enums,
 // times and days as readable text.
 //
 // Each person keeps a log of their own and the household shares its kitchen, so every row names its
@@ -41,6 +42,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
+    public DbSet<GlucoseLink> GlucoseLinks => Set<GlucoseLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -120,6 +122,28 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         modelBuilder.Entity<Period>().HasIndex(p => p.Start);
         modelBuilder.Entity<DayNote>().HasKey(n => new { n.UserId, n.Day });
 
+        // One link per person. The people the account follows are rows of their own, as a meal's items are.
+        var link = modelBuilder.Entity<GlucoseLink>();
+        link.HasKey(l => l.UserId);
+        link.Property(l => l.Unit).HasConversion<string>();
+        link.Property(l => l.LastFailure).HasConversion<string>();
+        link.Property(l => l.LinkedAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        link.Property(l => l.LastSuccessAt).HasConversion(
+            value => value.HasValue ? value.Value.UtcDateTime : (DateTime?)null,
+            stored => stored.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(stored.Value, DateTimeKind.Utc)) : null);
+        link.Property(l => l.FailingSince).HasConversion(
+            value => value.HasValue ? value.Value.UtcDateTime : (DateTime?)null,
+            stored => stored.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(stored.Value, DateTimeKind.Utc)) : null);
+        link.OwnsMany(l => l.Connections, connection =>
+        {
+            connection.ToTable("GlucoseLinkConnections");
+            connection.WithOwner().HasForeignKey("LinkUserId");
+            connection.Property<int>("Id");
+            connection.HasKey("Id");
+        });
+
         Personal(meal);
         Personal(dose);
         Personal(pen);
@@ -127,6 +151,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(exercise);
         Personal(modelBuilder.Entity<Period>());
         Personal(modelBuilder.Entity<DayNote>());
+        Personal(link);
         Household(food);
         Household(recipe);
     }

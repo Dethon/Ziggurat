@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
+using Domain.Security.Sealing;
 using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
@@ -39,6 +40,7 @@ public static class ConfigModule
             // Her glucose, from the LibreLinkUp follower account she links: one client, keeping each
             // account's token for as long as it lasts.
             .AddLibreLinkUp(LibreLinkUpRegions.Abbott)
+            .AddSingleton(new GlucoseCredentials(SealingKey.Parse(settings.SealingKey, "SealingKey")))
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()

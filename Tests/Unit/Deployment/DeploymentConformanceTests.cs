@@ -186,6 +186,7 @@ public class DeploymentConformanceTests
     [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
     [InlineData("TELEGRAM_SHARED_BOT_TOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
+    [InlineData("SUGARY_SEALING_KEY", new[] { "mcp-sugary" })]
     [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
     [InlineData("HOUSEHOLD_CONFIG_MASTER_KEY", new[] { "accounts" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)

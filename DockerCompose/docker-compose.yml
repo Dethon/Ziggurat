@@ -266,6 +266,8 @@ services:
       WEBPUSH__SUBJECT: ${WEBPUSH__SUBJECT}
       WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
       WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
+      # What a linked LibreLinkUp account's password is sealed under. Empty is no glucose linking.
+      SEALINGKEY: ${SUGARY_SEALING_KEY}
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
