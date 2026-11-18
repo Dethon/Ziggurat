@@ -326,6 +326,40 @@ public class SugaryWatchFileSystemTests
         _store.Stored(Household, "low")!.SubjectUserId.ShouldBe(Tradaly);
     }
 
+    // A stat of an id somebody else keeps out of view says the id is there to be taken and nothing else:
+    // what the union asks before a home watch is created under it.
+    [Fact]
+    public async Task AStatOfAnIdTakenOutOfView_SaysOnlyThatItIsTaken()
+    {
+        await CreateAsync(Tradaly, "low", LowWatch);
+
+        var hidden = Ok(await Mount(Dani).InfoAsync("/low", CancellationToken.None));
+        var free = Ok(await Mount(Dani).InfoAsync("/high", CancellationToken.None));
+        var hers = Ok(await Mount(Tradaly).InfoAsync("/low", CancellationToken.None));
+
+        hidden.ShouldBe(new FsInfoResult { Exists = false, Path = "/low", Hidden = true });
+        free.Hidden.ShouldBeFalse();
+        free.Exists.ShouldBeFalse();
+        hers.Exists.ShouldBeTrue();
+        hers.Hidden.ShouldBeFalse();
+    }
+
+    // The converse of the case above: a home watch written by somebody who cannot see the glucose watch
+    // holding its id would otherwise go to the home and leave the id held twice.
+    [Fact]
+    public async Task AHomeWatchUnderAnIdAGlucoseWatchHoldsOutOfView_IsRefused()
+    {
+        await CreateAsync(Tradaly, "low", LowWatch);
+
+        var refused = Error(await Union(Dani).CreateAsync(
+            "low/watch.json", """{"triggers":[{"trigger":"state"}]}""", false, true, CancellationToken.None));
+
+        refused.ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        refused.Message.ShouldNotContain("glucose");
+        refused.Message.ShouldNotContain("Tradaly");
+        _home.Files.Keys.ShouldNotContain("low/watch.json");
+    }
+
     [Fact]
     public async Task AnIdInView_IsReplacedOnlyWithOverwrite()
     {

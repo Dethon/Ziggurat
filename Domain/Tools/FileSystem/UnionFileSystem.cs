@@ -282,10 +282,16 @@ public sealed class UnionFileSystem : IFileSystemBackend, ICallerBoundBackend
             return new FsResult<T>.Err(source.Error!);
         }
 
-        return listing.HolderOf(Entry(destinationPath)) is { } other && other != member
-            ? FsError.Invalid<T>(
+        var destination = listing.HolderOf(Entry(destinationPath));
+        if (destination is { } other && other != member)
+        {
+            return FsError.Invalid<T>(
                 $"{sourcePath} is {member.Name}'s and {destinationPath} is {other.Name}'s: an entry cannot move "
-                + "or be copied from one filesystem sharing this mount point to another. Read it and write it anew instead.")
+                + "or be copied from one filesystem sharing this mount point to another. Read it and write it anew instead.");
+        }
+
+        return destination is null && await TakenElsewhereAsync(destinationPath, member, ct) is { } taken
+            ? new FsResult<T>.Err(taken)
             : await operation(member.Backend);
     }
 
@@ -316,12 +322,41 @@ public sealed class UnionFileSystem : IFileSystemBackend, ICallerBoundBackend
             .ToList();
         var targets = owners.Select(o => o.Owner ?? Fallback).Distinct().ToList();
 
-        return targets switch
+        var routed = targets switch
         {
-            [] when Fallback is { } fallback => new Placement(fallback, null),
-            [{ } only] => new Placement(only, null),
-            _ => new Placement(null, Unroutable(path, owners))
+            [] when Fallback is { } fallback => fallback,
+            [{ } only] => only,
+            _ => null
         };
+        if (routed is null)
+        {
+            return new Placement(null, Unroutable(path, owners));
+        }
+
+        return await TakenElsewhereAsync(path, routed, ct) is { } taken ? new Placement(null, taken) : new Placement(routed, null);
+    }
+
+    // One id is one entry across the members, but a member may keep an entry out of this caller's view,
+    // and then its listing does not show it: a new entry routed elsewhere would make the id two. So the
+    // other members are asked about the entry itself, and one holding it — seen or not
+    // (FsInfoResult.Hidden) — makes the id taken. The refusal names no member and nothing of the entry,
+    // since the caller may not know it is there. The member the entry goes to answers for its own ids;
+    // one that refuses or is away holds nothing the union can know of, as a create while a member is away
+    // is routed by claims alone.
+    private async Task<ToolErrorResult?> TakenElsewhereAsync(string path, Member target, CancellationToken ct)
+    {
+        var entry = Entry(path);
+        var entryPath = path.StartsWith('/') ? "/" + entry : entry;
+        var others = _members.Where(m => !ReferenceEquals(m, target)).ToList();
+        var answers = await AskAsync(others, m => m.Backend.InfoAsync(entryPath, ct));
+        return answers.Any(a => a.Value is { Exists: true } or { Hidden: true })
+            ? new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.AlreadyExists,
+                Message = $"'{entry}' is taken: the id is already in use here.",
+                Hint = "Choose another id."
+            }
+            : null;
     }
 
     private ToolErrorResult Unroutable(string path, IReadOnlyList<(string Value, Member? Owner)> owners)
@@ -422,8 +457,12 @@ public sealed class UnionFileSystem : IFileSystemBackend, ICallerBoundBackend
 
     // A member that refuses (the caller, the path, the operation) answers nothing and fails nothing;
     // one that throws or fails in a way worth retrying is away, and named so.
-    private async Task<IReadOnlyList<Answer<T>>> AskAllAsync<T>(Func<Member, Task<FsResult<T>>> ask) where T : class =>
-        await Task.WhenAll(_members.Select(async member =>
+    private Task<IReadOnlyList<Answer<T>>> AskAllAsync<T>(Func<Member, Task<FsResult<T>>> ask) where T : class =>
+        AskAsync(_members, ask);
+
+    private static async Task<IReadOnlyList<Answer<T>>> AskAsync<T>(
+        IReadOnlyList<Member> members, Func<Member, Task<FsResult<T>>> ask) where T : class =>
+        await Task.WhenAll(members.Select(async member =>
         {
             try
             {

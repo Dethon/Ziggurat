@@ -1,12 +1,21 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
+using Domain.Tools.Sugary.Watches;
+using Domain.Tools.Watches;
+using Infrastructure.Agents.Mcp;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Client;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit.Domain.Tools.FileSystem;
 
 namespace Tests.Integration.McpServerTests;
 
@@ -47,6 +56,37 @@ public class SugaryGlucoseWatchesTests
             ["filesystem"] = "sugary-watches", ["path"] = "low"
         }));
         (await GlobAsync(server, SugaryServer.Her)).ShouldBeEmpty();
+    }
+
+    // As the agent reaches /watchers: a union of the home's watches and Sugary's over the wire. Him writing
+    // a home watch under an id her glucose watch holds, which he cannot see, is refused saying nothing of
+    // it — the stat that tells the union so crosses the wire with the rest of the answer.
+    [Fact]
+    public async Task AHomeWatchUnderAnIdHerGlucoseWatchHolds_IsRefusedOverTheWire()
+    {
+        await using var server = await SugaryServer.StartAsync(sugaryPeople: _people);
+        Ok(await CreateAsync(server, "low", Low, SugaryServer.Her));
+        await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(server.Endpoint));
+        var home = new EntryMount("ha-watches", []);
+        var union = (ICallerBoundBackend)new UnionFileSystem(
+        [
+            new UnionFileSystem.Member("ha-watches", new FileSystemUnion(Watchers.RouteBy, [], Fallback: true), home),
+            new UnionFileSystem.Member(SugaryWatchFileSystem.Name, new FileSystemUnion(Watchers.RouteBy, [.. GlucoseTrigger.Kinds]),
+                new McpFileSystemBackend(client, SugaryWatchFileSystem.Name, null))
+        ]);
+
+        var refused = await union.As(SugaryServer.TurnOf(SugaryServer.Him)).CreateAsync(
+            "/low/watch.json", """{"triggers":[{"trigger":"state"}]}""", false, true, CancellationToken.None);
+        var free = await union.As(SugaryServer.TurnOf(SugaryServer.Him)).CreateAsync(
+            "/door/watch.json", """{"triggers":[{"trigger":"state"}]}""", false, true, CancellationToken.None);
+
+        var error = refused.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        error.Message.ShouldNotContain(SugaryServer.Her.UserId);
+        error.Message.ShouldNotContain("glucose");
+        home.Files.Keys.ShouldNotContain("/low/watch.json");
+        free.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        home.Files.Keys.ShouldContain("/door/watch.json");
     }
 
     // The engine's judgments are keyed by a trigger's place in the list, so a watch written anew forgets

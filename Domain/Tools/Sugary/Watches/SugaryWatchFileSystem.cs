@@ -134,13 +134,25 @@ public sealed class SugaryWatchFileSystem(
         }
 
         var node = HaWatchPath.Parse(path);
-        var (exists, isDir) = node.Kind switch
+        if (node.Kind is HaWatchKind.Root or HaWatchKind.Unknown)
         {
-            HaWatchKind.Root => (true, true),
-            HaWatchKind.Unknown => (false, false),
-            _ => (await VisibleAsync(reader, node.WatchId, ct) is not null, node.Kind == HaWatchKind.WatchDir)
-        };
-        return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
+            var root = node.Kind == HaWatchKind.Root;
+            return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = root, Path = path, IsDirectory = root ? true : null });
+        }
+
+        // An id somebody else keeps out of this reader's view is said to be taken and nothing more, so the
+        // union refuses a home watch under it as this mount refuses a glucose one (UnionFileSystem).
+        var stored = HaWatchAutomation.IsValidWatchId(node.WatchId) ? await watches.FindAsync(reader, node.WatchId!, ct) : null;
+        if (stored is not null && !(await PeopleAsync(reader, ct)).Sees(stored))
+        {
+            return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = false, Path = path, Hidden = true });
+        }
+
+        var exists = stored is not null;
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult
+        {
+            Exists = exists, Path = path, IsDirectory = exists ? node.Kind == HaWatchKind.WatchDir : null
+        });
     }
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>

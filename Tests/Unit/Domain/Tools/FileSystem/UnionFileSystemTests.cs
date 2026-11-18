@@ -161,6 +161,93 @@ public class UnionFileSystemTests
         _sugary.Files.Keys.ShouldNotContain("porch/watch.json");
     }
 
+    // One id across the members: an entry a member holds and keeps out of this caller's view is not in
+    // its listing, so the create would be routed to another member and the id held twice. The other
+    // members are asked whether it is there at all, and the refusal says the id is taken and nothing of
+    // whose it is or what it holds.
+    [Fact]
+    public async Task ACreateOfAnIdAnotherMemberHidesFromTheCaller_IsRefusedSayingNothingOfIt()
+    {
+        _sugary.Files["night-low/watch.json"] = """{"triggers":[{"trigger":"glucose"}],"name":"Ana's lows"}""";
+        _sugary.Hidden.Add("night-low");
+
+        var refused = Error(await Union().CreateAsync("night-low/watch.json", Trigger("state"), false, true, CancellationToken.None));
+
+        refused.ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        refused.Message.ShouldContain("night-low");
+        refused.Message.ShouldNotContain("sugary");
+        refused.Message.ShouldNotContain("glucose");
+        refused.Message.ShouldNotContain("Ana");
+        (refused.Hint ?? "").ShouldNotContain("sugary");
+        _home.Files.Keys.ShouldNotContain("night-low/watch.json");
+    }
+
+    [Fact]
+    public async Task ACreateOverwriting_IsRefusedToo_WhenAnotherMemberHidesTheId()
+    {
+        _home.Files["porch-2/watch.json"] = Trigger("state");
+        _home.Hidden.Add("porch-2");
+
+        Error(await Union().CreateAsync("/porch-2/watch.json", Trigger("glucose"), true, true, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        _sugary.Files.Keys.ShouldNotContain("/porch-2/watch.json");
+        _home.Probed.ShouldBe(["/porch-2"]);
+    }
+
+    // The member the create goes to answers for its own ids; the others are asked once, and a free id
+    // is created as before.
+    [Fact]
+    public async Task ACreateOfAFreeId_AsksTheOtherMembersAndGoesThrough()
+    {
+        Ok(await Union().CreateAsync("door/watch.json", Trigger("state"), false, true, CancellationToken.None));
+
+        _home.Files.Keys.ShouldContain("door/watch.json");
+        _sugary.Probed.ShouldBe(["door"]);
+        _home.Probed.ShouldBeEmpty();
+    }
+
+    // As a create while a member is away is routed by claims, a member away when asked holds nothing
+    // the union can know of.
+    [Fact]
+    public async Task AMemberAwayWhenAskedWhetherTheIdIsTaken_DoesNotStopTheCreate()
+    {
+        _sugary.Throws = true;
+
+        Ok(await Union().CreateAsync("door/watch.json", Trigger("state"), false, true, CancellationToken.None));
+
+        _home.Files.Keys.ShouldContain("door/watch.json");
+    }
+
+    [Fact]
+    public async Task AMoveOntoAnIdAnotherMemberHides_IsRefused()
+    {
+        _sugary.Files["night-low/watch.json"] = Trigger("glucose");
+        _sugary.Hidden.Add("night-low");
+
+        Error(await Union().MoveAsync("porch/watch.json", "night-low/watch.json", CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        _home.Files.Keys.ShouldContain("porch/watch.json");
+    }
+
+    [Fact]
+    public async Task ABridgeWriteOfAnIdAnotherMemberHides_IsRefused()
+    {
+        _sugary.Files["night-low/watch.json"] = Trigger("glucose");
+        _sugary.Hidden.Add("night-low");
+
+        var refused = await Should.ThrowAsync<FileSystemOperationException>(() => Union().WriteChunksAsync(
+            "night-low/watch.json", Chunks(Trigger("state")), false, true, CancellationToken.None));
+
+        refused.Error.ErrorCode.ShouldBe(ToolError.Codes.AlreadyExists);
+        _home.Files.Keys.ShouldNotContain("night-low/watch.json");
+    }
+
+    private static async IAsyncEnumerable<ReadOnlyMemory<byte>> Chunks(string text)
+    {
+        await Task.CompletedTask;
+        yield return System.Text.Encoding.UTF8.GetBytes(text);
+    }
+
     [Fact]
     public async Task AMemberRefusingTheCaller_AddsNothingAndFailsNothing()
     {
@@ -340,6 +427,13 @@ internal sealed class EntryMount(string name, Dictionary<string, string> files) 
 
     public bool Throws { get; set; }
 
+    // Entries this store holds and keeps out of the caller's view: never listed, and a stat says only
+    // that something is there.
+    public HashSet<string> Hidden { get; } = new(StringComparer.Ordinal);
+
+    // Every path a stat was asked of.
+    public List<string> Probed { get; } = [];
+
     public override string FilesystemName => name;
 
     public override string DescribeMount => $"The {name} entries.";
@@ -357,7 +451,9 @@ internal sealed class EntryMount(string name, Dictionary<string, string> files) 
         }
 
         var scope = basePath.Trim('/');
-        var under = Files.Keys.Where(k => scope.Length == 0 || k.StartsWith(scope + "/", StringComparison.Ordinal)).ToList();
+        var under = Files.Keys
+            .Where(k => !Hidden.Contains(k.Split('/')[0]))
+            .Where(k => scope.Length == 0 || k.StartsWith(scope + "/", StringComparison.Ordinal)).ToList();
         IReadOnlyList<string> entries = pattern == "*" && scope.Length == 0
             ? under.Select(k => k.Split('/')[0] + "/").Distinct().ToList()
             : under;
@@ -369,13 +465,28 @@ internal sealed class EntryMount(string name, Dictionary<string, string> files) 
             ? new FsResult<FsReadResult>.Ok(new FsReadResult { FilePath = path, Content = content, TotalLines = 1, Truncated = false })
             : NotFound<FsReadResult>(path)));
 
-    public override Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct) =>
-        Task.FromResult<FsResult<FsInfoResult>>(new FsResult<FsInfoResult>.Ok(new FsInfoResult
+    public override Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    {
+        lock (Probed)
         {
-            Exists = path.Length == 0 || Files.Keys.Any(k => k == path || k.StartsWith(path + "/", StringComparison.Ordinal)),
-            Path = path,
-            IsDirectory = !Files.ContainsKey(path)
-        }));
+            Probed.Add(path);
+        }
+
+        if (Failing<FsInfoResult>() is { } failed)
+        {
+            return Task.FromResult(failed);
+        }
+
+        var key = path.TrimStart('/');
+        return Task.FromResult<FsResult<FsInfoResult>>(new FsResult<FsInfoResult>.Ok(Hidden.Contains(key.Split('/')[0])
+            ? new FsInfoResult { Exists = false, Path = path, Hidden = true }
+            : new FsInfoResult
+            {
+                Exists = key.Length == 0 || Files.Keys.Any(k => k == key || k.StartsWith(key + "/", StringComparison.Ordinal)),
+                Path = path,
+                IsDirectory = !Files.ContainsKey(key)
+            }));
+    }
 
     public override Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite,
         bool createDirectories, CancellationToken ct)
