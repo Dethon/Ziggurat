@@ -118,17 +118,30 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
             }
             catch (TimeoutException e)
             {
-                // Never kept: the agent's own account of the stop is what says why.
-                var log = (await fixture.AgentLogAsync()).Split('\n')
-                    .Where(line => line.Contains("cancel", StringComparison.OrdinalIgnoreCase)
-                                   || line.Contains("stop", StringComparison.OrdinalIgnoreCase)
-                                   || line.Contains("approval", StringComparison.OrdinalIgnoreCase)
-                                   || line.Contains("returned", StringComparison.OrdinalIgnoreCase)
-                                   || line.Contains("fail", StringComparison.OrdinalIgnoreCase)
-                                   || line.Contains("warn", StringComparison.OrdinalIgnoreCase))
-                    .TakeLast(80);
+                // Never kept: what the store holds for the conversation says which of the keep's refusals
+                // it met — the line moved on, the turn handed back, or a turn still in flight.
+                var dump = new System.Text.StringBuilder();
+                foreach (var key in (await fixture.RedisAsync("--scan", "--pattern", "topic@*")).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var record = await fixture.RedisAsync("GET", key);
+                    if (!record.Contains(topic))
+                    {
+                        continue;
+                    }
+
+                    dump.AppendLine($"TOPIC {record}");
+                    var chat = System.Text.RegularExpressions.Regex.Match(record, "\"ChatId\":(\\d+)").Groups[1].Value;
+                    var thread = System.Text.RegularExpressions.Regex.Match(record, "\"ThreadId\":(\\d+)").Groups[1].Value;
+                    foreach (var k in (await fixture.RedisAsync("--scan", "--pattern", $"*{chat}:{thread}*")).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var type = (await fixture.RedisAsync("TYPE", k)).Trim();
+                        var v = type switch { "list" => await fixture.RedisAsync("LRANGE", k, "0", "-1"), "string" => await fixture.RedisAsync("GET", k), "hash" => await fixture.RedisAsync("HGETALL", k), _ => type };
+                        dump.AppendLine($"KEY {k} ({type}) TTL {(await fixture.RedisAsync("PTTL", k)).Trim()}\n{(v.Length > 3000 ? v[..3000] : v)}");
+                    }
+                }
+                var log = new[] { dump.ToString() };
                 throw new TimeoutException(
-                    $"The stopped turn was never kept ({words}). The agent's log:\n{string.Join('\n', log)}", e);
+                    $"The stopped turn was never kept ({words}). The store holds:\n{string.Join('\n', log)}", e);
             }
         }
     }

@@ -31,7 +31,7 @@ public class WebChatE2EFixture : E2EFixtureBase
     // names in the session check's headers.
     public Task<Account> AccountForAsync(int userIndex) => Stack.AccountForAsync(userIndex);
 
-    public Task<string> AgentLogAsync() => Stack.AgentLogAsync();
+    public Task<string> RedisAsync(params string[] command) => Stack.RedisAsync(command);
 
     // Scoped to this collection's space, so a test says what the transcriber answers without
     // knowing that another collection is dictating beside it.
