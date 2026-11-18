@@ -201,7 +201,7 @@ bridge. A new back-call, or a server that comes to need one, names its server he
   `STT__OPENAI__BASEURL`/`TTS__OPENAI__BASEURL`, `METRICS__URL` (`http://127.0.0.1:<port>/events`),
   the sandbox's `VFSBRIDGEURL` (`http://127.0.0.1:<port>/api/vfs-bridge`) — and the Rust daemon is
   served as a .NET client is. A server names only the back-calls it makes: anything beside it, a
-  sandbox command included, can dial those ports, and what it reaches is then the allowlist and no more.
+  sandbox command included, can dial those ports, and what it reaches is then the allowlist and no more. Each accepted connection is `NoDelay`: the answer is written head then body, and with Nagle's algorithm the body waited ~45 ms for the client's delayed acknowledgement on every back-call (`ABackCallRequest_IsNotHeldBackByTheRelaysSocket`). The server's end of an agent-opened stream (`TunnelClient`) was measured too and is not held back, so it is left as it is.
 - **The relay's end is a Kestrel of its own** (`BackCallGateway`, started with the relay). Its
   transport is the back-call streams themselves (`BackCallTransport`: one stream, one connection),
   so the HTTP inside is read by Kestrel, keep-alive and chunked bodies included, and never by a parser

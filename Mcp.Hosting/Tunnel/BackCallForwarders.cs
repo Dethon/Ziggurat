@@ -84,6 +84,12 @@ internal sealed class BackCallForwarders(TunnelSettings settings, TunnelLink lin
     {
         using (connection)
         {
+            // The answer is written as it arrives — its head, then its body — and with Nagle's
+            // algorithm on the second write waits for the client to acknowledge the first, which a
+            // client waiting for the body holds back for its delayed-ACK timer: ~45 ms on every
+            // back-call, measured on a loopback (BackCallGatewayTests). A sandbox command pays it
+            // per kernel operation through the bridge.
+            connection.NoDelay = true;
             TunnelStream stream;
             try
             {
