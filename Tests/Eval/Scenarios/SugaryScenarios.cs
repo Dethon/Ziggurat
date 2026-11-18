@@ -319,7 +319,8 @@ public static class SugaryScenarios
         {
             Mentions =
             [
-                new SpokenValue("her time in range", "75 %", "75%", "75,0", "75.0", "75 por ciento")
+                // At a word boundary, so "75 %" with whatever space, "75,0" and "75%" all carry it.
+                new SpokenValue("her time in range", "75")
             ]
         },
         Claims = [SugarySkill.LoadsForAQuestionAboutHerLog.Id],

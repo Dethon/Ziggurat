@@ -107,9 +107,10 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
         double.Parse(row[columns.IndexOf("coverage_pct")]!, CultureInfo.InvariantCulture).ShouldBe(100);
     }
 
-    // The newest reading is past 180 and climbing, which the mmol scenario's crossing note is about.
+    // The newest reading is just past 126 (7 mmol/L) and climbing, which the mmol scenario's crossing
+    // note is about, and in range, so nothing else meets a high nobody mentioned.
     [Fact]
-    public async Task HerNewestReading_IsAlreadyPast180_AndRising()
+    public async Task HerNewestReading_IsInRange_JustPast7Mmol_AndRising()
     {
         var newest = await QueryAsync("select mg_dl, trend from glucose order by read_at desc limit 1");
 

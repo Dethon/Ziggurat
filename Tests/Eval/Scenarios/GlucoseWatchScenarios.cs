@@ -13,7 +13,7 @@ namespace Tests.Eval.Scenarios;
 //
 // Jonas's, because he dials Sugary and the home alike: the home's index lists Laura's glucose entity
 // too, so every one of these is also the choice between the two kinds of watch. Her log (EvalSugaryLog)
-// has a fortnight of readings, her newest 195 and climbing, so a level of 180 is already past.
+// has a fortnight of readings, her newest 130 and climbing, so a level of 126 (7 mmol/L) is already past.
 public static class GlucoseWatchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
@@ -121,7 +121,9 @@ public static class GlucoseWatchScenarios
                 ]
             }
         ],
-        Permitted = Looking,
+        // Its rooms are read from /timers/satellites.json, which the timers stub says to load the
+        // countdown-timers skill before reading: that load is the way to the room, not a wrong skill.
+        Permitted = [.. Looking, CallPermission.Load(CountdownTimersSkill.Name)],
         Changes = OneGlucoseWatch(EvalRun.UserId, "glucose below 60"),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
@@ -235,13 +237,13 @@ public static class GlucoseWatchScenarios
         Policy = new RunPolicy(2, 3)
     };
 
-    // A level in mmol/L, written in mg/dL — and already past: her newest reading is 195, so the reply
+    // A level in mmol/L, written in mg/dL — and already past: her newest reading is 130, so the reply
     // says so and that the watch waits for the next crossing.
     public static Scenario ALevelInMmol => new()
     {
         Name = "a level asked in mmol/L is written in mg/dL and an already-past one is said",
         AgentId = "jonas",
-        Turn = new EvalTurn { Text = "Avísame cuando mi glucosa pase de 10 mmol/L.", Sender = "fran" },
+        Turn = new EvalTurn { Text = "Avísame cuando mi glucosa pase de 7 mmol/L.", Sender = "fran" },
         Instant = EvalInstant.Evening,
         Required =
         [
@@ -254,24 +256,24 @@ public static class GlucoseWatchScenarios
                 [
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Trigger("glucose")),
-                    Arg.Matches("content", @"""above""\s*:\s*180(\.\d+)?(?![\d.])"),
-                    Arg.Lacks("content", @"""above""\s*:\s*10(?![\d])")
+                    Arg.Matches("content", @"""above""\s*:\s*126(\.\d+)?(?![\d.])"),
+                    Arg.Lacks("content", @"""above""\s*:\s*7(?![\d])")
                 ]
             }
         ],
         Permitted = Looking,
-        Changes = OneGlucoseWatch(EvalRun.UserId, "glucose above 180"),
+        Changes = OneGlucoseWatch(EvalRun.UserId, "glucose above 126"),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Claims = [GlucoseWatchesSkill.LoadsForAGlucoseWatchRequest.Id, GlucoseWatchesSkill.LevelsAreMgDl.Id],
         Judged =
         [
             new JudgedCheck(GlucoseWatchesSkill.CrossingOnlyIsSaid.Id,
-                "The user asked to be warned when their glucose goes above 10 mmol/L (180 mg/dL), and the "
-                + "assistant created a watch for it. Their newest sensor reading was 195 mg/dL (about 10.8 "
+                "The user asked to be warned when their glucose goes above 7 mmol/L (126 mg/dL), and the "
+                + "assistant created a watch for it. Their newest sensor reading was 130 mg/dL (about 7.2 "
                 + "mmol/L) and rising, so they were already above the level when the watch was written, and "
                 + "such a watch fires only at the next crossing, not now. Pass only if the reply says they "
-                + "are already above it, giving the current value in either unit (195 mg/dL, or 10.8 mmol/L "
+                + "are already above it, giving the current value in either unit (130 mg/dL, or 7.2 mmol/L "
                 + "give or take a tenth), and that the warning will come the next time it crosses (after it "
                 + "has come back down). Fail if it does not mention the current value, or if it implies a "
                 + "warning is coming now or that they are below the level.")

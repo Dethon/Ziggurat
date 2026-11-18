@@ -67,11 +67,12 @@ public static class EvalSugaryLog
     // Her week of glucose before the scenarios' evening, read every five minutes on the home's clock:
     // low from 02:00 to 04:00, high from 14:00 to 18:00, in range the rest of the day — so any week of
     // it is 75 % in 70–180, 8.3 % below 70 and 16.7 % above 180, however its edges are drawn — and the
-    // last half hour climbing to 195, so a level of 180 is already past when a watch is written.
+    // last half hour climbing gently to 130, still in range — a dose worked out tonight meets no high
+    // nobody mentioned — and just past 126 (7 mmol/L), which the mmol scenario's level is.
     public const double TimeInRangePercent = 75.0;
-    public const int NewestMgPerDl = 195;
+    public const int NewestMgPerDl = 130;
     private static readonly DateTimeOffset _glucoseFrom = new(2026, 8, 3, 0, 0, 0, TimeSpan.FromHours(2));
-    private static readonly int[] _climb = [150, 160, 170, 182, 190, NewestMgPerDl];
+    private static readonly int[] _climb = [110, 115, 119, 123, 127, NewestMgPerDl];
 
     // Every glucose watch the household keeps, as the snapshot names it: how many, whose sensor each
     // watches, and what each of its triggers waits for — levels to the whole mg/dL, so a level asked in
