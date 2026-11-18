@@ -548,4 +548,107 @@ public class SugaryGlucosePollerTests
             return (await harness.ReadingsAsync(SugaryServer.Her)).Count > 0;
         }, "the loop polls her link");
     }
+
+    // Links are spread across the period, each at its own moment, rather than all asked at once.
+    [Fact]
+    public async Task Links_ArePolledEachAtItsOwnMomentOfThePeriod()
+    {
+        await using var harness = await StartAsync();
+        Account[] people = [SugaryServer.Her, SugaryServer.Him, SugaryServer.Neighbour];
+        foreach (var (person, i) in people.Select((p, i) => (p, i)))
+        {
+            Wear(harness.Fake.AddAccount($"p{i}@example.com", "pw").Follow($"patient-{i}", "Ana", "García"), harness.Clock.GetUtcNow());
+            await harness.LinkAsync(person, $"p{i}@example.com", "pw", $"patient-{i}");
+        }
+
+        var firstPolledAt = new Dictionary<int, int>();
+        var steps = (int)(Harness.Period / GlucosePollLoop.Tick);
+        foreach (var step in Enumerable.Range(1, steps))
+        {
+            harness.Clock.Advance(GlucosePollLoop.Tick);
+            await harness.SweepAsync();
+            foreach (var i in Enumerable.Range(0, people.Length).Where(i => harness.GraphCalls($"patient-{i}") > 0))
+            {
+                firstPolledAt.TryAdd(i, step);
+            }
+        }
+
+        Enumerable.Range(0, people.Length).Select(i => harness.GraphCalls($"patient-{i}")).ShouldAllBe(calls => calls == 1);
+        firstPolledAt.Values.Distinct().Count().ShouldBeGreaterThan(1, "the three were not all asked at the same moment");
+    }
+
+    // However many links are due together, only a few are asked at once.
+    [Fact]
+    public async Task AtMostFourLinks_AreAskedAtOnce()
+    {
+        await using var harness = await StartAsync();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asking = 0;
+        var most = 0;
+        foreach (var i in Enumerable.Range(0, 6))
+        {
+            var connection = harness.Fake.AddAccount($"p{i}@example.com", "pw").Follow($"patient-{i}", "Ana", "García");
+            connection.BeforeGraph = async () =>
+            {
+                var now = Interlocked.Increment(ref asking);
+                InterlockedMax(ref most, now);
+                await gate.Task;
+                Interlocked.Decrement(ref asking);
+            };
+            await harness.LinkAsync(new Account("household-many", $"user-{i}"), $"p{i}@example.com", "pw", $"patient-{i}");
+        }
+
+        harness.Clock.Advance(Harness.Period);
+        var sweep = harness.SweepAsync();
+        try
+        {
+            await Eventually.Until(() => Volatile.Read(ref asking) == 4, "four links are being asked");
+            await Eventually.Settle();
+            Volatile.Read(ref most).ShouldBe(4);
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+
+        await sweep;
+        Enumerable.Range(0, 6).Select(i => harness.GraphCalls($"patient-{i}")).ShouldAllBe(calls => calls == 1);
+    }
+
+    // LibreLinkUp slow to answer one person holds her poll alone: the loop goes on asking for everyone
+    // else's while hers is out.
+    [Fact]
+    public async Task ALinkSlowToAnswer_HoldsNobodyElsesPolls()
+    {
+        await using var harness = await StartAsync(withLoop: true);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hers = harness.Fake.AddAccount("her@example.com", "pw").Follow("patient-her", "Ana", "García");
+        hers.BeforeGraph = () => gate.Task;
+        var neighbours = harness.Fake.AddAccount("next@example.com", "pw").Follow("patient-next", "Eva", "Ruiz");
+        Wear(neighbours, harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "her@example.com", "pw", "patient-her");
+        await harness.LinkAsync(SugaryServer.Neighbour, "next@example.com", "pw", "patient-next");
+        try
+        {
+            await Eventually.Until(() =>
+            {
+                harness.Clock.Advance(GlucosePollLoop.Tick);
+                return harness.GraphCalls("patient-her") == 1 && harness.GraphCalls("patient-next") >= 3;
+            }, "the neighbour is polled again and again while her answer is out");
+            harness.GraphCalls("patient-her").ShouldBe(1, "a link being asked is not asked again until it is answered");
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        var seen = Volatile.Read(ref target);
+        while (value > seen && Interlocked.CompareExchange(ref target, value, seen) is var was && was != seen)
+        {
+            seen = was;
+        }
+    }
 }

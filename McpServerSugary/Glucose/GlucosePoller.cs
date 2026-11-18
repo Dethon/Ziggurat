@@ -166,14 +166,15 @@ public sealed class GlucosePoller(
     }
 
     // The current reading first, so it — with its arrow — is the one kept for its minute, then the curve
-    // oldest first; none within GlucoseReadingRules.Spacing of one she has or of one kept before it.
+    // oldest first, with no arrow (only the current reading says where she was heading); none within
+    // GlucoseReadingRules.Spacing of one she has or of one kept before it.
     private static async Task<IReadOnlyList<SensorReading>> KeepReadingsAsync(
         SugaryDbContext db, LinkKey key, LibreLinkUpGraph graph, CancellationToken ct)
     {
         IReadOnlyList<(SensorReading Reading, GlucoseSource Source)> shown =
         [
             .. graph.Connection.Current is { } current ? [(current, GlucoseSource.Current)] : Array.Empty<(SensorReading, GlucoseSource)>(),
-            .. graph.Points.Select(point => (point, GlucoseSource.Graph))
+            .. graph.Points.Select(point => (point with { Trend = GlucoseTrend.Unknown }, GlucoseSource.Graph))
         ];
         if (shown.Count == 0)
         {
