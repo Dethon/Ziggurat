@@ -64,7 +64,9 @@ public sealed class SugaryWatchFileSystem(
         "Glucose watches: standing instructions Sugary runs when someone's glucose crosses a level, changes fast, "
         + "is forecast to cross one, or their sensor stops, fails to link or is ending — each "
         + "`/watchers/<id>/watch.json` (create, edit, delete) with a read-only `status.json` beside it, in mg/dL. "
-        + "A watch whose triggers are glucose, glucose_trend, glucose_forecast or sensor is one of these.";
+        + "A watch whose triggers are glucose, glucose_trend, glucose_forecast or sensor is one of these, "
+        + "shown to the person it watches, its writer and whoever may read everyone's log. Load the "
+        + "`glucose-watches` skill first.";
 
     public override string DescribeRead =>
         "Reads a watch: /watchers/<id>/watch.json is the watch as written, status.json beside it when it was "

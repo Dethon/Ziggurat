@@ -65,7 +65,8 @@ public sealed class HaWatchFileSystem(
     public override string DescribeMount =>
         "The home's watches: standing instructions the home runs when an entity meets a condition, "
         + "each a Home Assistant automation written as `/watchers/<id>/watch.json` (create, edit, "
-        + "delete), with a read-only `status.json` beside it. Load the `home-watches` skill first.";
+        + "delete), with a read-only `status.json` beside it. Load the `home-watches` skill first; a watch on "
+        + "a person's glucose is Sugary's where Sugary serves glucose watches here too.";
 
     public override string DescribeRead =>
         "Reads a watch: /watchers/<id>/watch.json is the watch as written, status.json beside it its "

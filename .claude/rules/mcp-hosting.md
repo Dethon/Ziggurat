@@ -113,7 +113,7 @@ verified, so a tool reads its section of that household's configuration and no o
   a filesystem backend — whose operations never see the request — is asked by the registrar for
   itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
   conversation context and, on an exec the agent minted one for, the exec bridge's call token —
-  `HaWatchFileSystem` reads the first, `SandboxFileSystem` the second). Absent means the call carried
+  `HaWatchFileSystem` and `SugaryWatchFileSystem` read the first, `SandboxFileSystem` the second). Absent means the call carried
   none, and a consumer refuses rather than guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
   also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and the bill, and every use feeds it explicitly**:
   `JudgmentRequest.Caller` (a `JudgmentCaller`: the turn's model, the sender, the agent and the

@@ -21,6 +21,7 @@ public static class EvalSuite
         .. HouseholdVoiceScenarios.All,
         .. HomeAssistantScenarios.All,
         .. WatchScenarios.All,
+        .. GlucoseWatchScenarios.All,
         .. VaultScenarios.All,
         .. MountScenarios.All,
         .. ShellScenarios.All,

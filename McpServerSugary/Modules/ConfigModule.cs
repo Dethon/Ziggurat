@@ -130,7 +130,7 @@ public static class ConfigModule
             // After the log, so a call naming no filesystem still reaches the log.
             .AddFileSystemTools<SugaryWatchFileSystem>()
             .AddFileSystemResource<SugaryWatchFileSystem>()
-            .AddSkills(SugarySkill.Text)
+            .AddSkills(SugarySkill.Text, GlucoseWatchesSkill.Text)
             .WithPrompts<McpSystemPrompt>();
 
         return services;

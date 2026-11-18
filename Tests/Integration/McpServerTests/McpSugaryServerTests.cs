@@ -105,9 +105,10 @@ public class McpSugaryServerTests
         SugarySkill.Description.ShouldContain("exercise");
     }
 
-    // "Was she on her period the week her glucose ran high" is a query beside /ha.
+    // "Was she on her period the week her glucose ran high" is one query: her glucose is a table of
+    // the same log now, not Home Assistant's history.
     [Fact]
-    public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHa()
+    public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHerGlucose()
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -116,8 +117,46 @@ public class McpSugaryServerTests
 
         body.ShouldContain("- `periods` —");
         body.ShouldContain("`day_notes`");
-        body.ShouldContain("read `/ha` history for those days");
+        body.ShouldContain("read `glucose` for those days");
         SugarySkill.Description.ShouldContain("period");
+    }
+
+    // Her glucose is read where Sugary keeps it: the log skill names the tables and the README's
+    // statistics, and sends no glucose question to the home's mount, which a household without one
+    // does not have.
+    [Fact]
+    public async Task TheLogSkill_SendsHerGlucoseToTheLogsOwnTables_NeverToTheHome()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("- `glucose` —");
+        body.ShouldContain("`sensors`");
+        body.ShouldNotContain("/ha");
+        SugarySkill.Description.ShouldContain("glucose");
+    }
+
+    // A glucose watch is written where its readings are: Sugary ships the skill that teaches the file,
+    // its four trigger kinds, the unit and how an alarm is stopped.
+    [Fact]
+    public async Task TheGlucoseWatchesSkill_IsServed_WithTheTriggerKindsTheUnitAndTheStop()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(GlucoseWatchesSkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/watchers/<id>/watch.json");
+        body.ShouldContain("`glucose_trend`");
+        body.ShouldContain("`glucose_forecast`");
+        body.ShouldContain("`no_readings`");
+        body.ShouldContain("`link_failing`");
+        body.ShouldContain("18.016");
+        body.ShouldContain("`person`");
+        body.ShouldContain("./dismiss");
+        body.ShouldNotContain("entity_id");
     }
 
     [Fact]

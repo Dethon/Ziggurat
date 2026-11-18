@@ -185,7 +185,8 @@ public static class SugaryReadme
 
           Their glucose as their sensor measured it, which Sugary reads from LibreLinkUp through the follower
           account they linked in the app. A record of what was measured: what to do about a value is theirs
-          and their clinic's.
+          and their clinic's. Being warned when it crosses a level, falls fast or stops coming is a glucose
+          watch under `/watchers`, which the `glucose-watches` skill writes.
 
           - `read_at` — when the sensor measured it.
           - `mg_dl` — the value in mg/dL. Every value is kept in mg/dL, whatever unit they read in.

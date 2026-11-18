@@ -56,11 +56,12 @@ mechanism** in the Timers section.
 ### Watches (reacting to the home)
 
 A **watch** is a standing instruction the home itself runs when an entity meets a
-condition: "warn me when Laura's sugar goes above 180", "close the blinds when the living
+condition: "warn me when the fridge passes 8 degrees", "close the blinds when the living
 room passes 27", "tell me when the washing machine finishes". It is a real Home Assistant
 automation, written as a file under `/watchers/<id>/`, and the setup index says which
-watches exist. **Something in the home changing is a watch**, never a schedule that polls
-`./history`; a later moment that is a time rather than a change is decided under Which
+watches exist. A watch on a person's glucose is Sugary's, not the home's, wherever the
+`glucose-watches` skill is offered: it sits at `/watchers` too, and that skill writes it.
+**Something in the home changing is a watch**, never a schedule that polls `./history`; a later moment that is a time rather than a change is decided under Which
 mechanism in the Timers section. Before you write, change, pause or remove a watch — and only then: no other home task
 needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
 effect kinds, and the delivery rules. A watch takes two calls before the write, like any

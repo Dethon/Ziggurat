@@ -99,6 +99,18 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   the subject, or what the watch already said, else refused naming the field. The zone a fire's report and
   time conditions use stays the phones' saved one: the accounts service takes a delegation as proof of a
   household only for a schedule, from the scheduling server.
+- **What the agent is told about her glucose** is Sugary's to serve (`AddSkills`): the `sugary-log` skill names
+  the `glucose` and `sensors` tables beside her meals and doses and sends no glucose question to `/ha` (a
+  household with no home has none), and the `glucose-watches` skill (`Domain/Prompts/Skills/glucose-watches.md`)
+  teaches a glucose watch's file — the four trigger kinds in mg/dL (mmol/L × 18.016), `for`/`within`,
+  `person` for a granted reader, prompt and announce effects (no actions), the crossing rule with her newest
+  reading said when already past, `no_readings` against `link_failing`, an urgent alarm insistent in the
+  named room, channels where there is no satellite, and how an alarm is stopped. The home's `home-watches`
+  description and guide stub hand a glucose watch to it wherever it is offered, so the two descriptions
+  divide by subject (a person's sensor, the home's entities) rather than compete; a misspelled kind is still
+  the home's (the fallback) and refused in Home Assistant's words. The eval's glucose watches are
+  `GlucoseWatchScenarios`, over `EvalSugaryLog`'s seeded readings and links, with Sugary's watches in the
+  run's snapshot (`EvalSugaryLog.SnapshotAsync`).
 - **Her glucose from Home Assistant** (`import-glucose`, `GlucoseImport`): an operator's one-off, `docker exec
   mcp-sugary dotnet McpServerSugary.dll import-glucose --ha <url> --token-file <path> --entity <sensor> --tenant
   <household id> --user <user id> [--days 90]`, reading the recorder's history, then the statistics' hourly means

@@ -122,7 +122,11 @@ declaration, `SkillPreloadReads` over the session's mounts): the index lands bes
 fresh as that moment, and the model's first call is the action. The doing rules — layout, workflow, reading results, history, alarms, music — are the
 `home-assistant` skill (`Domain/Prompts/HomeAssistantSkill.cs`), which says to re-read the index
 when a name does not resolve; the doing rules of a watch are the `home-watches` skill
-(`Domain/Prompts/HomeWatchesSkill.cs`), the one home task that loads its own skill instead. Both
+(`Domain/Prompts/HomeWatchesSkill.cs`), the one home task that loads its own skill instead. A
+watch on a person's glucose is not the home's wherever Sugary serves the `glucose-watches` skill
+beside it: the stub and the `home-watches` description say so, so the two descriptions divide by
+subject (the home's entities, a person's sensor) and a home watch on the home's glucose entity is
+left for an agent with no Sugary (Nabu) or one that acts on the home. Both
 are shipped by the server through `AddSkills` and loaded by the model with `load_skill`. See
 `docs/adr/0039` and `.claude/rules/prompts.md`.
 

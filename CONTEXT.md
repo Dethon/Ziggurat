@@ -738,22 +738,27 @@ runs, or the command ends — so a temp-then-rename writer never commits its tem
 are held the same way.
 _Avoid_: buffered file, pending write, temp file
 
-## Home watches
+## Watches
 
 **Watch**:
-A standing instruction the agent leaves behind on the home: when a named entity meets
-a condition, its effects happen, in order. A watch outlives the conversation that created it and
-fires as often as its condition is met, until it is removed. Any agent can see and
-change any watch, and a watch that needs an agent to fire fires as the agent that
-created it.
+A standing instruction the agent leaves behind: when what it watches meets a condition — an
+entity in the home, or a person's glucose as Sugary reads their sensor — its effects happen, in
+order. Two engines keep them, side by side under `/watchers`: a home watch is a Home Assistant
+automation the home runs, a glucose watch is Sugary's, judged on every reading of that person's
+sensor; which one keeps a watch is decided by its triggers. A watch outlives the conversation that
+created it and fires each time its condition starts, until it is removed. Any agent can see and
+change any home watch; a glucose watch is shown only to the person whose sensor it watches, whoever
+wrote it and whoever may read everyone's Sugary log. A watch that needs an agent to fire fires on
+the agent that created it, as the person whose turn last wrote it.
 _Avoid_: automation, trigger, rule, alert, subscription
 
 **Effect**:
 One thing a watch does when it fires; a watch lists one or more. There are three
-kinds: a prompt the creating agent runs, an announcement spoken in the home with no
-agent involved, and a home action performed with no agent involved. The announcement
-and the home action happen the instant the watch fires; the prompt takes as long as
-the agent does.
+kinds: a prompt the creating agent runs, an announcement rung with no agent involved — spoken
+in the home, or for a glucose watch an alarm on the household's satellites, and on the person's
+chat and Telegram where none can ring it — and a home action performed with no agent involved,
+which only a home watch has. The announcement and the home action happen the instant the watch
+fires; the prompt takes as long as the agent does.
 _Avoid_: action (that is the home-action kind), consequence, handler
 
 ## Home Assistant
