@@ -571,19 +571,28 @@ public sealed class StreamingService(
             // button or a delete already ended this stream — changes nothing here.
             lease.Complete();
 
-            // Once the reply is over rather than once per chunk: the count it is read up to is
-            // the store's, and until the agent has persisted the turn there is nothing new to
-            // be read up to. A topic nobody is looking at keeps its badge.
+            // Not awaited: ending this reader waits on nothing the next turn does not need.
+            _ = SettleAsync(topic);
+        }
+    }
+
+    // What the reply's end leaves to read is all the store's: the names of the bubbles it drew, the
+    // count the conversation is read up to, and its row's preview, position and badge, none of which
+    // this client can work out for itself. The agent keeps the turn as its stream ends, not before,
+    // so a read at the end could beat the keep and leave the row without its preview until a reload.
+    // They are read once the history shows the turn kept, or once the asking gives up. A topic
+    // nobody is looking at keeps its badge.
+    private async Task SettleAsync(StoredTopic topic)
+    {
+        try
+        {
+            await LearnEntryIdsAsync(topic);
             await MarkReadIfViewedAsync(topic);
-
-            // The turn was stored before its stream ended, so the history now names what it drew. Not
-            // awaited: ending this reader waits on nothing the next turn does not need.
-            _ = LearnEntryIdsAsync(topic);
-
-            // The conversation has been written to, so its row has a new preview, a new position
-            // and possibly a badge — none of which this client can work out for itself now that
-            // the server owns all three.
             dispatcher.Dispatch(new RefreshTopicList());
+        }
+        catch (Exception)
+        {
+            // The next read of the conversation settles what this could not.
         }
     }
 
@@ -608,10 +617,8 @@ public sealed class StreamingService(
     {
         try
         {
-            var late = false;
             foreach (var wait in LearnAgainAfter)
             {
-                late |= wait > TimeSpan.Zero;
                 await Task.Delay(wait);
                 var revision = messagesStore.State.Revision;
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
@@ -625,15 +632,6 @@ public sealed class StreamingService(
                     .All(m => m.EntryId is not null || m.IsError || m.NoReply
                               || (string.IsNullOrEmpty(m.Content) && m.Attachments is not { Count: > 0 })))
                 {
-                    // Kept after the stream ended, so the row and the read mark taken at its end read
-                    // the record before this turn was in it: the row kept its old preview (a new
-                    // conversation's none) until a reload. Read again, now that it is.
-                    if (late)
-                    {
-                        await MarkReadIfViewedAsync(topic);
-                        dispatcher.Dispatch(new RefreshTopicList());
-                    }
-
                     return;
                 }
             }
