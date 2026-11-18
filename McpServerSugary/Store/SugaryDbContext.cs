@@ -8,7 +8,7 @@ namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
 // plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per session of exercise, one row per period, one row per noted day, one row per linked
-// glucose account and per person it follows, enums,
+// glucose account and per person it follows, one row per glucose reading and per sensor worn, enums,
 // times and days as readable text.
 //
 // Each person keeps a log of their own and the household shares its kitchen, so every row names its
@@ -43,6 +43,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
     public DbSet<GlucoseLink> GlucoseLinks => Set<GlucoseLink>();
+    public DbSet<GlucoseReading> GlucoseReadings => Set<GlucoseReading>();
+    public DbSet<GlucoseSensor> GlucoseSensors => Set<GlucoseSensor>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -144,6 +146,27 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
             connection.HasKey("Id");
         });
 
+        // Her readings outlive the link they came through (unlinking keeps them), so neither table has a
+        // key into it. One reading per person per instant; the poller and the import keep them apart.
+        var reading = modelBuilder.Entity<GlucoseReading>();
+        reading.HasKey(r => new { r.UserId, r.At });
+        reading.Property(r => r.At).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        reading.Property(r => r.Trend).HasConversion<string>();
+        reading.Property(r => r.Source).HasConversion(
+            value => GlucoseReadingRules.Word(value),
+            stored => GlucoseReadingRules.SourceOf(stored));
+
+        var sensor = modelBuilder.Entity<GlucoseSensor>();
+        sensor.HasKey(s => new { s.UserId, s.Serial });
+        sensor.Property(s => s.ActivatedAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        sensor.Property(s => s.LastSeenAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+
         Personal(meal);
         Personal(dose);
         Personal(pen);
@@ -152,6 +175,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(modelBuilder.Entity<Period>());
         Personal(modelBuilder.Entity<DayNote>());
         Personal(link);
+        Personal(reading);
+        Personal(sensor);
         Household(food);
         Household(recipe);
     }

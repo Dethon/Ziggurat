@@ -61,6 +61,9 @@ public record SugarySettings : IMcpHostSettings
     // of Sugary works; malformed stops startup.
     public string SealingKey { get; init; } = "";
 
+    // How her linked LibreLinkUp account is read (Glucose:PollSeconds).
+    public GlucoseSettings Glucose { get; init; } = new();
+
     // The hour on the home's clock from which a pen's reminder is sent: not in the night, and early
     // enough to pick up a new pen on the way out.
     public int PenReminderHour { get; init; } = 9;
@@ -74,6 +77,13 @@ public record SugarySettings : IMcpHostSettings
     // The deployment's retention policy, read from Domain's retention.json like every host's: the
     // upload store keeps a photo as long as an attachment is kept anywhere (ADR-0020).
     public RetentionSettings Retention { get; init; } = new();
+}
+
+public record GlucoseSettings
+{
+    // How often each linked account is asked for its newest reading: the sensor reads every minute,
+    // and LibreLinkUp's own app asks about as often.
+    public int PollSeconds { get; init; } = 60;
 }
 
 public record UploadSettings

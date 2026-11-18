@@ -238,6 +238,17 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
             return;
         }
 
+        if (connection.BeforeGraph is { } before)
+        {
+            await before();
+        }
+
+        if (connection.Down)
+        {
+            http.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            return;
+        }
+
         await WriteAsync(http, new JsonObject
         {
             ["status"] = 0,
@@ -396,6 +407,14 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
 
         // About twelve hours of five-minute points.
         public IReadOnlyList<Point> Graph { get; set; } = [];
+
+        // This connection's graph is answered 503 while set, whoever else is answered: one person's
+        // outage beside another's readings.
+        public bool Down { get; set; }
+
+        // Run when this connection's graph is asked for, before it is answered: something that happens
+        // while a poll is out.
+        public Func<Task>? BeforeGraph { get; set; }
 
         public JsonObject ToJson()
         {

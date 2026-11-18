@@ -15,7 +15,7 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261118004812_GlucoseLinks";
+    public override string LastMigrationId => "20261118011051_GlucoseReadings";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -232,6 +232,68 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("UserId");
 
                 b.ToTable("GlucoseLinks");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.GlucoseReading", b =>
+            {
+                b.Property<string>("UserId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("At")
+                    .HasColumnType("TEXT");
+
+                b.Property<double>("MgPerDl")
+                    .HasColumnType("REAL");
+
+                b.Property<string>("Source")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TenantId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Trend")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("UserId", "At");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("GlucoseReadings");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.GlucoseSensor", b =>
+            {
+                b.Property<string>("UserId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Serial")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("ActivatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTime>("LastSeenAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("ProductType")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("TenantId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("UserId", "Serial");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("GlucoseSensors");
             });
 
         modelBuilder.Entity("McpServerSugary.Store.Meal", b =>

@@ -485,6 +485,16 @@ public class SugaryGlucoseLinkApiTests
         await client.PutAsJsonAsync("/api/glucose/link", Credentials());
         await client.PostAsJsonAsync("/api/pens",
             new JsonObject { ["kind"] = "rapid", ["insulin"] = "Fiasp", ["openedOn"] = "2026-10-01", ["days"] = 28 });
+        await using (var db = server.Services.GetRequiredService<SugaryStore>().For(SugaryServer.Her))
+        {
+            db.GlucoseReadings.Add(new GlucoseReading
+            {
+                At = DateTimeOffset.UtcNow, MgPerDl = 120, Trend = global::Domain.DTOs.Sugary.GlucoseTrend.Steady,
+                Source = GlucoseSource.Current
+            });
+            db.GlucoseSensors.Add(new GlucoseSensor { Serial = "SN-1", ActivatedAt = DateTimeOffset.UtcNow, LastSeenAt = DateTimeOffset.UtcNow });
+            await db.SaveChangesAsync();
+        }
 
         var unlinked = await client.DeleteAsync("/api/glucose/link");
 
@@ -492,6 +502,12 @@ public class SugaryGlucoseLinkApiTests
         (await RowOf(server, SugaryServer.Her)).ShouldBeNull();
         (await client.GetAsync("/api/glucose/link")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await client.GetFromJsonAsync<JsonArray>("/api/pens"))!.Count.ShouldBe(1);
+        await using (var db = server.Services.GetRequiredService<SugaryStore>().For(SugaryServer.Her))
+        {
+            (await db.GlucoseReadings.CountAsync()).ShouldBe(1, "her readings are her log's, and stay");
+            (await db.GlucoseSensors.CountAsync()).ShouldBe(1);
+        }
+
         (await client.DeleteAsync("/api/glucose/link")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 

@@ -42,6 +42,10 @@ public static class ConfigModule
             // account's token for as long as it lasts.
             .AddLibreLinkUp(LibreLinkUpRegions.Abbott)
             .AddSingleton(new GlucoseCredentials(SealingKey.Parse(settings.SealingKey, "SealingKey")))
+            // Every live link read once a period; her glucose watches are told after each poll.
+            .AddSingleton(settings.Glucose)
+            .AddSingleton<IGlucosePollObserver, NoGlucoseWatches>()
+            .AddSingleton<GlucosePoller>()
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()
@@ -82,6 +86,12 @@ public static class ConfigModule
                     settings.WebPush.PublicKey!, settings.WebPush.PrivateKey!, settings.WebPush.Subject!))
                 .AddSingleton<PenReminders>()
                 .AddHostedService<PenReminderLoop>();
+        }
+
+        // Without a sealing key no password opens, so there is nothing to poll.
+        if (!string.IsNullOrWhiteSpace(settings.SealingKey))
+        {
+            services.AddHostedService<GlucosePollLoop>();
         }
 
         services

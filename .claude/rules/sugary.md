@@ -15,9 +15,9 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 ## Who owns a row
 
-Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions and the glucose link are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
+Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions, the glucose link, glucose readings and sensors are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person; a glucose reading's `(UserId, At)` and a sensor's `(UserId, Serial)`, with no key into the link, so unlinking keeps them. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
 
-`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, and a push subscription changing hands.
+`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, and the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query).
 
 ## Rows from before
 
@@ -54,6 +54,18 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   `SEALINGKEY` from `.env`'s `SUGARY_SEALING_KEY`, the associated data her household's and her own id) and no
   route answers it. Without the key linking answers 503 `linking-off` and the rest of Sugary works. Every
   refusal carries a `code` the app words (`GlucoseEndpoints`).
+- **The poller** (`GlucosePoller`, its loop `GlucosePollLoop` only when there is a sealing key) asks every live
+  link — a person chosen, a password not refused — once per `Glucose:PollSeconds` (appsettings, 60), each at its
+  own moment of the period (from its owner's id), at most four at a time. A link is first polled at its next
+  moment. The current reading is kept as `current` with its arrow, then the curve as `graph`; none within 2.5
+  minutes (`GlucoseReadingRules.Spacing`) of one she has. Readings, sensors and the link's state are written in
+  one transaction, and only where `LinkedAt` and `PatientId` are still what the poll read: a poll out while she
+  linked again writes nothing. A refused password stops the link until she links again; a rate limit waits its
+  `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while
+  it lasts, `FailingSince` kept from the first failure. `FailureDetail` is a step's component or a minimum
+  version, never a reason (the app shows it); reasons go to the log. After each poll that wrote, the
+  `IGlucosePollObserver` (her watches; a no-op until they exist) is told what was kept, the newest reading
+  LibreLinkUp gave and the link's state; its failure, like any of one person's poll, touches nobody else's.
 
 ## Turns, the mount and reminders
 
