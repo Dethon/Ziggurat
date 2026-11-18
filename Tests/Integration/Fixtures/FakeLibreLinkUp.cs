@@ -17,8 +17,10 @@ namespace Tests.Integration.Fixtures;
 // path prefix of its own (`/eu/llu/...`, `/global/llu/...`), which is what Regions points a client at:
 // a login at a region the account does not live in answers the redirect the real service answers, and
 // a token is good only at the region that issued it. Requests are refused as the real service refuses
-// them — a login without the app's product and version is told the version is too old, a call without
-// the token or the Account-Id its login implies is a 401 — so a test that passes proves the headers.
+// them — a request with no User-Agent is a 403 page from the edge in front of the service, as Abbott's
+// Cloudflare answers one, a login without the app's product and version is told the version is too old,
+// a call without the token or the Account-Id its login implies is a 401 — so a test that passes proves
+// the headers.
 // Every answer is gzipped when the request accepts it, as Abbott's are. The clock is the test's, so a
 // token's `expires` and a reading's age follow a FakeTimeProvider.
 public sealed class FakeLibreLinkUp : IAsyncDisposable
@@ -69,6 +71,14 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
         fake._app.Use(async (context, next) =>
         {
             fake._requests.Enqueue(await Request.OfAsync(context));
+            if (string.IsNullOrWhiteSpace(context.Request.Headers.UserAgent))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                context.Response.ContentType = "text/html";
+                await context.Response.WriteAsync("<!DOCTYPE html><html><title>Attention Required!</title></html>");
+                return;
+            }
+
             if (fake._interruptions.TryDequeue(out var interrupt) && await interrupt(context))
             {
                 return;

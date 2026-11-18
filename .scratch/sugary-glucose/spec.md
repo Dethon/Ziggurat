@@ -140,7 +140,8 @@ lists it.
 
 ### Glucose from LibreLinkUp (tickets 04–07)
 
-- **Client.** `LibreLinkUpClient` (in Sugary): `product: llu.android`, `version: 4.16.0`,
+- **Client.** `LibreLinkUpClient` (in Sugary): `product: llu.android`, `version: 4.16.0`, a
+  `User-Agent` (none is a Cloudflare 403 page before the service, found on prod 2026-11-18),
   `Account-Id` = lowercase hex SHA-256 of the login's `user.id`, bearer token cached until its
   `expires` (about 180 days) and re-logged only on 401/expiry — never per poll. A login answering
   `redirect: true, region` logs in again at `api-<region>.libreview.io` and the link keeps the region.

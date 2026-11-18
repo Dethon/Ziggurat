@@ -60,6 +60,10 @@ public sealed class LibreLinkUpClient(
     public const string Product = "llu.android";
     public const string AppVersion = "4.16.0";
 
+    // The app's HTTP library, as it names itself. Any agent will do; none at all is a 403 page from the
+    // Cloudflare edge in front of the service, before the request reaches it (seen 2026-11-18).
+    public const string UserAgent = "okhttp/4.12.0";
+
     // A token this close to its expiry is replaced before it is sent rather than after it is refused.
     private static readonly TimeSpan _renewalMargin = TimeSpan.FromMinutes(5);
 
@@ -224,6 +228,7 @@ public sealed class LibreLinkUpClient(
         var request = new HttpRequestMessage(method, uri);
         request.Headers.Add("product", Product);
         request.Headers.Add("version", AppVersion);
+        request.Headers.UserAgent.ParseAdd(UserAgent);
         request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
         request.Headers.Connection.Add("Keep-Alive");
         return request;

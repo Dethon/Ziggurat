@@ -64,6 +64,7 @@ public class LibreLinkUpClientTests
         login.Header("content-type")!.ShouldStartWith("application/json");
         login.Header("accept-encoding")!.ShouldContain("gzip");
         login.Header("cache-control").ShouldBe("no-cache");
+        login.Header("user-agent")!.ShouldNotBeNullOrWhiteSpace();
         var body = JsonNode.Parse(login.Body)!;
         body["email"]!.GetValue<string>().ShouldBe(Email);
         body["password"]!.GetValue<string>().ShouldBe(Password);
