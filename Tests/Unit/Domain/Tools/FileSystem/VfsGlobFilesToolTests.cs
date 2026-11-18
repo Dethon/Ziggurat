@@ -56,6 +56,32 @@ public class VfsGlobFilesToolTests
         result["note"]!.GetValue<string>().ShouldBe("downloads/ is missing its live downloads");
     }
 
+    // The filesystems of a shared mount point that did not answer are names, not paths, so they go
+    // out as they are, and the answer says what their absence means.
+    [Fact]
+    public async Task Run_NamesTheFilesystemsThatDidNotAnswer_Untranslated()
+    {
+        var sent = new FsGlobResult { Entries = ["porch/"], Truncated = false, Total = 1, Unavailable = ["sugary-watches"] };
+        var received = FsResultContract.ToNode(sent).Deserialize<FsGlobResult>(FsResultContract.ValidationOptions)!;
+        var tool = Build("/watchers", "", received, out _);
+
+        var result = await tool.RunAsync("/watchers", "*", cancellationToken: CancellationToken.None);
+
+        result["unavailable"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["sugary-watches"]);
+        result["hint"]!.GetValue<string>().ShouldContain("sugary-watches");
+    }
+
+    [Fact]
+    public async Task Run_AWholeAnswer_SaysNothingAboutAvailability()
+    {
+        var tool = Build("/ha", "", new FsGlobResult { Entries = ["a"], Truncated = false, Total = 1 }, out _);
+
+        var result = await tool.RunAsync("/ha", "*", cancellationToken: CancellationToken.None);
+
+        result.AsObject().ContainsKey("unavailable").ShouldBeFalse();
+        result.AsObject().ContainsKey("hint").ShouldBeFalse();
+    }
+
     [Fact]
     public async Task Run_NormalizesLeadingSlashEntries_WithoutDoubleSlash()
     {

@@ -52,7 +52,7 @@ internal static class McpFileSystemDiscovery
                 continue;
             }
 
-            if (registry.TryMount(mount, backend))
+            if (registry.TryMount(mount, backend, out var refusal))
             {
                 logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",
                     mount.Name, mount.MountPoint);
@@ -60,6 +60,14 @@ internal static class McpFileSystemDiscovery
             }
 
             shadowed.Add(mount.Name);
+            if (refusal is not null)
+            {
+                logger.LogWarning(
+                    "Filesystem '{Name}' declares a union at '{MountPoint}' but was not mounted as a member: {Refusal}",
+                    mount.Name, mount.MountPoint, refusal);
+                continue;
+            }
+
             logger.LogWarning(
                 "Filesystem '{Name}' is shadowed: mount point '{MountPoint}' is already another "
                 + "mount's, so it was not mounted and the existing one is untouched",
@@ -167,7 +175,10 @@ internal static class McpFileSystemDiscovery
             Workspace = metadata.Workspace,
             IsLandingTarget = metadata.LandingTarget,
             ShellReach = ParseShellReach(metadata.ShellReach),
-            OccupiedNames = metadata.OccupiedNames
+            OccupiedNames = metadata.OccupiedNames,
+            Union = metadata.Union is { RouteBy: { Length: > 0 } routeBy } union
+                ? new FileSystemUnion(routeBy, union.Claims ?? [], union.Fallback)
+                : null
         }, operations);
     }
 
@@ -187,7 +198,12 @@ internal static class McpFileSystemDiscovery
     // a string for the same reason in the other direction: absent, null and unknown all mean none.
     // Operations is null where the server published none, which is not the empty list a mount
     // serving nothing would publish.
+    // Union is null for a mount that keeps its mount point to itself, and one that names no pointer to
+    // route by reads as none: with nothing to read, no new entry could be placed.
     private record FileSystemResourceMetadata(
         string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget,
-        string? ShellReach, IReadOnlyList<string>? OccupiedNames, IReadOnlyList<string>? Operations);
+        string? ShellReach, IReadOnlyList<string>? OccupiedNames, IReadOnlyList<string>? Operations,
+        UnionMetadata? Union);
+
+    private record UnionMetadata(string? RouteBy, IReadOnlyList<string>? Claims, bool Fallback);
 }

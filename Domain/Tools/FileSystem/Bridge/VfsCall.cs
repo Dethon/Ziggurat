@@ -170,7 +170,9 @@ public sealed class VfsCall
             .Where(e => e.Name.Length > 0)
             .DistinctBy(e => e.Name, StringComparer.Ordinal)
             .ToList();
-        var truncated = value.Truncated || value.BudgetReached;
+        // A filesystem sharing the mount point that did not answer may hold any name the listing
+        // lacks, so the listing is a short one, never the whole directory.
+        var truncated = value.Truncated || value.BudgetReached || value.Unavailable is { Count: > 0 };
         if (truncated)
         {
             _truncated.TryAdd(path.TrimEnd('/'), 0);

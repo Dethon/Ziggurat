@@ -28,4 +28,10 @@ public sealed record FsGlobResult
     // What this answer leaves out that a reader would otherwise take as absent - a part of the
     // mount that could not be asked this time. Null (left off the wire) whenever the answer is whole.
     public string? Note { get; init; }
+
+    // The filesystems of a shared mount point that did not answer this listing (unreachable, or
+    // failing for now), by name, so an empty or short answer is never read as "there is nothing".
+    // A member that refused the caller is not here: for that caller it holds nothing. Null (left
+    // off the wire) on every other answer.
+    public IReadOnlyList<string>? Unavailable { get; init; }
 }

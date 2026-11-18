@@ -1,5 +1,7 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Utils;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Agents.Mcp;
@@ -104,5 +106,66 @@ public class McpFileSystemMountReadTests
                 """{"name":"box","mountPoint":"/box","description":"d","operations":[]}""",
                 new HashSet<string> { "fs_read" })
             .ShouldNotBeNull().Operations.ShouldBeEmpty();
+    }
+
+    // The union a backend declares goes out spelled as the other claims are (camelCase) and comes
+    // back on the mount the registry holds.
+    [Fact]
+    public void ADeclaredUnion_IsPublishedAndCarriedOnTheMount()
+    {
+        var body = FileSystemServerResource.Describe(new SharingMount());
+
+        body.ShouldContain("""
+            "union":{"routeBy":"/triggers/*/trigger","claims":["glucose","sensor"],"fallback":false}
+            """);
+        var union = McpFileSystemDiscovery.ReadMount(body, None).ShouldNotBeNull().Mount.Union.ShouldNotBeNull();
+        union.RouteBy.ShouldBe("/triggers/*/trigger");
+        union.Claims.ShouldBe(["glucose", "sensor"]);
+        union.Fallback.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void AFallbackUnion_ReadsWithNoClaims()
+    {
+        McpFileSystemDiscovery.ReadMount(
+                """{"name":"box","mountPoint":"/w","description":"d","union":{"routeBy":"/k","fallback":true}}""", None)
+            .ShouldNotBeNull().Mount.Union.ShouldBe(new FileSystemUnion("/k", [], true), new UnionComparer());
+    }
+
+    [Theory]
+    [InlineData("""{"name":"box","mountPoint":"/w","description":"d"}""")]
+    [InlineData("""{"name":"box","mountPoint":"/w","description":"d","union":null}""")]
+    [InlineData("""{"name":"box","mountPoint":"/w","description":"d","union":{"claims":["x"]}}""")]
+    public void NoUnionOrOneRoutingByNothing_ReadsAsNone(string json)
+    {
+        McpFileSystemDiscovery.ReadMount(json, None).ShouldNotBeNull().Mount.Union.ShouldBeNull();
+    }
+
+    [Fact]
+    public void AMountDeclaringNoUnion_PublishesNull()
+    {
+        FileSystemServerResource.Describe(new PlainMount()).ShouldContain("\"union\":null");
+    }
+
+    private sealed class UnionComparer : IEqualityComparer<FileSystemUnion?>
+    {
+        public bool Equals(FileSystemUnion? x, FileSystemUnion? y) =>
+            x is not null && y is not null && x.RouteBy == y.RouteBy && x.Fallback == y.Fallback && x.Claims.SequenceEqual(y.Claims);
+
+        public int GetHashCode(FileSystemUnion? obj) => 0;
+    }
+
+    private sealed class SharingMount : FileSystemBackendBase
+    {
+        public override string FilesystemName => "sugary-watches";
+        public override string MountPoint => "/watchers";
+        public override string DescribeMount => "Glucose watches.";
+        public override FileSystemUnion Union => new("/triggers/*/trigger", ["glucose", "sensor"]);
+    }
+
+    private sealed class PlainMount : FileSystemBackendBase
+    {
+        public override string FilesystemName => "plain";
+        public override string DescribeMount => "Plain.";
     }
 }

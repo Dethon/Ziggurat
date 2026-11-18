@@ -71,6 +71,13 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // command only at /vfs/<name>. Null for a mount without a shell of its own to collide with.
     public virtual IReadOnlyList<string>? OccupiedNames => null;
 
+    // A claim to share this mount point with other filesystems, whatever servers they live on: the
+    // agent merges the members into one mount and sends each top-level entry to the member that
+    // holds it, a new one by the claims (FileSystemUnion). Null, the default, keeps the mount point
+    // this filesystem's alone. A member is a store of entries, so a mount that declares a
+    // workspace, a shell or a landing target is refused as one.
+    public virtual FileSystemUnion? Union => null;
+
     // A caller-supplied pattern can be pathological, so every search matches under a bounded
     // timeout. Overridable because a test needs to trip it without waiting a real second.
     protected virtual TimeSpan SearchMatchTimeout => TimeSpan.FromSeconds(1);

@@ -3,6 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Outposts;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 
 namespace Infrastructure.Agents;
 
@@ -23,10 +24,45 @@ internal sealed class VirtualFileSystemRegistry : IVirtualFileSystemRegistry
     // claims that can collide on an address are two machines that gave themselves the same name.
     //
     // False means the mount was shadowed: perfectly valid, simply not there.
-    public bool TryMount(FileSystemMount mount, IFileSystemBackend backend)
+    //
+    // The one exception is filesystems that all asked to share: a mount declaring a union joins one
+    // already at its mount point that declared one too, and the two become a UnionFileSystem there.
+    public bool TryMount(FileSystemMount mount, IFileSystemBackend backend) => TryMount(mount, backend, out _);
+
+    // `refusal` says why a union member could not be mounted or join, for the log; null where the
+    // mount was simply shadowed by one that never asked to share.
+    public bool TryMount(FileSystemMount mount, IFileSystemBackend backend, out string? refusal)
     {
         ArgumentNullException.ThrowIfNull(mount);
-        return _mounts.TryAdd(mount.MountPoint, (mount, backend));
+        refusal = mount.Union is not null ? UnionFileSystem.RefusalAsMember(mount) : null;
+        if (refusal is not null)
+        {
+            return false;
+        }
+
+        if (_mounts.TryAdd(mount.MountPoint, (mount, backend)))
+        {
+            return true;
+        }
+
+        var held = _mounts[mount.MountPoint];
+        if (mount.Union is null || held.Mount.Union is null)
+        {
+            refusal = mount.Union is null ? null : $"'{held.Mount.Name}' at {mount.MountPoint} does not share its mount point";
+            return false;
+        }
+
+        switch (UnionFileSystem.Join(held, (mount, backend)))
+        {
+            case UnionFileSystem.Joining.Joined joined:
+                _mounts[mount.MountPoint] = (joined.Mount, joined.Backend);
+                return true;
+            case UnionFileSystem.Joining.Refused refused:
+                refusal = refused.Reason;
+                return false;
+            default:
+                throw new InvalidOperationException("Unreachable joining.");
+        }
     }
 
     // Why a name that is not mounted is not mounted, learned while the session was built and kept
