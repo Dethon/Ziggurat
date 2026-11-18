@@ -9,6 +9,7 @@ using Mcp.Hosting;
 using McpServerSugary.App;
 using McpServerSugary.Channel;
 using McpServerSugary.Clips;
+using McpServerSugary.Glucose;
 using McpServerSugary.McpPrompts;
 using McpServerSugary.McpTools;
 using McpServerSugary.Reminders;
@@ -35,6 +36,9 @@ public static class ConfigModule
                 sp.GetRequiredService<ISugaryLog>(), homeZone, sp.GetRequiredService<ITableEngine>()))
             .AddSingleton(sp => new HomeCalendar(sp.GetRequiredService<TimeProvider>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
+            // Her glucose, from the LibreLinkUp follower account she links: one client, keeping each
+            // account's token for as long as it lasts.
+            .AddLibreLinkUp(LibreLinkUpRegions.Abbott)
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
             .AddSingleton<UploadStore>()
