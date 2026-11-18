@@ -7,7 +7,9 @@ using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using GlucoseSource = Domain.DTOs.Sugary.GlucoseSource;
 using GlucoseTrend = Domain.DTOs.Sugary.GlucoseTrend;
+using GlucoseUnit = Domain.DTOs.Sugary.GlucoseUnit;
 
 namespace Tests.Integration.McpServerTests;
 
