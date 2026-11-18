@@ -57,7 +57,7 @@ public class SugaryGlucoseTablesTests
         int minutes, double mgDl, GlucoseSource source, GlucoseTrend trend = GlucoseTrend.Unknown) =>
         new(_since + TimeSpan.FromMinutes(minutes), mgDl, trend, source);
 
-    private SugaryFileSystem Mount() => (SugaryFileSystem)new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine()).For(InMemorySugaryLog.Her);
+    private SugaryFileSystem Mount() => (SugaryFileSystem)new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine(), new ReadSnapshots(TimeProvider.System)).For(InMemorySugaryLog.Her);
 
     private async Task<JsonNode> Query(string sql)
     {

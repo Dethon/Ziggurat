@@ -35,8 +35,11 @@ public static class ConfigModule
             .AddSingleton<OneLogWriteAtATime>()
             // Her log's tables are queried on DuckDB, in this server's image alone.
             .AddSingleton<ITableEngine, DuckDbTableEngine>()
+            // A file read in chunks is one version for the whole read, though a reading lands a minute.
+            .AddSingleton<IReadSnapshots>(sp => new ReadSnapshots(sp.GetRequiredService<TimeProvider>()))
             .AddSingleton(sp => new SugaryFileSystem(
-                sp.GetRequiredService<ISugaryLog>(), homeZone, sp.GetRequiredService<ITableEngine>()))
+                sp.GetRequiredService<ISugaryLog>(), homeZone, sp.GetRequiredService<ITableEngine>(),
+                sp.GetRequiredService<IReadSnapshots>()))
             // Her glucose watches, at /watchers beside the home's, kept for the household.
             .AddSingleton<IGlucoseWatches, SqliteGlucoseWatches>()
             .AddSingleton(sp => new SugaryWatchFileSystem(

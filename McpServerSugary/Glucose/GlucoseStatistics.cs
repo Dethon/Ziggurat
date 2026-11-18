@@ -21,7 +21,7 @@ public sealed record GlucoseFigures(
 
 // One implementation for the app's statistics. Each reading stands for the minutes until the next, at
 // most Cap, and the last for what is left of the period: readings are kept unevenly (the current one
-// about every three minutes, the curve's every five, an import's every hour), so a plain mean would
+// about every minute, the curve's every five where there was none, an import's every hour), so a plain mean would
 // weigh a stretch by how often it was read, and a gap in the sensor would count for the values either
 // side of it. The mean and the SD are weighed the same way, so CV and GMI rest on the same minutes.
 public static class GlucoseStatistics

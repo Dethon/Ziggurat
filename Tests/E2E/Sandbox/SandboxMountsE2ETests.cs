@@ -139,7 +139,7 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
             new LoggedGlucose(DateTimeOffset.Parse("2026-08-09T12:30:00Z"), 110, GlucoseTrend.Steady, GlucoseSource.Current),
             new LoggedGlucose(DateTimeOffset.Parse("2026-08-09T13:30:00Z"), 190, GlucoseTrend.Unknown, GlucoseSource.Graph)
         ]);
-        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine())
+        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine(), new ReadSnapshots(TimeProvider.System))
             .For(InMemorySugaryLog.Her);
         var call = Mint((sugary, "/sugary", null));
 

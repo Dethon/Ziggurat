@@ -402,8 +402,14 @@ public sealed class SugaryServer : IAsyncDisposable
             eof = chunk["eof"]!.GetValue<bool>();
         }
 
+        return await ParquetRowsAsync(bytes.ToArray());
+    }
+
+    // Parquet's bytes opened by DuckDB as any Parquet file: every value as text, times on UTC's clock.
+    public static async Task<IReadOnlyList<string?[]>> ParquetRowsAsync(byte[] bytes)
+    {
         var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"sugary-{Guid.NewGuid():N}.parquet");
-        await File.WriteAllBytesAsync(file, bytes.ToArray());
+        await File.WriteAllBytesAsync(file, bytes);
         try
         {
             await using var connection = new DuckDB.NET.Data.DuckDBConnection("DataSource=:memory:");

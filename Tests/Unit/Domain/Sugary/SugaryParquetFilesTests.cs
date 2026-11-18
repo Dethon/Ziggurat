@@ -39,7 +39,7 @@ public class SugaryParquetFilesTests
         ]);
         _log.Doses.Add(new LoggedDose(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid,
             [_paella], null));
-        _mount = new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine()).For(InMemorySugaryLog.Her);
+        _mount = new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine(), new ReadSnapshots(TimeProvider.System)).For(InMemorySugaryLog.Her);
         _registry.Mount(new FileSystemMount(SugaryFileSystem.Name, "/sugary", "her log"), _mount);
     }
 

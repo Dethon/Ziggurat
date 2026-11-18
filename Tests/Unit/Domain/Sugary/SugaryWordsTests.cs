@@ -4,6 +4,7 @@ using Domain.DTOs.Sugary;
 using Domain.Prompts;
 using Domain.Tools.Sugary;
 using Domain.Tools.Sugary.Vfs;
+using McpServerSugary.Tables;
 using Moq;
 using Shouldly;
 
@@ -21,7 +22,7 @@ public sealed partial class SugaryWordsTests
 
     public static TheoryData<string, string> Texts()
     {
-        var mount = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
+        var mount = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>(), new ReadSnapshots(TimeProvider.System));
         return new TheoryData<string, string>
         {
             { "the skill's description", SugarySkill.Description },

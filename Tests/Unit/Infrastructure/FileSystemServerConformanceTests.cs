@@ -17,6 +17,7 @@ using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using McpServerSandbox.McpPrompts;
+using McpServerSugary.Tables;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Moq;
@@ -301,7 +302,7 @@ public class FileSystemServerConformanceTests
                 "/sandbox/home/sandbox_user"),
             ["outpost"] = new OutpostFileSystem(
                 "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
-            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>()),
+            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>(), new ReadSnapshots(TimeProvider.System)),
             ["sugary-watches"] = new SugaryWatchFileSystem(
                 Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System)
         };

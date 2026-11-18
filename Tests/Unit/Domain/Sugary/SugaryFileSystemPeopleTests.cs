@@ -131,7 +131,7 @@ public class SugaryFileSystemPeopleTests
     [Fact]
     public async Task ACallProvingNoHousehold_ReadsNobodyElses()
     {
-        var mount = new SugaryFileSystem(_logs, TimeZoneInfo.Utc, new DuckDbTableEngine()).For(Caller(Dethon, household: null));
+        var mount = new SugaryFileSystem(_logs, TimeZoneInfo.Utc, new DuckDbTableEngine(), new ReadSnapshots(TimeProvider.System)).For(Caller(Dethon, household: null));
 
         Error(await mount.QueryAsync("/people/tradaly", "select 1", 10, CancellationToken.None))
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
@@ -190,7 +190,7 @@ public class SugaryFileSystemPeopleTests
         household.Setup(h => h.SettingsAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HouseholdSettings { Name = "Casa", TimeZone = "UTC" });
         household.Setup(h => h.SugaryPeopleAsync(It.IsAny<CancellationToken>())).ReturnsAsync(people);
-        return new SugaryFileSystem(_logs, TimeZoneInfo.Utc, new DuckDbTableEngine()).For(Caller(reader, household.Object));
+        return new SugaryFileSystem(_logs, TimeZoneInfo.Utc, new DuckDbTableEngine(), new ReadSnapshots(TimeProvider.System)).For(Caller(reader, household.Object));
     }
 
     private static FileSystemCaller Caller(string reader, ICallHousehold? household) => new(

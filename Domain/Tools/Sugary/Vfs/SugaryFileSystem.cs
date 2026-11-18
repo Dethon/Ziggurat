@@ -30,7 +30,8 @@ namespace Domain.Tools.Sugary.Vfs;
 // the household under people/<name>/, with the same files. Who holds that grant is the household's
 // people view, asked through the household the call proved, and only a reader it lists as granted, of
 // that very household, sees people/; anyone else asking into it is refused, never shown an empty log.
-public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, ITableEngine engine) : FileSystemBackendBase
+public sealed partial class SugaryFileSystem(
+    ISugaryLog log, TimeZoneInfo serverZone, ITableEngine engine, IReadSnapshots snapshots) : FileSystemBackendBase
 {
     public const string Name = "sugary";
 
@@ -162,7 +163,7 @@ public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo server
             throw new FileSystemOperationException(refused);
         }
 
-        var bytes = target.Node.IsDirectory ? null : await BytesAsync(target.Owner, target.Node, await ZoneAsync(ct), ct);
+        var bytes = target.Node.IsDirectory ? null : (await HeldAsync(target, 0, long.MaxValue, ct)).Bytes;
         if (bytes is null)
         {
             throw new FileSystemOperationException(new ToolErrorResult
@@ -175,9 +176,10 @@ public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo server
         yield return bytes;
     }
 
-    // The byte read as the wire asks it. A refusal thrown from the stream above would reach the wire
-    // as a failure to retry, so a call that names nobody, or asks into a log it may not read, is
-    // answered with the refusal itself here.
+    // The byte read as the wire asks it, a chunk per call: every chunk of one read from the version the
+    // read began with (IReadSnapshots), since the poller writes a reading a minute. A refusal thrown from
+    // a stream would reach the wire as a failure to retry, so a call that names nobody, or asks into a
+    // log it may not read, is answered with the refusal itself here.
     public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
         string path, long offset, int length, CancellationToken ct)
     {
@@ -186,9 +188,34 @@ public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo server
             return Nobody<FsBlobReadResult>();
         }
 
-        return (await ResolveAsync(reader, path, ct)).TryGetValue(out _, out var refused)
-            ? await base.ReadBlobAsync(path, offset, length, ct)
-            : new FsResult<FsBlobReadResult>.Err(refused);
+        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        {
+            return new FsResult<FsBlobReadResult>.Err(refused);
+        }
+
+        var from = Math.Max(offset, 0);
+        var take = Math.Max(length, 0);
+        var held = target.Node.IsDirectory ? new HeldBytes(null) : await HeldAsync(target, from, take, ct);
+        if (held.Lost)
+        {
+            return Fail<FsBlobReadResult>(ToolError.Codes.TransientDependency,
+                $"'{path}' was rendered again since this read began, so its next bytes would be from another "
+                + "version of the file: read it again from the start.");
+        }
+
+        if (held.Bytes is not { } bytes)
+        {
+            return NotFound<FsBlobReadResult>(path);
+        }
+
+        var start = (int)Math.Min(from, bytes.Length);
+        var window = bytes.AsSpan(start, (int)Math.Min(take, bytes.Length - start));
+        return new FsResult<FsBlobReadResult>.Ok(new FsBlobReadResult
+        {
+            ContentBase64 = Convert.ToBase64String(window),
+            Eof = start + window.Length >= bytes.Length,
+            TotalBytes = bytes.Length
+        });
     }
 
     // A table's size is its Parquet's, rendered to be measured: a reader of Parquet seeks to the end
@@ -208,7 +235,7 @@ public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo server
         }
 
         var node = target.Node;
-        var bytes = node.IsDirectory ? null : await BytesAsync(target.Owner, node, await ZoneAsync(ct), ct);
+        var bytes = node.IsDirectory ? null : (await PeekAsync(target, ct)).Bytes;
         var exists = node.IsDirectory || bytes is not null;
         return new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
@@ -433,6 +460,25 @@ public sealed partial class SugaryFileSystem(ISugaryLog log, TimeZoneInfo server
             .Distinct()
             .Order(StringComparer.Ordinal)
             .ToList();
+
+    // The file's bytes as the version of this read: every chunk of a read in chunks agrees, whatever lands
+    // in between. Whose log, which file and which clock is the key.
+    private async Task<HeldBytes> HeldAsync(Target target, long offset, long length, CancellationToken ct)
+    {
+        var zone = await ZoneAsync(ct);
+        return await snapshots.TakeAsync(
+            KeyOf(target, zone), offset, length, c => BytesAsync(target.Owner, target.Node, zone, c), ct);
+    }
+
+    // What an info reports: the version the next read of it gets.
+    private async Task<HeldBytes> PeekAsync(Target target, CancellationToken ct)
+    {
+        var zone = await ZoneAsync(ct);
+        return await snapshots.PeekAsync(KeyOf(target, zone), c => BytesAsync(target.Owner, target.Node, zone, c), ct);
+    }
+
+    private static string KeyOf(Target target, TimeZoneInfo zone) =>
+        $"{target.Owner.TenantId}/{target.Owner.UserId}{target.Node.Path}@{zone.Id}";
 
     // The file's bytes, or null where there is no such file.
     private async Task<byte[]?> BytesAsync(Account reader, SugaryNode node, TimeZoneInfo zone, CancellationToken ct) =>
