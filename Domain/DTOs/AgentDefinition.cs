@@ -37,4 +37,13 @@ public record AgentDefinition
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
+
+    // Set, every conversation of this agent in its household shares one OpenRouter session for this
+    // many minutes, then the next: OpenRouter keeps a session on the provider it first reached, and
+    // that provider's cache holds the prompt the conversations share. Unset, the session is the
+    // conversation's. For an agent whose conversations are short and many — a voice wake is one,
+    // over after minutes, and each landed on whichever provider ranked first, cold. The window is
+    // ours because OpenRouter's is not a bound: it releases a session only after an hour with no
+    // request, so a household that kept talking would never be routed afresh.
+    public int? SharedRoutingSessionMinutes { get; init; }
 }

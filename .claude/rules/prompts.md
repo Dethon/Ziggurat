@@ -130,7 +130,7 @@ turn only where the household set it up (`.claude/rules/household-config.md`, "T
 runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a
 household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
 a threshold an object as a seeded definition's is), `servers`, `features`, `whitelist`,
-`prompt-sections` (comma lists), `uses-outposts`, `no-tools` — and the words are the description the
+`prompt-sections` (comma lists), `uses-outposts`, `no-tools`, `shared-routing-session-minutes` — and the words are the description the
 identity section reads after the agent's name; a template fills no placeholder and has no parts or
 claims. An unknown key fails the document. A household gives a template its id, its name and its
 custom instructions (`.claude/rules/household-config.md`, "The agents a household runs"); everything

@@ -23,7 +23,7 @@ public static class AgentTemplates
     private static readonly HashSet<string> _keys =
     [
         "name", "purpose", "agent-name", "model", "reasoning-effort", "provider-routing", "servers", "features",
-        "whitelist", "prompt-sections", "uses-outposts", "no-tools"
+        "whitelist", "prompt-sections", "uses-outposts", "no-tools", "shared-routing-session-minutes"
     ];
 
     public static IReadOnlyList<AgentDefinition> All { get; } = [.. PromptDocuments.AgentTemplates.Select(Read)];
@@ -63,7 +63,8 @@ public static class AgentTemplates
             WhitelistPatterns = List(document.Value("whitelist")),
             PromptSections = List(document.Value("prompt-sections")),
             UsesOutposts = Flag(document, "uses-outposts"),
-            NoTools = Flag(document, "no-tools")
+            NoTools = Flag(document, "no-tools"),
+            SharedRoutingSessionMinutes = Minutes(document, "shared-routing-session-minutes")
         };
     }
 
@@ -78,6 +79,14 @@ public static class AgentTemplates
             null or "false" => false,
             "true" => true,
             var other => throw new FormatException($"{document.Source}: '{key}' is true or false, not '{other}'")
+        };
+
+    private static int? Minutes(PromptDocument document, string key) =>
+        document.Value(key) switch
+        {
+            null => null,
+            var value when int.TryParse(value, out var minutes) && minutes > 0 => minutes,
+            var other => throw new FormatException($"{document.Source}: '{key}' is a positive number of minutes, not '{other}'")
         };
 
     // A routing object as a seeded definition carries one (SectionSchema.Json), on one line: a

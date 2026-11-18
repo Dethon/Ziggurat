@@ -145,6 +145,8 @@ public class PromptDocumentsTests
         nabu.Model.ShouldBe(home.Model);
         nabu.ReasoningEffort.ShouldBe(home.ReasoningEffort);
         nabu.ProviderRouting.ShouldBeEquivalentTo(home.ProviderRouting);
+        nabu.SharedRoutingSessionMinutes.ShouldNotBeNull();
+        nabu.SharedRoutingSessionMinutes.ShouldBe(home.SharedRoutingSessionMinutes);
         nabu.UsesOutposts.ShouldBe(home.UsesOutposts);
         nabu.EnabledFeatures.ShouldBe(home.EnabledFeatures);
         nabu.WhitelistPatterns.ShouldBe(home.WhitelistPatterns);

@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Tools.Web;
 using Infrastructure.Agents;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Agents;
@@ -212,6 +213,34 @@ public sealed class AgentSpecProjectionTests
     {
         SubAgentSpec().RoutingSessionId.ShouldNotBe(SubAgentSpec().RoutingSessionId);
     }
+
+    // A voice conversation ends minutes after its last words, so a session per conversation lands
+    // each wake on whichever provider ranks first, whose cache has never seen the prompt. An agent
+    // that shares its session keeps one provider for all of its household's conversations — for a
+    // window, renewed on the clock, because OpenRouter keeps a session on its provider for as long as
+    // a request arrives within the hour, and a busy household would never be routed afresh.
+    [Fact]
+    public void ForAgent_AnAgentSharingItsRoutingSession_GivesItsHouseholdOnePerWindow()
+    {
+        var shared = _agentDefinition with { SharedRoutingSessionMinutes = 30 };
+        var opening = DateTimeOffset.Parse("2026-11-18T10:00:00Z");
+
+        var first = ProjectIn(shared, "conv-1", "home", opening).RoutingSessionId;
+
+        first.ShouldStartWith("jack:household:home:");
+        ProjectIn(shared, "conv-2", "home", opening.AddMinutes(29)).RoutingSessionId.ShouldBe(first);
+        ProjectIn(shared, "conv-3", "home", opening.AddMinutes(30)).RoutingSessionId.ShouldNotBe(first);
+        ProjectIn(shared, "conv-1", "elsewhere", opening).RoutingSessionId
+            .ShouldStartWith("jack:household:elsewhere:");
+        ProjectIn(_agentDefinition, "conv-2", "home", opening).RoutingSessionId.ShouldBe("jack:conv-2");
+    }
+
+    private static AgentSpec ProjectIn(
+        AgentDefinition definition, string conversationId, string tenantId, DateTimeOffset now) =>
+        AgentSpecProjection.ForAgent(
+            definition, new AgentKey(conversationId, "jack"), "fran", _openRouter, _patchable,
+            lemonadeHostAddress: null, _credentials, new DeploymentEndpoints(definition.McpServerEndpoints),
+            logger: null, tenantId: tenantId, clock: new FakeTimeProvider(now));
 
     private static object?[] Row(
         string field, Func<AgentSpec, object?> read, object? forAgent, object? forSubAgent) =>
