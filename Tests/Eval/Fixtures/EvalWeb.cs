@@ -575,14 +575,14 @@ public sealed class EvalWeb : IAsyncDisposable
     public sealed record MaterialsSignup(string Name, string Phone, string Email, string Workshop);
 
     // The browser every web scenario runs through, in one place: everything but this machine goes
-    // to a proxy that is not listening, so a page nobody in this process served fails to load
-    // rather than answering. Camoufox is what a deployment connects to, and it exists to get past
+    // to a proxy that hangs up on every connection, so a page nobody in this process served fails to
+    // load rather than answering. Camoufox is what a deployment connects to, and it exists to get past
     // anti-bot defences a locally served page does not have.
     public static Task<IBrowser> LaunchBrowserAsync(IPlaywright playwright) =>
         playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
-            Proxy = new Proxy { Server = "http://127.0.0.1:1", Bypass = "127.0.0.1,localhost" }
+            Proxy = new Proxy { Server = DeadEnd.Url(""), Bypass = "127.0.0.1,localhost" }
         });
 
     // The search client the websearch server builds, built the same way for a test that wants to
