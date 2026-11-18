@@ -10,15 +10,14 @@ namespace Tests.Eval.Scenarios;
 // (the living room's humidity above 70, on Telegram), so creating shows as one becoming two and
 // changing, pausing or removing act on that one.
 //
-// Jonas's watches are on the home's own things — the fridge, the freezer, the humidity — because he
-// dials Sugary, and a watch on somebody's glucose is Sugary's glucose watch (GlucoseWatchScenarios),
-// not a home watch on the home's glucose entity. Nabu dials no Sugary, so on a satellite Laura's
-// glucose in the home is the only glucose there is, and his two glucose watches stay the home's.
+// Every watch here is on the home's own things — the fridge, the freezer, the temperature, the
+// humidity — because Jonas and Nabu both dial Sugary, and a watch on somebody's glucose is Sugary's
+// glucose watch (GlucoseWatchScenarios), not a home watch on the home's glucose entity.
 public static class WatchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
-        CloseTheBlindsWhenHot, WakeMeIfHerSugarDrops, WarnMeOnTelegram, WarnMeByVoice, WarnMeOutsideARange,
+        CloseTheBlindsWhenHot, WakeMeIfTheFreezerWarms, WarnMeOnTelegram, WarnMeByVoice, WarnMeOutsideARange,
         AnUrgentWarning, TellMeWhenTheWashingMachineFinishes, ChangeTheThreshold, NotTonight, RemoveTheWatch
     ];
 
@@ -125,17 +124,15 @@ public static class WatchScenarios
 
     // Urgency, at night, in the room the request came from: an insistent announcement rings until
     // it is acknowledged, with no agent involved, and a time condition keeps it to the night.
-    public static Scenario WakeMeIfHerSugarDrops => new()
+    public static Scenario WakeMeIfTheFreezerWarms => new()
     {
         Name = "a night-time warning is an insistent announcement with a condition",
         AgentId = "nabu",
         Turn = new EvalTurn
         {
-            // Above, not below: when the seeded watch was Laura's sugar "below 70", a night-time "below
-            // 55" read as a tightening of it on a third of runs — a defensible reading the fixture
-            // invited, not the add-beside rule being ignored. The wording was kept when the seeded watch
-            // moved to the humidity, so the scenario still measures what it measured.
-            Text = "si el azúcar de Laura pasa de 250 por la noche despiértame aquí, que suene hasta que lo apague",
+            // The freezer, not Laura's sugar: Nabu dials Sugary, so a watch on her glucose is Sugary's
+            // (GlucoseWatchScenarios.WakeMeHereIfLaurasSugarClimbs keeps this wording for it).
+            Text = "si el congelador pasa de menos diez grados por la noche despiértame aquí, que suene hasta que lo apague",
             Sender = "fran",
             Room = "office",
             SatelliteId = "office-01"
@@ -154,15 +151,15 @@ public static class WatchScenarios
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("announce")),
                     Arg.Matches("content", @"""insistent"""),
-                    Arg.Matches("content", @"""above""\s*:\s*250"),
-                    Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
+                    Arg.Matches("content", @"""above""\s*:\s*-10(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.FreezerTemperatureEntityId),
                     Arg.Matches("content", @"""condition""\s*:\s*""time"""),
                     Arg.Matches("content", AnnounceTarget("office", "office-01"))
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("above", "250")),
+        Changes = OneMoreWatch(("above", "-10")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
@@ -224,7 +221,7 @@ public static class WatchScenarios
         AgentId = "nabu",
         Turn = new EvalTurn
         {
-            Text = "avísame cuando el azúcar de Laura pase de 180",
+            Text = "avísame cuando la temperatura del salón pase de 28 grados",
             Sender = "fran",
             Room = "kitchen",
             SatelliteId = "kitchen-01"
@@ -242,15 +239,15 @@ public static class WatchScenarios
                 [
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("prompt")),
-                    Arg.Matches("content", @"""above""\s*:\s*180"),
-                    Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
+                    Arg.Matches("content", @"""above""\s*:\s*28(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.SalonTemperatureEntityId),
                     Arg.Lacks("content", Kind("announce")),
                     Arg.Lacks("content", "telegram")
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("above", "180")),
+        Changes = OneMoreWatch(("above", "28")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },

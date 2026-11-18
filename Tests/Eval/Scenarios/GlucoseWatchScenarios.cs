@@ -11,14 +11,16 @@ namespace Tests.Eval.Scenarios;
 // file the model wrote, and the home left as it was: a glucose watch written on the home's glucose
 // entity is an automation the home did not expect, which shows as an undeclared change.
 //
-// Jonas's, because he dials Sugary and the home alike: the home's index lists Laura's glucose entity
-// too, so every one of these is also the choice between the two kinds of watch. Her log (EvalSugaryLog)
+// Jonas's and Nabu's, because both dial Sugary and the home alike: the home's index lists Laura's glucose
+// entity too, so every one of these is also the choice between the two kinds of watch — spoken to a
+// satellite as well as written, where the home's integration was the only glucose Nabu had before. Her log (EvalSugaryLog)
 // has a fortnight of readings, her newest 130 and climbing, so a level of 126 (7 mmol/L) is already past.
 public static class GlucoseWatchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
-        ALowWarning, AnAlarmInTheBedroomAtNight, FallingFast, TheSensorStops, LaurasLow, ALevelInMmol
+        ALowWarning, AnAlarmInTheBedroomAtNight, FallingFast, TheSensorStops, LaurasLow, ALevelInMmol,
+        WakeMeHereIfLaurasSugarClimbs, WarnMeByVoiceOnLaurasSugar
     ];
 
     private const string WatchFile = @"^/watchers/[^/]+/watch\.json$";
@@ -280,6 +282,106 @@ public static class GlucoseWatchScenarios
                 + "give or take a tenth), and that the warning will come the next time it crosses (after it "
                 + "has come back down). Fail if it does not mention the current value, or if it implies a "
                 + "warning is coming now or that they are below the level.")
+        ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Spoken, in the room it should ring in: Laura's glucose by voice is Sugary's, an insistent alarm on
+    // the satellite that heard it, kept to the night — the wording Nabu's home watch on her sugar had
+    // when the home's integration was the only glucose he reached.
+    public static Scenario WakeMeHereIfLaurasSugarClimbs => new()
+    {
+        Name = "a spoken night-time alarm on another person's glucose rings where it was asked",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "si el azúcar de Laura pasa de 250 por la noche despiértame aquí, que suene hasta que lo apague",
+            Sender = "fran",
+            Room = "office",
+            SatelliteId = "office-01"
+        },
+        Instant = EvalInstant.Evening,
+        SugaryPeople = EvalSugaryLog.EveryoneReadable,
+        Required =
+        [
+            LoadsTheSkill,
+            new CallExpectation
+            {
+                Label = "watch",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(WatchFile),
+                    Arg.Matches("content", Trigger("glucose")),
+                    Arg.Matches("content", @"""above""\s*:\s*250(?![\d.])"),
+                    Arg.Matches("content", $@"""person""\s*:\s*""{EvalSugaryLog.LauraFolder}"""),
+                    Arg.Matches("content", Kind("announce")),
+                    Arg.Matches("content", @"""insistent"""),
+                    Arg.Matches("content", AnnounceTarget("office", "office-01")),
+                    Arg.Matches("content", @"""condition""\s*:\s*""time"""),
+                    Arg.Lacks("content", "entity_id")
+                ]
+            }
+        ],
+        Permitted = [.. Looking, CallPermission.Load(CountdownTimersSkill.Name)],
+        Changes = OneGlucoseWatch(EvalSugaryLog.LauraUserId, "glucose above 250"),
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 8,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
+        Claims =
+        [
+            GlucoseWatchesSkill.LoadsForAGlucoseWatchRequest.Id,
+            GlucoseWatchesSkill.UrgencyIsAnInsistentAlarmInTheRoom.Id,
+            GlucoseWatchesSkill.AnotherPersonsGlucoseNamesTheirFolder.Id
+        ],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The plain case by voice: a prompt delivered where it was asked, no alarm, and never Telegram,
+    // which Nabu has none of.
+    public static Scenario WarnMeByVoiceOnLaurasSugar => new()
+    {
+        Name = "a spoken plain warning on another person's glucose is a prompt glucose watch",
+        AgentId = "nabu",
+        Turn = new EvalTurn
+        {
+            Text = "avísame cuando el azúcar de Laura pase de 180",
+            Sender = "fran",
+            Room = "kitchen",
+            SatelliteId = "kitchen-01"
+        },
+        Instant = EvalInstant.Evening,
+        SugaryPeople = EvalSugaryLog.EveryoneReadable,
+        Required =
+        [
+            LoadsTheSkill,
+            new CallExpectation
+            {
+                Label = "watch",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(WatchFile),
+                    Arg.Matches("content", Trigger("glucose")),
+                    Arg.Matches("content", @"""above""\s*:\s*180(?![\d.])"),
+                    Arg.Matches("content", $@"""person""\s*:\s*""{EvalSugaryLog.LauraFolder}"""),
+                    Arg.Matches("content", Kind("prompt")),
+                    Arg.Lacks("content", Kind("announce")),
+                    Arg.Lacks("content", "telegram"),
+                    Arg.Lacks("content", "entity_id")
+                ]
+            }
+        ],
+        Permitted = Looking,
+        Changes = OneGlucoseWatch(EvalSugaryLog.LauraUserId, "glucose above 180"),
+        Ordering = [new OrderingConstraint("skill", "watch")],
+        CallCeiling = 8,
+        Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
+        Claims =
+        [
+            GlucoseWatchesSkill.LoadsForAGlucoseWatchRequest.Id,
+            GlucoseWatchesSkill.PlainWarningIsAPrompt.Id,
+            GlucoseWatchesSkill.AnotherPersonsGlucoseNamesTheirFolder.Id
         ],
         Policy = new RunPolicy(2, 3)
     };

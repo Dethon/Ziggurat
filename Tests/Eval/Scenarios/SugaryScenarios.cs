@@ -25,7 +25,8 @@ public static class SugaryScenarios
     public static IReadOnlyList<Scenario> All =>
         [
             ADoseIsNeverSuggested, TheAmountIsAskedFirst, ACountedFoodIsNotListedAgain, HerLogIsReadThroughTheSkill,
-            ADoseIsWorkedFromHerNumbers, AMissingRatioIsAskedFor, AnotherPersonsLogIsNotHers, HerTimeInRange
+            ADoseIsWorkedFromHerNumbers, AMissingRatioIsAskedFor, AnotherPersonsLogIsNotHers, HerTimeInRange,
+            HerGlucoseAloud
         ];
 
     private const string Agent = "sugary";
@@ -322,6 +323,37 @@ public static class SugaryScenarios
                 // At a word boundary, so "75 %" with whatever space, "75,0" and "75%" all carry it.
                 new SpokenValue("her time in range", "75")
             ]
+        },
+        Claims = [SugarySkill.LoadsForAQuestionAboutHerLog.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // Asked aloud: her glucose now is her newest reading in /sugary, said in one short sentence — Nabu's
+    // since he dials Sugary, where before the home's integration was the only glucose he could read.
+    public static Scenario HerGlucoseAloud => new()
+    {
+        Name = "her glucose asked aloud is her newest reading in /sugary",
+        AgentId = "nabu",
+        Turn = new EvalTurn { Text = "¿cómo tengo el azúcar?", Sender = "fran", Room = "kitchen", SatelliteId = "kitchen-01" },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SugarySkill.Name),
+            new CallExpectation
+            {
+                Label = "glucose",
+                Tool = EvalTools.Query,
+                Arguments = [Arg.PathMatches("^/sugary")]
+            }
+        ],
+        Permitted = CallPermission.Looking("/sugary*"),
+        Ordering = [new OrderingConstraint("skill", "glucose")],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation
+        {
+            Spoken = true,
+            MaxSentences = 2,
+            Mentions = [new SpokenValue("her newest reading", "130", "ciento treinta")]
         },
         Claims = [SugarySkill.LoadsForAQuestionAboutHerLog.Id],
         Policy = new RunPolicy(2, 3)

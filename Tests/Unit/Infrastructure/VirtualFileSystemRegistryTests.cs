@@ -253,6 +253,21 @@ public class VirtualFileSystemRegistryTests
             .Members.Select(m => m.Name).ShouldBe(["ha-watches", "sugary-watches"]);
     }
 
+    // A household with Sugary off is not dialled Sugary's server, so the home's watches are the only
+    // member that arrives: /watchers is theirs alone, and every watch goes to them.
+    [Fact]
+    public void TryMount_TheHomesWatchesWithNoOtherMember_AreWatchersByThemselves()
+    {
+        var home = CreateMockBackend("ha-watches");
+
+        _registry.TryMount(Watches("ha-watches", _homeUnion, "Home watches."), home).ShouldBeTrue();
+
+        var mount = _registry.GetMounts().ShouldHaveSingleItem();
+        mount.MountPoint.ShouldBe("/watchers");
+        mount.Name.ShouldBe("ha-watches");
+        Resolve("/watchers/door/watch.json").Backend.ShouldBe(home);
+    }
+
     [Fact]
     public void TryMount_AThirdMember_JoinsTheUnion()
     {

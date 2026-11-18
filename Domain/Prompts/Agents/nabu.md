@@ -10,7 +10,8 @@
 # of the household's, so a command spoken to it reaches everything the agent can do: every one of the
 # tenant kit's own servers by server name — Home Assistant and the library among them — each reached
 # only where the household set it up (a live tunnel credential for the name), beside the shared
-# servers. It is the home's Nabu without the home's tuning: the voice section and the spoken-reply
+# servers — Sugary among them, so a person asks aloud after their glucose, logs a meal or sets a glucose
+# watch as they would in writing, where the household keeps Sugary on. It is the home's Nabu without the home's tuning: the voice section and the spoken-reply
 # routing — a fast, cheap first word over a thorough one — and no Music Assistant, which the kit does
 # not run. The language is the household's, as every template's is; the home's Nabu pins Spanish
 # because the home speaks it.
@@ -27,7 +28,7 @@ provider-routing: {"sort": "throughput", "preferredMaxLatency": {"p50": 1}, "ign
 # first, whose cache had never seen the prompt (2026-11-18). Renewed so a household that keeps
 # talking is still routed afresh, which OpenRouter does only after an hour of silence.
 shared-routing-session-minutes: 30
-servers: vault, sandbox, websearch, homeassistant, library, http://mcp-scheduling:8080/mcp, printer, http://mcp-timers:8080/mcp
+servers: vault, sandbox, websearch, homeassistant, library, http://mcp-scheduling:8080/mcp, printer, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp
 features: filesystem, subagents, memory
 whitelist: domain__filesystem*, mcp__websearch*, domain__subagents*, domain__memory*
 prompt-sections: voice

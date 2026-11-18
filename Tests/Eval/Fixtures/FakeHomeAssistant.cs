@@ -127,8 +127,9 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     // Laura's glucose, with a state_class so it has statistics, and the living room's temperature,
     // humidity and blinds and the kitchen's fridge and freezer: the entities the watch scenarios watch
     // and act on. Each reads well inside the range every scenario names, so a crossing is never already
-    // past at creation. Laura's glucose is watched only by Nabu, which dials no Sugary: an agent that
-    // does has her glucose as Sugary reads it, and a watch on it is a glucose watch, not the home's.
+    // past at creation. Laura's glucose is here as the home's integration still shows it, which no watch
+    // should use: an agent dialling Sugary has her glucose as Sugary reads it, and a watch on it is a
+    // glucose watch, not the home's.
     public const string GlucoseEntityId = "sensor.glucosa_laura";
     public const string SalonTemperatureEntityId = "sensor.temperatura_salon";
     public const string SalonHumidityEntityId = "sensor.humedad_salon";
