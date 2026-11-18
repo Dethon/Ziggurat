@@ -26,6 +26,17 @@ public sealed class HomeCalendar(TimeProvider clock, TimeZoneInfo zone)
     // The same clock on another household's zone: the pen reminders read each owner's day on theirs.
     public HomeCalendar In(TimeZoneInfo zone) => new(_clock, zone);
 
+    // The clock of a person whose household no request proves — a pen reminder, a glucose watch judged
+    // after a poll: the zone her phones last saved (a phone keeps her household's as of its last open),
+    // else this one, as is a zone this host does not know.
+    public HomeCalendar OnSaved(IEnumerable<string?> zones) =>
+        zones.OfType<string>()
+            .Select(id => TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : null)
+            .OfType<TimeZoneInfo>()
+            .FirstOrDefault() is { } saved
+            ? In(saved)
+            : this;
+
     public DateOnly Today => DateOnly.FromDateTime(AtHome(Now).DateTime);
 
     public DateTimeOffset AtHome(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, _zone);

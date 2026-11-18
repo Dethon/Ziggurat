@@ -102,7 +102,7 @@ public sealed class SqliteGlucoseWatches(SugaryStore store) : IGlucoseWatches
         return row;
     }
 
-    private static StoredGlucoseWatch ToStored(GlucoseWatch row) => new()
+    internal static StoredGlucoseWatch ToStored(GlucoseWatch row) => new()
     {
         Id = row.Id,
         SubjectUserId = row.SubjectUserId,

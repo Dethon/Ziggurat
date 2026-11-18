@@ -50,7 +50,9 @@ public static class ConfigModule
             .AddSingleton(new GlucoseCredentials(SealingKey.Parse(settings.SealingKey, "SealingKey")))
             // Every live link read once a period; her glucose watches are told after each poll.
             .AddSingleton(settings.Glucose)
-            .AddSingleton<IGlucosePollObserver, NoGlucoseWatches>()
+            .AddSingleton<IGlucoseWatchEffects, LoggedGlucoseWatchEffects>()
+            .AddSingleton<GlucoseWatchEngine>()
+            .AddSingleton<IGlucosePollObserver>(sp => sp.GetRequiredService<GlucoseWatchEngine>())
             .AddSingleton<GlucosePoller>()
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
@@ -97,7 +99,9 @@ public static class ConfigModule
         // Without a sealing key no password opens, so there is nothing to poll.
         if (!string.IsNullOrWhiteSpace(settings.SealingKey))
         {
-            services.AddHostedService<GlucosePollLoop>();
+            services
+                .AddHostedService<GlucosePollLoop>()
+                .AddHostedService<GlucoseWatchLoop>();
         }
 
         services

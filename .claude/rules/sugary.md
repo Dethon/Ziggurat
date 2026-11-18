@@ -17,7 +17,7 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions, the glucose link, glucose readings and sensors are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person; a glucose reading's `(UserId, At)` and a sensor's `(UserId, Serial)`, with no key into the link, so unlinking keeps them. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys. A glucose watch (`GlucoseWatch`, key `(TenantId, Id)`, ids unique per household) and what the engine judged of each of its triggers (`GlucoseWatchState`, key `(TenantId, WatchId, TriggerIndex)`, cascading with the watch) are `IHousehold`: a watch is about one person's sensor (`SubjectUserId`) and written by somebody (`WriterUserId`), and who is shown it — its subject, its writer, a holder of everyone's log — is said in `SqliteGlucoseWatches.ListAsync`, not by a filter (`SugaryWatchFileSystem`, `sugary-watches` at `/watchers`).
 
-`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query) and the glucose import (`GlucoseImport`, the named person's readings).
+`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query), the glucose import (`GlucoseImport`, the named person's readings) and the glucose watch engine (`GlucoseWatchEngine`, each subject's armed watches, their states, readings, link, sensors and phones' zones, the household and subject spelled out).
 
 ## Rows from before
 
@@ -65,8 +65,25 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while
   it lasts, `FailingSince` kept from the first failure. `FailureDetail` is a step's component or a minimum
   version, never a reason (the app shows it); reasons go to the log. After each poll that wrote, the
-  `IGlucosePollObserver` (her watches; a no-op until they exist) is told what was kept, the newest reading
+  `IGlucosePollObserver` (her watches, `GlucoseWatchEngine`) is told what was kept, the newest reading
   LibreLinkUp gave and the link's state; its failure, like any of one person's poll, touches nobody else's.
+- **Her glucose watches are judged by the server** (`GlucoseWatchEngine`, the rules in `GlucoseTriggers`, Domain,
+  pure): after each poll every trigger of the polled person's armed watches (`Enabled` and not `Spent`), a
+  reading trigger only on a newest reading under ten minutes old, and once a minute on the clock
+  (`GlucoseWatchLoop`, only with a sealing key) the sensor's triggers of everyone's, since a link backing off or
+  refused is asked rarely or never. Readings are her own (`current`, `graph`), never `import`/`import-hourly`.
+  `no_readings` is judged on LibreLinkUp's last answer (`LastSuccessAt` minus her newest reading), never while
+  the link fails; `link_failing` on `FailingSince`; `ending` on the latest-started sensor of those last seen,
+  fourteen days. A trigger fires on entering its condition (after `for`) and not again until it left; a
+  trigger with no state row is judged without firing, its condition recorded as fired if it holds (written
+  while she is low: fires at the next crossing); one that cannot be judged keeps its row, or gets none.
+  Time conditions are read on the zone her phones last saved (`HomeCalendar.OnSaved`, the pen reminders'
+  rule), else the server's, and gate the fire, not the episode: a low that began before the window fires when
+  it opens if still low. One judgement per person at a time. A fire calls `IGlucoseWatchEffects` (a logging
+  no-op until tickets 12/13), whose throw is contained; the episode is fired whatever was delivered, a `once`
+  watch spent (`Spent`, `Enabled` false on the columns) only by a fire that reached somebody, and the states,
+  `LastFiredAt` and spent are written in one transaction guarded on the watch's `Spec`, `Enabled`, `!Spent`
+  and its state-row count being what was read, so a watch rewritten or removed meanwhile gets nothing.
 - **Her glucose from Home Assistant** (`import-glucose`, `GlucoseImport`): an operator's one-off, `docker exec
   mcp-sugary dotnet McpServerSugary.dll import-glucose --ha <url> --token-file <path> --entity <sensor> --tenant
   <household id> --user <user id> [--days 90]`, reading the recorder's history, then the statistics' hourly means

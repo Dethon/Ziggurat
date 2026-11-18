@@ -29,9 +29,3 @@ public interface IGlucosePollObserver
 {
     Task PolledAsync(GlucosePoll poll, CancellationToken ct);
 }
-
-// Until her glucose watches are evaluated after a poll, nothing is.
-public sealed class NoGlucoseWatches : IGlucosePollObserver
-{
-    public Task PolledAsync(GlucosePoll poll, CancellationToken ct) => Task.CompletedTask;
-}
