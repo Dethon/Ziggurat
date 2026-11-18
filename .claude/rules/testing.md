@@ -166,6 +166,10 @@ for this, and each shape below is one that has already failed here.
   collection's span in the run's `.trx` with the others'. A collection made for a feature is a
   chain like any other: the queue's grew three classes of multi-turn cases and became the run's
   longest by ten seconds, when a class of it on the shortest existing chain cost nothing
+- A page's first wait pays for the app's boot, so the boot gets a wait of its own (the loading screen
+  gone, or the composer enabled) before the wait for what the test asked. A collection's first case
+  boots while every other collection boots, and one 60 s cap meant for the boot and a 10 s answer
+  together ran out on the boot alone beside a second suite
 - A sweep over an app's pages walks them in one page. Each `CreatePageAsync` boots the Blazor app
   again, and the boot is most of what such a case costs: a theory with a page per route booted the
   dashboard twelve times to check headers and widths one boot shows. Open the first page at its
