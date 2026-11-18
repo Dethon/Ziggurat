@@ -239,16 +239,10 @@ public static class GlucoseEndpoints
         Refuse(StatusCodes.Status503ServiceUnavailable, "linking-off",
             "Glucose can't be linked on this server: it has no sealing key.");
 
-    private static IResult Refuse(int status, string code, string detail, params (string Name, object? Value)[] more)
-    {
-        var extensions = new Dictionary<string, object?> { ["code"] = code };
-        foreach (var (name, value) in more)
-        {
-            extensions[name] = value;
-        }
-
-        return Results.Problem(detail, statusCode: status, extensions: extensions);
-    }
+    private static IResult Refuse(int status, string code, string detail, params (string Name, object? Value)[] more) =>
+        Results.Problem(detail, statusCode: status, extensions: more
+            .Prepend(("code", code))
+            .ToDictionary(field => field.Name, field => field.Value));
 
     private static string NameOf(LibreLinkUpConnection connection) =>
         $"{connection.FirstName} {connection.LastName}".Trim() is { Length: > 0 } name ? name : connection.PatientId;
