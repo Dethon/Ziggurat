@@ -63,12 +63,10 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   one transaction, and only where `LinkedAt` and `PatientId` are still what the poll read: a poll out while she
   linked again writes nothing. A refused password stops the link until she links again. **A password this server cannot open** (the sealing key changed or removed, a link copied onto somebody else's) is recorded as the link failing, `CredentialsUnreadable` (the app's `credentials-unreadable`, which asks her to link again and opens the form), with `FailingSince` and through the same `LinkedAt`/`PatientId` guard, LibreLinkUp never asked: skipped with nothing written, it left the tab showing a working link and every `link_failing` watch quiet. It stays live on the doubling backoff below, so the key put back opens it at its next ask with nothing to link again; nobody linked asks the accounts service nothing; a rate limit waits its
   `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while
-  it lasts, `FailingSince` kept from the first failure. **A household whose features turn Sugary off has its
-  links asked nothing** (`SugaryOffHouseholds`, the accounts service's `sugary-off` view on Sugary's own
-  credential, kept a minute, `.claude/rules/household-config.md`): switched back on, a link is seen again at
-  the next sweep and asked at its own moment. Features that cannot be read just now are taken as on and
-  logged once per outage, the failure remembered a minute — a medical alarm must not go silent because the
-  accounts service blinked. `FailureDetail` is a step's component or a minimum
+  it lasts, `FailingSince` kept from the first failure. **A household whose features turn Sugary off is
+  polled as any** (user's decision, 2026-11-18): the feature takes Sugary from the household's agents and
+  refuses estimates, never the app, so its log, pens and Glucose tab stay open and its readings stay live;
+  only its watches go quiet (below). `FailureDetail` is a step's component or a minimum
   version, never a reason (the app shows it); reasons go to the log. After each poll that wrote, the
   `IGlucosePollObserver` (her watches, `GlucoseWatchEngine`) is told what was kept, the newest reading
   LibreLinkUp gave and the link's state; its failure, like any of one person's poll, touches nobody else's.
@@ -80,7 +78,10 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   `no_readings` is judged on LibreLinkUp's last answer (`LastSuccessAt` minus her newest reading), never while
   the link fails; `link_failing` on `FailingSince`; `ending` on the latest-started sensor of those last seen,
   fourteen days. **A household whose features turn Sugary off has nothing judged and nothing fired**, on a
-  poll or the clock, and what was judged of its watches is forgotten (its state rows deleted): back on, its
+  poll or the clock (`SugaryOffHouseholds`, the accounts service's `sugary-off` view on Sugary's own
+  credential, kept a minute, `.claude/rules/household-config.md`; features that cannot be read just now are
+  taken as on and logged once per outage, the failure remembered a minute — a medical alarm must not go
+  silent because the accounts service blinked), and what was judged of its watches is forgotten (its state rows deleted): back on, its
   watches are judged as if just written, so nothing that happened while off fires late — a low still going
   when it came back on included — and the next crossing fires as before. A trigger fires on entering its condition (after `for`) and not again until it left; a
   trigger with no state row is judged without firing, its condition recorded as fired if it holds (written

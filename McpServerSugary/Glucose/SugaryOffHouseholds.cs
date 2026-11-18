@@ -3,8 +3,9 @@ using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.Glucose;
 
-// Which households turn Sugary off, as the glucose poller and the watch engine ask it. Neither wakes for a
-// request, so neither holds a proof of a household: they read the accounts service's view across
+// Which households turn Sugary off, as the glucose watch engine asks it: their watches judge and fire
+// nothing, since the feature takes Sugary from the household's agents. It wakes for no request, so it
+// holds no proof of a household: they read the accounts service's view across
 // households (`sugary-off`) on Sugary's own credential, which the reader keeps a minute.
 //
 // When it cannot be read just now every household is taken as on — a medical alarm must not go silent
@@ -47,7 +48,7 @@ public sealed class SugaryOffHouseholds(
             if (Failed())
             {
                 logger.LogWarning(ex,
-                    "Could not learn which households turn Sugary off; every household's glucose is polled and judged until it can be");
+                    "Could not learn which households turn Sugary off; every household's glucose watches are judged until it can be");
             }
 
             return _none;
