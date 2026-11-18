@@ -128,6 +128,8 @@ public class VfsBridgeOverTheWireTests
     private abstract class WatchStore(string name, Dictionary<string, string> files, List<string> seen, FileSystemCaller? caller)
         : FileSystemBackendBase
     {
+        protected List<string> Seen => seen;
+
         public override string FilesystemName => name;
 
         public override string MountPoint => "/watchers";
@@ -162,7 +164,7 @@ public class VfsBridgeOverTheWireTests
     {
         public override FileSystemUnion Union => new("/triggers/*/trigger", [], Fallback: true);
 
-        public override FileSystemBackendBase For(FileSystemCaller caller) => new HomeWatches(seen, caller);
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new HomeWatches(Seen, caller);
     }
 
     private sealed class GlucoseWatches(List<string> seen, FileSystemCaller? caller = null) : WatchStore(
@@ -170,7 +172,7 @@ public class VfsBridgeOverTheWireTests
     {
         public override FileSystemUnion Union => new("/triggers/*/trigger", ["glucose", "glucose_trend"]);
 
-        public override FileSystemBackendBase For(FileSystemCaller caller) => new GlucoseWatches(seen, caller);
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new GlucoseWatches(Seen, caller);
     }
 
     private sealed class CallerRecordingMount(List<string> seen, FileSystemCaller? caller = null) : FileSystemBackendBase

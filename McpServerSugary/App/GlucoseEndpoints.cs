@@ -349,7 +349,7 @@ public static class GlucoseEndpoints
     private static IResult Refuse(int status, string code, string detail, params (string Name, object? Value)[] more) =>
         Results.Problem(detail, statusCode: status, extensions: more
             .Prepend(("code", code))
-            .ToDictionary(field => field.Name, field => field.Value));
+            .ToDictionary<(string Name, object? Value), string, object?>(field => field.Name, field => field.Value));
 
     private static string NameOf(LibreLinkUpConnection connection) =>
         $"{connection.FirstName} {connection.LastName}".Trim() is { Length: > 0 } name ? name : connection.PatientId;

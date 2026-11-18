@@ -145,7 +145,7 @@ public class SugaryGlucosePollerTests
         var fake = await FakeLibreLinkUp.StartAsync(clock);
         var observer = new RecordingObserver();
         var server = await SugaryServer.StartAsync(
-            configure: s => s with { SealingKey = withKey ? _key : null },
+            configure: s => s with { SealingKey = withKey ? _key : "" },
             services: c =>
             {
                 c.Replace(ServiceDescriptor.Singleton(new LibreLinkUpClient(

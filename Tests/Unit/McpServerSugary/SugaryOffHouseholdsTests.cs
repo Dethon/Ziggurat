@@ -78,5 +78,5 @@ public class SugaryOffHouseholdsTests
     }
 
     private int Logged(LogLevel level) =>
-        _logger.Invocations.Count(i => i.Method.Name == nameof(ILogger.Log) && (LogLevel)i.Arguments[0] == level);
+        _logger.Invocations.Count(i => i.Method.Name == nameof(ILogger.Log) && i.Arguments[0] is LogLevel logged && logged == level);
 }

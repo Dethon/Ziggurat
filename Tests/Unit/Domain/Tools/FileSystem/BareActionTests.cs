@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Text;
 using Domain.Tools.FileSystem;
 using Shouldly;
@@ -94,6 +95,7 @@ public class BareActionTests
     // escapes, globs that would match files in the directory, braces, tildes, comments, operators,
     // non-ASCII spaces — and only accepted lines are run, each through an action that prints argv.
     [SkippableFact]
+    [SupportedOSPlatform("linux")]
     public void EveryLineItAccepts_BashSplitsIntoTheSameWords()
     {
         Skip.IfNot(RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && File.Exists("/bin/bash"), "needs bash");
@@ -123,6 +125,7 @@ public class BareActionTests
     // And the rendering reads back, through bash, as the same words: the mount is handed a line a
     // shell would split exactly as the original was.
     [SkippableFact]
+    [SupportedOSPlatform("linux")]
     public void TheRenderedCommand_BashSplitsIntoTheSameWords()
     {
         Skip.IfNot(RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && File.Exists("/bin/bash"), "needs bash");
@@ -197,6 +200,7 @@ public class BareActionTests
     // Each line runs in a directory whose files a glob would match and whose `./x` prints argv, one
     // line per command so a quote the parser thought closed and bash did not swallows the rest and
     // shows up as a count that differs.
+    [SupportedOSPlatform("linux")]
     private static List<string[]> BashWords(IReadOnlyList<string> lines)
     {
         var dir = Directory.CreateTempSubdirectory("bare-action-");
