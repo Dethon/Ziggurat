@@ -105,8 +105,8 @@ public sealed class OutpostExecTests : IDisposable
         var outpost = Executing(jailed: true);
 
         outpost.ShellReach.ShouldBe(ShellReach.Host);
-        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [])!
-            .ShellReach.ShouldBe(ShellReach.Host);
+        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), new HashSet<string>())!
+            .Mount.ShellReach.ShouldBe(ShellReach.Host);
     }
 
     // The exec screen reads the reach off whichever mount a path resolves to, so the machine
@@ -118,7 +118,7 @@ public sealed class OutpostExecTests : IDisposable
         var outpost = Executing(jailed: false);
         var registry = new VirtualFileSystemRegistry();
         registry.Mount(
-            McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), [VfsExecTool.Name])!,
+            McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(outpost), new HashSet<string> { "fs_exec" })!.Mount,
             outpost);
 
         ExecReach.Over(registry).Of($"outpost:laptop{_workingDirectory}", "./build").ShouldBe(ShellReach.Host);

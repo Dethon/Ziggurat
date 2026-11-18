@@ -1,4 +1,8 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.FileSystem;
+using Domain.Tools;
 using Infrastructure.Agents.Mcp;
 using Shouldly;
 
@@ -71,5 +75,51 @@ public class McpFileSystemBackendFilesystemArgTests
         backend.Calls
             .Where(c => c.Tool == "fs_blob_write")
             .ShouldAllBe(c => Equals(c.Args["filesystem"], "downloads"));
+    }
+
+    // A server may serve several filesystems behind one set of tools, so every operation says which
+    // one it is for — not only the byte streams. Each refused, so no payload has to be shaped.
+    private sealed class RefusedEverywhereBackend()
+        : McpFileSystemBackend(null!, "watches", FileSystemOperations.ToolNames)
+    {
+        public List<(string Tool, Dictionary<string, object?> Args)> Calls { get; } = [];
+
+        protected internal override Task<JsonNode> CallToolAsync(
+            string toolName, Dictionary<string, object?> args, CancellationToken ct)
+        {
+            Calls.Add((toolName, args));
+            return Task.FromResult<JsonNode>(ToolError.Create(ToolError.Codes.NotFound, "nothing here"));
+        }
+    }
+
+    [Fact]
+    public async Task EveryOperation_CarriesTheFilesystemName()
+    {
+        var backend = new RefusedEverywhereBackend();
+        var ct = CancellationToken.None;
+
+        await backend.ReadAsync("a", null, null, ct);
+        await backend.CreateAsync("a", "c", false, true, ct);
+        await backend.EditAsync("a", [new TextEdit("x", "y")], ct);
+        await backend.GlobAsync("", "*", ct);
+        await backend.SearchAsync("q", false, null, null, null, 5, 1, VfsTextSearchOutputMode.Content, ct);
+        await backend.MoveAsync("a", "b", ct);
+        await backend.CopyAsync("a", "b", false, true, ct);
+        await backend.DeleteAsync("a", ct);
+        await backend.InfoAsync("a", ct);
+        await backend.ExecAsync("a", "ls", null, ct);
+        await backend.QueryAsync("a", "select 1", 5, ct);
+        await backend.MoveOutCheckAsync("a", ct);
+        await Should.ThrowAsync<FileSystemOperationException>(async () =>
+        {
+            await foreach (var _ in backend.ReadChunksAsync("a", ct))
+            {
+            }
+        });
+        await Should.ThrowAsync<FileSystemOperationException>(() =>
+            backend.WriteChunksAsync("a", EmptyChunks(), true, true, ct));
+
+        backend.Calls.Select(c => c.Tool).Distinct().ShouldBe(FileSystemOperations.ToolNames, ignoreOrder: true);
+        backend.Calls.ShouldAllBe(c => Equals(c.Args["filesystem"], "watches"));
     }
 }

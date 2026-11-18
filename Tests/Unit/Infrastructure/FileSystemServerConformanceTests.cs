@@ -24,8 +24,9 @@ using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Infrastructure;
 
-// The point of the whole feature: for every filesystem server, the fs_* tools it advertises, the
-// operations its backend overrides, and the capabilities the mount publishes are the same set.
+// The point of the whole feature: for every filesystem, the operations its backend overrides, the
+// operations its resource publishes and the capabilities its mount gets are the same set, and a
+// server's fs_* tools are the union of its filesystems' — a server may serve several.
 // A server that registered a tool its backend does not implement fails here — which is how the
 // timers move lie was found: fs_move was advertised by a method that only said "unsupported".
 public class FileSystemServerConformanceTests
@@ -179,12 +180,18 @@ public class FileSystemServerConformanceTests
             .Where(FileSystemOperations.ToolNames.Contains)
             .ToList();
 
-        registered.ShouldBe(_advertised[name], ignoreOrder: true, serverId);
+        // A tool per operation any of the server's filesystems overrides, and no other.
+        registered.ShouldBe(
+            ServedBy(serverId).SelectMany(served => _advertised[served]).Distinct(), ignoreOrder: true, serverId);
 
         var mount = provider.GetServices<McpServerResource>()
             .SingleOrDefault(resource => resource.ProtocolResource?.Uri == $"filesystem://{name}");
         mount.ShouldNotBeNull($"{serverId} must publish its {name} mount");
         mount.ProtocolResource!.Name.ShouldBe(name);
+        provider.GetServices<McpServerResource>()
+            .Select(resource => resource.ProtocolResource?.Uri)
+            .Where(uri => uri?.StartsWith("filesystem://", StringComparison.Ordinal) == true)
+            .ShouldBe(ServedBy(serverId).Select(served => $"filesystem://{served}"), ignoreOrder: true, serverId);
 
         // The shipped backend, so the workspace this pins is the one the server was configured with
         // rather than one a test constructed. The sandbox's comes from its own HomeDir setting: the
@@ -196,11 +203,11 @@ public class FileSystemServerConformanceTests
         var describedMount = Published(FileSystemServerResource.Describe(configured));
         describedMount.Workspace.ShouldBe(_workspaces[name], serverId);
         describedMount.LandingTarget.ShouldBe(_landingTargets[name], serverId);
-        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!
-            .ShellReach.ShouldBe(_shellReaches[name], serverId);
+        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), new HashSet<string>())!
+            .Mount.ShellReach.ShouldBe(_shellReaches[name], serverId);
 
         // Only a shell has a root of its own for the other mounts' links to collide with.
-        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!.OccupiedNames;
+        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), new HashSet<string>())!.Mount.OccupiedNames;
         (occupied is not null).ShouldBe(_shellReaches[name] == ShellReach.Contained, serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
@@ -208,14 +215,23 @@ public class FileSystemServerConformanceTests
         FileSystemServerTools.SupportedToolNames(backendType)
             .ShouldBe(_advertised[name], ignoreOrder: true, serverId);
 
-        // What the mount publishes to the model: every advertised operation the model can call, and
-        // nothing else. The two blob tools are transfer machinery, not model-facing.
-        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(registered)).ShouldBe(
-            FileSystemOperations.All
-                .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
-                .Select(o => o.Capability!),
-            serverId);
+        // What the filesystem's resource says are its own operations, beside the server's union.
+        describedMount.Operations.ShouldBe(_advertised[name], ignoreOrder: true, serverId);
+
+        // What the mount publishes to the model: every operation of its own the model can call, and
+        // nothing else — not another filesystem's on the same server. The blob tools and the move-out
+        // check are transfer machinery, not model-facing.
+        McpFileSystemDiscovery.ReadMount(
+                FileSystemServerResource.Describe(configured), McpFileSystemDiscovery.AdvertisedOperations(registered))!
+            .Mount.Capabilities.ShouldBe(
+                FileSystemOperations.All
+                    .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
+                    .Select(o => o.Capability!),
+                serverId);
     }
+
+    private static IEnumerable<string> ServedBy(string serverId) =>
+        Backends().Select(row => ((string)row[0], (string)row[1])).Where(row => row.Item2 == serverId).Select(row => row.Item1);
 
     private static ServiceProvider ConfiguredServer(string serverId)
     {
@@ -367,7 +383,8 @@ public class FileSystemServerConformanceTests
             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
     private record PublishedMount(
-        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget);
+        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget,
+        IReadOnlyList<string>? Operations);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

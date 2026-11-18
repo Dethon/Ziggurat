@@ -24,7 +24,7 @@ public static class FileSystemServerResource
         {
             var backend = sp.GetRequiredService<TBackend>();
             return McpServerResource.Create(
-                () => Describe(backend),
+                () => Describe(backend, typeof(TBackend)),
                 new McpServerResourceCreateOptions
                 {
                     UriTemplate = Address(backend.FilesystemName),
@@ -42,9 +42,16 @@ public static class FileSystemServerResource
     // What McpFileSystemDiscovery reads to mount this filesystem: the name it will be addressed by,
     // the path it goes under, the prose the model gets about it, where under it a file can be
     // written and will stay written, whether a person's attachments may be put there, where its
-    // shell runs a command, and which names at that shell's root the other mounts cannot take. All of it comes off the backend, the workspace and the reach null for a
+    // shell runs a command, which names at that shell's root the other mounts cannot take, and the
+    // operations it serves. All of it comes off the backend, the workspace and the reach null for a
     // mount that declares none.
-    public static string Describe(FileSystemBackendBase backend) =>
+    //
+    // The operations are this filesystem's own, read off the type the registrar reads the tools
+    // off: a server serving several filesystems advertises the union of their tools, so the tool
+    // list no longer says what any one mount can do.
+    public static string Describe(FileSystemBackendBase backend) => Describe(backend, backend.GetType());
+
+    private static string Describe(FileSystemBackendBase backend, Type backendType) =>
         JsonSerializer.Serialize(new
         {
             name = backend.FilesystemName,
@@ -53,6 +60,7 @@ public static class FileSystemServerResource
             workspace = backend.Workspace,
             landingTarget = backend.IsLandingTarget,
             shellReach = backend.ShellReach is { } reach ? JsonNamingPolicy.CamelCase.ConvertName(reach.ToString()) : null,
-            occupiedNames = backend.OccupiedNames
+            occupiedNames = backend.OccupiedNames,
+            operations = FileSystemServerTools.SupportedToolNames(backendType)
         });
 }

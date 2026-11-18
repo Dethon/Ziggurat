@@ -1,6 +1,4 @@
-using System.ComponentModel;
 using System.Net;
-using System.Text.Json;
 using Domain.Contracts;
 using Domain.Security;
 using Domain.Tools.Config;
@@ -14,7 +12,6 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using ModelContextProtocol.Server;
 using static Tests.Unit.Domain.Downloads.Vfs.DownloadFakes;
 
 namespace Tests.Integration.Fixtures;
@@ -52,11 +49,11 @@ public class MultiFileSystemFixture : IAsyncLifetime
         var notesPort = TestPort.GetAvailable();
         var mediaPort = TestPort.GetAvailable();
 
-        _libraryHost = BuildVaultHost(libraryPort, LibraryPath, builder => builder
-            .WithResources<LibraryFileSystemResource>());
+        // Each named what it publishes: a call carries the filesystem it is for, and a server
+        // refuses a name it does not serve.
+        _libraryHost = BuildVaultHost(libraryPort, LibraryPath, "library", "Personal document library");
 
-        _notesHost = BuildVaultHost(notesPort, NotesPath, builder => builder
-            .WithResources<NotesFileSystemResource>());
+        _notesHost = BuildVaultHost(notesPort, NotesPath, "notes", "Personal notes");
 
         _mediaHost = BuildMediaHost(mediaPort);
 
@@ -104,7 +101,7 @@ public class MultiFileSystemFixture : IAsyncLifetime
         public McpGateSettings Mcp => McpTestSecret.Gate;
     }
 
-    private static IHost BuildVaultHost(int port, string vaultPath, Func<IMcpServerBuilder, IMcpServerBuilder> addResources)
+    private static IHost BuildVaultHost(int port, string vaultPath, string name, string description)
     {
         var settings = new McpSettings
         {
@@ -119,19 +116,18 @@ public class MultiFileSystemFixture : IAsyncLifetime
             options.Listen(IPAddress.Loopback, port);
         });
 
-        var mcpBuilder = builder.Services
+        builder.Services
             .AddTransient<LibraryPathConfig>(_ => new LibraryPathConfig(settings.VaultPath))
             .AddTransient<IFileSystemClient, LocalFileSystemClient>()
             .AddSingleton(sp => new TextDiskFileSystem(
-                "vault",
-                "Personal Obsidian vault.",
+                name,
+                $"{description} ({settings.VaultPath})",
                 sp.GetRequiredService<IFileSystemClient>(),
                 new LibraryPathConfig(settings.VaultPath),
                 settings.AllowedExtensions))
             .AddToolServer(settings, ToolResponse.Create)
-            .AddFileSystemTools<TextDiskFileSystem>();
-
-        addResources(mcpBuilder);
+            .AddFileSystemTools<TextDiskFileSystem>()
+            .AddFileSystemResource<TextDiskFileSystem>();
 
         var app = builder.Build();
         app.MapMcp("/mcp");
@@ -186,43 +182,5 @@ public class MultiFileSystemFixture : IAsyncLifetime
                 // Ignore cleanup errors
             }
         }
-    }
-}
-
-[McpServerResourceType]
-public class LibraryFileSystemResource(McpSettings settings)
-{
-    [McpServerResource(
-        UriTemplate = "filesystem://library",
-        Name = "Library Filesystem",
-        MimeType = "application/json")]
-    [Description("Personal document library filesystem")]
-    public string GetLibraryInfo()
-    {
-        return JsonSerializer.Serialize(new
-        {
-            name = "library",
-            mountPoint = "/library",
-            description = $"Personal document library ({settings.VaultPath})"
-        });
-    }
-}
-
-[McpServerResourceType]
-public class NotesFileSystemResource(McpSettings settings)
-{
-    [McpServerResource(
-        UriTemplate = "filesystem://notes",
-        Name = "Notes Filesystem",
-        MimeType = "application/json")]
-    [Description("Personal notes filesystem")]
-    public string GetNotesInfo()
-    {
-        return JsonSerializer.Serialize(new
-        {
-            name = "notes",
-            mountPoint = "/notes",
-            description = $"Personal notes ({settings.VaultPath})"
-        });
     }
 }
