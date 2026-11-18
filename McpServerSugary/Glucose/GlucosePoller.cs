@@ -165,42 +165,40 @@ public sealed class GlucosePoller(
             graph.Connection.Current ?? graph.Points.LastOrDefault());
     }
 
-    // The current reading first, so it — with its arrow — is the one kept for its minute, then the curve
-    // oldest first, with no arrow (only the current reading says where she was heading); none within
-    // GlucoseReadingRules.Spacing of one she has or of one kept before it.
+    // The current reading is kept whenever the sensor has measured since: each is its own minute, and
+    // at a poll a minute keeping only one every few minutes would thin the log the trend and the
+    // statistics read. The curve is those same minutes thinned to five, so a curve point within
+    // GlucoseReadingRules.Spacing of a reading she has — the current one of this poll included — is
+    // the same moment seen twice and is not kept; one filling a gap (before the link, while her phone
+    // was out of reach) is. Curve points carry no arrow: only the current reading says where she was
+    // heading.
     private static async Task<IReadOnlyList<SensorReading>> KeepReadingsAsync(
         SugaryDbContext db, LinkKey key, LibreLinkUpGraph graph, CancellationToken ct)
     {
-        IReadOnlyList<(SensorReading Reading, GlucoseSource Source)> shown =
-        [
-            .. graph.Connection.Current is { } current ? [(current, GlucoseSource.Current)] : Array.Empty<(SensorReading, GlucoseSource)>(),
-            .. graph.Points.Select(point => (point with { Trend = GlucoseTrend.Unknown }, GlucoseSource.Graph))
-        ];
+        var current = graph.Connection.Current;
+        var points = graph.Points.Select(point => point with { Trend = GlucoseTrend.Unknown }).OrderBy(p => p.At).ToList();
+        var shown = points.Select(p => p.At).Concat(current is null ? [] : [current.At]).ToList();
         if (shown.Count == 0)
         {
             return [];
         }
 
         var spacing = GlucoseReadingRules.Spacing;
-        var from = shown.Min(s => s.Reading.At) - spacing;
-        var to = shown.Max(s => s.Reading.At) + spacing;
-        var had = await db.GlucoseReadings.IgnoreQueryFilters()
+        var from = shown.Min() - spacing;
+        var to = shown.Max() + spacing;
+        var instants = new SortedSet<DateTimeOffset>(await db.GlucoseReadings.IgnoreQueryFilters()
             .Where(r => r.UserId == key.UserId && r.TenantId == key.TenantId && r.At >= from && r.At <= to)
             .Select(r => r.At)
-            .ToListAsync(ct);
+            .ToListAsync(ct));
 
-        var kept = shown.Aggregate(
-            (Instants: had, Kept: new List<(SensorReading Reading, GlucoseSource Source)>()),
-            (so, candidate) =>
-            {
-                if (so.Instants.All(at => (at - candidate.Reading.At).Duration() >= spacing))
-                {
-                    so.Instants.Add(candidate.Reading.At);
-                    so.Kept.Add(candidate);
-                }
-
-                return so;
-            }).Kept;
+        IReadOnlyList<(SensorReading Reading, GlucoseSource Source)> currentKept =
+            current is not null && instants.Add(current.At) ? [(current, GlucoseSource.Current)] : [];
+        var kept = currentKept
+            .Concat(points
+                .Where(point => instants.GetViewBetween(point.At - spacing + TimeSpan.FromTicks(1), point.At + spacing - TimeSpan.FromTicks(1)).Count == 0
+                    && instants.Add(point.At))
+                .Select(point => (Reading: point, Source: GlucoseSource.Graph)))
+            .ToList();
 
         db.GlucoseReadings.AddRange(kept.Select(k => new GlucoseReading
         {

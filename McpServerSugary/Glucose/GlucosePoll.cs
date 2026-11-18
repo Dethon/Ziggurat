@@ -6,8 +6,8 @@ namespace McpServerSugary.Glucose;
 
 // What one poll of a person's link came to, for her watches: the readings it kept (oldest first; none
 // after a failure, and none when everything it was shown was already kept), the newest reading
-// LibreLinkUp gave — the connection's current one, kept or not, since at a poll a minute most are
-// within GlucoseReadingRules.Spacing of the last and are not kept — and the link as the poll left it.
+// LibreLinkUp gave — the connection's current one, kept or not, since one the sensor has not replaced
+// is given again and kept only once — and the link as the poll left it.
 public sealed record GlucosePoll(
     Account Person,
     IReadOnlyList<SensorReading> Stored,

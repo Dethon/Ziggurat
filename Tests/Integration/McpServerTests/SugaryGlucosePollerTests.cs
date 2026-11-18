@@ -222,15 +222,20 @@ public class SugaryGlucosePollerTests
         Wear(connection, harness.Clock.GetUtcNow());
         await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
 
+        var shown = new List<DateTimeOffset>();
         foreach (var _ in Enumerable.Range(0, 13 * 60))
         {
             Wear(connection, harness.Clock.GetUtcNow() + Harness.Period);
+            shown.Add(connection.Latest!.Value.Point.At);
             await harness.NextPeriodAsync();
         }
 
         var readings = await harness.ReadingsAsync(SugaryServer.Her);
-        var gaps = readings.Zip(readings.Skip(1), (a, b) => b.At - a.At).ToList();
-        gaps.Min().ShouldBeGreaterThanOrEqualTo(GlucoseReadingRules.Spacing, "no moment is kept twice");
+        readings.Where(r => r.Source == GlucoseSource.Current).Select(r => r.At)
+            .ShouldBe(shown, "every current reading is kept");
+        readings.Where(r => r.Source == GlucoseSource.Graph)
+            .Where(point => readings.Any(r => r != point && (r.At - point.At).Duration() < GlucoseReadingRules.Spacing))
+            .ShouldBeEmpty("no moment is kept twice");
         var end = harness.Clock.GetUtcNow();
         var curve = Enumerable.Range(0, (int)((end - _start + TimeSpan.FromHours(12)) / TimeSpan.FromMinutes(5)) - 2)
             .Select(i => _start - TimeSpan.FromHours(12) + TimeSpan.FromMinutes(5 * i))
@@ -244,6 +249,74 @@ public class SugaryGlucosePollerTests
         readings.ShouldAllBe(r => r.MgPerDl == ValueAt(r.At));
         harness.Fake.Logins.Count.ShouldBe(1, "the token is kept, never asked for per poll");
         harness.Fake.Unhandled.ShouldBeEmpty();
+    }
+
+    // At a poll a minute the sensor's every reading is kept, and the curve, which shows those same
+    // minutes thinned to five, adds nothing beside them; a current reading LibreLinkUp gives again,
+    // because the sensor has not measured since, is kept once.
+    [Fact]
+    public async Task APollAMinute_KeepsEveryCurrentReading_AndNoCurvePointBesideOne()
+    {
+        await using var harness = await StartAsync();
+        var connection = harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García");
+        Wear(connection, harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        var linkedAt = harness.Clock.GetUtcNow();
+
+        var shown = new List<DateTimeOffset>();
+        foreach (var minute in Enumerable.Range(0, 30))
+        {
+            if (minute is not (12 or 13))
+            {
+                Wear(connection, harness.Clock.GetUtcNow() + Harness.Period);
+            }
+
+            shown.Add(connection.Latest!.Value.Point.At);
+            await harness.NextPeriodAsync();
+        }
+
+        var readings = await harness.ReadingsAsync(SugaryServer.Her);
+        readings.Where(r => r.Source == GlucoseSource.Current).Select(r => r.At)
+            .ShouldBe(shown.Distinct(), "thirty polls, twenty-eight readings the sensor took");
+        readings.Where(r => r.Source == GlucoseSource.Current)
+            .ShouldAllBe(r => r.Trend == GlucoseTrend.Steady && r.MgPerDl == ValueAt(r.At));
+        readings.Where(r => r.Source == GlucoseSource.Graph)
+            .ShouldAllBe(r => r.At < linkedAt, "every curve point since the link duplicates a current reading");
+        readings.Where(r => r.Source == GlucoseSource.Graph)
+            .Where(point => readings.Any(r => r.Source == GlucoseSource.Current && (r.At - point.At).Duration() < GlucoseReadingRules.Spacing))
+            .ShouldBeEmpty();
+    }
+
+    // A phone out of reach for a while: LibreLinkUp gives the same current reading until it is back,
+    // then the curve has the minutes in between. Those are kept, being nobody else's moments, and the
+    // curve beside the readings kept before the gap is not.
+    [Fact]
+    public async Task CurvePointsFillingAGap_AreKept()
+    {
+        await using var harness = await StartAsync();
+        var connection = harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García");
+        Wear(connection, harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        foreach (var _ in Enumerable.Range(0, 10))
+        {
+            Wear(connection, harness.Clock.GetUtcNow() + Harness.Period);
+            await harness.NextPeriodAsync();
+        }
+
+        var lastBeforeGap = connection.Latest!.Value.Point.At;
+        await harness.NextPeriodAsync(40);
+        Wear(connection, harness.Clock.GetUtcNow() + Harness.Period);
+        var back = connection.Latest!.Value.Point.At;
+        await harness.NextPeriodAsync();
+
+        var readings = await harness.ReadingsAsync(SugaryServer.Her);
+        readings.Count(r => r.At == lastBeforeGap).ShouldBe(1, "the reading given forty times is kept once");
+        var gap = readings.Where(r => r.At > lastBeforeGap && r.At < back).ToList();
+        gap.ShouldNotBeEmpty();
+        gap.ShouldAllBe(r => r.Source == GlucoseSource.Graph);
+        gap.Select(r => r.At).ShouldBe(connection.Graph
+            .Select(p => p.At)
+            .Where(at => at - lastBeforeGap >= GlucoseReadingRules.Spacing && back - at >= GlucoseReadingRules.Spacing));
     }
 
     [Fact]

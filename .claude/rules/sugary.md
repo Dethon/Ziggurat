@@ -57,8 +57,9 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - **The poller** (`GlucosePoller`, its loop `GlucosePollLoop` only when there is a sealing key) asks every live
   link — a person chosen, a password not refused — once per `Glucose:PollSeconds` (appsettings, 60), each at its
   own moment of the period (from its owner's id), at most four at a time. A link is first polled at its next
-  moment. The current reading is kept as `current` with its arrow, then the curve as `graph`; none within 2.5
-  minutes (`GlucoseReadingRules.Spacing`) of one she has. Readings, sensors and the link's state are written in
+  moment. Every current reading is kept as `current` with its arrow (one at an instant she has is not kept
+  again), then the curve as `graph`, a point within 2.5 minutes (`GlucoseReadingRules.Spacing`) of one she has
+  skipped, so the curve fills only gaps. Readings, sensors and the link's state are written in
   one transaction, and only where `LinkedAt` and `PatientId` are still what the poll read: a poll out while she
   linked again writes nothing. A refused password stops the link until she links again; a rate limit waits its
   `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while

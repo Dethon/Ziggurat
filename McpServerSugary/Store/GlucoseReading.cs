@@ -3,9 +3,10 @@ using Domain.DTOs.Sugary;
 namespace McpServerSugary.Store;
 
 // One glucose value of her log, at the instant the sensor measured it (UTC, LibreLinkUp's
-// FactoryTimestamp), in mg/dL whatever unit she reads. One per person per instant, and none within
-// GlucoseReadingRules.Spacing of another of hers: the poller, the curve and the import all see the same
-// values, and a value counted twice would weigh twice in every statistic.
+// FactoryTimestamp), in mg/dL whatever unit she reads. One per person per instant; and a curve point or
+// an imported value is not kept within GlucoseReadingRules.Spacing of another of hers: the current
+// readings, the curve and the import all see the same values, and a value counted twice would weigh
+// twice in every statistic.
 public class GlucoseReading : IPersonal
 {
     public string UserId { get; set; } = "";
@@ -48,8 +49,9 @@ public class GlucoseSensor : IPersonal
 
 public static class GlucoseReadingRules
 {
-    // A reading this close to one she already has is the same moment seen twice — the current reading
-    // and the curve's point of that minute, or a minute polled twice — and is not kept.
+    // A curve point (or an imported value) this close to a reading she already has is the same moment
+    // seen twice — the curve's point of a minute whose current reading she has — and is not kept.
+    // Current readings are each the sensor's own minute and are all kept.
     public static readonly TimeSpan Spacing = TimeSpan.FromMinutes(2.5);
 
     // The column's words, which a reader of the table sees.
