@@ -178,7 +178,11 @@ public sealed record PutAside(string? AfterEntryId, string? LastSeen) : HistoryR
         }
         else
         {
-            versions[slot] = new SlotVersions(now, inactive);
+            // What replaces the versions is made after them, whatever the clock says: a host that set
+            // its clock back between a reply and its reroll dated the reply after this moment, and the
+            // slot sorted the new version first.
+            var latest = inactive.Max(v => v.MadeAt);
+            versions[slot] = new SlotVersions(now > latest ? now : latest.AddTicks(1), inactive);
         }
 
         return new ConversationHistory([.. history.Messages.Take(at + 1)], versions);
