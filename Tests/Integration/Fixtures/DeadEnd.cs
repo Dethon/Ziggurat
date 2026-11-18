@@ -16,8 +16,19 @@ public static class DeadEnd
         {
             while (true)
             {
-                using var connection = await listener.AcceptTcpClientAsync();
-                connection.Client.LingerState = new LingerOption(true, 0);
+                // One connection going wrong is no reason to stop answering the next: a stopped loop
+                // would leave every later caller hanging on the listen backlog instead of refused.
+                try
+                {
+                    using var connection = await listener.AcceptTcpClientAsync();
+                    connection.Client.LingerState = new LingerOption(true, 0);
+                }
+                catch (SocketException)
+                {
+                }
+                catch (IOException)
+                {
+                }
             }
         });
         return ((IPEndPoint)listener.LocalEndpoint).Port;

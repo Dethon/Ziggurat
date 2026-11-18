@@ -80,7 +80,8 @@ for this, and each shape below is one that has already failed here.
 - An address meant to be unreachable is `DeadEnd.Url(...)`, a listener that hangs up, never a port
   assumed closed. On this machine a connect to `127.0.0.1:1` is dropped, not refused, and waits out
   the caller's whole connect timeout: the eval browser's proxy paid eight seconds a page, a failed
-  reconnect ten. A test that means to wait out a production bound says so in its name
+  reconnect ten. The two `…WhereNothingIsListening_GivesUpWithoutWaitingOutTheSdkDefault` cases
+  dial `localhost:1` on purpose: their claim is the handshake bound, so they need the hang
 - A case whose time jumps between runs by a round number (2 s one run, 17 s the next) is waiting
   out a timeout somewhere, not slowed by load: run it alone a few times and time its steps. The
   eval's archive case paid fifteen seconds one run in four to a Chromium lifecycle wait that missed
