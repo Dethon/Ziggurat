@@ -143,5 +143,9 @@ every rewrite that can race a fire); kept for a rewrite racing a first judgement
   `PUT /link` clears it as any failure. The poll and watch loops are now registered with or without a sealing
   key (a removed key used to stop them, leaving every link looking well); with no link the poller asks the
   accounts service nothing. `SugaryServer` and `EvalSugaryLog` remove both loops (tests drive them). The app
-  words it in both languages and opens the link form for it. The race guard has no dedicated test on this
-  path (no network hook to interleave); it is the shared `Still` write the existing race tests pin.
+  words it in both languages and opens the link form for it. The race guard on the failure write was pinned
+  by nothing (the existing race tests go through `KeepAsync`; an owner-only filter in `RecordAsync` passed
+  them all): `AFailedPollThatOutlivesItsLink_WritesNothing` (LibreLinkUp down while she relinks or chooses
+  another) and `AnUnreadablePasswordOfALinkSinceRelinked_WritesNothing` (her poll held behind four others
+  while she relinks) now are, 3 red under that mutation. `GlucoseWatchDelegationTests.APromptNoAgentTook_ArrivesAtTheNextPollThatStillFindsHerLow`
+  proves the retry through the real emitter and agent connection (red with the un-firing removed).

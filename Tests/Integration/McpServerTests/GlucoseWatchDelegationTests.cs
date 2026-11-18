@@ -175,6 +175,29 @@ public class GlucoseWatchDelegationTests
         (spent.Spent, spent.Enabled).ShouldBe((true, false));
     }
 
+    // The agent away at the crossing (a deploy reconnecting it): the prompt reached nobody, and once an
+    // agent polls again the next reading that still finds her low brings it, as her.
+    [Fact]
+    public async Task APromptNoAgentTook_ArrivesAtTheNextPollThatStillFindsHerLow()
+    {
+        await using var server = await StartAsync();
+        await WriteAsync(server, TurnOf(SugaryServer.Her), b => b.CreateAsync("low/watch.json", _watch, false, true, CancellationToken.None));
+        var engine = server.Services.GetRequiredService<GlucoseWatchEngine>();
+        var start = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(5);
+
+        await PollAsync(server, engine, start, 100);
+        await PollAsync(server, engine, start + TimeSpan.FromMinutes(1), 60);
+        var agent = await server.AgentAsync();
+        await PollAsync(server, engine, start + TimeSpan.FromMinutes(2), 58);
+
+        using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var fire = await agent.Messages.FirstAsync(wait.Token);
+        fire.Content.ShouldBe(Prompt);
+        fire.FireReport.ShouldNotBeNull().ShouldContain("58 mg/dL");
+        (await AdmitAsync(fire)).ShouldBeOfType<FireAdmission.Delegated>().Identity.Account.ShouldBe(SugaryServer.Her);
+        (await StoredAsync(server, "low")).LastFiredAt.ShouldNotBeNull();
+    }
+
     private static Task<SugaryServer> StartAsync() =>
         SugaryServer.StartAsync(sugaryPeople: _people, configure: s => s with { Delivery = TestDelegations.Delivery });
 

@@ -580,6 +580,83 @@ public class SugaryGlucosePollerTests
         harness.Observer.Polls.ShouldBeEmpty();
     }
 
+    // A failure is as much the old link's: LibreLinkUp down while she linked again marks nothing on the new one.
+    [Theory]
+    [InlineData("relinked")]
+    [InlineData("chose another")]
+    public async Task AFailedPollThatOutlivesItsLink_WritesNothing(string change)
+    {
+        await using var harness = await StartAsync();
+        var connection = harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García");
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        connection.Down = true;
+        connection.BeforeGraph = async () =>
+        {
+            await using var db = harness.Factory();
+            var hers = db.GlucoseLinks.IgnoreQueryFilters().Where(l => l.UserId == SugaryServer.Her.UserId);
+            if (change == "relinked")
+            {
+                await hers.ExecuteUpdateAsync(set => set.SetProperty(l => l.LinkedAt, _start + TimeSpan.FromSeconds(1)));
+            }
+            else
+            {
+                await hers.ExecuteUpdateAsync(set => set.SetProperty(l => l.PatientId, "patient-2"));
+            }
+        };
+
+        await harness.NextPeriodAsync();
+
+        harness.GraphCalls("patient-1").ShouldBe(1);
+        var link = await harness.LinkOfAsync(SugaryServer.Her);
+        (link.LastFailure, link.FailingSince).ShouldBe((null, null));
+        harness.Observer.Polls.ShouldBeEmpty();
+    }
+
+    // A password that did not open, judged for a link she has since linked again, marks nothing on the new
+    // one: her poll waits for a slot behind four others while she links again.
+    [Fact]
+    public async Task AnUnreadablePasswordOfALinkSinceRelinked_WritesNothing()
+    {
+        await using var harness = await StartAsync();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var asking = 0;
+        foreach (var i in Enumerable.Range(0, 4))
+        {
+            var connection = harness.Fake.AddAccount($"p{i}@example.com", "pw").Follow($"patient-{i}", "Ana", "García");
+            connection.BeforeGraph = async () =>
+            {
+                Interlocked.Increment(ref asking);
+                await gate.Task;
+            };
+            await harness.LinkAsync(new Account("household-many", $"user-{i}"), $"p{i}@example.com", "pw", $"patient-{i}");
+        }
+
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1",
+            key: Convert.ToBase64String(SealingKey.Generate().Export()));
+        harness.Clock.Advance(Harness.Period);
+        var sweep = harness.SweepAsync();
+        try
+        {
+            // Four asking holds every slot, so hers is waiting: it has read the link, not yet opened it.
+            await Eventually.Until(() => Volatile.Read(ref asking) == 4, "four links are being asked");
+            var sealedAgain = harness.Server.Services.GetRequiredService<GlucoseCredentials>().Seal(SugaryServer.Her, "pw");
+            await using var db = harness.Factory();
+            await db.GlucoseLinks.IgnoreQueryFilters().Where(l => l.UserId == SugaryServer.Her.UserId)
+                .ExecuteUpdateAsync(set => set
+                    .SetProperty(l => l.LinkedAt, _start + TimeSpan.FromSeconds(1))
+                    .SetProperty(l => l.SealedPassword, sealedAgain));
+        }
+        finally
+        {
+            gate.TrySetResult();
+        }
+
+        await sweep;
+        var link = await harness.LinkOfAsync(SugaryServer.Her);
+        (link.LastFailure, link.FailingSince).ShouldBe((null, null));
+        harness.Observer.Polls.ShouldNotContain(p => p.Person == SugaryServer.Her);
+    }
+
     // What a watch is told after each of her polls: what was kept, the newest reading LibreLinkUp gave
     // (kept or not), and the link as it now stands — after a failure too.
     [Fact]
