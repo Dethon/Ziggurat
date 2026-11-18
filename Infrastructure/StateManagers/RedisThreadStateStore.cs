@@ -194,12 +194,14 @@ public sealed class RedisThreadStateStore(
             return;
         }
 
+        // The record first, then the line: a page that sees the turn in the history reads its row off
+        // the record next, and stamped after the push, a row read in between kept the old preview.
+        await StampLastWriteAsync(key, messages);
         await _db.ListRightPushAsync(key, Serialize(messages));
         await _db.KeyExpireAsync(key, _expiration);
 
         // The versions beside the line live as long as it does.
         await _db.KeyExpireAsync(VersionsKey(key), _expiration);
-        await StampLastWriteAsync(key, messages);
     }
 
     public async Task DropTailAsync(string key, int count)

@@ -223,6 +223,31 @@ public sealed class StreamingServiceTests : IDisposable
         MessagesFor(topic.TopicId).Last().IsInterrupted.ShouldBeTrue();
     }
 
+    // The row's preview and badge are read off the conversation's record, which the agent writes when
+    // it keeps the turn. Read at the stream's end when the keep came later, the row kept the preview it
+    // had (none, for a new conversation) until a reload: once the history shows the turn kept, the row
+    // is read again, and the conversation on screen marked read up to it.
+    [Fact]
+    public async Task SendMessageAsync_AReplyKeptAfterItsStreamEnded_RefreshesItsRowAndReadMarkOnceKept()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "test", CorrelationId = "mine" }]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+        var refreshes = 0;
+        using var counting = _dispatcher.RegisterHandler<RefreshTopicList>(_ => Interlocked.Increment(ref refreshes));
+        _messagingService.EnqueueMessages(new ChatStreamMessage { Content = "Done", MessageId = "m1" });
+        _topicService.HistoryAnswers.Enqueue([]);
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "Done", null, null, EntryId: "e2"));
+
+        await SendAndDrainAsync(topic);
+
+        await Eventually.Until(() => Volatile.Read(ref refreshes) == 2, "the row read again once the turn was kept");
+        await Eventually.Until(() => _topicService.MarkedReadTopicIds.Count == 2, "the read mark taken again");
+    }
+
     // Carlos says "ok" twice in a shared topic: the second is a message of its own, not the first one
     // again — the page drew only the first until a reload.
     [Fact]

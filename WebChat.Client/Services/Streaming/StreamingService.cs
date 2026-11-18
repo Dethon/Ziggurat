@@ -608,8 +608,10 @@ public sealed class StreamingService(
     {
         try
         {
+            var late = false;
             foreach (var wait in LearnAgainAfter)
             {
+                late |= wait > TimeSpan.Zero;
                 await Task.Delay(wait);
                 var revision = messagesStore.State.Revision;
                 var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
@@ -623,6 +625,15 @@ public sealed class StreamingService(
                     .All(m => m.EntryId is not null || m.IsError || m.NoReply
                               || (string.IsNullOrEmpty(m.Content) && m.Attachments is not { Count: > 0 })))
                 {
+                    // Kept after the stream ended, so the row and the read mark taken at its end read
+                    // the record before this turn was in it: the row kept its old preview (a new
+                    // conversation's none) until a reload. Read again, now that it is.
+                    if (late)
+                    {
+                        await MarkReadIfViewedAsync(topic);
+                        dispatcher.Dispatch(new RefreshTopicList());
+                    }
+
                     return;
                 }
             }
