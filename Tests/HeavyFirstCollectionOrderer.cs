@@ -28,6 +28,9 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         // launches two of its own.
         "Playwright",
         "CamoufoxFingerprintPinTests",
+        // The sandbox image's fifty-two cases behind one container: unnamed, it was offered its thread
+        // anywhere from 5 s to 65 s in, and the late runs ended on it.
+        "SandboxE2E",
         // Longer chains before shorter ones: there are more of these than threads, and a chain of
         // half a minute offered its thread late is what the run then ends on (EvalWebTests started
         // at 54 s behind the short classes then listed above it and finished at 100).
