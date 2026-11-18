@@ -39,6 +39,15 @@ pub struct Listing {
     pub truncated: bool,
 }
 
+/// The working directory as one request: the attr of every step on the way to it, stopping at the
+/// first that is not there or not allowed, and its listing where the last step is a directory. A
+/// prefetch: what it carries is cached as if each had been asked, and what it lacks is asked as ever.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Walk {
+    pub steps: Vec<(String, Attr)>,
+    pub listing: Option<Listing>,
+}
+
 /// What an action printed and how it ended.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +70,7 @@ pub type Errno = i32;
 pub trait Bridge: Send + Sync + 'static {
     fn attr(&self, path: &str) -> Result<Attr, Errno>;
     fn list(&self, path: &str) -> Result<Listing, Errno>;
+    fn walk(&self, path: &str) -> Result<Walk, Errno>;
     fn read(&self, path: &str) -> Result<Vec<u8>, Errno>;
 
     /// The whole file, as the equivalent tool call would write it. `new` is the daemon's knowledge

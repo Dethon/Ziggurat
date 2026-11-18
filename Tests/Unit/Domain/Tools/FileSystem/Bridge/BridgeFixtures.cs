@@ -19,6 +19,8 @@ internal sealed class ScriptedSandbox(IVfsBridge bridge, Func<VfsCall, Cancellat
 
     public List<string> TokensSeen { get; } = [];
 
+    public List<VfsBridgeGrant> GrantsSeen { get; } = [];
+
     public override string FilesystemName => "sandbox";
 
     public override string DescribeMount => "Scripted sandbox.";
@@ -32,6 +34,7 @@ internal sealed class ScriptedSandbox(IVfsBridge bridge, Func<VfsCall, Cancellat
         string path, string command, int? timeoutSeconds, VfsBridgeGrant grant, CancellationToken ct)
     {
         TokensSeen.Add(grant.Token);
+        GrantsSeen.Add(grant);
         var call = bridge.Find(grant.Token) ?? throw new InvalidOperationException("the tool handed over a token the bridge does not know");
         return new FsResult<FsExecResult>.Ok(await script(call, ct));
     }

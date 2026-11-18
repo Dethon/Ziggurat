@@ -24,6 +24,48 @@ public class VfsBridgeWalkTests
             }), ScriptedSandbox.Mount, ShellReach.Contained),
             (mount, "/vault", null)), _bridge);
 
+    // The daemon asks for the working directory once, before the command runs: every directory on
+    // the way to it and its listing, in one request — on prod each question was a round trip out
+    // through the home's tunnel and back, asked one after another by the kernel.
+    [Fact]
+    public async Task AWalk_AnswersEveryStepOnTheWayAndTheListing()
+    {
+        BridgeWalk? walk = null;
+        await Tool(new MemoryDisk("vault", new Dictionary<string, string>
+        {
+            ["notes/deep/todo.md"] = "x",
+            ["notes/deep/done.md"] = "y"
+        }), async (call, ct) => walk = (await call.WalkAsync("/vault/notes/deep", ct))
+            .ShouldBeOfType<BridgeAnswer<BridgeWalk>.Ok>().Value)
+            .RunAsync("/sandbox", "ls", arguments: BridgeFixtures.Whitelisted);
+
+        walk!.Steps.Select(s => (s.Path, s.Attr.Kind)).ShouldBe([
+            ("/vault", BridgeKinds.Directory),
+            ("/vault/notes", BridgeKinds.Directory),
+            ("/vault/notes/deep", BridgeKinds.Directory)
+        ]);
+        walk.Listing!.Entries.Select(e => e.Name).Order().ShouldBe(["done.md", "todo.md"]);
+    }
+
+    // A walk is a prefetch, never an answer the kernel acts on: it stops at the first step that is
+    // not there or not allowed, lists nothing that is not a directory it reached, and each step is
+    // gated as the attr it stands for.
+    [Theory]
+    [InlineData("/vault/nope/deeper", true, new[] { "/vault" })]
+    [InlineData("/vault/notes/todo.md", true, new[] { "/vault", "/vault/notes", "/vault/notes/todo.md" })]
+    [InlineData("/vault/notes", false, new[] { "/vault" })]
+    public async Task AWalk_StopsWhereTheAttrWould(string path, bool infoRunsUnasked, string[] steps)
+    {
+        BridgeWalk? walk = null;
+        var arguments = infoRunsUnasked ? BridgeFixtures.Whitelisted : BridgeFixtures.Allowing(VfsGlobFilesTool.Name, VfsExecTool.Name);
+        await Tool(new MemoryDisk("vault", new Dictionary<string, string> { ["notes/todo.md"] = "x" }),
+                async (call, ct) => walk = (await call.WalkAsync(path, ct)).ShouldBeOfType<BridgeAnswer<BridgeWalk>.Ok>().Value)
+            .RunAsync("/sandbox", "ls", arguments: arguments);
+
+        walk!.Steps.Select(s => s.Path).ShouldBe(steps);
+        walk.Listing.ShouldBeNull();
+    }
+
     [Fact]
     public async Task AListingTheMountCutShort_IsReportedOnTheExecResult()
     {

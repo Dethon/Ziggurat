@@ -100,11 +100,12 @@ public class LauncherRunnerTests : IDisposable
             """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""");
 
         await Runner(bridgeUrl: "http://agent:8080/api/vfs-bridge")
-            .RunAsync("", "ls /vault", null, new VfsBridgeGrant("tok-1"), CancellationToken.None);
+            .RunAsync("", "ls /vault", null, new VfsBridgeGrant("tok-1", ["timers", "vault"]), CancellationToken.None);
 
         var bridge = JsonNode.Parse(await launcher)!["bridge"]!;
         bridge["url"]!.GetValue<string>().ShouldBe("http://agent:8080/api/vfs-bridge");
         bridge["token"]!.GetValue<string>().ShouldBe("tok-1");
+        bridge["served"]!.AsArray().Select(n => n!.GetValue<string>()).ShouldBe(["timers", "vault"]);
     }
 
     [SkippableTheory]
@@ -206,6 +207,49 @@ public class LauncherRunnerTests : IDisposable
 
         await Should.ThrowAsync<OperationCanceledException>(run);
         await hungUp.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    // What the file tools wrote is handed to the command's user by the launcher before the command
+    // runs — only those paths, not the whole home volume, which on prod is a walk of 172k entries
+    // before every command. Each path goes once: the next command has nothing new to adopt.
+    [SkippableFact]
+    public async Task RunAsync_SendsWhatTheFileToolsWroteOnce()
+    {
+        SkipIfNotLinux();
+        const string answer = """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""";
+        var runner = Runner();
+        runner.Wrote("/home/sandbox_user/a.py");
+        runner.Wrote("/home/sandbox_user/dir");
+        runner.Wrote("/home/sandbox_user/a.py");
+
+        var first = PlayLauncherAsync(answer);
+        await runner.RunAsync("", "true", null, null, CancellationToken.None);
+        var adopted = JsonNode.Parse(await first)!["adopt"]!.AsArray().Select(n => n!.GetValue<string>()).Order();
+
+        File.Delete(_socket);
+        var second = PlayLauncherAsync(answer);
+        await runner.RunAsync("", "true", null, null, CancellationToken.None);
+
+        adopted.ShouldBe(["/home/sandbox_user/a.py", "/home/sandbox_user/dir"]);
+        JsonNode.Parse(await second)!["adopt"].ShouldBeNull();
+    }
+
+    // A command that never reached the launcher adopted nothing, so what it carried waits for the
+    // next one rather than staying the server's for good.
+    [SkippableFact]
+    public async Task RunAsync_ALauncherNeverReached_KeepsWhatItCarriedForTheNext()
+    {
+        SkipIfNotLinux();
+        var runner = Runner();
+        runner.Wrote("/home/sandbox_user/a.py");
+
+        await Should.ThrowAsync<SocketException>(() => runner.RunAsync("", "true", null, null, CancellationToken.None));
+
+        var launcher = PlayLauncherAsync(
+            """{"stdout":"","stderr":"","exitCode":0,"timedOut":false,"truncated":false,"durationMs":1}""");
+        await runner.RunAsync("", "true", null, null, CancellationToken.None);
+        JsonNode.Parse(await launcher)!["adopt"]!.AsArray().Select(n => n!.GetValue<string>())
+            .ShouldBe(["/home/sandbox_user/a.py"]);
     }
 
     [SkippableFact]

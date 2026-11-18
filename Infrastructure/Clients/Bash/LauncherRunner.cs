@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -26,6 +27,13 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
 
     private readonly CommandCwd _cwd = new(options.ContainerRoot);
 
+    // What the file tools wrote since the last command reached the launcher. The launcher hands
+    // each to the command's user before it runs the command: the paths alone rather than a walk of
+    // the whole home, whose cost grows with whatever the commands left there.
+    private readonly ConcurrentDictionary<string, byte> _written = new(StringComparer.Ordinal);
+
+    public void Wrote(string fullPath) => _written.TryAdd(fullPath, 0);
+
     public async Task<FsResult<FsExecResult>> RunAsync(
         string path, string command, int? timeoutSeconds, VfsBridgeGrant? bridge,
         CancellationToken cancellationToken)
@@ -35,32 +43,47 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
             return new FsResult<FsExecResult>.Err(unresolved);
         }
 
+        var adopt = _written.Keys.Where(path => _written.TryRemove(path, out _)).ToList();
         var request = new LauncherRequest(
             command,
             cwd,
             CommandCwd.EffectiveTimeoutSeconds(options, timeoutSeconds),
             options.OutputCapBytes,
             options.Environment ?? new Dictionary<string, string>(),
-            bridge is not null && !string.IsNullOrEmpty(bridgeUrl) ? new LauncherBridge(bridgeUrl, bridge.Token) : null);
+            bridge is not null && !string.IsNullOrEmpty(bridgeUrl) ? new LauncherBridge(bridgeUrl, bridge.Token, bridge.Served) : null,
+            adopt.Count > 0 ? adopt : null);
 
-        using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-        await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), cancellationToken);
-        await using var stream = new NetworkStream(socket, ownsSocket: false);
-
-        var line = JsonSerializer.Serialize(request, _json) + "\n";
-        await stream.WriteAsync(Encoding.UTF8.GetBytes(line), cancellationToken);
-
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        string? answer;
+        string? answer = null;
         try
         {
-            answer = await reader.ReadLineAsync(cancellationToken);
+            using var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+            await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), cancellationToken);
+            await using var stream = new NetworkStream(socket, ownsSocket: false);
+
+            var line = JsonSerializer.Serialize(request, _json) + "\n";
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(line), cancellationToken);
+
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            try
+            {
+                answer = await reader.ReadLineAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Closing our end is what tells the launcher to kill the tree.
+                socket.Shutdown(SocketShutdown.Both);
+                throw;
+            }
         }
-        catch (OperationCanceledException)
+        finally
         {
-            // Closing our end is what tells the launcher to kill the tree.
-            socket.Shutdown(SocketShutdown.Both);
-            throw;
+            // An answer means the launcher read the request, and it adopts before anything else.
+            // Without one it may not have, so the paths wait for the next command; adopting twice
+            // changes nothing.
+            if (string.IsNullOrEmpty(answer))
+            {
+                adopt.ForEach(Wrote);
+            }
         }
 
         return Interpret(answer, cwd);
@@ -105,9 +128,10 @@ public class LauncherRunner(BashRunnerOptions options, string socketPath, string
         int TimeoutSeconds,
         int OutputCapBytes,
         IReadOnlyDictionary<string, string> Env,
-        LauncherBridge? Bridge);
+        LauncherBridge? Bridge,
+        IReadOnlyList<string>? Adopt);
 
-    private sealed record LauncherBridge(string Url, string Token);
+    private sealed record LauncherBridge(string Url, string Token, IReadOnlyList<string>? Served);
 
     private sealed record LauncherAnswer(
         string? Stdout,

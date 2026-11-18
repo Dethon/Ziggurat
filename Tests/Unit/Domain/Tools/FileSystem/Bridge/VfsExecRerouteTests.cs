@@ -19,17 +19,22 @@ public class VfsExecRerouteTests
     private readonly CatalogMount _timers = new();
     private readonly List<(string Path, string Command)> _sandboxRan = [];
 
-    private IVirtualFileSystemRegistry WithSandbox() => BridgeFixtures.Registry(
-        (new RecordingSandbox(_bridge, _sandboxRan), ScriptedSandbox.Mount, ShellReach.Contained),
-        (_timers, "/timers", null));
+    // The timers mount as discovery mounts it: its server publishes exec, a catalog of actions.
+    private IVirtualFileSystemRegistry WithSandbox()
+    {
+        var registry = BridgeFixtures.Registry(
+            (new RecordingSandbox(_bridge, _sandboxRan), ScriptedSandbox.Mount, ShellReach.Contained));
+        registry.Mount(new FileSystemMount(_timers.FilesystemName, "/timers", _timers.DescribeMount) { Capabilities = ["exec"] }, _timers);
+        return registry;
+    }
 
     [Fact]
     public async Task ExecOnAMountWithNoShell_RunsInTheSandboxThere()
     {
         var result = await new VfsExecTool(WithSandbox(), _bridge)
-            .RunAsync("/timers", "./dismiss", arguments: BridgeFixtures.Whitelisted);
+            .RunAsync("/timers", "./dismiss && echo done", arguments: BridgeFixtures.Whitelisted);
 
-        _sandboxRan.ShouldBe([("vfs/timers", "./dismiss")]);
+        _sandboxRan.ShouldBe([("vfs/timers", "./dismiss && echo done")]);
         _timers.Ran.ShouldBeEmpty();
         result["cwd"]!.GetValue<string>().ShouldBe("/timers");
         result["vfsChanges"].ShouldNotBeNull();
@@ -76,6 +81,56 @@ public class VfsExecRerouteTests
         _sandboxRan.ShouldBeEmpty();
         _timers.Ran.ShouldBeEmpty();
         result["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+    }
+
+    // One action file run by itself on a mount with an exec of its own reaches that exec whichever
+    // way it goes — in the sandbox the action file hands its words back to it through the bridge —
+    // so it goes straight there, handed the line the action file would have handed it, and skips
+    // the namespace, the daemon and a round trip per path component.
+    [Theory]
+    [InlineData("/timers", "./dismiss", "", "./dismiss")]
+    [InlineData("/timers/eggs", "  ./run_now  ", "eggs", "./run_now")]
+    [InlineData("/timers/eggs", "./notify --message \"la cena\" --n 2", "eggs", "./notify --message 'la cena' --n 2")]
+    public async Task ABareActionOnAMountWithItsOwnExec_RunsThereDirectly(string path, string command, string ranAt, string ranCommand)
+    {
+        var result = await new VfsExecTool(WithSandbox(), _bridge)
+            .RunAsync(path, command, arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBeEmpty();
+        _timers.Ran.ShouldBe([(ranAt, ranCommand)]);
+        result["cwd"]!.GetValue<string>().ShouldBe(path);
+        result["vfsChanges"].ShouldBeNull();
+    }
+
+    // Anything bash would read differently from the words — a glob over the directory's files, a
+    // tilde, a comment, a quote left open — is the sandbox's to run, as a script is.
+    [Theory]
+    [InlineData("./turn_on *")]
+    [InlineData("./turn_on ~")]
+    [InlineData("./turn_on #note")]
+    [InlineData("./turn_on 'open")]
+    [InlineData("./dismiss | cat")]
+    public async Task AnActionLineBashWouldReadOtherwise_RunsInTheSandbox(string command)
+    {
+        await new VfsExecTool(WithSandbox(), _bridge).RunAsync("/timers", command, arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBe([("vfs/timers", command)]);
+        _timers.Ran.ShouldBeEmpty();
+    }
+
+    // A mount whose server publishes no exec (the vault) has no action of its own to run, so even
+    // `./x` there is a program in the sandbox.
+    [Fact]
+    public async Task ABareActionOnAMountWithNoExec_RunsInTheSandbox()
+    {
+        var vault = new MemoryDisk("vault", new Dictionary<string, string>());
+        var registry = BridgeFixtures.Registry(
+            (new RecordingSandbox(_bridge, _sandboxRan), ScriptedSandbox.Mount, ShellReach.Contained));
+        registry.Mount(new FileSystemMount("vault", "/vault", "Vault.") { Capabilities = ["file_read", "glob"] }, vault);
+
+        await new VfsExecTool(registry, _bridge).RunAsync("/vault", "./build", arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBe([("vfs/vault", "./build")]);
     }
 
     // jack has no sandbox: the same call runs the mount's own catalog, with the same effect.
@@ -139,6 +194,9 @@ public class VfsExecRerouteTests
     [InlineData("dismiss", ShellReach.Contained)]
     [InlineData("python3 -c 'print(1)'", ShellReach.Contained)]
     [InlineData("FOO=1 ./dismiss", ShellReach.Contained)]
+    [InlineData("./turn_on *", ShellReach.Contained)]
+    [InlineData("./turn_on ~", ShellReach.Contained)]
+    [InlineData("./turn_on 'open", ShellReach.Contained)]
     public void ABareActionOnARoutedMount_IsNotScreened(string command, ShellReach? expected)
     {
         var registry = BridgeFixtures.Registry(

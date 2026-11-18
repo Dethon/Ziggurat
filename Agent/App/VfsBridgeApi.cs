@@ -32,6 +32,16 @@ public static class VfsBridgeApi
                 truncated = l.Truncated
             })));
 
+        // The working directory in one request, asked once before the command runs.
+        bridge.MapPost("/walk", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct) =>
+            WithCall(http, vfs, async call => Json(await call.WalkAsync(path, ct), w => new
+            {
+                steps = w.Steps.Select(s => new { path = s.Path, kind = s.Attr.Kind, size = s.Attr.Size }),
+                listing = w.Listing is { } l
+                    ? new { entries = l.Entries.Select(e => new { name = e.Name, kind = e.Kind }), truncated = l.Truncated }
+                    : null
+            })));
+
         // The body is the whole file; `new` says nothing was at the path when the command made it.
         bridge.MapPost("/write", (HttpContext http, IVfsBridge vfs, string path, CancellationToken ct, bool @new = false) =>
             WithCall(http, vfs, async call => Json(

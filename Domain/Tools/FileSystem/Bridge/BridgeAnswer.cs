@@ -39,6 +39,13 @@ public sealed record BridgeEntry(string Name, string Kind);
 // recursive command made of it — saw only part of it.
 public sealed record BridgeListing(IReadOnlyList<BridgeEntry> Entries, bool Truncated);
 
+// The working directory in one answer: the attr of each step on the way to it, as far as they are
+// there and allowed, and its listing where the last step is a directory. The daemon asks it once,
+// before the command runs, and caches it as if each had been asked.
+public sealed record BridgeWalk(IReadOnlyList<BridgeWalkStep> Steps, BridgeListing? Listing);
+
+public sealed record BridgeWalkStep(string Path, BridgeAttr Attr);
+
 // The errno a refusal becomes. The names are the daemon's to turn into numbers.
 public static class Errnos
 {

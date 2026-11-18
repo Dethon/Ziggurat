@@ -42,7 +42,7 @@ pub fn serve(config: LauncherConfig) -> io::Result<i32> {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "no server command after --"));
     }
 
-    crate::home::share(Path::new(&config.home), config.puid, config.pgid);
+    crate::home::share(Path::new(&config.home), config.server_uid, config.puid, config.pgid);
     let groups = kept_groups(config.pgid)?;
     let listener = open_socket(&config)?;
 

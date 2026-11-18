@@ -12,6 +12,8 @@ using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Topics;
 using Infrastructure.Metrics;
 using Infrastructure.Tunnels;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -200,6 +202,48 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         (await read.Content.ReadAsStringAsync()).ShouldBe("milk");
         write.StatusCode.ShouldBe(HttpStatusCode.OK, await write.Content.ReadAsStringAsync());
         notes.Files["done.md"].ShouldBe("eggs");
+    }
+
+    // The forwarder writes a back-call's answer into the server's connection as it arrives — head,
+    // then body — and with Nagle's algorithm on the second write waits for an acknowledgement the
+    // client, waiting for the body, holds back for its delayed-ACK timer: ~45 ms a request on a
+    // loopback, paid by a sandbox command on every bridge operation. Measured against that floor,
+    // not against a speed.
+    [Fact]
+    public async Task ABackCallRequest_IsNotHeldBackByTheRelaysSocket()
+    {
+        var port = await ServerOfAsync(_home, "sandbox", BackCallProtocol.VfsBridge);
+        var notes = new MemoryDisk("notes", new Dictionary<string, string> { ["todo.md"] = "milk" });
+        var call = _relay.Bridge.Mint(BridgeFixtures.Registry((notes, "/notes", null)), BridgeFixtures.Everything, null, null);
+        using var daemon = new HttpClient { BaseAddress = Loopback(port) };
+        daemon.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", call.Token);
+
+        var median = await MedianMsAsync(async () =>
+        {
+            using var answer = await daemon.PostAsync(
+                $"{BackCallTargets.BridgeRoute.TrimStart('/')}/write?path=/notes/done.md", new ByteArrayContent("eggs"u8.ToArray()));
+            answer.EnsureSuccessStatusCode();
+        });
+
+        median.ShouldBeLessThan(DelayedAckFloorMs, "a back-call waited on the relay socket's delayed acknowledgement");
+    }
+
+    // Half Linux's 40 ms minimum delayed ACK: a request held back once is never under it, and one
+    // that is not runs in a couple of milliseconds even with the suite at full width.
+    private const double DelayedAckFloorMs = 20;
+
+    private static async Task<double> MedianMsAsync(Func<Task> request)
+    {
+        await request();
+        var times = new List<double>();
+        for (var i = 0; i < 15; i++)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            await request();
+            times.Add(clock.Elapsed.TotalMilliseconds);
+        }
+
+        return times.Order().ElementAt(times.Count / 2);
     }
 
     public static TheoryData<string, string> OtherPaths => new()

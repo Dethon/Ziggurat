@@ -20,6 +20,10 @@ pub struct ExecRequest {
     /// Where present, the call's other mounts are served at /vfs through the agent's bridge.
     #[serde(default)]
     pub bridge: Option<BridgeGrant>,
+    /// What the server's file tools wrote since the last command, as full container paths: handed
+    /// to PUID before this command runs (`home::adopt`).
+    #[serde(default)]
+    pub adopt: Vec<String>,
 }
 
 /// The call token, and where the bridge it opens answers. Handed to the call's daemon over its
@@ -29,6 +33,10 @@ pub struct ExecRequest {
 pub struct BridgeGrant {
     pub url: String,
     pub token: String,
+    /// The mounts the call serves, named by the agent: the daemon's root without a round trip.
+    /// Absent, the daemon lists the root through the bridge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub served: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -66,6 +74,16 @@ mod tests {
         assert_eq!(request.timeout_seconds, 60);
         assert_eq!(request.env["HOME"], "/home/sandbox_user");
         assert_eq!(request.bridge, None);
+        assert!(request.adopt.is_empty());
+    }
+
+    #[test]
+    fn a_request_may_carry_what_the_file_tools_wrote() {
+        let line = r#"{"command":"ls","cwd":"/","timeoutSeconds":5,"outputCapBytes":10,"env":{},"adopt":["/home/sandbox_user/a.py"]}"#;
+
+        let request: ExecRequest = serde_json::from_str(line).unwrap();
+
+        assert_eq!(request.adopt, ["/home/sandbox_user/a.py"]);
     }
 
     #[test]
@@ -76,8 +94,17 @@ mod tests {
 
         assert_eq!(
             request.bridge,
-            Some(BridgeGrant { url: "http://agent:8080/api/vfs-bridge".into(), token: "t".into() })
+            Some(BridgeGrant { url: "http://agent:8080/api/vfs-bridge".into(), token: "t".into(), served: None })
         );
+    }
+
+    #[test]
+    fn a_bridge_may_name_the_mounts_it_serves() {
+        let line = r#"{"command":"ls","cwd":"/","timeoutSeconds":5,"outputCapBytes":10,"env":{},"bridge":{"url":"u","token":"t","served":["timers","vault"]}}"#;
+
+        let request: ExecRequest = serde_json::from_str(line).unwrap();
+
+        assert_eq!(request.bridge.unwrap().served, Some(vec!["timers".to_string(), "vault".to_string()]));
     }
 
     #[test]
