@@ -20,8 +20,8 @@ public static class WatchDelegation
     // to write anyway.
     public static DelegatedObject? OfWrite(string path, string text, string? existing, string agentId, ReplyTarget? origin)
     {
-        var node = HaVfsPath.Parse(path);
-        if (node.Kind != HaVfsKind.WatchFile || !HaWatchAutomation.IsValidWatchId(node.WatchId)
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind != HaWatchKind.WatchFile || !HaWatchAutomation.IsValidWatchId(node.WatchId)
             || TryParse(text) is not { } spec)
         {
             return null;

@@ -65,8 +65,8 @@ internal static class TunnelledHomeAssistant
         var turn = new ConversationContext("jonas", "conv-1", person.UserId, new ReplyTarget(ChannelIds.SignalR, "conv-1"),
             Principal: new Principal(ChannelIds.SignalR, person.UserId, person),
             Identity: IdentityClaims.Person(person.UserId, person.TenantId, ChannelIds.SignalR, ["member"]));
-        (await new McpFileSystemBackend(client, HaFileSystem.Name, null).As(turn)
-                .CreateAsync("/watches/laura-sugar-high/watch.json", watch, false, true, ct))
+        (await new McpFileSystemBackend(client, HaWatchFileSystem.Name, null).As(turn)
+                .CreateAsync("/laura-sugar-high/watch.json", watch, false, true, ct))
             .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
     }
 

@@ -1,6 +1,9 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
@@ -8,44 +11,171 @@ using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// The one writable subtree of the mount. A watch is a Home Assistant automation; the file is a view
-// of it, rendered on write and projected back on read, stored nowhere but in the home. Every other
-// path on the mount refuses a write here, by name, so the model learns where writing is possible
+// The home's watches, at /watchers. A watch is a Home Assistant automation; the file is a view of
+// it, rendered on write and projected back on read, stored nowhere but in the home. Every path but
+// a watch file refuses a write here, by name, so the model learns where writing is possible
 // instead of hunting for another spelling.
-public sealed partial class HaFileSystem
+//
+// /watchers is a mount point other servers' watches share (a union, FileSystemUnion): each watch
+// is a top-level entry, and a new one comes here when none of its triggers is a kind another
+// member claims — which is every Home Assistant trigger.
+public sealed class HaWatchFileSystem(
+    HaCatalogProvider catalogProvider,
+    Func<IHomeAssistantClient> clientFactory,
+    TimeProvider? timeProvider = null,
+    ConversationContext? caller = null,
+    HaWatches? watches = null,
+    ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
-    private static bool IsWatchNode(HaVfsNode node) =>
-        node.Kind is HaVfsKind.WatchesRoot or HaVfsKind.WatchDir or HaVfsKind.WatchFile or HaVfsKind.WatchStatusFile;
+    public const string Name = "ha-watches";
+    public const string MountPointPath = "/watchers";
 
-    private async Task<(bool Exists, bool IsDir)> ResolveWatchAsync(HaVfsNode node, CancellationToken ct)
+    // Shared with the home mount's setup index when the server hands one in, so both read the home's
+    // watches through one instance; a test that builds the mount alone gets its own.
+    private readonly HaWatches _watches = watches ?? new HaWatches(clientFactory, timeProvider);
+
+    // Who is writing: a watch runs its prompts as the agent that created it, and acts for the person
+    // whose write carried the delegation it keeps — or for nobody, when the write that last set it
+    // carried none. The server's one instance has no caller, and the registrar asks for a view per
+    // call.
+    private ConversationContext? _caller = caller;
+    private string? _delegation;
+
+    // A shallow copy with the caller swapped, never a second construction: a copy carries every
+    // dependency this mount was built with — the ones that exist and the ones added later — so
+    // there is no argument list here to fall behind the constructor's. The watches and the catalog
+    // are shared by reference, which is the point; the class is sealed, so the copy is exactly this
+    // type. HaWatchFileSystemCallerViewTests pins caller-and-nothing-else.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
     {
-        if (node.Kind == HaVfsKind.WatchesRoot)
-        {
-            return (true, true);
-        }
-
-        var exists = HaWatchAutomation.IsValidWatchId(node.WatchId) && await _watches.GetAsync(node.WatchId!, ct) is not null;
-        return (exists, node.Kind == HaVfsKind.WatchDir);
+        var view = (HaWatchFileSystem)MemberwiseClone();
+        view._caller = caller.Conversation;
+        view._delegation = caller.Delegation;
+        return view;
     }
 
-    private async Task<FsResult<string>> RenderWatchAsync(string path, HaVfsNode node, CancellationToken ct)
+    public override string FilesystemName => Name;
+
+    public override string MountPoint => MountPointPath;
+
+    // Every trigger Home Assistant knows is this member's: it claims no value and takes whatever no
+    // other member claims.
+    public override FileSystemUnion? Union => new("/triggers/*/trigger", [], Fallback: true);
+
+    public override string DescribeMount =>
+        "The home's watches: standing instructions the home runs when an entity meets a condition, "
+        + "each a Home Assistant automation written as `/watchers/<id>/watch.json` (create, edit, "
+        + "delete), with a read-only `status.json` beside it. Load the `home-watches` skill first.";
+
+    public override string DescribeRead =>
+        "Reads a watch: /watchers/<id>/watch.json is the watch as written, status.json beside it its "
+        + "createdAt/lastTriggeredAt/spent.";
+
+    public override string DescribeCreate =>
+        "Creates or replaces a watch: fs_create /watchers/<descriptive-id>/watch.json with JSON "
+        + "{name, triggers, conditions?, effects, once?, enabled?, deliverTo?, userId?}. Writing an "
+        + "existing id with overwrite=true replaces that watch in place.";
+
+    public override string DescribeEdit =>
+        "Edits a watch's /watchers/<id>/watch.json in place (threshold, effects, enabled, once); "
+        + "the same watch is replaced, never a second one.";
+
+    public override string DescribeDelete =>
+        "Removes a watch: fs_delete /watchers/<id> (or its watch.json) deletes the automation from "
+        + "the home.";
+
+    public override string DescribeInfo =>
+        "Returns metadata for a watch path: exists and isDirectory.";
+
+    public override string DescribeGlob =>
+        "Lists the watches: each is a directory `<id>/` holding `watch.json` and `status.json`. "
+        + "`*` matches one path segment, `**` recurses; a trailing slash lists directories only.";
+
+    // Read live from the home on every listing. A home that cannot answer is a failure, not an
+    // empty listing: beside other members of /watchers, an empty answer would read as "no home
+    // watches" where the truth is "the home did not answer".
+    public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
-        if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is not { } watch)
+        if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
         {
-            return NotFound(path);
+            return new FsResult<FsGlobResult>.Err(invalidPattern);
         }
 
-        return new FsResult<string>.Ok(node.Kind == HaVfsKind.WatchFile
+        IReadOnlyList<string> ids;
+        try
+        {
+            ids = (await _watches.ListAsync(ct)).Select(w => w.Id).ToList();
+        }
+        catch (HomeAssistantException ex)
+        {
+            return HomeAssistantFailure<FsGlobResult>(ex);
+        }
+
+        return Glob(pattern, () => Entries(ids, scope));
+    }
+
+    private static IReadOnlyList<string> Entries(IReadOnlyList<string> ids, GlobScope scope)
+    {
+        var dirs = ids.Where(scope.Matches).Select(id => id + "/");
+        var files = scope.DirsOnly
+            ? []
+            : ids.SelectMany(id => new[] { $"{id}/{HaWatchPath.WatchFileName}", $"{id}/{HaWatchPath.StatusFileName}" })
+                .Where(scope.Matches);
+        return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
+    }
+
+    public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
+    {
+        var node = HaWatchPath.Parse(path);
+        var (exists, isDir) = node.Kind switch
+        {
+            HaWatchKind.Root => (true, true),
+            HaWatchKind.Unknown => (false, false),
+            _ => (HaWatchAutomation.IsValidWatchId(node.WatchId) && await _watches.GetAsync(node.WatchId!, ct) is not null,
+                node.Kind == HaWatchKind.WatchDir)
+        };
+        return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = exists, Path = path, IsDirectory = exists ? isDir : null });
+    }
+
+    public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
+        (await RenderAsync(path, ct)).TryGetValue(out var text, out var error)
+            ? HaReadResult.Numbered(path, text, offset, limit)
+            : new FsResult<FsReadResult>.Err(error);
+
+    // The rendered file as it is, with no line numbers: what a sandbox command reads through the
+    // bridge, so `jq .` parses a watch and `sed -i` on one writes back what it read.
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!(await RenderAsync(path, ct)).TryGetValue(out var text, out var error))
+        {
+            throw new FileSystemOperationException(error);
+        }
+
+        yield return Encoding.UTF8.GetBytes(text);
+    }
+
+    private async Task<FsResult<string>> RenderAsync(string path, CancellationToken ct)
+    {
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind is not (HaWatchKind.WatchFile or HaWatchKind.WatchStatusFile)
+            || !HaWatchAutomation.IsValidWatchId(node.WatchId)
+            || await _watches.GetAsync(node.WatchId!, ct) is not { } watch)
+        {
+            return NotFound<string>(path);
+        }
+
+        return new FsResult<string>.Ok(node.Kind == HaWatchKind.WatchFile
             ? watch.Spec.ToJson()
             : HaWatches.RenderStatus(watch, (await catalogProvider.GetAsync(ct)).HomeZone));
     }
 
     public override async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
-        var node = HaVfsPath.Parse(path);
-        if (node.Kind != HaVfsKind.WatchFile)
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind != HaWatchKind.WatchFile)
         {
-            return await RefuseWriteAsync<FsCreateResult>(node, path, "created", ct);
+            return RefuseWrite<FsCreateResult>(node, path, "created");
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId))
         {
@@ -73,10 +203,10 @@ public sealed partial class HaFileSystem
 
     public override async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
-        var node = HaVfsPath.Parse(path);
-        if (node.Kind != HaVfsKind.WatchFile)
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind != HaWatchKind.WatchFile)
         {
-            return await RefuseWriteAsync<FsEditResult>(node, path, "edited", ct);
+            return RefuseWrite<FsEditResult>(node, path, "edited");
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is not { } existing)
         {
@@ -103,10 +233,10 @@ public sealed partial class HaFileSystem
 
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
-        var node = HaVfsPath.Parse(path);
-        if (node.Kind is not (HaVfsKind.WatchDir or HaVfsKind.WatchFile))
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind is not (HaWatchKind.WatchDir or HaWatchKind.WatchFile))
         {
-            return await RefuseWriteAsync<FsRemoveResult>(node, path, "deleted", ct);
+            return RefuseWrite<FsRemoveResult>(node, path, "deleted");
         }
         if (!HaWatchAutomation.IsValidWatchId(node.WatchId) || await _watches.GetAsync(node.WatchId!, ct) is null)
         {
@@ -279,7 +409,7 @@ public sealed partial class HaFileSystem
         return null;
     }
 
-    private static readonly System.Text.Json.JsonSerializerOptions _targetJson = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions _targetJson = new() { PropertyNameCaseInsensitive = true };
 
     private static FsResult<T> HomeAssistantFailure<T>(HomeAssistantException ex) where T : class =>
         ex is HomeAssistantNotFoundException
@@ -291,22 +421,14 @@ public sealed partial class HaFileSystem
         FsError.Invalid<T>(
             $"'{id}' is not a valid watch id: use a descriptive slug of letters, digits, '-' and '_' (e.g. laura-sugar-high).");
 
-    // A write anywhere but a watch file is refused by name — an existing action file as
-    // executable-only, an existing read-only file as read-only, anything else as not the place —
-    // and the refusal says what can be done there instead. Only an action the entity really has is
-    // refused as one: any leaf parses as an action, so the catalog decides.
-    private async Task<FsResult<T>> RefuseWriteAsync<T>(HaVfsNode node, string path, string verb, CancellationToken ct)
-        where T : class =>
-        node.Kind is HaVfsKind.ActionFile && Resolve(node, await catalogProvider.GetAsync(ct)).Exists
-            ? ExecutableOnly<T>(path, node.Service!)
-            : RefuseWrite<T>(node, path, verb);
-
-    private static FsResult<T> RefuseWrite<T>(HaVfsNode node, string path, string verb) where T : class =>
-        node.Kind is HaVfsKind.WatchStatusFile
+    // A write anywhere but a watch file is refused by name, and the refusal says where writing is
+    // possible instead.
+    private static FsResult<T> RefuseWrite<T>(HaWatchNode node, string path, string verb) where T : class =>
+        node.Kind is HaWatchKind.WatchStatusFile
             ? FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                $"{path} is read-only: status.json is rendered from the automation; the watch is changed through /ha/watches/<id>/watch.json.",
+                $"{path} is read-only: status.json is rendered from the automation; the watch is changed through /watchers/<id>/watch.json.",
                 "Write or edit the watch.json beside it instead.")
             : FsError.Fail<T>(ToolError.Codes.UnsupportedOperation,
-                $"{path} cannot be {verb}: /ha is read-only except for /ha/watches/<id>/watch.json.",
-                "To act on a device use exec on its action files; to react to the home write a watch.");
+                $"{path} cannot be {verb}: the one writable file of a home watch is /watchers/<id>/watch.json.",
+                "Create the watch's watch.json; to remove a watch, delete its directory.");
 }

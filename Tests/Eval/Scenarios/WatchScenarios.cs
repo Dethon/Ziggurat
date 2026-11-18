@@ -4,7 +4,7 @@ using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
 
-// Reacting to the home: a watch is a file under /ha/watches that becomes a real automation, and
+// Reacting to the home: a watch is a file under /watchers that becomes a real automation, and
 // what these assert is the automation the fake home received — its effect kind, its triggers, its
 // delivery — and the watch count moving or holding still. The fake home starts with one watch
 // (Laura's sugar below 70, on Telegram), so creating shows as one becoming two and changing,
@@ -17,13 +17,18 @@ public static class WatchScenarios
         AnUrgentWarning, TellMeWhenTheWashingMachineFinishes, ChangeTheThreshold, NotTonight, RemoveTheWatch
     ];
 
-    private const string WatchFile = @"^/ha/watches/[^/]+/watch\.json$";
+    private const string WatchFile = @"^/watchers/[^/]+/watch\.json$";
 
     // The home skill's load is tolerated beside the watches skill: a watch names an entity, the
     // entity layout is the home skill's, and both models reach for it about one run in three.
     // The watches skill stays required; this only stops the detour reading as a wrong choice.
+    // Looking at the watches themselves (listing /watchers, reading a watch before changing it) is
+    // looking too.
     private static IReadOnlyList<CallPermission> LookingAtTheHome =>
-        [.. CallPermission.LookingAndManuals("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)];
+    [
+        .. CallPermission.LookingAndManuals("/ha*"), .. CallPermission.Looking("/watchers*"),
+        CallPermission.Load(HomeAssistantSkill.Name)
+    ];
 
     private static string Kind(string kind) => $@"""kind""\s*:\s*""{kind}""";
 
@@ -401,7 +406,7 @@ public static class WatchScenarios
         Permitted =
         [
             .. LookingAtTheHome,
-            new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
+            new CallPermission(EvalTools.Create, $"/watchers/{FakeHomeAssistant.SugarWatchId}/*")
         ],
         // The outcome, not only the edit: the home's automation now fires below 65, and it is
         // still the one watch.
@@ -442,7 +447,7 @@ public static class WatchScenarios
         Permitted =
         [
             .. LookingAtTheHome,
-            new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
+            new CallPermission(EvalTools.Create, $"/watchers/{FakeHomeAssistant.SugarWatchId}/*")
         ],
         Changes = [new StateChange(FakeHomeAssistant.SugarWatchEntityId, "off")],
         Ordering = [new OrderingConstraint("skill", "pause")],
@@ -465,7 +470,7 @@ public static class WatchScenarios
         Required =
         [
             // The index is tolerated, not required: a removal names no entity, and the watch is
-            // found by listing /ha/watches — a model that went straight there did nothing wrong.
+            // found by listing /watchers — a model that went straight there did nothing wrong.
             LoadsTheSkill,
             new CallExpectation
             {

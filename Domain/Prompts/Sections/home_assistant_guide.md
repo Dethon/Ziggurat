@@ -17,7 +17,7 @@ claims:
 - home.exactly-what-was-asked: A request to change one thing changes exactly that thing, and nothing else in the home moves.
 - home.area-slug-is-read-not-derived: An area id passed to an action is the slug read from the setup index, never one derived from the display name.
 - home.room-request-uses-the-room-action: A request that names a room runs the action that takes an area id, never the whole-house one.
-- home.reacting-to-the-home-is-a-watch: A request to react to an entity changing becomes a watch under /ha/watches, never a schedule, a timer or a calendar event.
+- home.reacting-to-the-home-is-a-watch: A request to react to an entity changing becomes a watch under /watchers, never a schedule, a timer or a calendar event.
 ---
 
 ## Home Assistant Control (`/ha` filesystem)
@@ -58,7 +58,7 @@ mechanism** in the Timers section.
 A **watch** is a standing instruction the home itself runs when an entity meets a
 condition: "warn me when Laura's sugar goes above 180", "close the blinds when the living
 room passes 27", "tell me when the washing machine finishes". It is a real Home Assistant
-automation, written as a file under `/ha/watches/<id>/`, and the setup index says which
+automation, written as a file under `/watchers/<id>/`, and the setup index says which
 watches exist. **Something in the home changing is a watch**, never a schedule that polls
 `./history`; a later moment that is a time rather than a change is decided under Which
 mechanism in the Timers section. Before you write, change, pause or remove a watch — and only then: no other home task

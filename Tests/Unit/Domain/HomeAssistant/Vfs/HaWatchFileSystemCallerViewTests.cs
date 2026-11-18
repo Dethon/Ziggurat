@@ -14,20 +14,18 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 // instance working and the one that answers calls not, with nothing at compile time to say so.
 // Asked of every instance field, so a dependency added tomorrow is covered without naming it. The
 // caller is two fields: the conversation it serves and the delegation its write carried.
-public class HaFileSystemCallerViewTests
+public class HaWatchFileSystemCallerViewTests
 {
     private static readonly ConversationContext _jonas =
         new("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1"));
 
-    private static HaFileSystem MountWithEveryDependency()
+    private static HaWatchFileSystem MountWithEveryDependency()
     {
         var client = new FakeHaClient();
         var time = new FakeTimeProvider();
-        return new HaFileSystem(
+        return new HaWatchFileSystem(
             new HaCatalogProvider(() => client, time),
             () => client,
-            regexMatchTimeout: TimeSpan.FromSeconds(3),
-            musicClientFactory: () => Mock.Of<IMusicAssistantClient>(),
             timeProvider: time,
             caller: null,
             watches: new HaWatches(() => client, time),
@@ -39,16 +37,16 @@ public class HaFileSystemCallerViewTests
     {
         var mount = MountWithEveryDependency();
 
-        var view = mount.For(new FileSystemCaller(_jonas, null, "a-delegation")).ShouldBeOfType<HaFileSystem>();
+        var view = mount.For(new FileSystemCaller(_jonas, null, "a-delegation")).ShouldBeOfType<HaWatchFileSystem>();
 
-        var fields = typeof(HaFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        var fields = typeof(HaWatchFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         var differing = fields.Where(f => !Equals(f.GetValue(mount), f.GetValue(view))).ToList();
 
         differing.Select(f => f.GetValue(view)).ShouldBe([_jonas, "a-delegation"], ignoreOrder: true);
         // A lost dependency would compare null to null and pass, so the mount above has to set every
-        // one. The setup index is the exception: a cache built on first read, not a dependency.
+        // one.
         fields.Where(f => !differing.Contains(f) && f.GetValue(mount) is null).Select(f => f.Name)
-            .ShouldBe(["_setupIndex"]);
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -66,6 +64,6 @@ public class HaFileSystemCallerViewTests
     }
 
     private static object? CallerOf(FileSystemBackendBase fs) =>
-        typeof(HaFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+        typeof(HaWatchFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
             .Single(f => f.FieldType == typeof(ConversationContext)).GetValue(fs);
 }

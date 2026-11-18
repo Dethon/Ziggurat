@@ -139,7 +139,7 @@ public sealed class FakeHomeAssistant : HttpMessageHandler
     public static readonly string SugarWatchEntityId = new FakeAutomation(
         HaWatchAutomation.AutomationId(SugarWatchId), new JsonObject { ["alias"] = SugarWatchName }).EntityId;
 
-    public static readonly string SugarWatchPathPattern = $@"^/ha/watches/{SugarWatchId}(/watch\.json)?/?$";
+    public static readonly string SugarWatchPathPattern = $@"^/watchers/{SugarWatchId}(/watch\.json)?/?$";
 
     // The home's automations, as the config API holds them: how many carry the assistant prefix
     // is the watch count a scenario declares as its change, the way it declares an alarm's.

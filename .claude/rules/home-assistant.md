@@ -26,8 +26,9 @@ The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`. Each action an entit
 **action file** named for its service with no extension (`turn_on`, `music_assistant.play_media`),
 run from the entity directory as `./turn_on` or `turn_on` alike — `./` is the spelling taught,
 because a real shell needs it once exec runs in the sandbox. An action file is executable-only:
-read, create, edit and delete refuse it (`FsError.ExecutableOnly`), info reports `executable`,
-glob lists it under `executables`, and its usage is `--help`. The old `<service>.sh` spelling
+a read refuses it (`FsError.ExecutableOnly`), info reports `executable`, glob lists it under
+`executables`, and its usage is `--help`; `/ha` overrides no write at all (a watch is written at
+`/watchers`). The old `<service>.sh` spelling
 names nothing and answers 127 with the available names. Since any leaf other than `state.json`
 parses as an action, whether one exists is the catalog's answer, never the parser's.
 
@@ -127,9 +128,16 @@ are shipped by the server through `AddSkills` and loaded by the model with `load
 
 ## Watches are Home Assistant automations, written as files
 
-`/ha/watches/<id>/watch.json` is the mount's one writable subtree (`HaFileSystem.Watches.cs`;
-`HaVfsPath` has the four watch kinds; `HaTree` lists them from ids the fs fetches live, only for a
-glob that can reach them). A watch **is** a real automation written through the config API
+A watch is `/watchers/<id>/watch.json`, with a read-only `status.json` beside it, on a filesystem of
+its own: `HaWatchFileSystem` (`ha-watches`, served by the Home Assistant server after `ha`, so a call
+naming no filesystem still reaches the home). `/ha` is read-only and `/ha/watches` names nothing.
+`/watchers` is a **union** mount point (`.claude/rules/virtual-filesystem.md`): the home's watches
+declare `routeBy: /triggers/*/trigger` with `fallback: true` — every Home Assistant trigger is a kind
+no other member claims — so each watch is a top-level `<id>/` entry the union finds by listing, and
+other servers' watches (Sugary's glucose watches) sit beside them. `HaWatchPath` parses the mount's
+four kinds; the listing is read live from the home, and a home that cannot list its automations
+fails the listing retryably rather than answering empty, so the union says the home's watches are
+unavailable instead of that there are none. A watch **is** a real automation written through the config API
 (`IHomeAssistantClient.{List,Get,Upsert,Delete}Automation*`): `HaWatchSpec` parses the file and
 names the field it refuses, `HaWatchAutomation.Render` turns it into the automation — id
 `assistant_watch_<id>`, alias = name, `mode: single`, triggers/conditions verbatim, the effects in
@@ -156,9 +164,9 @@ subtree and untouchable through it. `enabled` is the entity's on/off, synced wit
 as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
 composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
 the call's `_meta`: the fs-tool registrar asks the mount for itself as that caller sees it
-(`HaFileSystem.For`), never an ambient. The view is a shallow copy with the caller swapped, not a
+(`HaWatchFileSystem.For`), never an ambient. The view is a shallow copy with the caller swapped, not a
 second construction — a hand rebuild falls behind the constructor silently, and
-`HaFileSystemCallerViewTests` pins that a view differs from its mount in the caller alone; a file naming no
+`HaWatchFileSystemCallerViewTests` pins that a view differs from its mount in the caller alone; a file naming no
 `deliverTo` takes the caller's origin channel and address, because the model is never told which
 channel a turn came from, and a file naming no `userId` takes the caller's user for the same
 reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming

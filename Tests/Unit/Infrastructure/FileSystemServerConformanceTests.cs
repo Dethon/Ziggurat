@@ -39,6 +39,7 @@ public class FileSystemServerConformanceTests
         { "schedules", "scheduling", typeof(ScheduleFileSystem) },
         { "print-queue", "printer", typeof(PrinterQueueFileSystem) },
         { "ha", "homeassistant", typeof(HaFileSystem) },
+        { "ha-watches", "homeassistant", typeof(HaWatchFileSystem) },
         { "media", "library", typeof(MediaLibraryDiskFileSystem) },
         { "vault", "vault", typeof(TextDiskFileSystem) },
         { "sandbox", "sandbox", typeof(SandboxFileSystem) },
@@ -63,15 +64,13 @@ public class FileSystemServerConformanceTests
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ],
-            // Read and exec over the home, plus the one writable subtree: a watch is created, edited
-            // and deleted as a file, and every other path refuses those three by name. The byte read
-            // is the rendered file itself, which is what a sandbox command reads: the text read
-            // numbers its lines.
-            ["ha"] =
-            [
-                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec",
-                "fs_blob_read"
-            ],
+            // Read and exec over the home, and nothing written: the watches moved to their own mount.
+            // The byte read is the rendered file itself, which is what a sandbox command reads: the
+            // text read numbers its lines.
+            ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_exec", "fs_blob_read"],
+            // The home's watches, at /watchers: a watch is created, edited and deleted as a file, its
+            // status read beside it. The byte read serves the rendering, as /ha's does.
+            ["ha-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"],
             // The media library reads only the overlay's status file and writes no text, so it keeps
             // the plain disk surface plus read. It is also the one mount with a move-out rule, and
             // the only one that registers the check.
@@ -117,6 +116,7 @@ public class FileSystemServerConformanceTests
             ["schedules"] = null,
             ["print-queue"] = null,
             ["ha"] = null,
+            ["ha-watches"] = null,
             ["media"] = null,
             ["vault"] = null,
             ["sandbox"] = "home/sandbox_user",
@@ -136,6 +136,7 @@ public class FileSystemServerConformanceTests
             ["schedules"] = false,
             ["print-queue"] = false,
             ["ha"] = false,
+            ["ha-watches"] = false,
             ["media"] = false,
             ["vault"] = false,
             ["sandbox"] = true,
@@ -157,11 +158,29 @@ public class FileSystemServerConformanceTests
             ["schedules"] = null,
             ["print-queue"] = null,
             ["ha"] = null,
+            ["ha-watches"] = null,
             ["media"] = null,
             ["vault"] = null,
             ["sandbox"] = ShellReach.Contained,
             ["outpost"] = null,
             ["sugary"] = null
+        };
+
+    // Where each mount is published, where that is not `/<name>`: an outpost is a separate machine
+    // at its own address, and the home's watches share /watchers with every other server's.
+    private static string ExpectedMountPoint(string name, FileSystemBackendBase backend) => backend switch
+    {
+        OutpostFileSystem => $"outpost:{name}",
+        HaWatchFileSystem => "/watchers",
+        _ => $"/{name}"
+    };
+
+    // Which mounts share their mount point, and how a new entry finds its member. Written out, as
+    // the rest are. The home's watches take every watch whose triggers nobody else claims.
+    private static readonly IReadOnlyDictionary<string, FileSystemUnion?> _unions =
+        new Dictionary<string, FileSystemUnion?>(StringComparer.Ordinal)
+        {
+            ["ha-watches"] = new("/triggers/*/trigger", [], Fallback: true)
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -256,6 +275,8 @@ public class FileSystemServerConformanceTests
                 Mock.Of<IPrintSpool>(), Mock.Of<IPrinterClient>(), new PrintQueueGate(), "text,jpeg"),
             ["ha"] = new HaFileSystem(
                 new HaCatalogProvider(Mock.Of<IHomeAssistantClient>), Mock.Of<IHomeAssistantClient>),
+            ["ha-watches"] = new HaWatchFileSystem(
+                new HaCatalogProvider(Mock.Of<IHomeAssistantClient>), Mock.Of<IHomeAssistantClient>),
             ["media"] = new MediaLibraryDiskFileSystem(
                 Mock.Of<IFileSystemClient>(), new LibraryPathConfig("/media"),
                 new DownloadsOverlay(
@@ -301,8 +322,20 @@ public class FileSystemServerConformanceTests
         published.Name.ShouldBe(name);
         // An outpost is a separate machine, so its name is a machine address rather than a branch
         // of the one tree every other mount shares.
-        published.MountPoint.ShouldBe(backend is OutpostFileSystem ? $"outpost:{name}" : $"/{name}");
+        published.MountPoint.ShouldBe(ExpectedMountPoint(name, backend));
         published.Description.ShouldBe(backend.DescribeMount);
+
+        // The union as published and as the agent reads it back: a member alone at its mount point
+        // (the home's watches before any other server's join them) is mounted there all the same.
+        var expectedUnion = _unions.GetValueOrDefault(name);
+        published.Union?.RouteBy.ShouldBe(expectedUnion?.RouteBy, name);
+        published.Union?.Claims.ShouldBe(expectedUnion?.Claims ?? [], name);
+        published.Union?.Fallback.ShouldBe(expectedUnion?.Fallback ?? false, name);
+        (published.Union is null).ShouldBe(expectedUnion is null, name);
+        var discovered = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(backend), new HashSet<string>())!.Mount;
+        discovered.MountPoint.ShouldBe(ExpectedMountPoint(name, backend), name);
+        (discovered.Union?.RouteBy, discovered.Union?.Fallback).ShouldBe((expectedUnion?.RouteBy, expectedUnion?.Fallback), name);
+        (discovered.Union?.Claims ?? []).ShouldBe(expectedUnion?.Claims ?? [], name);
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }
 
@@ -384,7 +417,9 @@ public class FileSystemServerConformanceTests
 
     private record PublishedMount(
         string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget,
-        IReadOnlyList<string>? Operations);
+        IReadOnlyList<string>? Operations, PublishedUnion? Union);
+
+    private record PublishedUnion(string RouteBy, IReadOnlyList<string> Claims, bool Fallback);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

@@ -17,41 +17,20 @@ public sealed partial class HaFileSystem(
     TimeSpan? regexMatchTimeout = null,
     Func<IMusicAssistantClient>? musicClientFactory = null,
     TimeProvider? timeProvider = null,
-    ConversationContext? caller = null,
     HaWatches? watches = null,
     ISatelliteCatalog? satellites = null) : FileSystemBackendBase
 {
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
-    // Shared with the setup summary when the server hands one in, so both read the home's watches
-    // through one instance; a test that builds the mount alone gets its own.
+    // The setup index names the home's watches, which live on their own mount (HaWatchFileSystem,
+    // /watchers). Shared with that mount when the server hands one in, so both read them through
+    // one instance; a test that builds the mount alone gets its own.
     private readonly HaWatches _watches = watches ?? new HaWatches(clientFactory, timeProvider);
 
     // The setup index, built from the same catalog, watches and satellites on every read. It used to
     // be appended to the served prompt, where it was as old as the conversation; as a file it is as
     // old as the read.
     private HomeAssistantSetupSummary? _setupIndex;
-
-    // Who is writing, for the one record on this mount that remembers its author: a watch runs its
-    // prompts as the agent that created it, and acts for the person whose write carried the
-    // delegation it keeps — or for nobody, when the write that last set it carried none. The
-    // server's one instance has no caller, and the registrar asks for a view per call.
-    private ConversationContext? _caller = caller;
-    private string? _delegation;
-
-    // A shallow copy with the caller swapped, never a second construction: a copy carries every
-    // dependency this mount was built with — the ones that exist and the ones added later — so
-    // there is no argument list here to fall behind the constructor's. Rebuilding by hand did
-    // that silently: the server's instance kept working and the one answering calls did not.
-    // The watches and the catalog are shared by reference, which is the point; the class is sealed,
-    // so the copy is exactly this type. HaFileSystemCallerViewTests pins caller-and-nothing-else.
-    public override FileSystemBackendBase For(FileSystemCaller caller)
-    {
-        var view = (HaFileSystem)MemberwiseClone();
-        view._caller = caller.Conversation;
-        view._delegation = caller.Delegation;
-        return view;
-    }
 
     public const string Name = "ha";
 
@@ -71,41 +50,25 @@ public sealed partial class HaFileSystem(
         + "`/ha/areas/<room>/<entity_id>/`. `read state.json` for live state; `exec './<service> "
         + "--help'` for an action's arguments; `exec './<service> --flag value'` to control a device. "
         + "Action files are executable-only: they run, and cannot be read or written. NOT a shell — "
-        + "exec only runs the listed action files (anything else returns exit 127). The one writable place is `/ha/watches/<id>/watch.json`: "
-        + "a standing instruction the home runs when an entity meets a condition (see the guide). "
-        + "Everything else is read-only.";
+        + "exec only runs the listed action files (anything else returns exit 127). Read-only: a "
+        + "standing instruction the home runs when an entity meets a condition is a watch, under "
+        + "`/watchers` (see the guide).";
 
     // The words the model reads about each operation, next to the behaviour they describe. They
     // name the mount's real files, which is what makes the Home Assistant surface usable.
     public override string DescribeRead =>
         "Reads a Home Assistant virtual file: state.json returns the entity's live state + "
-        + "attributes; an action file is executable-only (its usage is `exec './<service> --help'`); "
-        + "/ha/watches/<id>/watch.json "
-        + "is a watch as written, status.json beside it its createdAt/lastTriggeredAt/spent.";
-
-    public override string DescribeCreate =>
-        "Creates or replaces a watch: fs_create /ha/watches/<descriptive-id>/watch.json with JSON "
-        + "{name, triggers, conditions?, effects, once?, enabled?, deliverTo?, userId?}. Writing an "
-        + "existing id with overwrite=true replaces that watch in place. Nothing else on /ha can be "
-        + "created.";
-
-    public override string DescribeEdit =>
-        "Edits a watch's /ha/watches/<id>/watch.json in place (threshold, effects, enabled, once); "
-        + "the same watch is replaced, never a second one. Nothing else on /ha can be edited.";
-
-    public override string DescribeDelete =>
-        "Removes a watch: fs_delete /ha/watches/<id> (or its watch.json) deletes the automation from "
-        + "the home. Nothing else on /ha can be deleted.";
+        + "attributes; an action file is executable-only (its usage is `exec './<service> --help'`).";
 
     public override string DescribeInfo =>
         "Returns metadata for a Home Assistant virtual path: exists, isDirectory, and executable "
         + "for an action file. Cheap existence check before read/exec.";
 
     public override string DescribeGlob =>
-        "Lists Home Assistant entities, areas, watches and action files matching a glob pattern. "
+        "Lists Home Assistant entities, areas and action files matching a glob pattern. "
         + "`*` matches one path segment, `**` recurses. A trailing slash lists directories only "
-        + "(domains, entities, areas, watches — e.g. `*/`); otherwise files (`state.json`, action "
-        + "files, `watch.json`) and directories both match, with directories returned with a trailing "
+        + "(domains, entities, areas — e.g. `*/`); otherwise files (`state.json`, action "
+        + "files) and directories both match, with directories returned with a trailing "
         + "slash and the action files also listed under `executables`.";
 
     public override string DescribeSearch =>
@@ -129,33 +92,10 @@ public sealed partial class HaFileSystem(
         }
 
         var catalog = await catalogProvider.GetAsync(ct);
-        var watchIds = await WatchIdsInScopeAsync(basePath, ct);
         return Glob(
             pattern,
-            () => HaTree.Glob(catalog, scope, watchIds),
+            () => HaTree.Glob(catalog, scope),
             entry => HaVfsPath.Parse(entry).Kind == HaVfsKind.ActionFile);
-    }
-
-    // The watches are read live from the home, so they are fetched only for a glob that can reach
-    // them: one scoped to an entity or an area lists no watch and pays no call for them. A home
-    // that cannot answer for them degrades the way the catalog does — the listing goes on without
-    // them — rather than turning every root glob into an error while the home is down.
-    private async Task<IReadOnlyList<string>> WatchIdsInScopeAsync(string basePath, CancellationToken ct)
-    {
-        var scope = (basePath ?? string.Empty).Trim('/');
-        if (scope.Length > 0 && !scope.StartsWith(HaVfsPath.WatchesRootName, StringComparison.Ordinal))
-        {
-            return [];
-        }
-
-        try
-        {
-            return (await _watches.ListAsync(ct)).Select(w => w.Id).ToList();
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            return [];
-        }
     }
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
@@ -164,12 +104,6 @@ public sealed partial class HaFileSystem(
         if (node.Kind is HaVfsKind.SetupIndexFile)
         {
             return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = true, Path = path, IsDirectory = false });
-        }
-
-        if (IsWatchNode(node))
-        {
-            var (watchExists, watchIsDir) = await ResolveWatchAsync(node, ct);
-            return new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = watchExists, Path = path, IsDirectory = watchExists ? watchIsDir : null });
         }
 
         var catalog = await catalogProvider.GetAsync(ct);
@@ -186,7 +120,7 @@ public sealed partial class HaFileSystem(
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct) =>
         (await RenderAsync(path, ct)).TryGetValue(out var text, out var error)
-            ? BuildReadResult(path, text, offset, limit)
+            ? HaReadResult.Numbered(path, text, offset, limit)
             : new FsResult<FsReadResult>.Err(error);
 
     // The rendered file as it is, with no line numbers: what a sandbox command reads through the
@@ -210,11 +144,6 @@ public sealed partial class HaFileSystem(
         if (node.Kind is HaVfsKind.SetupIndexFile)
         {
             return new FsResult<string>.Ok(await SetupIndex.GetAsync(ct));
-        }
-
-        if (node.Kind is HaVfsKind.WatchFile or HaVfsKind.WatchStatusFile)
-        {
-            return await RenderWatchAsync(path, node, ct);
         }
 
         if (node.Kind is not (HaVfsKind.StateFile or HaVfsKind.ActionFile))
@@ -410,29 +339,9 @@ public sealed partial class HaFileSystem(
         _ => (false, false)
     };
 
-    // Line-numbered read result matching the Sandbox/Vault file_read shape.
-    private static FsResult<FsReadResult> BuildReadResult(string filePath, string text, int? offset, int? limit)
-    {
-        var allLines = text.Split('\n');
-        var start = Math.Clamp((offset ?? 1) - 1, 0, allLines.Length);
-        var remaining = allLines.Skip(start).ToArray();
-        var take = Math.Min(limit ?? remaining.Length, remaining.Length);
-        var content = string.Join("\n", remaining.Take(take).Select((l, i) => $"{start + i + 1}: {l}"));
-        var truncated = take < remaining.Length;
-
-        return new FsResult<FsReadResult>.Ok(new FsReadResult
-        {
-            FilePath = filePath,
-            Content = content,
-            TotalLines = allLines.Length,
-            Truncated = truncated,
-            Suggestion = truncated ? $"Use offset={start + take + 1} to continue reading." : null
-        });
-    }
-
-    // Home Assistant is a read + exec control surface with one writable subtree, the watches
-    // (HaFileSystem.Watches.cs). Move, copy and writing bytes have no meaning anywhere on it, so
-    // they are left unoverridden and the base answers them.
+    // Home Assistant is a read + exec control surface. Writing, moving and copying have no meaning
+    // anywhere on it — a watch is written on its own mount (HaWatchFileSystem) — so they are left
+    // unoverridden and the base answers them.
 
     private static FsResult<string> NotFound(string path, string? canonicalName = null) =>
         new FsResult<string>.Err(new ToolErrorResult

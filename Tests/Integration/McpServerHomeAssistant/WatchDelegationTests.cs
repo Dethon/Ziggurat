@@ -31,7 +31,7 @@ public class WatchDelegationTests : IAsyncLifetime
 {
     private const string Household = "4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b";
     private const string WatchId = "laura-sugar-high";
-    private const string Path = $"/watches/{WatchId}/watch.json";
+    private const string Path = $"/{WatchId}/watch.json";
     private const string Prompt = "Look into it and warn Fran.";
 
     private static readonly Account _fran = new(Household, "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f");
@@ -241,7 +241,7 @@ public class WatchDelegationTests : IAsyncLifetime
     private async Task WriteAsync<T>(ConversationContext turn, Func<IFileSystemBackend, Task<FsResult<T>>> write) where T : class
     {
         await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(Endpoint), cancellationToken: _cts.Token);
-        (await write(new McpFileSystemBackend(client, HaFileSystem.Name, null).As(turn)))
+        (await write(new McpFileSystemBackend(client, HaWatchFileSystem.Name, null).As(turn)))
             .ShouldBeOfType<FsResult<T>.Ok>();
     }
 

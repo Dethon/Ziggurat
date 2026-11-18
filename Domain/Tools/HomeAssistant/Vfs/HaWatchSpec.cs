@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Domain.Tools.HomeAssistant.Vfs;
 
-// What the agent writes to `/ha/watches/<id>/watch.json`: a human name, Home Assistant's own
+// What the agent writes to `/watchers/<id>/watch.json`: a human name, Home Assistant's own
 // triggers and conditions passed through as written, and the ordered effects. Parsing names the
 // field it refused, because the agent fixes the file from the message in the same turn.
 public sealed class HaWatchSpecException(string message) : Exception(message);

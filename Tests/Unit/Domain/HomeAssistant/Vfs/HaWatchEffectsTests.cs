@@ -20,7 +20,7 @@ public class HaWatchEffectsTests
 {
     private static readonly DateTimeOffset _now = new(2026, 9, 5, 10, 0, 0, TimeSpan.Zero);
 
-    private static HaFileSystem Build(out FakeHaClient client, ReplyTarget? origin = null)
+    private static HaWatchFileSystem Build(out FakeHaClient client, ReplyTarget? origin = null)
     {
         client = new FakeHaClient
         {
@@ -28,18 +28,18 @@ public class HaWatchEffectsTests
         };
         var local = client;
         var time = new FakeTimeProvider(_now);
-        return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
+        return new HaWatchFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
             caller: new ConversationContext("jonas", "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
     }
 
-    private static async Task<JsonObject> Written(HaFileSystem fs, FakeHaClient client, string id, string effects, string extra = "")
+    private static async Task<JsonObject> Written(HaWatchFileSystem fs, FakeHaClient client, string id, string effects, string extra = "")
     {
         var content = $$"""
             {"name": "Laura's sugar",
              "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "below": 60}],
              "effects": {{effects}}{{extra}}}
             """;
-        (await fs.CreateAsync($"watches/{id}/watch.json", content, false, true, CancellationToken.None))
+        (await fs.CreateAsync($"{id}/watch.json", content, false, true, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
         return client.UpsertedAutomations.Last().Config;
     }
@@ -154,7 +154,7 @@ public class HaWatchEffectsTests
         meta["deliverTo"]!.ToJsonString().ShouldBe("""["signalr","voice:office-01"]""");
         meta["userId"]!.GetValue<string>().ShouldBe("fran");
 
-        var read = (await fs.ReadAsync("watches/sugar-low/watch.json", null, null, CancellationToken.None))
+        var read = (await fs.ReadAsync("sugar-low/watch.json", null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
         read.ShouldContain("\"signalr\"");
         read.ShouldContain("\"voice:office-01\"");
@@ -272,7 +272,7 @@ public class HaWatchEffectsTests
         await Written(fs, client, "sugar-low", """[{"kind": "prompt", "prompt": "p"}]""");
         client.Calls.Clear();
 
-        (await fs.EditAsync("watches/sugar-low/watch.json",
+        (await fs.EditAsync("sugar-low/watch.json",
             [new TextEdit("\"enabled\": true", "\"enabled\": false")], CancellationToken.None))
             .ShouldBeOfType<FsResult<FsEditResult>.Ok>();
 
@@ -281,7 +281,7 @@ public class HaWatchEffectsTests
         (await Watch(fs, "sugar-low"))["enabled"]!.GetValue<bool>().ShouldBeFalse();
         client.Calls.Clear();
 
-        (await fs.EditAsync("watches/sugar-low/watch.json",
+        (await fs.EditAsync("sugar-low/watch.json",
             [new TextEdit("\"enabled\": false", "\"enabled\": true")], CancellationToken.None))
             .ShouldBeOfType<FsResult<FsEditResult>.Ok>();
 
@@ -298,11 +298,11 @@ public class HaWatchEffectsTests
         client.Calls.ShouldBeEmpty();
     }
 
-    private static async Task<JsonObject> Status(HaFileSystem fs, string id) => await Parse(fs, $"watches/{id}/status.json");
+    private static async Task<JsonObject> Status(HaWatchFileSystem fs, string id) => await Parse(fs, $"{id}/status.json");
 
-    private static async Task<JsonObject> Watch(HaFileSystem fs, string id) => await Parse(fs, $"watches/{id}/watch.json");
+    private static async Task<JsonObject> Watch(HaWatchFileSystem fs, string id) => await Parse(fs, $"{id}/watch.json");
 
-    private static async Task<JsonObject> Parse(HaFileSystem fs, string path)
+    private static async Task<JsonObject> Parse(HaWatchFileSystem fs, string path)
     {
         var read = (await fs.ReadAsync(path, null, null, CancellationToken.None)).ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
         var text = string.Join("\n", read.Content.Split('\n').Select(l => l[(l.IndexOf(": ", StringComparison.Ordinal) + 2)..]));
@@ -359,18 +359,18 @@ public class HaWatchAnnounceTargetTests
             throw new VoiceHubUnavailableException("connection refused");
     }
 
-    private static HaFileSystem Build(out FakeHaClient client, ISatelliteCatalog? satellites)
+    private static HaWatchFileSystem Build(out FakeHaClient client, ISatelliteCatalog? satellites)
     {
         client = new FakeHaClient { States = { Entity("sensor.laura_glucose", "112") } };
         var local = client;
         var time = new FakeTimeProvider();
-        return new HaFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
+        return new HaWatchFileSystem(new HaCatalogProvider(() => local, time), () => local, timeProvider: time,
             caller: new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1")),
             satellites: satellites);
     }
 
-    private static Task<FsResult<FsCreateResult>> Create(HaFileSystem fs, string target) =>
-        fs.CreateAsync("watches/sugar-low/watch.json", $$"""
+    private static Task<FsResult<FsCreateResult>> Create(HaWatchFileSystem fs, string target) =>
+        fs.CreateAsync("sugar-low/watch.json", $$"""
             {"name": "Laura's sugar", "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.laura_glucose", "below": 60}],
              "effects": [{"kind": "announce", "text": "low", "target": {{target}}}]}
             """, false, true, CancellationToken.None);
@@ -465,7 +465,7 @@ public class HaWatchAnnounceTargetTests
         var catalog = new FakeSatelliteCatalog();
         var fs = Build(out _, catalog);
 
-        (await fs.CreateAsync("watches/sugar-low/watch.json", """
+        (await fs.CreateAsync("sugar-low/watch.json", """
             {"name": "x", "triggers": [{"trigger": "state", "entity_id": "sensor.laura_glucose"}], "effects": [{"kind": "prompt", "prompt": "p"}]}
             """, false, true, CancellationToken.None)).ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 

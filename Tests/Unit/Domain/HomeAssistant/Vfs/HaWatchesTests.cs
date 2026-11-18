@@ -28,7 +28,7 @@ public class HaWatchesTests
         }
         """;
 
-    private static HaFileSystem Build(out FakeHaClient client, string? agentId = "jonas", ReplyTarget? origin = null)
+    private static HaWatchFileSystem Build(out FakeHaClient client, string? agentId = "jonas", ReplyTarget? origin = null)
     {
         client = new FakeHaClient
         {
@@ -42,7 +42,7 @@ public class HaWatchesTests
         var local = client;
         var time = new FakeTimeProvider(_now);
         var provider = new HaCatalogProvider(() => local, time);
-        return new HaFileSystem(provider, () => local, timeProvider: time,
+        return new HaWatchFileSystem(provider, () => local, timeProvider: time,
             caller: agentId is null ? null : new ConversationContext(agentId, "conv-1", "fran", origin ?? new ReplyTarget("telegram", "conv-1")));
     }
 
@@ -60,7 +60,7 @@ public class HaWatchesTests
 
         var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
         meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe([expected]);
-        (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Count.ShouldBe(1);
+        (await Read(fs, "blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Count.ShouldBe(1);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class HaWatchesTests
 
         var meta = JsonNode.Parse(client.UpsertedAutomations.Last().Config["description"]!.GetValue<string>())!["watch"]!;
         meta["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
-        (await Read(fs, "watches/blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
+        (await Read(fs, "blinds-when-hot/watch.json"))["deliverTo"]!.AsArray().Select(d => d!.GetValue<string>()).ShouldBe(["voice:kitchen-01"]);
     }
 
     // The model is never told who is asking either, so a file naming no userId runs its prompts as
@@ -103,7 +103,7 @@ public class HaWatchesTests
 
         var meta = JsonNode.Parse(client.UpsertedAutomations.Single().Config["description"]!.GetValue<string>())!["watch"]!;
         meta["userId"]!.GetValue<string>().ShouldBe("fran");
-        (await Read(fs, "watches/blinds-when-hot/watch.json"))["userId"]!.GetValue<string>().ShouldBe("fran");
+        (await Read(fs, "blinds-when-hot/watch.json"))["userId"]!.GetValue<string>().ShouldBe("fran");
     }
 
     // A replace that names no user keeps the watch's own, as it keeps its delivery: whoever edits a
@@ -134,10 +134,10 @@ public class HaWatchesTests
     }
 
     // A second mount over the same home, as another channel's turn would see it.
-    private static HaFileSystem Over(FakeHaClient client, ReplyTarget origin, string userId = "fran")
+    private static HaWatchFileSystem Over(FakeHaClient client, ReplyTarget origin, string userId = "fran")
     {
         var time = new FakeTimeProvider(_now);
-        return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+        return new HaWatchFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
             caller: new ConversationContext("jonas", origin.ConversationId!, userId, origin));
     }
 
@@ -147,10 +147,10 @@ public class HaWatchesTests
     private static async Task<ToolErrorResult> Err<T>(Task<FsResult<T>> result) where T : class =>
         (await result).ShouldBeOfType<FsResult<T>.Err>().Error;
 
-    private static Task<FsResult<FsCreateResult>> Create(HaFileSystem fs, string id, string content, bool overwrite = false) =>
-        fs.CreateAsync($"watches/{id}/watch.json", content, overwrite, true, CancellationToken.None);
+    private static Task<FsResult<FsCreateResult>> Create(HaWatchFileSystem fs, string id, string content, bool overwrite = false) =>
+        fs.CreateAsync($"{id}/watch.json", content, overwrite, true, CancellationToken.None);
 
-    private static async Task<JsonObject> Read(HaFileSystem fs, string path)
+    private static async Task<JsonObject> Read(HaWatchFileSystem fs, string path)
     {
         var read = await Ok(fs.ReadAsync(path, null, null, CancellationToken.None));
         // The read is line-numbered like every other file on the mount; strip the numbers back off.
@@ -158,14 +158,37 @@ public class HaWatchesTests
         return JsonNode.Parse(text)!.AsObject();
     }
 
+    // A watch is a top-level entry of /watchers: that listing is how a union of watch mounts finds
+    // which member holds an entry.
     [Fact]
-    public async Task Glob_TheRoot_ListsTheWatchesDirectoryBesideEntitiesAndAreas()
+    public async Task Glob_TheRoot_ListsEachWatchAsADirectory()
     {
         var fs = Build(out _);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        var entries = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+        (await Ok(fs.GlobAsync("", "*", CancellationToken.None))).Entries.ShouldBe(["blinds-when-hot/"]);
+    }
 
-        entries.ShouldBe(["areas/", "entities/", "watches/"]);
+    // The watches moved to /watchers; /ha's root lists the home alone, and the old subtree names
+    // nothing even for a watch the home holds.
+    [Fact]
+    public async Task TheHomeMount_NeitherListsNorServesTheOldWatchesSubtree()
+    {
+        var fs = Build(out var client);
+        await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
+        var home = Home(client);
+
+        (await Ok(home.GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBe(["areas/", "entities/"]);
+        (await Ok(home.GlobAsync("", "**", CancellationToken.None))).Entries.ShouldNotContain(e => e.StartsWith("watches"));
+        (await Err(home.ReadAsync("watches/blinds-when-hot/watch.json", null, null, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+        (await Ok(home.InfoAsync("watches", CancellationToken.None))).Exists.ShouldBeFalse();
+        (await Ok(home.InfoAsync("watches/blinds-when-hot/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
+    }
+
+    private static HaFileSystem Home(FakeHaClient client)
+    {
+        var time = new FakeTimeProvider(_now);
+        return new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time);
     }
 
     [Fact]
@@ -200,7 +223,7 @@ public class HaWatchesTests
         var fs = Build(out var client);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        var error = await Err(fs.EditAsync("watches/blinds-when-hot/watch.json",
+        var error = await Err(fs.EditAsync("blinds-when-hot/watch.json",
             [new TextEdit("\"above\": 28", "\"above\": 29")], CancellationToken.None));
 
         error.ErrorCode.ShouldBe("invalid_argument");
@@ -215,7 +238,7 @@ public class HaWatchesTests
     {
         var fs = Build(out var client);
 
-        var error = await Err(fs.EditAsync("watches/no-such-watch/watch.json",
+        var error = await Err(fs.EditAsync("no-such-watch/watch.json",
             [new TextEdit("a", "b")], CancellationToken.None));
 
         error.ErrorCode.ShouldBe("not_found");
@@ -228,10 +251,10 @@ public class HaWatchesTests
         var fs = Build(out _);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        var entries = (await Ok(fs.GlobAsync("watches", "**", CancellationToken.None))).Entries;
-        entries.ShouldBe(["watches/blinds-when-hot/", "watches/blinds-when-hot/status.json", "watches/blinds-when-hot/watch.json"]);
+        var entries = (await Ok(fs.GlobAsync("", "**", CancellationToken.None))).Entries;
+        entries.ShouldBe(["blinds-when-hot/", "blinds-when-hot/status.json", "blinds-when-hot/watch.json"]);
 
-        var watch = await Read(fs, "watches/blinds-when-hot/watch.json");
+        var watch = await Read(fs, "blinds-when-hot/watch.json");
         watch["name"]!.GetValue<string>().ShouldBe("Close the blinds when the living room is hot");
         watch["triggers"]!.ToJsonString().ShouldBe(
             """[{"trigger":"numeric_state","entity_id":"sensor.living_room_temperature","above":27}]""");
@@ -254,7 +277,7 @@ public class HaWatchesTests
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
         client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = _now.AddMinutes(30);
 
-        var status = await Read(fs, "watches/blinds-when-hot/status.json");
+        var status = await Read(fs, "blinds-when-hot/status.json");
 
         status["createdAt"]!.GetValue<string>().ShouldBe("2026-09-05T12:00:00+02:00");
         status["lastTriggeredAt"]!.GetValue<string>().ShouldBe("2026-09-05T12:30:00+02:00");
@@ -267,7 +290,7 @@ public class HaWatchesTests
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
         client.Automations["assistant_watch_blinds-when-hot"].LastTriggered = _now.AddMinutes(30);
 
-        var status = await Read(fs, "watches/blinds-when-hot/status.json");
+        var status = await Read(fs, "blinds-when-hot/status.json");
 
         status["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
         status["lastTriggeredAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:30:00");
@@ -277,18 +300,18 @@ public class HaWatchesTests
     }
 
     [Fact]
-    public async Task Info_TheWatchesRootADirectoryAndItsFiles_Exist_AndAnUnknownWatchDoesNot()
+    public async Task Info_TheRootADirectoryAndItsFiles_Exist_AndAnUnknownWatchDoesNot()
     {
         var fs = Build(out _);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        (await Ok(fs.InfoAsync("watches", CancellationToken.None))).ShouldSatisfyAllConditions(
+        (await Ok(fs.InfoAsync("", CancellationToken.None))).ShouldSatisfyAllConditions(
             i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(true));
-        (await Ok(fs.InfoAsync("watches/blinds-when-hot", CancellationToken.None))).ShouldSatisfyAllConditions(
+        (await Ok(fs.InfoAsync("blinds-when-hot", CancellationToken.None))).ShouldSatisfyAllConditions(
             i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(true));
-        (await Ok(fs.InfoAsync("watches/blinds-when-hot/watch.json", CancellationToken.None))).ShouldSatisfyAllConditions(
+        (await Ok(fs.InfoAsync("blinds-when-hot/watch.json", CancellationToken.None))).ShouldSatisfyAllConditions(
             i => i.Exists.ShouldBeTrue(), i => i.IsDirectory.ShouldBe(false));
-        (await Ok(fs.InfoAsync("watches/ghost/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
+        (await Ok(fs.InfoAsync("ghost/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
     }
 
     // The failure this pins is the one alarms had: a change that ends as two records. Editing a
@@ -299,7 +322,7 @@ public class HaWatchesTests
         var fs = Build(out var client);
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        var edited = await Ok(fs.EditAsync("watches/blinds-when-hot/watch.json",
+        var edited = await Ok(fs.EditAsync("blinds-when-hot/watch.json",
             [new TextEdit("\"above\": 27", "\"above\": 29")], CancellationToken.None));
 
         edited.Status.ShouldBe("edited");
@@ -310,7 +333,7 @@ public class HaWatchesTests
         var meta = JsonNode.Parse(client.UpsertedAutomations[1].Config["description"]!.GetValue<string>())!["watch"]!;
         meta["agentId"]!.GetValue<string>().ShouldBe("jonas");
         meta["createdAt"]!.GetValue<string>().ShouldStartWith("2026-09-05T10:00:00");
-        (await Read(fs, "watches/blinds-when-hot/watch.json"))["triggers"]![0]!["above"]!.GetValue<int>().ShouldBe(29);
+        (await Read(fs, "blinds-when-hot/watch.json"))["triggers"]![0]!["above"]!.GetValue<int>().ShouldBe(29);
     }
 
     [Fact]
@@ -330,8 +353,8 @@ public class HaWatchesTests
     }
 
     [Theory]
-    [InlineData("watches/blinds-when-hot")]
-    [InlineData("watches/blinds-when-hot/watch.json")]
+    [InlineData("blinds-when-hot")]
+    [InlineData("blinds-when-hot/watch.json")]
     public async Task Delete_TheDirectoryOrTheFile_RemovesTheAutomationFromTheHome(string path)
     {
         var fs = Build(out var client);
@@ -342,7 +365,7 @@ public class HaWatchesTests
         deleted.Status.ShouldBe("deleted");
         client.DeletedAutomations.ShouldBe(["assistant_watch_blinds-when-hot"]);
         client.Automations.ShouldBeEmpty();
-        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
         (await Err(fs.DeleteAsync(path, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
     }
 
@@ -412,7 +435,7 @@ public class HaWatchesTests
     {
         var fs = Build(out var client);
 
-        var error = await Err(fs.CreateAsync($"watches/{id}/watch.json", BlindsWatch, false, true, CancellationToken.None));
+        var error = await Err(fs.CreateAsync($"{id}/watch.json", BlindsWatch, false, true, CancellationToken.None));
 
         error.ErrorCode.ShouldBe("invalid_argument");
         error.Message.ShouldContain($"'{id}' is not a valid watch id");
@@ -422,8 +445,8 @@ public class HaWatchesTests
     // A slash makes another path, not a bad id: a deeper path is nowhere a watch can be, and an
     // empty segment collapses to the directory itself. Both are refused as not-the-place.
     [Theory]
-    [InlineData("watches/blinds/when/watch.json")]
-    [InlineData("watches//watch.json")]
+    [InlineData("blinds/when/watch.json")]
+    [InlineData("//watch.json")]
     public async Task Create_APathThatIsNotAWatchFile_IsRefusedAsNotThePlace(string path)
     {
         var fs = Build(out var client);
@@ -431,7 +454,7 @@ public class HaWatchesTests
         var error = await Err(fs.CreateAsync(path, BlindsWatch, false, true, CancellationToken.None));
 
         error.ErrorCode.ShouldBe("unsupported_operation");
-        error.Message.ShouldContain("/ha/watches/<id>/watch.json");
+        error.Message.ShouldContain("/watchers/<id>/watch.json");
         client.UpsertedAutomations.ShouldBeEmpty();
     }
 
@@ -451,12 +474,12 @@ public class HaWatchesTests
         });
         await Ok(Create(fs, "blinds-when-hot", BlindsWatch));
 
-        var watches = (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries;
-        watches.ShouldBe(["watches/blinds-when-hot/"]);
-        (await Ok(fs.InfoAsync("watches/voice_alarm_bridge/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
-        (await Err(fs.DeleteAsync("watches/voice_alarm_bridge", CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+        var watches = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+        watches.ShouldBe(["blinds-when-hot/"]);
+        (await Ok(fs.InfoAsync("voice_alarm_bridge/watch.json", CancellationToken.None))).Exists.ShouldBeFalse();
+        (await Err(fs.DeleteAsync("voice_alarm_bridge", CancellationToken.None))).ErrorCode.ShouldBe("not_found");
 
-        var entities = (await Ok(fs.GlobAsync("entities/automation", "*/", CancellationToken.None))).Entries;
+        var entities = (await Ok(Home(client).GlobAsync("entities/automation", "*/", CancellationToken.None))).Entries;
         entities.ShouldContain(e => e.Contains("voice_alarm_bridge"));
     }
 
@@ -472,8 +495,8 @@ public class HaWatchesTests
             ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
         });
 
-        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
-        (await Err(fs.ReadAsync("watches/handmade/watch.json", null, null, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
+        (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Err(fs.ReadAsync("handmade/watch.json", null, null, CancellationToken.None))).ErrorCode.ShouldBe("not_found");
     }
 
     // Staying theirs is right; vanishing without a word is not. The prefix is ours, so a prefixed
@@ -486,14 +509,14 @@ public class HaWatchesTests
         var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
         var time = new FakeTimeProvider(_now);
         var watches = new HaWatches(() => client, time, logs.CreateLogger("watches"));
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time, watches: watches);
+        var fs = new HaWatchFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time, watches: watches);
         client.SeedAutomation("assistant_watch_handmade", new JsonObject
         {
             ["alias"] = "Hand made", ["description"] = "edited in the UI",
             ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
         });
 
-        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
 
         logs.Messages.ShouldContain(m => m.Contains("assistant_watch_handmade") && m.Contains("description"));
     }
@@ -505,7 +528,7 @@ public class HaWatchesTests
     {
         var client = new FakeHaClient { EntityLagListings = 100 };
         var time = new ArmedClock(_now);
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
+        var fs = new HaWatchFileSystem(new HaCatalogProvider(() => client, time), () => client, timeProvider: time,
             caller: new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
 
         // Each advance waits for the write to arm the retry delay it ends; advancing on a yield
@@ -524,12 +547,11 @@ public class HaWatchesTests
     }
 
     [Theory]
-    [InlineData("entities/cover/living_room_blinds/state.json")]
-    [InlineData("entities/cover/living_room_blinds/close_cover.sh")]
-    [InlineData("areas/unassigned/cover.living_room_blinds/state.json")]
-    [InlineData("watches/blinds-when-hot/status.json")]
-    [InlineData("watches/blinds-when-hot/notes.txt")]
+    [InlineData("blinds-when-hot/status.json")]
+    [InlineData("blinds-when-hot/notes.txt")]
+    [InlineData("blinds-when-hot")]
     [InlineData("notes.txt")]
+    [InlineData("a/b/c")]
     public async Task CreateAndEdit_AnywhereButAWatchFile_AreRefused(string path)
     {
         var fs = Build(out var client);
@@ -539,38 +561,37 @@ public class HaWatchesTests
         var edit = await Err(fs.EditAsync(path, [new TextEdit("a", "b")], CancellationToken.None));
 
         create.ErrorCode.ShouldBe("unsupported_operation");
-        create.Message.ShouldContain("/ha/watches/<id>/watch.json");
+        create.Message.ShouldContain("/watchers/<id>/watch.json");
         edit.ErrorCode.ShouldBe("unsupported_operation");
         client.UpsertedAutomations.Count.ShouldBe(1);
     }
 
-    // An action file is refused for what it is — it runs, it is never opened — rather than as one
-    // more place that is not a watch, so the refusal points at exec instead of at /ha/watches.
+    // /ha has nothing writable left: create, edit and delete are not its operations, so the
+    // answer is the mount's own "not here", never a watch written by another spelling.
     [Theory]
+    [InlineData("watches/blinds-when-hot/watch.json")]
     [InlineData("entities/cover/living_room_blinds/close_cover")]
-    [InlineData("areas/unassigned/cover.living_room_blinds/close_cover")]
-    public async Task CreateEditOrDelete_AnActionFile_AreRefusedAsExecutableOnly(string path)
+    public async Task TheHomeMount_WritesNothing(string path)
     {
-        var fs = Build(out var client);
+        Build(out var client);
+        var home = Home(client);
 
         var refusals = new[]
         {
-            await Err(fs.CreateAsync(path, "{}", true, true, CancellationToken.None)),
-            await Err(fs.EditAsync(path, [new TextEdit("a", "b")], CancellationToken.None)),
-            await Err(fs.DeleteAsync(path, CancellationToken.None))
+            await Err(home.CreateAsync(path, BlindsWatch, true, true, CancellationToken.None)),
+            await Err(home.EditAsync(path, [new TextEdit("a", "b")], CancellationToken.None)),
+            await Err(home.DeleteAsync(path, CancellationToken.None))
         };
 
-        refusals.ShouldAllBe(e => e.ErrorCode == "unsupported_operation"
-                                  && e.Message.Contains("executable-only")
-                                  && e.Hint!.Contains("./close_cover"));
+        refusals.ShouldAllBe(e => e.ErrorCode == "unsupported_operation");
+        client.UpsertedAutomations.ShouldBeEmpty();
         client.Calls.ShouldBeEmpty();
     }
 
     [Theory]
-    [InlineData("entities/cover/living_room_blinds")]
-    [InlineData("entities/cover/living_room_blinds/state.json")]
-    [InlineData("watches/blinds-when-hot/status.json")]
-    [InlineData("watches")]
+    [InlineData("")]
+    [InlineData("blinds-when-hot/status.json")]
+    [InlineData("blinds-when-hot/notes.txt")]
     public async Task Delete_AnywhereButAWatch_IsRefused(string path)
     {
         var fs = Build(out var client);
@@ -583,18 +604,17 @@ public class HaWatchesTests
     }
 
     [Fact]
-    public async Task Glob_ScopedToAnEntity_DoesNotAskTheHomeForItsWatches()
+    public async Task TheHomeMount_GlobNeverAsksTheHomeForItsWatches()
     {
-        var fs = Build(out var client);
+        Build(out var client);
         client.SeedAutomation("assistant_watch_x", new JsonObject
         {
             ["alias"] = "X", ["description"] = new HaWatchMetadata("jonas", [new HaPromptEffect("p")], false, null, null, _now).ToJson(),
             ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
         });
 
-        var entries = (await Ok(fs.GlobAsync("entities/cover", "*/", CancellationToken.None))).Entries;
-
-        entries.ShouldBe(["entities/cover/living_room_blinds/"]);
+        (await Ok(Home(client).GlobAsync("", "**", CancellationToken.None))).Entries
+            .ShouldContain("entities/cover/living_room_blinds/");
         client.AutomationListings.ShouldBe(0);
     }
 
@@ -626,7 +646,7 @@ public class HaWatchesTests
         var fs = Build(out _);
         await Ok(Create(fs, "wash-done", OnceWatch));
 
-        var status = await Read(fs, "watches/wash-done/status.json");
+        var status = await Read(fs, "wash-done/status.json");
 
         status["enabled"]!.GetValue<bool>().ShouldBeFalse();
         status["spent"]!.GetValue<bool>().ShouldBeFalse();
@@ -640,7 +660,7 @@ public class HaWatchesTests
         client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
         client.Automations["assistant_watch_wash-done"].IsOn = false;
 
-        var status = await Read(fs, "watches/wash-done/status.json");
+        var status = await Read(fs, "wash-done/status.json");
 
         status["spent"]!.GetValue<bool>().ShouldBeTrue();
     }
@@ -655,10 +675,10 @@ public class HaWatchesTests
         await Ok(Create(fs, "wash-done", ArmedOnceWatch));
         client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
 
-        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+        await Ok(fs.EditAsync("wash-done/watch.json",
             [new TextEdit("\"enabled\": true", "\"enabled\": false")], CancellationToken.None));
 
-        var status = await Read(fs, "watches/wash-done/status.json");
+        var status = await Read(fs, "wash-done/status.json");
         status["enabled"]!.GetValue<bool>().ShouldBeFalse();
         status["spent"]!.GetValue<bool>().ShouldBeFalse();
     }
@@ -672,12 +692,12 @@ public class HaWatchesTests
         await Ok(Create(fs, "wash-done", ArmedOnceWatch));
         client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
         client.Automations["assistant_watch_wash-done"].IsOn = false;
-        (await Read(fs, "watches/wash-done/status.json"))["spent"]!.GetValue<bool>().ShouldBeTrue();
+        (await Read(fs, "wash-done/status.json"))["spent"]!.GetValue<bool>().ShouldBeTrue();
 
-        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+        await Ok(fs.EditAsync("wash-done/watch.json",
             [new TextEdit("The wash is done.", "The wash is done; say so.")], CancellationToken.None));
 
-        var status = await Read(fs, "watches/wash-done/status.json");
+        var status = await Read(fs, "wash-done/status.json");
         status["enabled"]!.GetValue<bool>().ShouldBeFalse();
         status["spent"]!.GetValue<bool>().ShouldBeFalse();
     }
@@ -688,27 +708,41 @@ public class HaWatchesTests
     {
         var fs = Build(out var client);
         await Ok(Create(fs, "wash-done", OnceWatch));
-        await Ok(fs.EditAsync("watches/wash-done/watch.json",
+        await Ok(fs.EditAsync("wash-done/watch.json",
             [new TextEdit("\"enabled\": false", "\"enabled\": true")], CancellationToken.None));
         client.Automations["assistant_watch_wash-done"].LastTriggered = _now.AddMinutes(30);
         client.Automations["assistant_watch_wash-done"].IsOn = false;
 
-        var status = await Read(fs, "watches/wash-done/status.json");
+        var status = await Read(fs, "wash-done/status.json");
 
         status["spent"]!.GetValue<bool>().ShouldBeTrue();
     }
 
-    // The catalog answers a glob from its cache when the home is down; the watches, read live, must
-    // degrade the same way rather than turn the whole listing into an error.
+    // A home that cannot list its automations is away, not empty: the listing fails retryably, so
+    // a union of watch mounts names this member unavailable instead of saying it holds no watches.
+    // (Under /ha the watches sat beside the catalog and degraded to nothing so the catalog still
+    // listed; here there is nothing else to list.)
     [Fact]
-    public async Task Glob_TheRoot_WhenTheHomeCannotListItsAutomations_StillListsTheCatalog()
+    public async Task Glob_WhenTheHomeCannotListItsAutomations_IsATransientFailure()
     {
         var fs = Build(out var client);
         client.AutomationListingFailure = new HomeAssistantException("connection refused", 503);
 
-        var entries = (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries;
+        var error = await Err(fs.GlobAsync("", "*", CancellationToken.None));
 
-        entries.ShouldBe(["areas/", "entities/", "watches/"]);
+        error.ErrorCode.ShouldBe("transient_dependency");
+        error.Retryable.ShouldBeTrue();
+    }
+
+    // The home mount does not ask for automations at all, so a home that cannot list them leaves
+    // its listing whole.
+    [Fact]
+    public async Task TheHomeMount_WhenTheHomeCannotListItsAutomations_StillListsTheCatalog()
+    {
+        Build(out var client);
+        client.AutomationListingFailure = new HomeAssistantException("connection refused", 503);
+
+        (await Ok(Home(client).GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBe(["areas/", "entities/"]);
     }
 
     // Metadata naming no creating agent is not a watch's: a prompt fire would otherwise run as an
@@ -723,7 +757,7 @@ public class HaWatchesTests
             ["triggers"] = new JsonArray(new JsonObject { ["trigger"] = "state" }), ["actions"] = new JsonArray()
         });
 
-        (await Ok(fs.GlobAsync("watches", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
+        (await Ok(fs.GlobAsync("", "*/", CancellationToken.None))).Entries.ShouldBeEmpty();
     }
 
     // An empty list names no delivery, so it takes the caller's channel like an absent one.

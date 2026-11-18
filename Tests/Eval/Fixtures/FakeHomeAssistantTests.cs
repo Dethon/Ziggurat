@@ -438,8 +438,8 @@ public class FakeHomeAssistantTests
         var key = FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below");
         before[key].ShouldBe("70");
 
-        var result = await Mount(home).EditAsync(
-            Relative($"/ha/watches/{FakeHomeAssistant.SugarWatchId}/watch.json"),
+        var result = await WatchMount(home).EditAsync(
+            RelativeToWatchers($"/watchers/{FakeHomeAssistant.SugarWatchId}/watch.json"),
             [new Domain.DTOs.TextEdit("\"below\": 70", "\"below\": 65")], CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsEditResult>.Ok>();
@@ -473,9 +473,19 @@ public class FakeHomeAssistantTests
             musicClientFactory: music is null ? null : musicClient);
     }
 
+    // The home's watches, at /watchers, over the same fake home.
+    private static HaWatchFileSystem WatchMount(FakeHomeAssistant home)
+    {
+        IHomeAssistantClient client() => new HomeAssistantClient(
+            new HttpClient(home) { BaseAddress = new Uri("http://home-assistant.eval") }, FakeHomeAssistant.Token);
+        return new HaWatchFileSystem(new HaCatalogProvider(client), client);
+    }
+
     // The backend is handed mount-relative paths; the `/ha` prefix a scenario asserts on is the
     // router's, and it is stripped before the backend ever sees it.
     private static string Relative(string path) => path["/ha/".Length..];
+
+    private static string RelativeToWatchers(string path) => path[(HaWatchFileSystem.MountPointPath.Length + 1)..];
 
     private static IReadOnlyList<string> Paths(FsResult<FsGlobResult> result) =>
         result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;

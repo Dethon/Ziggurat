@@ -2,8 +2,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public enum HaVfsKind
 {
-    Root, SetupIndexFile, EntitiesRoot, ClassDir, AreasRoot, AreaDir, EntityDir, StateFile, ActionFile,
-    WatchesRoot, WatchDir, WatchFile, WatchStatusFile, Unknown
+    Root, SetupIndexFile, EntitiesRoot, ClassDir, AreasRoot, AreaDir, EntityDir, StateFile, ActionFile, Unknown
 }
 
 public sealed record HaVfsNode(
@@ -11,8 +10,7 @@ public sealed record HaVfsNode(
     string? ClassDomain = null,
     string? Area = null,
     string? EntitySegment = null,
-    string? Service = null,
-    string? WatchId = null);
+    string? Service = null);
 
 public static class HaVfsPath
 {
@@ -21,9 +19,6 @@ public static class HaVfsPath
     // The one-page account of the home, at the root: built when it is read, so it is never older
     // than the task that reads it (docs/adr/0039).
     public const string SetupIndexFileName = "setup-index.md";
-    public const string WatchesRootName = "watches";
-    public const string WatchFileName = "watch.json";
-    public const string WatchStatusFileName = "status.json";
 
     public static HaVfsNode Parse(string relativePath)
     {
@@ -40,7 +35,6 @@ public static class HaVfsPath
             SetupIndexFileName when segments.Length == 1 => new HaVfsNode(HaVfsKind.SetupIndexFile),
             "entities" => ParseEntities(segments),
             "areas" => ParseAreas(segments),
-            WatchesRootName => ParseWatches(segments),
             _ => new HaVfsNode(HaVfsKind.Unknown)
         };
     }
@@ -60,16 +54,6 @@ public static class HaVfsPath
         2 => new HaVfsNode(HaVfsKind.AreaDir, Area: s[1]),
         3 => new HaVfsNode(HaVfsKind.EntityDir, Area: s[1], EntitySegment: s[2]),
         4 => Leaf(s[3], classDomain: null, area: s[1], segment: s[2]),
-        _ => new HaVfsNode(HaVfsKind.Unknown)
-    };
-
-    // The one writable subtree: `watches/<id>/watch.json`, with a read-only `status.json` beside it.
-    private static HaVfsNode ParseWatches(string[] s) => s.Length switch
-    {
-        1 => new HaVfsNode(HaVfsKind.WatchesRoot),
-        2 => new HaVfsNode(HaVfsKind.WatchDir, WatchId: s[1]),
-        3 when s[2] == WatchFileName => new HaVfsNode(HaVfsKind.WatchFile, WatchId: s[1]),
-        3 when s[2] == WatchStatusFileName => new HaVfsNode(HaVfsKind.WatchStatusFile, WatchId: s[1]),
         _ => new HaVfsNode(HaVfsKind.Unknown)
     };
 
