@@ -84,20 +84,38 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
                 await Assertions.Expect(UserMessage(page, $"CHARLIE{tag}")).ToHaveCountAsync(0);
             }
 
-            // A fresh load reads what was stored, once: the stopped turn is stored after the stop
-            // answers, so it is waited for here rather than raced by the load.
-            await WebChatConversationE2ETests.WaitForTurnKeptAsync(ana, UserMessage(ana, $"{topic}: IMPORTANT"));
-            var fresh = await carlosContext.NewPageAsync();
-            await GotoWebChatAsync(fresh, fixture.WebChatUrl);
-            await SelectAgentAsync(fresh);
-            await OpenTopicPastTheOverlayAsync(fresh, topic);
-            await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+            // A fresh load reads what was stored, once, and the stopped turn is stored only when the
+            // agent's turn has unwound — after the stop answered, and later still behind a held
+            // approval — with nothing on the page told when. So the conversation is loaded afresh until
+            // the stopped message is in it, and then asked what else is.
+            var fresh = await FreshlyLoadedWithAsync(carlosContext, topic, $"{topic}: IMPORTANT");
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
         }
         finally
         {
             await DrainPendingApprovalsAsync(ana);
+        }
+    }
+
+    private async Task<IPage> FreshlyLoadedWithAsync(IBrowserContext context, string topic, string words)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        var page = await context.NewPageAsync();
+        while (true)
+        {
+            await GotoWebChatAsync(page, fixture.WebChatUrl);
+            await SelectAgentAsync(page);
+            await OpenTopicPastTheOverlayAsync(page, topic);
+            try
+            {
+                await UserMessage(page, words).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+                return page;
+            }
+            catch (TimeoutException) when (DateTime.UtcNow < deadline)
+            {
+                // Loaded before the turn was stored: load it again.
+            }
         }
     }
 }
