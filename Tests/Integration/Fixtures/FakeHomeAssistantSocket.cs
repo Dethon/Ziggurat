@@ -77,38 +77,39 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
     public static async Task<FakeHomeAssistantSocket> StartAsync(
         FakeCalendarStore? calendar = null, string token = ValidToken)
     {
-        var port = TestPort.GetAvailable();
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(o => o.Listen(IPAddress.Loopback, port));
-        var app = builder.Build();
-
         FakeHomeAssistantSocket server = null!;
-        app.UseWebSockets();
-        app.Map("/api/websocket", async context =>
+        var (port, app) = await TestPort.StartWebAsync(port =>
         {
-            if (!context.WebSockets.IsWebSocketRequest)
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(o => o.Listen(IPAddress.Loopback, port));
+            var app = builder.Build();
+
+            app.UseWebSockets();
+            app.Map("/api/websocket", async context =>
             {
-                context.Response.StatusCode = 400;
-                return;
-            }
-            using var socket = await context.WebSockets.AcceptWebSocketAsync();
-            await server.ServeAsync(socket, context.RequestAborted);
-        });
-
-        app.MapGet("/api/states/{entityId}", (HttpContext context, string entityId) =>
-            !server.Authorized(context) ? Results.Unauthorized()
-            : server.States.TryGetValue(entityId, out var state)
-                ? Results.Json(new JsonObject
+                if (!context.WebSockets.IsWebSocketRequest)
                 {
-                    ["entity_id"] = entityId,
-                    ["state"] = state.State,
-                    ["attributes"] = state.Attributes.DeepClone()
-                })
-                : Results.NotFound());
-        app.MapGet("/api/history/period/{start}", (HttpContext context, string start) =>
-            !server.Authorized(context) ? Results.Unauthorized() : Results.Json(server.HistoryOf(context, start)));
+                    context.Response.StatusCode = 400;
+                    return;
+                }
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                await server.ServeAsync(socket, context.RequestAborted);
+            });
 
-        await app.StartAsync();
+            app.MapGet("/api/states/{entityId}", (HttpContext context, string entityId) =>
+                !server.Authorized(context) ? Results.Unauthorized()
+                : server.States.TryGetValue(entityId, out var state)
+                    ? Results.Json(new JsonObject
+                    {
+                        ["entity_id"] = entityId,
+                        ["state"] = state.State,
+                        ["attributes"] = state.Attributes.DeepClone()
+                    })
+                    : Results.NotFound());
+            app.MapGet("/api/history/period/{start}", (HttpContext context, string start) =>
+                !server.Authorized(context) ? Results.Unauthorized() : Results.Json(server.HistoryOf(context, start)));
+            return app;
+        });
         server = new FakeHomeAssistantSocket(app, $"http://127.0.0.1:{port}", port, token, calendar ?? new FakeCalendarStore());
         return server;
     }

@@ -62,41 +62,43 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
 
     public static async Task<FakeLibreLinkUp> StartAsync(TimeProvider? clock = null)
     {
-        var fake = new FakeLibreLinkUp(clock ?? TimeProvider.System) { _port = TestPort.GetAvailable() };
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, fake._port));
-        fake._app = builder.Build();
-
-        fake._app.Use(async (context, next) =>
+        var fake = new FakeLibreLinkUp(clock ?? TimeProvider.System);
+        (fake._port, fake._app) = await TestPort.StartWebAsync(port =>
         {
-            fake._requests.Enqueue(await Request.OfAsync(context));
-            if (string.IsNullOrWhiteSpace(context.Request.Headers.UserAgent))
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.Logging.ClearProviders();
+            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+            fake._app = builder.Build();
+
+            fake._app.Use(async (context, next) =>
             {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "text/html";
-                await context.Response.WriteAsync("<!DOCTYPE html><html><title>Attention Required!</title></html>");
-                return;
-            }
+                fake._requests.Enqueue(await Request.OfAsync(context));
+                if (string.IsNullOrWhiteSpace(context.Request.Headers.UserAgent))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    context.Response.ContentType = "text/html";
+                    await context.Response.WriteAsync("<!DOCTYPE html><html><title>Attention Required!</title></html>");
+                    return;
+                }
 
-            if (fake._interruptions.TryDequeue(out var interrupt) && await interrupt(context))
+                if (fake._interruptions.TryDequeue(out var interrupt) && await interrupt(context))
+                {
+                    return;
+                }
+
+                await next(context);
+            });
+            fake._app.MapPost("/{region}/llu/auth/login", (HttpContext http, string region) => fake.LogInAsync(http, region));
+            fake._app.MapGet("/{region}/llu/connections", (HttpContext http, string region) => fake.ConnectionsAsync(http, region));
+            fake._app.MapGet("/{region}/llu/connections/{patientId}/graph",
+                (HttpContext http, string region, string patientId) => fake.GraphAsync(http, region, patientId));
+            fake._app.MapFallback((HttpContext http) =>
             {
-                return;
-            }
-
-            await next(context);
+                fake._unhandled.Enqueue($"{http.Request.Method} {http.Request.Path}");
+                return Results.NotFound();
+            });
+            return fake._app;
         });
-        fake._app.MapPost("/{region}/llu/auth/login", (HttpContext http, string region) => fake.LogInAsync(http, region));
-        fake._app.MapGet("/{region}/llu/connections", (HttpContext http, string region) => fake.ConnectionsAsync(http, region));
-        fake._app.MapGet("/{region}/llu/connections/{patientId}/graph",
-            (HttpContext http, string region, string patientId) => fake.GraphAsync(http, region, patientId));
-        fake._app.MapFallback((HttpContext http) =>
-        {
-            fake._unhandled.Enqueue($"{http.Request.Method} {http.Request.Path}");
-            return Results.NotFound();
-        });
-
-        await fake._app.StartAsync();
         return fake;
     }
 

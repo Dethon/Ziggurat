@@ -87,6 +87,11 @@ for this, and each shape below is one that has already failed here.
   eval's archive case paid fifteen seconds one run in four to a Chromium lifecycle wait that missed
   its event — a defect in the browser code, which the test then pinned
 
+- An in-process server starts through `TestPort.StartWebAsync`, never `GetAvailable` and a bind of
+  its own. The claim keeps test processes apart and nothing keeps out the rest of the machine: under
+  WSL's mirrored networking Windows shares this port space, and a fake model server beside a second
+  suite died on "address already in use" at a port the probe had just found free
+
 ## Containers
 
 - A container's bind mount comes from `HostMountDirectory.Claim(name)`, never a fresh temp

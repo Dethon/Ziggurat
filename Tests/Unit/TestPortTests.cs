@@ -1,4 +1,8 @@
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -55,5 +59,32 @@ public class TestPortTests
         var ports = Enumerable.Range(0, 50).Select(_ => TestPort.GetAvailable()).ToList();
 
         ports.ShouldAllBe(port => port < TestPort.DockerEphemeralRangeStart);
+    }
+
+    // The claim and the probe keep test processes apart, and nothing keeps out the rest of the machine:
+    // under WSL's mirrored networking Windows shares this port space, and a server beside the suite
+    // once failed on "address already in use" at a port the probe had just found free. A server that
+    // loses its port that way is started on another rather than failing a test about something else.
+    [Fact]
+    public async Task StartWebAsync_APortTakenBetweenTheProbeAndTheBind_StartsOnAnother()
+    {
+        using var squatter = new TcpListener(IPAddress.Loopback, 0);
+        squatter.Start();
+        var taken = ((IPEndPoint)squatter.LocalEndpoint).Port;
+        var offered = new Queue<int>([taken, TestPort.GetAvailable()]);
+
+        var (port, app) = await TestPort.StartWebAsync(port =>
+        {
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.WebHost.UseKestrel(o => o.Listen(IPAddress.Loopback, port));
+            var built = builder.Build();
+            built.MapGet("/", () => "here");
+            return built;
+        }, offered.Dequeue);
+        await using var _ = app;
+
+        port.ShouldNotBe(taken);
+        using var http = new HttpClient();
+        (await http.GetStringAsync($"http://127.0.0.1:{port}/")).ShouldBe("here");
     }
 }

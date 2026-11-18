@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Connections;
 
 namespace Tests.Integration.Fixtures;
 
@@ -30,6 +32,40 @@ public static class TestPort
     private static int BandTop => Math.Min(EphemeralRangeStart, DockerEphemeralRangeStart);
 
     public static int GetAvailable() => _pool.Get();
+
+    // An in-process server on a port of the band, started on another when its port was taken between
+    // the probe and the bind. The claim and the probe keep test processes apart and nothing keeps out
+    // the rest of the machine: under WSL's mirrored networking Windows shares this port space, and an
+    // accounts test once died on "address already in use" at a port just found free. A port lost that
+    // way stays claimed, so this process does not offer it again.
+    public static Task<(int Port, WebApplication App)> StartWebAsync(
+        Func<int, WebApplication> build, Func<int>? next = null) =>
+        StartWebAsync(port => Task.FromResult(build(port)), next);
+
+    public static async Task<(int Port, WebApplication App)> StartWebAsync(
+        Func<int, Task<WebApplication>> build, Func<int>? next = null)
+    {
+        next ??= GetAvailable;
+        for (var attempt = 1; ; attempt++)
+        {
+            var port = next();
+            var app = await build(port);
+            try
+            {
+                await app.StartAsync();
+                return (port, app);
+            }
+            catch (Exception e) when (attempt < 5 && IsAddressInUse(e))
+            {
+                await app.DisposeAsync();
+            }
+        }
+    }
+
+    private static bool IsAddressInUse(Exception? e) =>
+        e is not null && (e is AddressInUseException
+                          || e is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse }
+                          || IsAddressInUse(e.InnerException));
 
     // For a fixture that has stopped whatever it bound; the number becomes issuable again, and the
     // probe still has the last word when it is.

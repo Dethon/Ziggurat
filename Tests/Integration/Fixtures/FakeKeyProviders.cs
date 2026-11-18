@@ -62,34 +62,36 @@ public sealed class FakeKeyProviders : IAsyncDisposable
     // On every address when a container asks it, which reaches this process through the host's gateway.
     public static async Task<FakeKeyProviders> StartAsync(bool forContainers = false)
     {
-        var fake = new FakeKeyProviders { _port = TestPort.GetAvailable() };
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(options => options.Listen(forContainers ? IPAddress.Any : IPAddress.Loopback, fake._port));
-        fake._app = builder.Build();
-
-        // Each takes more than the context, so none is read as a bare RequestDelegate whose IResult is dropped.
-        fake._app.MapGet("/api/v1/key", (HttpContext http, CancellationToken _) =>
-            fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
-                """{"data":{"label":"sk-or-v1-...","usage":0}}"""));
-
-        fake._app.MapPost("/oauth/token", (HttpContext http, CancellationToken _) =>
+        var fake = new FakeKeyProviders();
+        (fake._port, fake._app) = await TestPort.StartWebAsync(port =>
         {
-            var basic = http.Request.Headers.Authorization.ToString().Replace("Basic ", "", StringComparison.Ordinal);
-            var pair = Encoding.UTF8.GetString(Convert.FromBase64String(basic)).Split(':', 2);
-            return fake.AnswerAsync(http, pair[0], """{"access_token":"t","token_type":"bearer","expires_in":43199,"scope":"read"}""");
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.Logging.ClearProviders();
+            builder.WebHost.UseKestrel(options => options.Listen(forContainers ? IPAddress.Any : IPAddress.Loopback, port));
+            fake._app = builder.Build();
+
+            // Each takes more than the context, so none is read as a bare RequestDelegate whose IResult is dropped.
+            fake._app.MapGet("/api/v1/key", (HttpContext http, CancellationToken _) =>
+                fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
+                    """{"data":{"label":"sk-or-v1-...","usage":0}}"""));
+
+            fake._app.MapPost("/oauth/token", (HttpContext http, CancellationToken _) =>
+            {
+                var basic = http.Request.Headers.Authorization.ToString().Replace("Basic ", "", StringComparison.Ordinal);
+                var pair = Encoding.UTF8.GetString(Convert.FromBase64String(basic)).Split(':', 2);
+                return fake.AnswerAsync(http, pair[0], """{"access_token":"t","token_type":"bearer","expires_in":43199,"scope":"read"}""");
+            });
+
+            // A Lemonade box's model listing, under /lemonade as a box's API is under its own base.
+            fake._app.MapGet("/lemonade/models", (HttpContext http, CancellationToken _) =>
+                fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
+                    """{"data":[]}"""));
+
+            fake._app.MapGet("/{bot}/getMe", (string bot, HttpContext http) =>
+                fake.AnswerAsync(http, bot.StartsWith("bot", StringComparison.Ordinal) ? bot[3..] : "",
+                    """{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"test_bot"}}"""));
+            return fake._app;
         });
-
-        // A Lemonade box's model listing, under /lemonade as a box's API is under its own base.
-        fake._app.MapGet("/lemonade/models", (HttpContext http, CancellationToken _) =>
-            fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
-                """{"data":[]}"""));
-
-        fake._app.MapGet("/{bot}/getMe", (string bot, HttpContext http) =>
-            fake.AnswerAsync(http, bot.StartsWith("bot", StringComparison.Ordinal) ? bot[3..] : "",
-                """{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"test_bot"}}"""));
-
-        await fake._app.StartAsync();
         return fake;
     }
 
