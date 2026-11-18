@@ -167,12 +167,15 @@ public static class GlucoseWatchScenarios
     };
 
     // A silent sensor, which is not the link failing: Sugary told apart a sensor that stopped from a
-    // provider that did not answer, and the request is about the sensor.
+    // provider that did not answer, and the request is about the sensor. Her glucose sensor, by name:
+    // "the sensor" alone, in a house whose index lists a dozen, had Jev preload home-watches on 5 of 6
+    // runs across two passes (2026-11-18) — a fair reading of an ambiguous request, not a description
+    // fault, and the model loaded glucose-watches after it and wrote the right watch every time.
     public static Scenario TheSensorStops => new()
     {
         Name = "a sensor that stops sending is a no_readings watch",
         AgentId = "jonas",
-        Turn = new EvalTurn { Text = "Avísame si el sensor deja de mandar lecturas durante media hora.", Sender = "fran" },
+        Turn = new EvalTurn { Text = "Avísame si mi sensor de glucosa deja de mandar lecturas durante media hora.", Sender = "fran" },
         Instant = EvalInstant.Evening,
         Required =
         [
