@@ -17,7 +17,7 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions, the glucose link, glucose readings and sensors are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person; a glucose reading's `(UserId, At)` and a sensor's `(UserId, Serial)`, with no key into the link, so unlinking keeps them. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
 
-`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, and the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query).
+`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query) and the glucose import (`GlucoseImport`, the named person's readings).
 
 ## Rows from before
 
@@ -67,6 +67,18 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   version, never a reason (the app shows it); reasons go to the log. After each poll that wrote, the
   `IGlucosePollObserver` (her watches; a no-op until they exist) is told what was kept, the newest reading
   LibreLinkUp gave and the link's state; its failure, like any of one person's poll, touches nobody else's.
+- **Her glucose from Home Assistant** (`import-glucose`, `GlucoseImportCommand`/`GlucoseImport`, run once by the
+  operator: `docker exec mcp-sugary dotnet McpServerSugary.dll import-glucose --ha <url> --token-file <path>
+  --entity <sensor> --tenant <household id> --user <user id> [--days 90]`). Unlike `import`, its rows are the
+  named person's, never `legacy`, written through the factory's context with the owner spelled out. It asks Home
+  Assistant through Infrastructure's `HomeAssistantClient`: the sensor's `unit_of_measurement` (mmol/L × 18.016;
+  any other unit, or none, is refused), the recorder's history in ten-day UTC windows (each window's opening
+  state, stamped at its start, is not a reading; `unavailable`, `unknown` and anything not a positive number are
+  skipped) as `import`, then the statistics' hourly means for the whole hours before the history's first point
+  as `import-hourly`, stamped at the hour's start. A history point within `Spacing` of a reading she has (or one
+  just imported) is skipped as a curve point is, an hourly mean for an hour she has readings in, so a second run
+  imports nothing. The token is read from a file and never printed; `--token` is refused. Imported rows never
+  reach `IGlucosePollObserver`: the command is its own process with the store alone, no poller.
 
 ## Turns, the mount and reminders
 

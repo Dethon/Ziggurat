@@ -258,6 +258,11 @@ services:
     # (sugary-meals.csv, sugary-items.csv, sugary-foods.csv) in ./volumes/sugary/import, then
     #   docker exec mcp-sugary dotnet McpServerSugary.dll import /data/import
     # A meal or food already here is left alone, so running it twice adds nothing.
+    # Her glucose from before Sugary read LibreLinkUp comes over from Home Assistant once, with HA's
+    # long-lived token in a file in the volume (removed afterwards; never on the command line):
+    #   docker exec mcp-sugary dotnet McpServerSugary.dll import-glucose --ha http://<home>:8123 \
+    #     --token-file /data/ha-token --entity sensor.<glucose> --tenant <household id> --user <user id>
+    # A reading already here is left alone, so running it twice adds nothing.
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ./volumes/sugary:/data

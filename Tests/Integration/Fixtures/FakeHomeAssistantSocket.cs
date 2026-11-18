@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Integration.Fixtures;
@@ -15,7 +17,10 @@ namespace Tests.Integration.Fixtures;
 //     {"id","type":"result","success",...} frame — "result" on success, "error":{"code","message"}
 //     otherwise,
 //   - the calendar commands mutate the shared FakeCalendarStore, so what the REST calendars
-//     endpoint lists afterwards is what this side did.
+//     endpoint lists afterwards is what this side did,
+//   - and, for a client that is handed one address for both halves (Sugary's glucose import), the
+//     REST reads `GET /api/states/{id}` and `GET /api/history/period/{start}` from `States` and
+//     `History`, behind the same bearer token.
 // `Recorder`, when set, hears every calendar mutation as (service, entity, payload) — the eval's
 // fake home records them beside its REST calls.
 public sealed class FakeHomeAssistantSocket : IAsyncDisposable
@@ -49,6 +54,17 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
 
     public sealed record RegistryEntry(string Platform, string ConfigEntryId, JsonObject? Capabilities = null);
 
+    // Entity states for `GET /api/states/{id}`: the state and its attributes. An id not here is 404.
+    public Dictionary<string, (string State, JsonObject Attributes)> States { get; } = [];
+
+    // The recorder's changes per entity, for `GET /api/history/period/{start}`, answered as Home
+    // Assistant answers a minimal, attribute-free read: the state the entity had at the window's start
+    // stamped at that start (when it had one), then every change after the start up to `end_time`.
+    public Dictionary<string, List<(DateTimeOffset At, string State)>> History { get; } = [];
+
+    // Every history window asked, as (start, end) in the strings the client sent.
+    public List<(string Start, string End)> HistoryRequests { get; } = [];
+
     private FakeHomeAssistantSocket(IHost host, string baseUrl, int port, string token, FakeCalendarStore calendar)
     {
         _host = host;
@@ -79,9 +95,61 @@ public sealed class FakeHomeAssistantSocket : IAsyncDisposable
             await server.ServeAsync(socket, context.RequestAborted);
         });
 
+        app.MapGet("/api/states/{entityId}", (HttpContext context, string entityId) =>
+            !server.Authorized(context) ? Results.Unauthorized()
+            : server.States.TryGetValue(entityId, out var state)
+                ? Results.Json(new JsonObject
+                {
+                    ["entity_id"] = entityId,
+                    ["state"] = state.State,
+                    ["attributes"] = state.Attributes.DeepClone()
+                })
+                : Results.NotFound());
+        app.MapGet("/api/history/period/{start}", (HttpContext context, string start) =>
+            !server.Authorized(context) ? Results.Unauthorized() : Results.Json(server.HistoryOf(context, start)));
+
         await app.StartAsync();
         server = new FakeHomeAssistantSocket(app, $"http://127.0.0.1:{port}", port, token, calendar ?? new FakeCalendarStore());
         return server;
+    }
+
+    private bool Authorized(HttpContext context) =>
+        context.Request.Headers.Authorization.ToString() == $"Bearer {_token}";
+
+    private JsonArray HistoryOf(HttpContext context, string start)
+    {
+        var entityId = context.Request.Query["filter_entity_id"].ToString();
+        var end = context.Request.Query["end_time"].ToString();
+        lock (HistoryRequests)
+        {
+            HistoryRequests.Add((start, end));
+        }
+
+        var from = DateTimeOffset.Parse(start, CultureInfo.InvariantCulture);
+        var to = DateTimeOffset.Parse(end, CultureInfo.InvariantCulture);
+        if (!History.TryGetValue(entityId, out var changes))
+        {
+            return [];
+        }
+
+        var ordered = changes.OrderBy(c => c.At).ToList();
+        var atStart = ordered.LastOrDefault(c => c.At <= from);
+        var series = new JsonArray();
+        if (atStart.State is not null)
+        {
+            series.Add(Point(atStart.State, from));
+        }
+        foreach (var change in ordered.Where(c => c.At > from && c.At <= to))
+        {
+            series.Add(Point(change.State, change.At));
+        }
+        return series.Count == 0 ? [] : [series];
+
+        static JsonObject Point(string state, DateTimeOffset at) => new()
+        {
+            ["state"] = state,
+            ["last_changed"] = at.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'+00:00'", CultureInfo.InvariantCulture)
+        };
     }
 
     private async Task ServeAsync(WebSocket socket, CancellationToken ct)
