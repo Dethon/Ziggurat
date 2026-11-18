@@ -156,6 +156,28 @@ public class SkillPreloadNoteTests
         sent[2].ShouldBeSameAs(thread[1]);
     }
 
+    // A turn that ended with no reply — stopped, refused — leaves its request and note with nothing
+    // after them; the next turn's note goes ahead of its own request, never ahead of the earlier
+    // note, which would move bytes a later request's cached prefix holds.
+    [Fact]
+    public void TwoPreloadedRequestsInARow_EachHaveTheirNoteAheadOfThem()
+    {
+        List<ChatMessage> thread =
+        [
+            .. Turn(SkillLoadTool.AsPreloaded(HomePreload, "preload-abc")),
+            new(ChatRole.User, "y la luz"),
+            .. SkillLoadTool.AsPreloaded(HomePreload, "preload-def")
+        ];
+
+        var sent = SkillPreloadNote.AsSent(thread);
+
+        sent.Count.ShouldBe(4);
+        sent[0].Text.ShouldContain("the `home-assistant` skill");
+        sent[1].ShouldBeSameAs(thread[0]);
+        sent[2].Text.ShouldContain("the `home-assistant` skill");
+        sent[3].ShouldBeSameAs(thread[3]);
+    }
+
     // A load the model made is its own turn, and stays the call and the result it left.
     [Fact]
     public void AModelsOwnLoadAndRead_AreLeftAsTheCallsItMade()

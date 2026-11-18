@@ -68,23 +68,31 @@ public static class SkillPreloadNote
 
         return messages
             .SelectMany(m => Sent(m, hostCalls, results))
-            .Aggregate(new List<ChatMessage>(), Place);
+            .Aggregate(new Placed([], new HashSet<ChatMessage>(ReferenceEqualityComparer.Instance)), Place)
+            .Sent;
     }
 
-    // A note goes ahead of the request it was made for — the run of user messages it followed — so
-    // what is the same on every turn that preloads the same skill sits before what never is, and
-    // the provider's cached prefix reaches through it.
-    private static List<ChatMessage> Place(List<ChatMessage> sent, (ChatMessage Message, bool IsNote) next)
+    // `Claimed` is every note placed and the request each went ahead of.
+    private sealed record Placed(List<ChatMessage> Sent, HashSet<ChatMessage> Claimed);
+
+    // A note goes ahead of the request it was made for — the run of user messages it followed, back
+    // to the last reply or the last request a note already went ahead of — so what is the same on
+    // every turn that preloads the same skill sits before what never is, and the provider's cached
+    // prefix reaches through it. A turn that ended with no reply leaves its note and request with
+    // nothing after them, and the next note jumping over both would move bytes already cached.
+    private static Placed Place(Placed placed, (ChatMessage Message, bool IsNote) next)
     {
         if (!next.IsNote)
         {
-            sent.Add(next.Message);
-            return sent;
+            placed.Sent.Add(next.Message);
+            return placed;
         }
 
-        var request = sent.FindLastIndex(m => m.Role != ChatRole.User) + 1;
-        sent.Insert(request, next.Message);
-        return sent;
+        var request = placed.Sent.FindLastIndex(m => m.Role != ChatRole.User || placed.Claimed.Contains(m)) + 1;
+        placed.Claimed.UnionWith(placed.Sent.Skip(request));
+        placed.Claimed.Add(next.Message);
+        placed.Sent.Insert(request, next.Message);
+        return placed;
     }
 
     private static IEnumerable<(ChatMessage Message, bool IsNote)> Sent(

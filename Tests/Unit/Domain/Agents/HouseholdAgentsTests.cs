@@ -38,6 +38,27 @@ public class HouseholdAgentsTests
         ana.Description.ShouldBe(AgentTemplates.Named("jonas")!.Description);
     }
 
+    // The voice template's shared routing session reaches a household's agent made from it, under
+    // whatever id the household gave it, so every household's wakes keep their provider's cache.
+    [Fact]
+    public void AVoiceTemplateEntry_KeepsTheTemplatesSharedRoutingSession()
+    {
+        var household = Household(new AgentsSection
+        {
+            DefaultAgent = "jonas",
+            Agents =
+            [
+                new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" },
+                new HouseholdAgent { Id = "nabu-2", Template = AgentTemplates.Nabu, Name = "Casa" }
+            ]
+        });
+
+        var agents = HouseholdAgents.Of(household, _shared);
+
+        agents.Find("nabu-2")!.SharedRoutingSessionMinutes.ShouldBe(30);
+        agents.Find("jonas")!.SharedRoutingSessionMinutes.ShouldBeNull();
+    }
+
     [Fact]
     public void AHouseholdWhoseSectionNamesNoAgent_HasTheTwoTemplates_AndJonasAnswersByDefault()
     {
