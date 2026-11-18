@@ -32,25 +32,6 @@ public interface IGlucoseWatchEffects
     Task<GlucoseEffectsOutcome> FireAsync(FiredGlucoseWatch watch, GlucoseTriggerFire report, CancellationToken ct);
 }
 
-// One announcement of a fired watch rung: on the household's satellites, or on the people's own channels
-// when there is none to ring on. True when it rang somewhere.
-public interface IGlucoseAnnounceEffect
-{
-    Task<bool> RingAsync(FiredGlucoseWatch watch, GlucoseAnnounceEffect effect, GlucoseTriggerFire report, CancellationToken ct);
-}
-
-// Until announcements are wired (ticket 13), one is a line in the log that rang nowhere.
-public sealed class UnwiredGlucoseAnnounce(ILogger<UnwiredGlucoseAnnounce> logger) : IGlucoseAnnounceEffect
-{
-    public Task<bool> RingAsync(FiredGlucoseWatch watch, GlucoseAnnounceEffect effect, GlucoseTriggerFire report, CancellationToken ct)
-    {
-        logger.LogInformation(
-            "Glucose watch {WatchId} of household {HouseholdId} would announce on trigger {TriggerIndex}; announcements are not wired yet",
-            watch.Watch.Id, watch.Subject.TenantId, report.TriggerIndex);
-        return Task.FromResult(false);
-    }
-}
-
 // The effects as a fire runs them, in the order written. A prompt is put on Sugary's channel for the agent
 // as an unprompted fire (GlucoseWatchFire) and counts when an agent was polling to take it — gate-on-live,
 // so one nobody took is not kept to arrive late, and its `once` watch stays armed; the engine never waits

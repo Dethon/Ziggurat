@@ -56,7 +56,6 @@ public static class ConfigModule
             // A watch's prompts go to the agent on this server's channel; its announcements ring through
             // the announce seam, which rings nowhere until it is wired.
             .AddSingleton(settings.Delivery)
-            .AddSingleton<IGlucoseAnnounceEffect, UnwiredGlucoseAnnounce>()
             .AddSingleton<IGlucoseWatchEffects, GlucoseWatchEffects>()
             .AddSingleton<GlucoseWatchEngine>()
             .AddSingleton<IGlucosePollObserver>(sp => sp.GetRequiredService<GlucoseWatchEngine>())

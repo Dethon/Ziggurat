@@ -86,7 +86,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   the principal the watch's `userId`, the subject's household, origin Watch with the id, sender
   `ServiceSenders.GlucoseWatch`, and the delegation the watch keeps — emitted gate-on-live on Sugary's channel
   and counted only when an agent took it, never awaited past that; an `announce` handed to
-  `IGlucoseAnnounceEffect`, `UnwiredGlucoseAnnounce` ringing nowhere until ticket 13), whose throw is contained; the episode is fired whatever was delivered, a `once`
+  `IGlucoseAnnounceEffect`, `GlucoseAnnounce`: the household's satellites through the relay as an `Alarm`, else — no target, every satellite offline, the hub unreachable — an insistent channel alert to the subject and the writer; `/timers ./dismiss` stops it on a satellite, a channel's Dismiss on channels), whose throw is contained; the episode is fired whatever was delivered, a `once`
   watch spent (`Spent`, `Enabled` false on the columns) only by a fire that reached somebody, and the states,
   `LastFiredAt` and spent are written in one transaction guarded on the watch's `Spec`, `Enabled`, `!Spent`
   and its state-row count being what was read, so a watch rewritten or removed meanwhile gets nothing.
