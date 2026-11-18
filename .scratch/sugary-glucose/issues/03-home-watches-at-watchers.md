@@ -48,6 +48,23 @@ Done in f5733f039. Deviations and things worth knowing:
   for nobody); an old agent against a new kit would find `/ha/watches` gone. Conversations that loaded
   the old skill body may try `/ha/watches` once and be told not found.
 
+Test-first, honestly: the old-path, union-member and delegation tests were written before the
+implementation but first ran after it (they did not compile before); red was demonstrated afterwards
+for the union row only (`Union` nulled, the `ha-watches` conformance row fails). A rerun on HEAD
+(Unit tier plus the HA, watch-delegation and bridge filters) had one unrelated failure under load,
+`ChatMonitoringTests.AMonitorThatKeepsFailing_IsRestartedOnADoublingDelay` (a minute's hang), which
+passes alone three times out of three. The sandbox bridge keys served mounts by mount point
+(`VfsCall`, `ServedMount.NameOf(m.MountPoint)`), so a command sees `/watchers`; the AppArmor profile
+allows the one FUSE mount at `/vfs/` and needs nothing per mount.
+
+For ticket 10: `Domain/Tools/Sugary/Vfs/SugaryFileSystem.cs`'s comment still says its caller view
+copies "as HaFileSystem does" — it is `HaWatchFileSystem` now; left alone to keep out of Sugary's
+files. Conformance needs a `sugary-watches` row in every table, `ExpectedMountPoint` and `_unions`.
+The home is the fallback and writes triggers verbatim, so a misspelled glucose trigger kind is routed
+to Home Assistant and refused in its words — ticket 14's skill and scenarios should expect that.
+The armed run for this ticket should be the changed tier: the guide document changed, so it selects
+the whole home family, not only `WatchScenarios`.
+
 For ticket 10: register `SugaryWatchFileSystem` after `SugaryFileSystem`; share the mount point
 (`HaWatchFileSystem.MountPointPath`, or move it to a neutral constant) and the `routeBy`
 `/triggers/*/trigger`. The setup index's watches line still counts the home's watches only

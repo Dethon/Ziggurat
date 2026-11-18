@@ -388,7 +388,7 @@ closes within its 10 + 30 minutes) for a login.
 under `_meta["com.herfluffness/delegation"]` (`ChannelProtocol.DelegationMetaKey`), beside the call
 token, for exactly what the call writes: a filesystem write states its object under the agent-only
 `ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules or
-`ha` create from its content, an edit by reading the file first and laying the edits over it as the
+`ha-watches` (`/watchers`) create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
 reading the watch whose delivery it keeps, and named with the writing turn's agent), and
 `web_login` is a login handoff by its name, described off the call's own context and its `url`
