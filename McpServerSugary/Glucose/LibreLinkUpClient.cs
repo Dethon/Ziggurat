@@ -172,9 +172,9 @@ public sealed class LibreLinkUpClient(
             }
 
             var data = ((Reply.Data)reply).Value;
-            if (data?["redirect"]?.GetValueKind() == JsonValueKind.True)
+            if (Field(data, "redirect")?.GetValueKind() == JsonValueKind.True)
             {
-                var to = LibreLinkUpWire.Text(data["region"]);
+                var to = LibreLinkUpWire.Text(Field(data, "region"));
                 if (LibreLinkUpRegions.Normalize(to) is not { } next || next == region)
                 {
                     return Unreachable<Session>($"redirected to an unusable region '{to}'");
@@ -185,18 +185,15 @@ public sealed class LibreLinkUpClient(
                 continue;
             }
 
-            if (LibreLinkUpWire.Text(data?["authTicket"]?["token"]) is not { } token
-                || LibreLinkUpWire.Text(data?["user"]?["id"]) is not { } userId)
+            var ticket = Field(data, "authTicket");
+            if (LibreLinkUpWire.Text(Field(ticket, "token")) is not { } token
+                || LibreLinkUpWire.Text(Field(Field(data, "user"), "id")) is not { } userId)
             {
                 return Unreachable<Session>("the login answered no token");
             }
 
-            var now = clock.GetUtcNow();
-            var expires = LibreLinkUpWire.Number(data?["authTicket"]?["expires"]) is { } seconds
-                ? DateTimeOffset.FromUnixTimeSeconds((long)seconds)
-                : now + TimeSpan.FromMilliseconds(LibreLinkUpWire.Number(data?["authTicket"]?["duration"]) ?? 0);
             return new LibreLinkUpAnswer<Session>.Ok(
-                new Session(address, region, token, AccountIdOf(userId), expires), region);
+                new Session(address, region, token, AccountIdOf(userId), ExpiryOf(ticket)), region);
         }
 
         return Unreachable<Session>("redirected more than once");
@@ -263,9 +260,9 @@ public sealed class LibreLinkUpClient(
                     return new Reply.Failed(new LibreLinkUpFailure.CredentialsRefused());
                 case 4:
                     return new Reply.Failed(new LibreLinkUpFailure.StepRequired(
-                        LibreLinkUpWire.Text(data?["step"]?["componentName"]) ?? "unknown"));
+                        LibreLinkUpWire.Text(Field(Field(data, "step"), "componentName")) ?? "unknown"));
                 case 920:
-                    var minimum = LibreLinkUpWire.Text(data?["minimumVersion"]);
+                    var minimum = LibreLinkUpWire.Text(Field(data, "minimumVersion"));
                     logger.LogError(
                         "LibreLinkUp no longer serves app version {Version}; it asks for {Minimum}. Raise LibreLinkUpClient.AppVersion",
                         AppVersion, minimum ?? "a newer one");
@@ -287,6 +284,17 @@ public sealed class LibreLinkUpClient(
             return Fails("an answer that is not JSON");
         }
     }
+
+    // The ticket's expiry, else its duration from now. A ticket that says neither readably is kept until
+    // a call is refused: taking it as expired would log in on every call, which is what gets an account
+    // rate-limited.
+    private DateTimeOffset ExpiryOf(JsonNode? ticket) =>
+        LibreLinkUpWire.Epoch(LibreLinkUpWire.Number(Field(ticket, "expires")))
+        ?? (LibreLinkUpWire.Number(Field(ticket, "duration")) is > 0 and < 1e13 and var duration
+            ? clock.GetUtcNow() + TimeSpan.FromMilliseconds(duration)
+            : DateTimeOffset.MaxValue);
+
+    private static JsonNode? Field(JsonNode? node, string name) => LibreLinkUpWire.Field(node, name);
 
     private TimeSpan? RetryAfter(HttpResponseMessage response) => response.Headers.RetryAfter switch
     {

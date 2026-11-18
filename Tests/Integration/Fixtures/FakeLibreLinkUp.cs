@@ -48,6 +48,10 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
     // The version a login must claim at least; a lower one is answered status 920.
     public string MinimumVersion { get; set; } = AppVersion;
 
+    // Changes the authTicket a login answers before it is sent, as a service might word it otherwise:
+    // its expiry in milliseconds, or none at all. The token itself still lasts TokenLifetime.
+    public Action<JsonObject>? AlterTicket { get; set; }
+
     public IReadOnlyList<Request> Requests => [.. _requests];
 
     public IReadOnlyList<Request> Logins => [.. _requests.Where(r => r.Path.EndsWith("/llu/auth/login"))];
@@ -187,18 +191,20 @@ public sealed class FakeLibreLinkUp : IAsyncDisposable
         var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
         var expires = _clock.GetUtcNow() + TokenLifetime;
         _tokens[token] = new Issued(account, region, expires);
+        var ticket = new JsonObject
+        {
+            ["token"] = token,
+            ["expires"] = expires.ToUnixTimeSeconds(),
+            ["duration"] = (long)TokenLifetime.TotalMilliseconds
+        };
+        AlterTicket?.Invoke(ticket);
         await WriteAsync(http, new JsonObject
         {
             ["status"] = 0,
             ["data"] = new JsonObject
             {
                 ["user"] = new JsonObject { ["id"] = account.UserId, ["email"] = account.Email, ["country"] = "ES" },
-                ["authTicket"] = new JsonObject
-                {
-                    ["token"] = token,
-                    ["expires"] = expires.ToUnixTimeSeconds(),
-                    ["duration"] = (long)TokenLifetime.TotalMilliseconds
-                }
+                ["authTicket"] = ticket
             }
         });
     }

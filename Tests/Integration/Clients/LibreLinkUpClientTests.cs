@@ -340,6 +340,91 @@ public class LibreLinkUpClientTests
         Failure(answer).ShouldBeOfType<LibreLinkUpFailure.Unreachable>();
     }
 
+    // The service is not ours: an envelope whose data is the wrong shape is no answer, never an exception
+    // out of a poll.
+    [Theory]
+    [InlineData("""{"status":0,"data":"oops"}""")]
+    [InlineData("""{"status":0,"data":[1]}""")]
+    [InlineData("""{"status":0,"data":{"connection":"none"}}""")]
+    [InlineData("""{"status":4,"data":"x"}""")]
+    [InlineData("""{"status":920,"data":[1]}""")]
+    [InlineData("""[1,2]""")]
+    public async Task AnAnswerOfTheWrongShape_FailsTyped(string body)
+    {
+        var clock = new FakeTimeProvider(_now);
+        await using var fake = await FakeLibreLinkUp.StartAsync(clock);
+        Seed(fake);
+        var client = ClientOf(fake, clock);
+        Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+
+        fake.AnswerNext(body);
+        var connections = await client.ConnectionsAsync(_account, CancellationToken.None);
+        fake.AnswerNext(body);
+        var graph = await client.GraphAsync(_account, "patient-1", CancellationToken.None);
+
+        connections.ShouldBeOfType<LibreLinkUpAnswer<IReadOnlyList<LibreLinkUpConnection>>.Failed>();
+        graph.ShouldBeOfType<LibreLinkUpAnswer<LibreLinkUpGraph>.Failed>();
+    }
+
+    [Fact]
+    public async Task AConnectionsFieldsOfTheWrongShape_AreAbsent()
+    {
+        var clock = new FakeTimeProvider(_now);
+        await using var fake = await FakeLibreLinkUp.StartAsync(clock);
+        Seed(fake);
+        var client = ClientOf(fake, clock);
+        Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+
+        fake.AnswerNext("""
+            {"status":0,"data":[
+              {"patientId":"a","sensor":"none","glucoseMeasurement":5},
+              {"patientId":"b","sensor":{"sn":"0M00MS","a":1652400270000},"glucoseMeasurement":[1]}
+            ]}
+            """);
+        var connections = Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+
+        connections.Select(c => c.PatientId).ShouldBe(["a", "b"]);
+        connections.ShouldAllBe(c => c.Sensor == null && c.Current == null);
+    }
+
+    [Theory]
+    [InlineData(1e15, null)]
+    [InlineData(null, null)]
+    [InlineData("soon", "later")]
+    public async Task ALoginWhoseExpiryIsUnreadable_KeepsItsTokenUntilRefused(object? expires, object? duration)
+    {
+        var clock = new FakeTimeProvider(_now);
+        await using var fake = await FakeLibreLinkUp.StartAsync(clock);
+        Seed(fake);
+        fake.AlterTicket = ticket =>
+        {
+            ticket["expires"] = JsonValue.Create(expires);
+            ticket["duration"] = JsonValue.Create(duration);
+        };
+        var client = ClientOf(fake, clock);
+
+        Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+        clock.Advance(TimeSpan.FromDays(30));
+        Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+
+        fake.Logins.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task AForbiddenCall_IsReloggedOnceAndAnswered()
+    {
+        var clock = new FakeTimeProvider(_now);
+        await using var fake = await FakeLibreLinkUp.StartAsync(clock);
+        Seed(fake);
+        var client = ClientOf(fake, clock);
+        Ok(await client.ConnectionsAsync(_account, CancellationToken.None));
+
+        fake.InterruptNext(HttpStatusCode.Forbidden);
+        Ok(await client.GraphAsync(_account, "patient-1", CancellationToken.None)).Points.Count.ShouldBe(6);
+
+        fake.Logins.Count.ShouldBe(2);
+    }
+
     [Fact]
     public async Task NothingListening_IsUnreachable()
     {

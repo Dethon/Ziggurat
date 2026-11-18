@@ -56,37 +56,51 @@ public static class LibreLinkUpWire
             : null;
 
     public static SensorReading? Reading(JsonNode? item) =>
-        Instant(Text(item?["FactoryTimestamp"])) is { } at && Number(item?["ValueInMgPerDl"]) is { } mgPerDl
-            ? new SensorReading(at, mgPerDl, Trend((int?)Number(item?["TrendArrow"])))
+        Instant(Text(Field(item, "FactoryTimestamp"))) is { } at && Number(Field(item, "ValueInMgPerDl")) is { } mgPerDl
+            ? new SensorReading(at, mgPerDl, Trend((int?)Number(Field(item, "TrendArrow"))))
             : null;
 
     public static LibreLinkUpSensor? Sensor(JsonNode? sensor) =>
-        Text(sensor?["sn"]) is { } serial && Number(sensor?["a"]) is { } activated
-            ? new LibreLinkUpSensor(serial, DateTimeOffset.FromUnixTimeSeconds((long)activated), (int?)Number(sensor?["pt"]))
+        Text(Field(sensor, "sn")) is { } serial && Number(Field(sensor, "a")) is { } activated
+            && Epoch(activated) is { } activatedAt
+            ? new LibreLinkUpSensor(serial, activatedAt, (int?)Number(Field(sensor, "pt")))
             : null;
 
     public static LibreLinkUpConnection? Connection(JsonNode? connection) =>
-        Text(connection?["patientId"]) is { } patientId
+        Text(Field(connection, "patientId")) is { } patientId
             ? new LibreLinkUpConnection(
                 patientId,
-                Text(connection?["firstName"]) ?? "",
-                Text(connection?["lastName"]) ?? "",
-                Number(connection?["targetLow"]),
-                Number(connection?["targetHigh"]),
-                Sensor(connection?["sensor"]),
-                Reading(connection?["glucoseMeasurement"]))
+                Text(Field(connection, "firstName")) ?? "",
+                Text(Field(connection, "lastName")) ?? "",
+                Number(Field(connection, "targetLow")),
+                Number(Field(connection, "targetHigh")),
+                Sensor(Field(connection, "sensor")),
+                Reading(Field(connection, "glucoseMeasurement")))
             : null;
 
+    // Every entry or none: a list with an entry that is no connection would read as "nobody shares with
+    // you", or leave out the very person she follows.
     public static IReadOnlyList<LibreLinkUpConnection>? Connections(JsonNode? data) =>
-        data is JsonArray connections ? [.. connections.Select(Connection).OfType<LibreLinkUpConnection>()] : null;
+        data is JsonArray entries && entries.Select(Connection).ToList() is var connections
+                                  && connections.All(c => c is not null)
+            ? [.. connections.OfType<LibreLinkUpConnection>()]
+            : null;
 
     public static LibreLinkUpGraph? Graph(JsonNode? data) =>
-        Connection(data?["connection"]) is { } connection
+        Connection(Field(data, "connection")) is { } connection
             ? new LibreLinkUpGraph(
                 connection,
-                [.. Items(data?["graphData"]).Select(Reading).OfType<SensorReading>().OrderBy(r => r.At)],
-                [.. Items(data?["activeSensors"]).Select(active => Sensor(active?["sensor"])).OfType<LibreLinkUpSensor>()])
+                [.. Items(Field(data, "graphData")).Select(Reading).OfType<SensorReading>().OrderBy(r => r.At)],
+                [.. Items(Field(data, "activeSensors")).Select(active => Sensor(Field(active, "sensor"))).OfType<LibreLinkUpSensor>()])
             : null;
+
+    // A field of an object; anything else has none. The indexer throws on a node of another kind, and
+    // a poll must fail typed rather than with an exception.
+    internal static JsonNode? Field(JsonNode? node, string name) => node is JsonObject fields ? fields[name] : null;
+
+    // Seconds since the epoch, where they make an instant at all: a value in milliseconds does not.
+    internal static DateTimeOffset? Epoch(double? seconds) =>
+        seconds is >= 0 and <= 253402300799 ? DateTimeOffset.FromUnixTimeSeconds((long)seconds) : null;
 
     internal static string? Text(JsonNode? node) =>
         node?.GetValueKind() == JsonValueKind.String && node.GetValue<string>() is { Length: > 0 } text ? text : null;
