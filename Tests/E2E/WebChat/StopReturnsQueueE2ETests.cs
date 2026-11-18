@@ -84,11 +84,14 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
                 await Assertions.Expect(UserMessage(page, $"CHARLIE{tag}")).ToHaveCountAsync(0);
             }
 
+            // A fresh load reads what was stored, once: the stopped turn is stored after the stop
+            // answers, so it is waited for here rather than raced by the load.
+            await WebChatConversationE2ETests.WaitForTurnKeptAsync(ana, UserMessage(ana, $"{topic}: IMPORTANT"));
             var fresh = await carlosContext.NewPageAsync();
             await GotoWebChatAsync(fresh, fixture.WebChatUrl);
             await SelectAgentAsync(fresh);
             await OpenTopicPastTheOverlayAsync(fresh, topic);
-            await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+            await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
         }

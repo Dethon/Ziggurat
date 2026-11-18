@@ -14,6 +14,10 @@ internal static class HermeticPage
 {
     public const string AnchorUrl = "https://hermetic-anchor.test/";
 
+    // A second origin, for a case whose claim is two different sites side by side. Both answer any
+    // path and query with the same blank page.
+    public const string OtherUrl = "https://hermetic-other.test/";
+
     // The route goes on the context, and the context outlives every case: the backend is refcounted
     // across the whole run, so registering per call stacked one more handler for the same URL on it
     // every time, none of them ever removed. They all answer identically, so nothing was wrong with
@@ -36,13 +40,13 @@ internal static class HermeticPage
         await InjectAsync(browser, sessionId, markup);
     }
 
-    private static Task EnsureRouteAsync(PlaywrightWebBrowser browser)
+    public static Task EnsureRouteAsync(PlaywrightWebBrowser browser)
     {
         lock (_routed)
         {
             if (!_routed.TryGetValue(browser, out var registration))
             {
-                registration = browser.RouteOnContextAsync(AnchorUrl, route => route.FulfillAsync(new()
+                registration = browser.RouteOnContextAsync("https://hermetic-*.test/**", route => route.FulfillAsync(new()
                 {
                     ContentType = "text/html",
                     Body = "<!DOCTYPE html><html><head><title>anchor</title></head><body></body></html>"
