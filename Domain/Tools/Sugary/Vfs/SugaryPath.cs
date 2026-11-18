@@ -5,8 +5,8 @@ namespace Domain.Tools.Sugary.Vfs;
 
 public enum SugaryNodeKind
 {
-    Root, People, Readme, Foods, Periods, DayNotes, DoseMeals, MealsDir, ItemsDir, DosesDir, ExerciseDir, MealsMonth, ItemsMonth, DosesMonth,
-    ExerciseMonth, Unknown
+    Root, People, Readme, Foods, Periods, DayNotes, DoseMeals, Sensors, MealsDir, ItemsDir, DosesDir, ExerciseDir, GlucoseDir, MealsMonth,
+    ItemsMonth, DosesMonth, ExerciseMonth, GlucoseMonth, Unknown
 }
 
 // Month is "yyyy-MM" on the monthly kinds and null elsewhere.
@@ -14,7 +14,7 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
 {
     public bool IsDirectory =>
         Kind is SugaryNodeKind.Root or SugaryNodeKind.People or SugaryNodeKind.MealsDir or SugaryNodeKind.ItemsDir or SugaryNodeKind.DosesDir
-            or SugaryNodeKind.ExerciseDir;
+            or SugaryNodeKind.ExerciseDir or SugaryNodeKind.GlucoseDir;
 
     // The path a listing or a search hit names this node by, mount-root-relative with a leading slash.
     public string Path => Kind switch
@@ -26,14 +26,17 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.Periods => "/" + SugaryPath.PeriodsFileName,
         SugaryNodeKind.DayNotes => "/" + SugaryPath.DayNotesFileName,
         SugaryNodeKind.DoseMeals => "/" + SugaryPath.DoseMealsFileName,
+        SugaryNodeKind.Sensors => "/" + SugaryPath.SensorsFileName,
         SugaryNodeKind.MealsDir => "/" + SugaryPath.MealsDirName,
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
         SugaryNodeKind.ExerciseDir => "/" + SugaryPath.ExerciseDirName,
+        SugaryNodeKind.GlucoseDir => "/" + SugaryPath.GlucoseDirName,
         SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}{SugaryPath.TableExtension}",
         SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}{SugaryPath.TableExtension}",
         SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}{SugaryPath.TableExtension}",
         SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}{SugaryPath.TableExtension}",
+        SugaryNodeKind.GlucoseMonth => $"/{SugaryPath.GlucoseDirName}/{Month}{SugaryPath.TableExtension}",
         _ => ""
     };
 }
@@ -49,10 +52,12 @@ public static class SugaryPath
     public const string PeriodsFileName = "periods" + TableExtension;
     public const string DayNotesFileName = "day-notes" + TableExtension;
     public const string DoseMealsFileName = "dose-meals" + TableExtension;
+    public const string SensorsFileName = "sensors" + TableExtension;
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
     public const string ExerciseDirName = "exercise";
+    public const string GlucoseDirName = "glucose";
 
     // Where everyone else's logs are, for a reader an owner let read them: people/<name>/ holds the same
     // files as the root does for the reader's own.
@@ -107,15 +112,18 @@ public static class SugaryPath
             [PeriodsFileName] => new SugaryNode(SugaryNodeKind.Periods),
             [DayNotesFileName] => new SugaryNode(SugaryNodeKind.DayNotes),
             [DoseMealsFileName] => new SugaryNode(SugaryNodeKind.DoseMeals),
+            [SensorsFileName] => new SugaryNode(SugaryNodeKind.Sensors),
             [MealsDirName] => new SugaryNode(SugaryNodeKind.MealsDir),
             [ItemsDirName] => new SugaryNode(SugaryNodeKind.ItemsDir),
             [DosesDirName] => new SugaryNode(SugaryNodeKind.DosesDir),
             [ExerciseDirName] => new SugaryNode(SugaryNodeKind.ExerciseDir),
+            [GlucoseDirName] => new SugaryNode(SugaryNodeKind.GlucoseDir),
             [MealsDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.MealsMonth, month),
             [ItemsDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.ItemsMonth, month),
             [DosesDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.DosesMonth, month),
             [ExerciseDirName, var file] when MonthOf(file) is { } month =>
                 new SugaryNode(SugaryNodeKind.ExerciseMonth, month),
+            [GlucoseDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.GlucoseMonth, month),
             _ => new SugaryNode(SugaryNodeKind.Unknown)
         };
     }

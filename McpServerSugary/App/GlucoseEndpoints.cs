@@ -1,3 +1,4 @@
+using Domain.DTOs.Sugary;
 using McpServerSugary.Glucose;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;

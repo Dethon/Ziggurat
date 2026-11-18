@@ -87,6 +87,46 @@ public class SugaryFileSystemPeopleTests
         _logs.Asked.ShouldNotContain(new Account(Household, Dethon));
     }
 
+    // "How was Tradaly's glucose last week", asked by someone she let read it: her readings, her
+    // files, and her README with her own unit and range — never the reader's.
+    [Fact]
+    public async Task AGrantedReader_ReadsAnotherPersonsGlucose_WithTheirRange()
+    {
+        _logs.Of(Tradaly).Glucose.Add(new LoggedGlucose(
+            DateTimeOffset.Parse("2026-08-09T13:30:00Z"), 210, GlucoseTrend.Rising, GlucoseSource.Current));
+        _logs.Of(Tradaly).Targets = new GlucoseTargets(GlucoseUnit.Mmol, 80, 160);
+        _logs.Of(Dethon).Targets = new GlucoseTargets(GlucoseUnit.Mgdl, 70, 180);
+        var mount = Mount(reader: Dethon, People(granted: Dethon));
+
+        var hers = await QueryAsync(mount, "/sugary/people/tradaly", "select max(mg_dl) from glucose");
+        var his = await QueryAsync(mount, "/sugary", "select count(*) from glucose");
+        var files = Ok(await mount.GlobAsync("/people/tradaly", "glucose/*", CancellationToken.None));
+        var readme = (await mount.ReadAsync("/people/tradaly/README.md", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+
+        hers["rows"]!.AsArray().Single()![0]!.GetValue<double>().ShouldBe(210);
+        his["rows"]!.AsArray().Single()![0]!.GetValue<int>().ShouldBe(0);
+        files.Entries.ShouldBe(["/people/tradaly/glucose/2026-08.parquet"]);
+        readme.ShouldContain("their target range is 80–160 mg/dL");
+        readme.ShouldNotContain("70–180 mg/dL (");
+    }
+
+    [Fact]
+    public async Task AReaderWithoutTheGrant_IsRefusedAnotherPersonsGlucose()
+    {
+        _logs.Of(Dethon).Glucose.Add(new LoggedGlucose(
+            DateTimeOffset.Parse("2026-08-09T13:30:00Z"), 210, GlucoseTrend.Rising, GlucoseSource.Current));
+        var mount = Mount(reader: Tradaly, People(granted: Dethon));
+
+        Error(await mount.QueryAsync("/people/dethon", "select * from glucose", 10, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await mount.ReadBlobAsync("/people/dethon/glucose/2026-08.parquet", 0, 100, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await mount.ReadAsync("/people/dethon/README.md", null, null, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        _logs.Asked.ShouldNotContain(new Account(Household, Dethon));
+    }
+
     // A call that proved no household cannot be checked for the grant, so it reads its own log alone.
     [Fact]
     public async Task ACallProvingNoHousehold_ReadsNobodyElses()
@@ -233,5 +273,18 @@ public class SugaryFileSystemPeopleTests
             For(owner).DayNotesAsync(owner, ct);
 
         public Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct) => For(owner).FoodsAsync(owner, ct);
+
+        public Task<IReadOnlyList<string>> GlucoseMonthsAsync(Account owner, TimeZoneInfo zone, CancellationToken ct) =>
+            For(owner).GlucoseMonthsAsync(owner, zone, ct);
+
+        public Task<IReadOnlyList<LoggedGlucose>> GlucoseAsync(
+            Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct) =>
+            For(owner).GlucoseAsync(owner, from, to, ct);
+
+        public Task<IReadOnlyList<LoggedSensor>> GlucoseSensorsAsync(Account owner, CancellationToken ct) =>
+            For(owner).GlucoseSensorsAsync(owner, ct);
+
+        public Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct) =>
+            For(owner).GlucoseTargetsAsync(owner, ct);
     }
 }

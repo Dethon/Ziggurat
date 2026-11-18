@@ -277,6 +277,28 @@ public sealed class SugaryServer : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    // What the poller keeps: her readings, the sensors LibreLinkUp listed, and her link's unit and range.
+    public async Task SaveAsync(params GlucoseReading[] readings)
+    {
+        await using var db = Hers();
+        db.GlucoseReadings.AddRange(readings);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SaveAsync(params GlucoseSensor[] sensors)
+    {
+        await using var db = Hers();
+        db.GlucoseSensors.AddRange(sensors);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SaveAsync(params GlucoseLink[] links)
+    {
+        await using var db = Hers();
+        db.GlucoseLinks.AddRange(links);
+        await db.SaveChangesAsync();
+    }
+
     // What the migration into the home household does with a log from before it was per person (or
     // brought in by the import): gives every row nobody owns to the person whose log it is, and the
     // kitchen to their household. Until then the rows are kept and seen by nobody.

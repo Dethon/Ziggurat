@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs.Sugary;
 using Domain.Security.Sealing;
 using McpServerSugary.Glucose;
 using McpServerSugary.Store;

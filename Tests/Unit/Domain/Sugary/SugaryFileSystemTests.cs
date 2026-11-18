@@ -62,6 +62,7 @@ public class SugaryFileSystemTests
         log.Setup(l => l.DoseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DateTimeOffset(2026, 8, 30, 21, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 1, 21, 0, 0, TimeSpan.Zero)]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.GlucoseMonthsAsync(It.IsAny<Account>(), It.IsAny<TimeZoneInfo>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>()).For(InMemorySugaryLog.Her);
 
         var all = (await mount.GlobAsync("/", "**", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
@@ -69,7 +70,8 @@ public class SugaryFileSystemTests
 
         all.Entries.ShouldBe([
             "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/doses/2026-08.parquet", "/doses/2026-09.parquet", "/exercise/",
-            "/foods.parquet", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet", "/periods.parquet"
+            "/foods.parquet", "/glucose/", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet", "/periods.parquet",
+            "/sensors.parquet"
         ]);
         doses.Entries.ShouldBe(["/doses/2026-08.parquet", "/doses/2026-09.parquet"]);
     }
@@ -82,11 +84,12 @@ public class SugaryFileSystemTests
         log.Setup(l => l.MealTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.GlucoseMonthsAsync(It.IsAny<Account>(), It.IsAny<TimeZoneInfo>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>()).For(InMemorySugaryLog.Her);
 
         var glob = (await mount.GlobAsync("/", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
-        glob.Entries.ShouldBe(["/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/periods.parquet"]);
+        glob.Entries.ShouldBe(["/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/periods.parquet", "/sensors.parquet"]);
     }
 
     // A month has an exercise file when a session started in it, whatever else she logged then.
@@ -96,6 +99,7 @@ public class SugaryFileSystemTests
         var log = new Mock<ISugaryLog>();
         log.Setup(l => l.MealTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.GlucoseMonthsAsync(It.IsAny<Account>(), It.IsAny<TimeZoneInfo>(), It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<Account>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 2, 9, 0, 0, TimeSpan.Zero)]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>()).For(InMemorySugaryLog.Her);

@@ -134,6 +134,11 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
                 MealOutcome.InRange, null,
                 [new LoggedItem(0, "toast", null, null, null, new CarbRange(20, 30, 40), ItemSource.Label, null, false, null)])
         ]);
+        log.Glucose.AddRange(
+        [
+            new LoggedGlucose(DateTimeOffset.Parse("2026-08-09T12:30:00Z"), 110, GlucoseTrend.Steady, GlucoseSource.Current),
+            new LoggedGlucose(DateTimeOffset.Parse("2026-08-09T13:30:00Z"), 190, GlucoseTrend.Unknown, GlucoseSource.Graph)
+        ]);
         var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine())
             .For(InMemorySugaryLog.Her);
         var call = Mint((sugary, "/sugary", null));
@@ -142,10 +147,11 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
             "python3 -c \"import polars as pl; print(pl.read_parquet('/sugary/meals/2026-08.parquet')['carbs_g'].sum())\"; "
             + "duckdb -noheader -csv -c \"select string_agg(items, ' then ' order by eaten_at) from '/sugary/meals/*.parquet'\"; "
             + "python3 -c \"import duckdb; print(duckdb.sql('select count(*) from read_parquet(\\'/sugary/items/*.parquet\\')').fetchone()[0])\"; "
+            + "duckdb -noheader -csv -c \"select max(mg_dl) from '/sugary/glucose/*.parquet'\"; "
             + "duckdb --version | cut -d' ' -f1",
             call, cts.Token);
 
-        Stdout(result).ShouldBe("100.0\npaella then toast\n2\nv1.5.6\n", result.ToString());
+        Stdout(result).ShouldBe("100.0\npaella then toast\n2\n190.0\nv1.5.6\n", result.ToString());
     }
 
     [SkippableFact]

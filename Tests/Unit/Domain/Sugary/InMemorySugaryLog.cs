@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 
 namespace Tests.Unit.Domain.Sugary;
 
@@ -21,6 +22,9 @@ public sealed class InMemorySugaryLog : ISugaryLog
     public List<LoggedPeriod> Periods { get; } = [];
     public List<LoggedDayNote> DayNotes { get; } = [];
     public List<SavedFood> Foods { get; } = [];
+    public List<LoggedGlucose> Glucose { get; } = [];
+    public List<LoggedSensor> Sensors { get; } = [];
+    public GlucoseTargets? Targets { get; set; }
 
     public Task<IReadOnlyList<DateTimeOffset>> MealTimesAsync(Account owner, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<DateTimeOffset>>([.. Meals.Select(meal => meal.EatenAt)]);
@@ -49,4 +53,23 @@ public sealed class InMemorySugaryLog : ISugaryLog
 
     public Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<SavedFood>>([.. Foods]);
+
+    public Task<IReadOnlyList<string>> GlucoseMonthsAsync(Account owner, TimeZoneInfo zone, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<string>>(
+            [.. Glucose.Select(reading => SugaryTables.Month(reading.At, zone)).Distinct().Order(StringComparer.Ordinal)]);
+
+    // How many times the readings were asked for: a statement that cannot reach them must not load them.
+    public int GlucoseReads { get; private set; }
+
+    public Task<IReadOnlyList<LoggedGlucose>> GlucoseAsync(Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    {
+        GlucoseReads++;
+        return Task.FromResult<IReadOnlyList<LoggedGlucose>>(
+            [.. Glucose.Where(reading => reading.At >= from && reading.At < to).OrderBy(reading => reading.At)]);
+    }
+
+    public Task<IReadOnlyList<LoggedSensor>> GlucoseSensorsAsync(Account owner, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<LoggedSensor>>([.. Sensors]);
+
+    public Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct) => Task.FromResult(Targets);
 }

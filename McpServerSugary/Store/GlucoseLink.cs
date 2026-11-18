@@ -1,3 +1,5 @@
+using Domain.DTOs.Sugary;
+
 namespace McpServerSugary.Store;
 
 // The LibreLinkUp follower account her glucose comes from, one per person: where it lives, how to log
@@ -45,12 +47,6 @@ public class GlucoseConnectionOffered
 {
     public string PatientId { get; set; } = "";
     public string Name { get; set; } = "";
-}
-
-public enum GlucoseUnit
-{
-    Mgdl,
-    Mmol
 }
 
 // Why the last poll got no answer, as LibreLinkUpFailure names it.

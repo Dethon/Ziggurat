@@ -1,4 +1,5 @@
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 
 namespace McpServerSugary.Store;
 
@@ -19,17 +20,6 @@ public class GlucoseReading : IPersonal
     public GlucoseTrend Trend { get; set; }
 
     public GlucoseSource Source { get; set; }
-}
-
-// Where a reading came from: the connection's current reading, a point of the curve LibreLinkUp keeps
-// (about twelve hours, every five minutes), a value imported from Home Assistant's history, or an
-// hourly mean of its long-term statistics — a lower resolution the README names.
-public enum GlucoseSource
-{
-    Current,
-    Graph,
-    Import,
-    ImportHourly
 }
 
 // A sensor she has worn, as LibreLinkUp listed it: kept as seen, so when one started and when it ends
@@ -54,22 +44,8 @@ public static class GlucoseReadingRules
     // Current readings are each the sensor's own minute and are all kept.
     public static readonly TimeSpan Spacing = TimeSpan.FromMinutes(2.5);
 
-    // The column's words, which a reader of the table sees.
-    public static string Word(GlucoseSource source) => source switch
-    {
-        GlucoseSource.Current => "current",
-        GlucoseSource.Graph => "graph",
-        GlucoseSource.Import => "import",
-        GlucoseSource.ImportHourly => "import-hourly",
-        _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
-    };
+    // The column's words, one spelling for the database and the mount's tables (SugaryTables).
+    public static string Word(GlucoseSource source) => SugaryTables.SourceWord(source);
 
-    public static GlucoseSource SourceOf(string word) => word switch
-    {
-        "current" => GlucoseSource.Current,
-        "graph" => GlucoseSource.Graph,
-        "import" => GlucoseSource.Import,
-        "import-hourly" => GlucoseSource.ImportHourly,
-        _ => throw new ArgumentOutOfRangeException(nameof(word), word, null)
-    };
+    public static GlucoseSource SourceOf(string word) => SugaryTables.SourceOf(word);
 }

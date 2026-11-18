@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 using Microsoft.EntityFrameworkCore;
 
 namespace McpServerSugary.Store;
@@ -96,6 +97,53 @@ public sealed class SqliteSugaryLog(SugaryStore store) : ISugaryLog
             .Select(f => new SavedFood(
                 f.Id, f.Name, f.CarbsPer100g, f.Unit, f.PortionGrams, f.PortionCarbs, f.Barcode, f.Source))
             .ToList();
+    }
+
+    // Each month's first reading found by the index on (owner, instant), from one month to the next
+    // that has any: a query per month with readings rather than half a million instants a year.
+    public async Task<IReadOnlyList<string>> GlucoseMonthsAsync(Account owner, TimeZoneInfo zone, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        var months = new List<string>();
+        var from = DateTimeOffset.MinValue;
+        // Each step's start is the month after the reading the last one found.
+        while (await db.GlucoseReadings.AsNoTracking()
+                   .Where(r => r.At >= from)
+                   .OrderBy(r => r.At)
+                   .Select(r => (DateTimeOffset?)r.At)
+                   .FirstOrDefaultAsync(ct) is { } first)
+        {
+            months.Add(SugaryTables.Month(first, zone));
+            from = SugaryTables.NextMonthStart(first, zone);
+        }
+
+        return months;
+    }
+
+    public async Task<IReadOnlyList<LoggedGlucose>> GlucoseAsync(
+        Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        return await db.GlucoseReadings.AsNoTracking()
+            .Where(r => r.At >= from && r.At < to)
+            .OrderBy(r => r.At)
+            .Select(r => new LoggedGlucose(r.At, r.MgPerDl, r.Trend, r.Source))
+            .ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<LoggedSensor>> GlucoseSensorsAsync(Account owner, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        var sensors = await db.GlucoseSensors.AsNoTracking().ToListAsync(ct);
+        return sensors.OrderBy(s => s.ActivatedAt).Select(s => new LoggedSensor(s.Serial, s.ActivatedAt, s.LastSeenAt)).ToList();
+    }
+
+    public async Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        return await db.GlucoseLinks.AsNoTracking()
+            .Select(l => new GlucoseTargets(l.Unit, l.TargetLow, l.TargetHigh))
+            .FirstOrDefaultAsync(ct);
     }
 
     private static LoggedMeal ToLogged(Meal meal) => new(

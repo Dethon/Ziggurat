@@ -121,14 +121,15 @@ public class McpSugaryServerTests
     }
 
     [Fact]
-    public async Task AnEmptyLog_HasItsReadmeItsThreeTablesAndThreeEmptyDirectories()
+    public async Task AnEmptyLog_HasItsReadmeItsTablesAndItsEmptyDirectories()
     {
         await using var server = await SugaryServer.StartAsync();
 
         (await server.GlobAsync("**")).ShouldBe([
             "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/exercise/", "/foods.parquet",
-            "/items/", "/meals/", "/periods.parquet"
+            "/glucose/", "/items/", "/meals/", "/periods.parquet", "/sensors.parquet"
         ]);
+        (await server.TableRowsAsync("/sensors.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/dose-meals.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/foods.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/periods.parquet")).ShouldBeEmpty();
@@ -402,7 +403,7 @@ public class McpSugaryServerTests
 
         (await server.GlobAsync("**/*.parquet")).ShouldBe([
             "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
-            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet"
+            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet", "/sensors.parquet"
         ]);
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.parquet" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");

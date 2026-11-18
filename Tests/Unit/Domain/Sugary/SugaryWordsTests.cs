@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using Domain.Contracts;
+using Domain.DTOs.Sugary;
 using Domain.Prompts;
 using Domain.Tools.Sugary;
 using Domain.Tools.Sugary.Vfs;
@@ -25,7 +26,8 @@ public sealed partial class SugaryWordsTests
         {
             { "the skill's description", SugarySkill.Description },
             { "the skill's body", SugarySkill.Body },
-            { "the README", SugaryReadme.For(TimeZoneInfo.Utc) },
+            { "the README", SugaryReadme.For(TimeZoneInfo.Utc, null) },
+            { "the README of a linked log", SugaryReadme.For(TimeZoneInfo.Utc, new GlucoseTargets(GlucoseUnit.Mmol, 80, 160)) },
             { "the mount's description", mount.DescribeMount },
             { "the read tool's description", mount.DescribeRead },
             { "the info tool's description", mount.DescribeInfo },

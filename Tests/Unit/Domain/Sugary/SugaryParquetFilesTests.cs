@@ -50,9 +50,9 @@ public class SugaryParquetFilesTests
 
         glob["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe([
             "/sugary/README.md", "/sugary/day-notes.parquet", "/sugary/dose-meals.parquet", "/sugary/doses/", "/sugary/doses/2026-08.parquet",
-            "/sugary/exercise/", "/sugary/foods.parquet", "/sugary/items/", "/sugary/items/2026-07.parquet",
+            "/sugary/exercise/", "/sugary/foods.parquet", "/sugary/glucose/", "/sugary/items/", "/sugary/items/2026-07.parquet",
             "/sugary/items/2026-08.parquet", "/sugary/meals/", "/sugary/meals/2026-07.parquet",
-            "/sugary/meals/2026-08.parquet", "/sugary/periods.parquet"
+            "/sugary/meals/2026-08.parquet", "/sugary/periods.parquet", "/sugary/sensors.parquet"
         ]);
     }
 
@@ -84,7 +84,7 @@ public class SugaryParquetFilesTests
         var read = await new VfsFileReadTool(_registry).RunAsync("/sugary/README.md");
 
         read["content"]!.GetValue<string>().ShouldStartWith("# Sugary");
-        Encoding.UTF8.GetString(await BytesAsync("/README.md")).ShouldBe(SugaryReadme.For(_madrid));
+        Encoding.UTF8.GetString(await BytesAsync("/README.md")).ShouldBe(SugaryReadme.For(_madrid, null));
     }
 
     [Fact]
