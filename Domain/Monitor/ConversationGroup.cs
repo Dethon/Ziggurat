@@ -42,7 +42,11 @@ internal sealed class ConversationGroup(
     // Whether the household a message acts for is suspended, asked of every message as it arrives.
     // Optional as the households' defaults are: a host with none suspends nobody.
     IAgentDefinitionProvider? households,
-    ILogger logger) : IAsyncDisposable
+    ILogger logger,
+    // What each agent's sessions last offered, shared by the monitor's groups: a group's first turn
+    // judges its preload over it rather than waiting out its own warmup. None means every first
+    // turn waits, as before.
+    SkillsOffered? skillsOffered = null) : IAsyncDisposable
 {
     // What a refused person is told (RefusalAnswers, which a channel may say in its own words).
     internal const string SuspendedAnswer = RefusalAnswers.Suspended;
@@ -1478,20 +1482,18 @@ internal sealed class ConversationGroup(
     }
 
     // Never faults: a preloader that throws, or a history that cannot be read, is a turn with no
-    // head start and nothing more. The judgment is over the session's skills and against the
-    // conversation as persisted, both answered by the agent that owns the session.
+    // head start and nothing more. The judgment is against the conversation as persisted, and over
+    // the skills the session offers — known once the warmup that dials their servers has ended.
+    // While it has not, the same agent's last session says what they will be (SkillsOffered), so
+    // the judgment overlaps the warmup instead of following it, and keeps only what this session
+    // turns out to offer. A warmup that fails is that turn's failure, reported once by the turn —
+    // not a preload error on top.
     private async Task<SkillPreload> PreloadAsync(ChannelMessage message, GroupState state)
     {
-        // The skills arrive with the servers the warmup dials, and a group's first turn builds
-        // its message while that is still under way: asked before, the judgment would be over
-        // nothing. The wait costs the first turn only what the turn waits for anyway, and it
-        // still overlaps the recall. A warmup that fails is that turn's failure, reported once
-        // by the turn — not a preload error on top.
-        try
-        {
-            await state.Warmup;
-        }
-        catch (Exception)
+        var expected = state.Warmup.IsCompleted
+            ? null
+            : skillsOffered?.Last(state.DeliveryKey.AgentId, state.TenantId);
+        if (expected is null && !await WarmedAsync(state))
         {
             return SkillPreload.NotAsked;
         }
@@ -1506,15 +1508,18 @@ internal sealed class ConversationGroup(
                 return SkillPreload.NotAsked;
             }
 
-            var skills = state.Agent.GetSkills(state.Thread);
+            var skills = expected ?? OfferedBy(state);
             if (skills.Count == 0)
             {
                 return SkillPreload.NotAsked;
             }
 
             var history = await state.Agent.GetHistoryAsync(state.Thread, _turnCt);
+            var preload = await skillPreloader.PreloadAsync(Request(message, skills, history, state), _turnCt);
 
-            return await skillPreloader.PreloadAsync(Request(message, skills, history, state), _turnCt);
+            return expected is null
+                ? preload
+                : await WarmedAsync(state) ? Within(preload, OfferedBy(state)) : SkillPreload.NotAsked;
         }
         catch (Exception ex) when (!_turnCt.IsCancellationRequested)
         {
@@ -1523,6 +1528,38 @@ internal sealed class ConversationGroup(
             state.Metrics.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
             return failed;
         }
+    }
+
+    private static async Task<bool> WarmedAsync(GroupState state)
+    {
+        try
+        {
+            await state.Warmup;
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    // Read off a warmed session only, and remembered for the agent's next group.
+    private IReadOnlyList<PromptSkill> OfferedBy(GroupState state)
+    {
+        var skills = state.Agent.GetSkills(state.Thread);
+        skillsOffered?.Remember(state.DeliveryKey.AgentId, state.TenantId, skills);
+        return skills;
+    }
+
+    // A preload judged over the last session's skills, cut to what this one offers — and carrying
+    // this session's own copy of each, which is the one the model will be told it has.
+    private static SkillPreload Within(SkillPreload preload, IReadOnlyList<PromptSkill> offered)
+    {
+        var byName = offered.ToDictionary(s => s.Name);
+        var kept = preload.Skills.Where(s => byName.ContainsKey(s.Name)).Select(s => byName[s.Name]).ToList();
+        return kept.Count == 0 && preload.Skills.Count > 0
+            ? SkillPreload.NotAsked
+            : preload with { Skills = kept, Reads = [.. preload.Reads.Where(r => byName.ContainsKey(r.Skill))] };
     }
 
     private static SkillPreloadRequest Request(
@@ -1537,9 +1574,16 @@ internal sealed class ConversationGroup(
                 UserId = message.Principal?.Account?.UserId
             },
             ChannelId = message.ChannelId,
-            // The session's mounts, built by the warmup awaited above: the reads a preloaded
-            // skill declares are made over them, the way the model's own would be.
-            Reader = SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread))
+            // The session's mounts: the reads a preloaded skill declares are made over them, the way
+            // the model's own would be. They exist once the warmup has ended, which a judgment taken
+            // during it may not have seen, so the reader waits for it rather than the request.
+            Reader = async (path, ct) =>
+            {
+                await state.Warmup.WaitAsync(ct);
+                return SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread)) is { } read
+                    ? await read(path, ct)
+                    : null;
+            }
         };
 
     // A turn of several steers answers under the first one's key, and ends every other one's with a stream

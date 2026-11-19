@@ -81,6 +81,10 @@ public class ChatMonitor(
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(logger);
 
+    // Shared by every group this monitor runs, so a group can judge its preload over what the
+    // same agent's last session offered while its own warmup is still dialling.
+    private readonly SkillsOffered _skillsOffered = new();
+
     public async Task Monitor(CancellationToken cancellationToken)
     {
         try
@@ -184,7 +188,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, assertions, delegations, standing, agentDefinitions, logger);
+            skillPreloader, assertions, delegations, standing, agentDefinitions, logger, _skillsOffered);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {
