@@ -2898,13 +2898,67 @@ h1.marked .icon {
   stroke-width: 2;
 }
 
+.measurement-history-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.measurement-history-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.measurement-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
 .measurement-kind {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.measurement-kind + .measurement-kind {
+.measurement-kind + .measurement-history-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.measurement-history-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.measurement-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.measurement-kind {
   border-top: 1px solid var(--color-line);
   padding-top: var(--space-2);
 }

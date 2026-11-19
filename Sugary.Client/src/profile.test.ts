@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { charted, dayTaken, history, latest, measurementProblem, plotted, showsCycle } from "./profile";
+import { charted, dayTaken, fittingRange, history, latest, measurementProblem, nearest, plotted, showsCycle, spaced, within } from "./profile";
 import type { Measurement } from "./types";
 
 describe("the Cycle tab", () => {
@@ -107,5 +107,42 @@ describe("the chart of a kind", () => {
       frame,
     );
     expect(flat.points.map((p) => p.y)).toEqual([50, 50]);
+  });
+});
+
+describe("a history's range", () => {
+  const today = "2026-11-19";
+  const at = (id: string, on: string): Measurement => ({ id, kind: "weight", on, value: 40 });
+  const rows = [at("now", "2026-11-01"), at("spring", "2026-03-01"), at("edge", "2025-11-19"), at("old", "2023-05-01"), at("ancient", "2019-01-01")];
+
+  it("ends today and reaches back a year, five years, or to the first entry", () => {
+    expect(within(rows, "year", today).map((m) => m.id)).toEqual(["now", "spring", "edge"]);
+    expect(within(rows, "fiveYears", today).map((m) => m.id)).toEqual(["now", "spring", "edge", "old"]);
+    expect(within(rows, "all", today).map((m) => m.id)).toEqual(["now", "spring", "edge", "old", "ancient"]);
+  });
+
+  it("opens on the narrowest range that holds two entries, so a chart is there to see", () => {
+    expect(fittingRange(rows, today)).toBe("year");
+    expect(fittingRange([at("a", "2026-06-01"), at("b", "2024-01-01")], today)).toBe("fiveYears");
+    expect(fittingRange([at("a", "2026-06-01"), at("b", "2015-01-01")], today)).toBe("all");
+    expect(fittingRange([at("a", "2015-01-01")], today)).toBe("all");
+  });
+});
+
+describe("a chart's points under a finger", () => {
+  const point = (id: string, x: number) => ({ measurement: { id, kind: "height" as const, on: "2026-01-01", value: 1 }, x, y: 0 });
+
+  it("are each a target only while a fingertip apart, so no point hides another", () => {
+    expect(spaced([point("a", 0), point("b", 40), point("c", 80)])).toBe(true);
+    expect(spaced([point("a", 0), point("b", 40), point("c", 50)])).toBe(false);
+    expect(spaced([point("a", 0)])).toBe(true);
+  });
+
+  it("when crowded, give the one nearest the tap along the days", () => {
+    const points = [point("a", 0), point("b", 10), point("c", 20)];
+    expect(nearest(points, -5).measurement.id).toBe("a");
+    expect(nearest(points, 14).measurement.id).toBe("b");
+    expect(nearest(points, 16).measurement.id).toBe("c");
+    expect(nearest(points, 400).measurement.id).toBe("c");
   });
 });

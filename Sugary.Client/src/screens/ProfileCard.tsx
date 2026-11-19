@@ -7,10 +7,11 @@ import { localDay } from "../cycle";
 import { errorMessage } from "../errors";
 import { formatDays, formatUnits } from "../format";
 import { MeasurementChart } from "../components/MeasurementChart";
-import { charted, DIABETES_TYPES, history, latest, MEASUREMENT_KINDS, SEXES, UNIT } from "../profile";
+import { charted, DIABETES_TYPES, fittingRange, history, latest, MEASUREMENT_KINDS, SEXES, UNIT, type HistoryRange } from "../profile";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
 import type { DiabetesType, Measurement, MeasurementKind, Profile } from "../types";
+import { MeasurementHistorySheet } from "./MeasurementHistorySheet";
 import { MeasurementSheet } from "./MeasurementSheet";
 
 const ICON = { height: "ruler", weight: "scale" } as const;
@@ -28,6 +29,8 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
   const [measurements, setMeasurements] = useState<Measurement[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ kind: MeasurementKind; measurement?: Measurement } | null>(null);
+  // A kind's history screen, kept open under an entry opened from it, so closing the entry returns there.
+  const [viewing, setViewing] = useState<{ kind: MeasurementKind; range: HistoryRange } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -40,6 +43,13 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A history emptied by its last delete closes, rather than waiting to reopen on the next add.
+  useEffect(() => {
+    if (viewing && measurements && history(measurements, viewing.kind).length === 0) {
+      setViewing(null);
+    }
+  }, [viewing, measurements]);
 
   async function save(change: Partial<Profile>) {
     setError(null);
@@ -154,40 +164,20 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
                   </span>
                   <Icon name="plus" size={20} />
                 </button>
-                {charted(past) && (
-                  <MeasurementChart
-                    kind={kind}
-                    measurements={past}
-                    label={t(`measurementChart_${kind}`)}
-                    onOpen={(measurement) => setSheet({ kind, measurement })}
-                  />
-                )}
                 {past.length > 0 && (
-                  <details className="pen-history">
-                    <summary>
+                  <button
+                    type="button"
+                    className="measurement-history-link"
+                    aria-haspopup="dialog"
+                    aria-label={`${t(`measurementHistoryTitle_${kind}`)} (${past.length})`}
+                    onClick={() => setViewing({ kind, range: fittingRange(past, today) })}
+                  >
+                    {charted(past) && <MeasurementChart kind={kind} measurements={past} />}
+                    <span className="measurement-history-label">
                       {t("measurementHistory", { n: past.length })}
-                      <Icon name="chevron" size={18} />
-                    </summary>
-                    <ul className="rows">
-                      {past.map((m) => (
-                        <li key={m.id}>
-                          <button
-                            type="button"
-                            className="row-link period-row measurement-row"
-                            aria-haspopup="dialog"
-                            aria-label={`${t(`measurementEdit_${m.kind}`)}, ${day(m.on)}`}
-                            onClick={() => setSheet({ kind: m.kind, measurement: m })}
-                          >
-                            <span className="period-row-text">
-                              <span className="item-name">{shownValue(m)}</span>
-                              <span className="item-meta">{day(m.on)}</span>
-                            </span>
-                            <Icon name="pencil" size={18} />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                      <Icon name="chevronRight" size={18} />
+                    </span>
+                  </button>
                 )}
               </div>
             );
@@ -195,6 +185,18 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
         </div>
       )}
       <p className="muted small">{t("measurementsHint")}</p>
+      {viewing && !sheet && measurements && (
+        <MeasurementHistorySheet
+          kind={viewing.kind}
+          past={history(measurements, viewing.kind)}
+          range={viewing.range}
+          today={today}
+          onRange={(range) => setViewing({ ...viewing, range })}
+          onOpen={(measurement) => setSheet({ kind: viewing.kind, measurement })}
+          onAdd={() => setSheet({ kind: viewing.kind })}
+          onClose={() => setViewing(null)}
+        />
+      )}
       {sheet && (
         <MeasurementSheet
           kind={sheet.kind}

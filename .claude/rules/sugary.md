@@ -147,9 +147,12 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   is refused, she corrects the first; the kind never changes). Both are her log's writes, queued like the rest.
   The app's **Cycle tab follows her sex: hidden only from a man who said so**, so somebody who never said — every
   person from before profiles — keeps it; her periods stay logged and on the mount either way. The app asks
-  `/api/profile` beside `/api/session` before its first paint, and offline shows every tab. Settings draws each
-  kind's history, from two entries on, as a chart whose points open that entry to correct or delete, with the same entries listed
-  under it; a day field saves when it is left, not per keystroke. All four tables download as CSV beside the rest.
+  `/api/profile` beside `/api/session` before its first paint, and offline shows every tab. Settings shows each
+  kind's latest value and, from two entries on, a small chart of all of it; tapping it opens that kind's history
+  screen (a sheet, so years of entries never stretch Settings) with a year / five years / all picker, opening on the
+  narrowest that holds two entries, and the range's chart and list, either opening an entry to correct or delete.
+  A chart's points are buttons only while a fingertip apart (`spaced`); crowded, a tap opens the `nearest` day. No
+  paging: `GET /measurements` returns every entry, a few hundred small rows; a day field saves when it is left, not per keystroke. All four tables download as CSV beside the rest.
 
 ## Turns, the mount and reminders
 

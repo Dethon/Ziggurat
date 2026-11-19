@@ -72,6 +72,26 @@ export function charted(history: readonly Measurement[]): boolean {
   return history.length > 1;
 }
 
+// How far back a history screen looks: a year, five, or every entry. Each ends today.
+export type HistoryRange = "year" | "fiveYears" | "all";
+export const HISTORY_RANGES: readonly HistoryRange[] = ["year", "fiveYears", "all"];
+const YEARS_BACK: Record<HistoryRange, number | null> = { year: 1, fiveYears: 5, all: null };
+
+export function within(history: readonly Measurement[], range: HistoryRange, today: string): Measurement[] {
+  const years = YEARS_BACK[range];
+  if (years === null) {
+    return [...history];
+  }
+  const since = `${Number(today.slice(0, 4)) - years}${today.slice(4)}`;
+  return history.filter((m) => m.on >= since);
+}
+
+// The narrowest range with a chart in it: a child measured twice a year, or a weight last taken years
+// ago, would open on an empty year.
+export function fittingRange(history: readonly Measurement[], today: string): HistoryRange {
+  return HISTORY_RANGES.find((range) => charted(within(history, range, today))) ?? "all";
+}
+
 export interface PlottedPoint {
   measurement: Measurement;
   x: number;
@@ -104,4 +124,17 @@ function dayAfter(day: string): string {
   const date = new Date(`${day}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
+}
+
+// A fingertip, in the chart's own units: the width of a point's tap target.
+export const FINGERTIP = 32;
+
+// Every point a fingertip from the next along the days, so each can be a target of its own without
+// one covering another. Hundreds of entries are not, and are tapped by nearness instead.
+export function spaced(points: readonly PlottedPoint[]): boolean {
+  return points.every((point, index) => index === 0 || point.x - points[index - 1].x >= FINGERTIP);
+}
+
+export function nearest(points: readonly PlottedPoint[], x: number): PlottedPoint {
+  return points.reduce((best, point) => (Math.abs(point.x - x) < Math.abs(best.x - x) ? point : best));
 }
