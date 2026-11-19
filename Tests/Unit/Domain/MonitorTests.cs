@@ -243,6 +243,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool ShowsReasoning { get; init; } = true;
+
     public bool IsConnected { get; init; } = true;
 
     public string? ConversationIdToReturn { get; init; }

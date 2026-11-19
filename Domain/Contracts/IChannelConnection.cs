@@ -17,6 +17,11 @@ public interface IChannelConnection : IHouseholdChannel
     // to that conversation as a later target of the fan-out, never as the first (ADR 0046).
     bool HostsReviewCopies { get; }
 
+    // Whether the channel shows the model's reasoning (declared per endpoint in config; voice speaks
+    // none). One that shows none is sent none: every reply is awaited before the next update is
+    // pulled, so a reasoning delta it would only drop is a round trip its answer waits behind.
+    bool ShowsReasoning { get; }
+
     // Whether the channel's server is connected now. A fan-out mints the agent's own topic for an
     // attach-only target only while it is: a topic nothing will attach to is an empty one left in
     // somebody's sidebar.

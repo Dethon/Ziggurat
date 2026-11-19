@@ -332,6 +332,7 @@ public static class InjectorModule
                 callTokens: sp.GetRequiredService<CallTokens>())
             {
                 HostsReviewCopies = endpoint.HostsReviewCopies,
+                ShowsReasoning = endpoint.ShowsReasoning,
                 Household = household,
                 HouseholdLemonadeModels = household.IsEvery ? () => HouseholdLemonadeModels(sp) : null
             };

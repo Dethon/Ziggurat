@@ -116,6 +116,8 @@ public sealed class McpChannelConnection(
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool ShowsReasoning { get; init; } = true;
+
     public bool IsConnected => _client is not null;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
