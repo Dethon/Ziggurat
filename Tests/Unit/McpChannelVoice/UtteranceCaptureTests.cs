@@ -215,6 +215,7 @@ public class UtteranceCaptureTests
         public TimeSpan PauseAfter => after;
         public void Paused(CapturePause pause) => Calls.Add($"paused:{pause.Audio.Count}");
         public void Resumed(CapturePause pause) => Calls.Add("resumed");
+        public void Dropped(CapturePause pause) => Calls.Add("dropped");
     }
 
     [Fact]

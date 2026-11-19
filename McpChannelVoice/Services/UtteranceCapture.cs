@@ -34,12 +34,14 @@ public sealed class CapturePause(IReadOnlyList<AudioChunk> audio, CaptureStats s
 }
 
 // Told, on the Wyoming read loop, when an open capture's speech has paused for PauseAfter and when
-// it resumes. Both calls must return without waiting on anything.
+// it resumes, and, as the capture closes, when it closed in a pause without ending the utterance
+// (no speech, arbitration, an early reject) so nothing will come to claim it. None may wait.
 public interface ICapturePauseListener
 {
     TimeSpan PauseAfter { get; }
     void Paused(CapturePause pause);
     void Resumed(CapturePause pause);
+    void Dropped(CapturePause pause);
 }
 
 public sealed class UtteranceCapture(

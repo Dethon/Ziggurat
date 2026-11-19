@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.Prompts;
 
 namespace Domain.Skills;
@@ -8,13 +7,9 @@ namespace Domain.Skills;
 // voice turns open a conversation of their own and paid that wait on top of the judgment. A later
 // group judges over what the same agent offered last time while its own warmup is still dialling,
 // and keeps only what its session turns out to offer (ConversationGroup.PreloadAsync).
-public sealed class SkillsOffered
+public interface ISkillsOffered
 {
-    private readonly ConcurrentDictionary<(string AgentId, string? Household), IReadOnlyList<PromptSkill>> _last = new();
+    IReadOnlyList<PromptSkill>? Last(string agentId, string? household);
 
-    public IReadOnlyList<PromptSkill>? Last(string agentId, string? household) =>
-        _last.TryGetValue((agentId, household), out var skills) ? skills : null;
-
-    public void Remember(string agentId, string? household, IReadOnlyList<PromptSkill> skills) =>
-        _last[(agentId, household)] = skills;
+    void Remember(string agentId, string? household, IReadOnlyList<PromptSkill> skills);
 }

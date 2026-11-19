@@ -46,7 +46,7 @@ internal sealed class ConversationGroup(
     // What each agent's sessions last offered, shared by the monitor's groups: a group's first turn
     // judges its preload over it rather than waiting out its own warmup. None means every first
     // turn waits, as before.
-    SkillsOffered? skillsOffered = null) : IAsyncDisposable
+    ISkillsOffered? skillsOffered = null) : IAsyncDisposable
 {
     // What a refused person is told (RefusalAnswers, which a channel may say in its own words).
     internal const string SuspendedAnswer = RefusalAnswers.Suspended;

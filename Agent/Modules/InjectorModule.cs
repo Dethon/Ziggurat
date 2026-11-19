@@ -205,6 +205,7 @@ public static class InjectorModule
             TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload, ExecScreenSettings execScreen) =>
             services
                 .AddTypeSafeJudge(typeSafe, keepConnectionAlive: false)
+                .AddSingleton<ISkillsOffered, Infrastructure.Agents.Skills.SkillsOfferedMemory>()
                 .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
                     sp.GetRequiredService<IJudge>(),
                     skillPreload,

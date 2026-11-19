@@ -35,7 +35,11 @@ public sealed class SpeculativeTranscription(
         replaced?.Discard();
     }
 
-    public void Resumed(CapturePause pause)
+    public void Resumed(CapturePause pause) => DiscardFor(pause);
+
+    public void Dropped(CapturePause pause) => DiscardFor(pause);
+
+    private void DiscardFor(CapturePause pause)
     {
         Attempt? resumed = null;
         lock (_lock)
@@ -129,7 +133,8 @@ public sealed class SpeculativeTranscription(
         // A no-op once the attempt was used, so a turn can discard unconditionally on its way out.
         public void Discard()
         {
-            if (Settle("discarded", ElapsedMs))
+            // A decode that already finished cost its own length, however long it then sat unclaimed.
+            if (Settle("discarded", Decode.IsCompleted ? Volatile.Read(ref _decodeMs) : ElapsedMs))
             {
                 _cts.Cancel();
             }

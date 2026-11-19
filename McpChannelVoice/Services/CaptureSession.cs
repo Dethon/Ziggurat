@@ -71,6 +71,12 @@ public sealed class CaptureSession(
         // Closing and paying back into the room-noise memory are one act on the microphone, so a
         // turn cannot close without paying.
         var stats = session.Mic.Close(capture);
+        // Only an utterance that ended goes on to be transcribed and claim its pause's decode.
+        if (capture.Pause is { } pause
+            && capture.Completed is not { IsCompletedSuccessfully: true, Result: CaptureOutcome.Ended })
+        {
+            pauses?.Dropped(pause);
+        }
         // Stamped with the host's TimeProvider — the same instance the playback loop reads,
         // which reads it back. The frozen endpointing tail rewinds the close to the instant the user
         // actually stopped talking; read here, at the close, because it is the last point where the

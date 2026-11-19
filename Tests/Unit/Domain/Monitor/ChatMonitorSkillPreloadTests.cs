@@ -369,7 +369,8 @@ public class ChatMonitorSkillPreloadTests
             recall,
             Mock.Of<ILogger<ChatMonitor>>(),
             TestAssertions.Verifier(),
-            skillPreloader: preloader);
+            skillPreloader: preloader,
+            skillsOffered: new global::Infrastructure.Agents.Skills.SkillsOfferedMemory());
 
     private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
 

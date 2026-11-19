@@ -1158,4 +1158,59 @@ public class SatelliteConnectionTests
 
         await StopAsync(run, cts);
     }
+
+    // Speculation decodes before the speaker check, so a stranger's or the TV's audio does reach
+    // whisper now. Nothing of it is used: the verdict is still taken on the whole capture at close,
+    // and a rejected one dispatches nothing and throws the decode away.
+    [Fact]
+    public async Task Speculation_RejectedSpeaker_DispatchesNothingAndDiscardsTheDecode()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness();
+        h.Verifier = new RejectingVerifier();
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 10);
+        h.SendAudio(0, 8);
+
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(10));
+        h.PublishedOf(VoiceMetric.UtteranceRejected).ShouldHaveSingleItem().Outcome.ShouldBe("unknown_speaker");
+        await UntilAsync(() => h.PublishedOf(VoiceMetric.SpeculativeSttMs).Length == 1, TimeSpan.FromSeconds(5));
+        h.PublishedOf(VoiceMetric.SpeculativeSttMs).Single().Outcome.ShouldBe("discarded");
+        h.Emitter.Received().ShouldBeEmpty();
+
+        await StopAsync(run, cts);
+    }
+
+    // A capture that closes without a turn — rejected mid-capture here — never reaches the claim, so
+    // its decode is thrown away as it closes rather than left running until the next pause.
+    [Fact]
+    public async Task Speculation_CaptureClosedWithoutATurn_DiscardsTheDecodeAsItCloses()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness();
+        h.Voice = h.Voice with
+        {
+            SpeakerVerification = new SpeakerVerificationSettings { EarlyVerifyMs = 300 }
+        };
+        h.Verifier = new GatedToneVerifier(minSpeechMs: 800, knownSample: 1234);
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        // A pause long enough to decode from, too short to end the capture: the early mark finds it
+        // still open and rejects the unknown tone.
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 10);
+        h.SendAudio(0, 3);
+
+        await UntilAsync(() => h.WrittenOfType("transcript").Count > 0, TimeSpan.FromSeconds(10));
+        await UntilAsync(() => h.PublishedOf(VoiceMetric.SpeculativeSttMs).Length == 1, TimeSpan.FromSeconds(5));
+        h.PublishedOf(VoiceMetric.SpeculativeSttMs).Single().Outcome.ShouldBe("discarded");
+
+        await StopAsync(run, cts);
+    }
 }
