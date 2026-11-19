@@ -3,6 +3,8 @@ namespace Domain.Contracts;
 // A glob in progress. The matches arrive as they are found rather than as a finished collection,
 // which is what lets a caller stop pulling once it has all it will report — on a tree whose root is
 // a container root, that early exit is the difference between answering and enumerating everything.
+// Matches arrive in enumeration order, not sorted: determinism was traded for the early exit, so a
+// caller must not sort or assume a stable order. Cancellation propagates as the abort it is.
 public sealed class GlobWalk
 {
     // The walk hands itself to the sequence, so the counters below belong to the code doing the

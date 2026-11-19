@@ -8,226 +8,144 @@ paths:
 
 # The system prompt is a manifest, not a concatenation
 
-Every section that can reach a system prompt is declared in `PromptManifest`, with a name, a
-one-line purpose, a priority band, a token budget, an audience and a conflict policy — read from
-the section's document (below), whose header is that declaration. `PromptComposer` turns a
-`PromptContext` into sections and `PromptAssembly` orders, joins and audits them. Nothing decides an
-order at a call site: adding a section is a document plus a line binding its text, never an
-argument about where a `Prepend` goes.
+Every section that can reach a system prompt is declared in `PromptManifest`, read from its document's
+header. `PromptComposer` turns a `PromptContext` into sections; `PromptAssembly` orders, joins and
+audits them. Nothing decides an order at a call site: a section is a document plus a line binding its
+text, never an argument about where a `Prepend` goes.
 
-- **A declaration is metadata; the words are bound to it.** Half these sections are written by
-  somebody else — an MCP server serves its own prompt and can change it without this repo being
-  rebuilt — so `PromptDeclaration.Bind(text)` is how text becomes a `PromptSection`. `ServedBy`
-  names the compose service a section arrives from; null means the words are built here.
-- **`PromptPriority` is the ordering, and later wins.** A section further down sits closer to the
-  conversation, so it is the one the model applies. The date sits after every static section
-  because the provider's cache keys on a byte prefix; custom instructions and the channel override
-  sit after that; the language rule is last.
-- **A prompt name is a key.** Two servers answering to `system_prompt` cannot both be budgeted, so
-  each server's `[McpServerPrompt(Name = …)]` reads the `Name` constant of its section's class in
-  `Domain/Prompts`, and the section's document is named after that same constant. The constant
-  stays in code because an attribute takes nothing else.
-- **A contradiction is a question with an answer.** A section names the rules it governs
-  (`PromptRules`) and the sections it beats. Two sections claiming one rule with no declared winner
-  is reported by the assembly and fails the tests; so is a section claiming to override one that is
-  read after it, because that claim is simply false.
-- **Behaviour belongs in a section, not in `customInstructions`.** Prose in `appsettings.json` is
-  unreviewable in a diff, unreachable from a test and impossible to budget. An agent names sections
-  instead (`promptSections`), resolved against `PromptManifest.SelectableSections` — validated for
-  the whole deployment at startup and again per agent as its spec is projected. `VoicePrompt` is
-  the worked example: it was three kilobytes of JSON string.
-- **A served section reaches every agent that dials its server, unless it names an audience.**
-  `PromptAudience.ForAgents(...)` is filtered in `PromptAssembly.Build`: `sugary_prompt` is the
-  `sugary` agent's, though Jonas dials `mcp-sugary` too for her log. `library_prompt` (Captain Jack) is
-  `jack`'s, and the library serves the same workings without him as `library_guide` for the voice
-  and chat templates' agents, which dial the library too. An audience naming an agent's id also
-  takes the numbered ids a household gives a second agent of that template (`nabu-2`).
-  `PromptAudienceTests` checks an audience names a configured agent.
-- **An agent may dial its servers for their prompts alone.** `noTools` on a definition: the session
-  offers no tool, no skill and no mount, so no `load_skill`, no `skills` section and no preload is
-  asked (`sugary`, a one-answer estimator). It enables no features and no outposts, or the
-  projection refuses it.
-- **Over budget is reported, never thrown.** `McpAgent` logs the assembly's warnings once per
-  distinct set — a prompt that grew is a worse outcome than a turn that fails, and a server that
-  grows its prompt must not take the agent down. What fails a build is `PromptBudgetTests`.
+- **A declaration is metadata; the words are bound to it** (`PromptDeclaration.Bind(text)`), because a
+  server serves its own prompt and can change it without this repo being rebuilt. `ServedBy` names the
+  compose service it arrives from; null means built here.
+- **`PromptPriority` is the ordering, and later wins** (closer to the conversation). The date sits after
+  every static section (the provider's cache keys on a byte prefix); custom instructions and the channel
+  override after it; the language rule last.
+- **A prompt name is a key** (two servers answering to `system_prompt` cannot both be budgeted). A
+  server's `[McpServerPrompt(Name = …)]` reads the `Name` constant of its section's class in
+  `Domain/Prompts`, and the document is named after that same constant; the constant stays in code
+  because an attribute takes nothing else.
+- **A contradiction is a question with an answer.** A section names the rules it governs (`PromptRules`)
+  and the sections it beats. Two claiming one rule with no declared winner, or one claiming to override
+  a section read after it, is reported by the assembly and fails the tests.
+- **Behaviour belongs in a section, not in `customInstructions`** (`appsettings.json` prose cannot be
+  reviewed, tested or budgeted). An agent names sections (`promptSections`), resolved against
+  `PromptManifest.SelectableSections`, validated at startup and per agent as its spec is projected.
+- **A served section reaches every agent that dials its server, unless it names an audience**
+  (`PromptAudience.ForAgents`, filtered in `PromptAssembly.Build`): `sugary_prompt` is the `sugary`
+  agent's though Jonas dials `mcp-sugary` too; `library_prompt` is `jack`'s, and the templates' agents
+  dialling the library (`nabu`, `jonas`) get `library_guide`. An audience naming an id also takes a household's numbered ids of
+  that template (`nabu-2`). `PromptAudienceTests` checks an audience names a configured agent.
+- **`noTools`**: an agent dials its servers for their prompts alone — no tool, skill, mount, `load_skill`,
+  `skills` section or preload — and enables no features or outposts, or the projection refuses it.
+- **Over budget is reported, never thrown**: `McpAgent` logs the warnings once per distinct set, so a
+  server growing its prompt cannot take the agent down. `PromptBudgetTests` fails the build.
 
 ## A section is a document
 
-Every section's words and declaration live in one text document, `Domain/Prompts/Sections/<name>.md`,
-so the prompt is data a later editor can work on and a claim sits beside its prose (ADR 0031). The
-classes beside them (`TimerPrompt`, `VoicePrompt`, …) are handles: the `Name` constant, the
-server's `Description`, the C# accessors the hosts call, and one `PromptClaim` per claim a scenario
-cites, resolved from the document by id (`document.Claim("timers.…")`) — a statement lives in the
-document only, and a handle whose id the document stopped declaring fails the first test that
-touches its class.
+Words and declaration live in `Domain/Prompts/Sections/<name>.md` (ADR 0031; format in
+`PromptDocument`'s comment). The classes beside them (`TimerPrompt`, `VoicePrompt`, …) are handles: the
+`Name` constant, the server's `Description`, host accessors, and one `PromptClaim` per cited claim,
+resolved by id (`document.Claim("timers.…")`). A statement lives in the document only; a handle whose id
+the document stopped declaring fails the first test touching its class.
 
-- **The format.** A header between two `---` lines, then the words. A header line is
-  `key: value`, split at the first colon (a purpose is a sentence), and `#` starts a comment line —
-  the reason a budget is what it is goes there. A section's keys: `name` (= the file name), `purpose`,
-  `priority` (a `PromptPriority` band by name), `budget`, `served-by`, `audience-agents`,
-  `audience-channels`, `governs` (`PromptRules` words), `beats`, `selectable`, `placeholders`, and
-  `claims:` followed by `- <id>: <statement>` lines. An unknown key, band or rule fails the document
-  (`PromptDocument.AsSection`). After the main body, `<!-- part: <name> -->` lines open named parts:
-  words the host adds or swaps in — the timer roster's heading, the language pins, the mounts
-  section's machines and shell paragraphs. Each body is its lines without the blank lines around
-  them; CRLF is read as LF.
-- **A placeholder is `{{name}}`**, lowercase, digits and `_`, no spaces — so Jinja's and Templater's
-  `{{ … }}` in a skill body stay prose. It is filled verbatim, in one pass. The host fills what only
-  it knows: the date, the agent's name and description, the user, the custom instructions, the
-  language, the satellites, the printer's formats, the sandbox's mount point and workspace, the
-  mounts, the scheduling setup. A placeholder absorbs its own separator where the words vary — the
-  identity's ` {{description}}` is empty for an agent with none, `{{satellites}}` and `{{setup}}`
-  are where a block lands with its blank line — so no conditional lives in a document; the host
-  chooses a part, never an `if`. Lists and their item formats (a mount line, a roster line, an
-  agent line) stay in code; every sentence is in a document.
-- **The contract is held from both ends.** The header's `placeholders:` lists every hole the bodies
-  use, and reading the document fails on one declared and used nowhere or used and undeclared —
-  an edit that drops `{{date}}` from the words fails where the documents are loaded, at startup and
-  in `PromptDocumentsTests`. The host names what it fills when it takes a body
-  (`document.Template("satellites")`, `document.Part("satellites", "roster")`, in a static field), so
-  a hole dropped from the header and the words alike fails the host's class; `PromptTemplate.Fill`
-  refuses a value missing or extra. A section with nothing to fill is read with `document.Text`.
-- **Shipped embedded, in Domain.** One folder because Domain owns every declaration — the agent,
-  the eval and every server read the manifest, and the servers already take their words from
-  `Domain/Prompts`. Embedded rather than copied to output, for the public suffix list's reason: the
-  words are the code's, not a policy a host may override, and a container that edited its own
-  prompt would make every snapshot a statement about another prompt. The repository's
-  `.dockerignore` drops `**/*.md` and puts `Domain/Prompts/**/*.md` back
-  (`DeploymentConformanceTests` holds it), and `Domain.csproj` fails a build that embedded no
-  section or no skill. Agent templates join `Domain/Prompts/` as documents of their own kind.
-- **A skill is a document too**, `Domain/Prompts/Skills/<name>.md`, in the same format and read by
-  `PromptDocument.AsSkill`. Its keys: `name` (= the file name), `description` (the advertisement,
-  verbatim — Jev and the model read it), `description-budget`, `body-budget`, `served-by` (required),
-  `preload-reads`, `placeholders` and `claims:`, the trigger claim first. It lives in Domain and not
-  beside its server, because the server ships the skill (ADR 0039) but the agent, the eval, Jev's
-  preload and every budget test read its declaration from the manifest, and none of them references
-  a server; each server references Domain, so the document is in its image already. The classes
-  beside them (`HomeAssistantSkill`, `SandboxSkill`, …) are handles: the `Name` constant, the
-  `Text` or `For(...)` the server's `AddSkills` takes, and the claim handles. The manifest lists
-  skills by name; the order a model sees them in is its servers' registration order.
-- **The changed tier reads the header.** `ChangeScope` parses a changed `.md` with the same parser,
-  so an edit anywhere in a document — words, a part, a statement — selects every scenario testing a
-  claim its header declares, and an id its words merely mention is not a declaration. Code still
-  declares by spelling a quoted id, which is how a claim handle's file, or a skill still declared in
-  code, selects. `ChangeScopeTests` runs every shipped document against the real suite.
-- **What is not a section stays code.** The memory pipeline's extraction, consolidation and profile
-  prompts are the system prompts of its own model calls, and the HA setup index is a file the mount
-  builds on every read; neither reaches an agent's prompt as a section.
+- **The format.** Header between two `---` lines, `key: value`, `#` comment lines (a budget's reason
+  goes there). Section keys: `name` (= file name), `purpose`, `priority` (a `PromptPriority` band),
+  `budget`, `served-by`, `audience-agents`, `audience-channels`, `governs` (`PromptRules` words),
+  `beats`, `selectable`, `placeholders`, `claims:` with `- <id>: <statement>` lines. An unknown key, band
+  or rule fails the document (`PromptDocument.AsSection`). `<!-- part: <name> -->` opens a named part the
+  host adds or swaps in. Bodies drop surrounding blank lines; CRLF reads as LF.
+- **A placeholder is `{{name}}`** — lowercase, digits, `_`, no spaces, so `{{ … }}` in a skill body stays
+  prose — filled verbatim in one pass. It absorbs its own separator (the identity's ` {{description}}`),
+  so no conditional lives in a document: the host chooses a part, never an `if`. Lists and item formats
+  stay in code; every sentence is in a document.
+- **The contract is held from both ends.** `placeholders:` lists every hole the bodies use; declared and
+  unused, or used and undeclared, fails at startup and in `PromptDocumentsTests`. The host names what it
+  fills when it takes a body (`document.Template(...)`, `document.Part(...)`, in a static field), so a
+  hole dropped from header and words alike still fails the host's class; `PromptTemplate.Fill` refuses
+  a value missing or extra. Nothing to fill: `document.Text`.
+- **Shipped embedded, in Domain** — the words are the code's, not a policy a host may override. The
+  `.dockerignore` drops `**/*.md` and puts `Domain/Prompts/**/*.md` back (`DeploymentConformanceTests`);
+  `Domain.csproj` fails a build that embedded no section or no skill.
+- **A skill is a document too**, `Domain/Prompts/Skills/<name>.md` (`PromptDocument.AsSkill`). Keys:
+  `name`, `description` (the advertisement, verbatim — Jev and the model read it), `description-budget`,
+  `body-budget`, `served-by` (required), `preload-reads`, `placeholders`, `claims:` with the trigger
+  claim first. It lives in Domain, not beside its server (ADR 0039): the agent, eval, preload and budget
+  tests read it and none references a server. Its handle (`HomeAssistantSkill`, …) holds `Name`, the
+  `Text` or `For(...)` the server's `AddSkills` takes, and claim handles; it is a `PromptManifest.Skills`
+  entry, and a server publishes it through the hosting helper, never a hand-written resource. A model sees skills in server registration order.
+- **The changed tier reads the header.** `ChangeScope` parses a changed `.md` with the same parser: any
+  edit selects every scenario testing a claim its header declares; an id the words merely mention is not
+  a declaration. Code declares by spelling a quoted id. `ChangeScopeTests` runs every shipped document.
+- **What is not a section stays code**: the memory pipeline's own model-call prompts and the HA setup
+  index.
 
 ## An agent template is a document
 
-A household's agent starts from a shipped template (CONTEXT.md, "Agent template"):
-`Domain/Prompts/Agents/<name>.md`, embedded as the sections are, read by `AgentTemplates` into an
-`AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
-dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant kit's own servers by
-name, with files, workers and memory; `sugary`, the estimator; and `nabu`, the home's Nabu without
-the home — the voice section and its spoken-reply tuning, every one of the kit's own servers by name
-(Home Assistant and the library included: a command spoken to it reaches everything the agent can
-do) and the shared servers Jonas dials but Idealista (Sugary among them, so a person asks aloud after
-their glucose or sets a glucose watch), the household's language rather than a pinned one — which an owner adds and no household starts
-with, and which answers the household's satellites unless the owner marks another agent to (any
-agent serving a satellite reads the voice section, `.claude/rules/channels.md`). A template's own server reaches a
-turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household
-runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a
-household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
-a threshold an object as a seeded definition's is), `servers`, `features`, `whitelist`,
-`prompt-sections` (comma lists), `uses-outposts`, `no-tools`, `shared-routing-session-minutes` — and the words are the description the
-identity section reads after the agent's name; a template fills no placeholder and has no parts or
-claims. An unknown key fails the document. A household gives a template its id, its name and its
-custom instructions (`.claude/rules/household-config.md`, "The agents a household runs"); everything
-else is the template's. The prompt snapshots are the home's seeded agents' (the eval's copies), and
-the voice template's beside them (`prompt.template.nabu.txt`, `AgentPromptFixture`'s `template.` ids,
-as a household runs it before its owner says anything), since what a household's spoken agent is told
-is otherwise nowhere a reviewer reads it.
+`Domain/Prompts/Agents/<name>.md` (CONTEXT.md, "Agent template"), embedded like sections, read by
+`AgentTemplates` into an `AgentDefinition` whose id is the file name. The header is the definition, its
+keys `name`, `purpose`, `agent-name` (the name a household starts with), `model`, `reasoning-effort`,
+`provider-routing` (one JSON object on its line, a threshold an object as a seeded definition's is),
+`servers`, `features`, `whitelist`, `prompt-sections` (comma lists), `uses-outposts`, `no-tools`,
+`shared-routing-session-minutes`; an unknown key fails the document; the words are the description the identity section reads
+after the agent's name; no placeholders, parts or claims. Today: `jonas` (general), `sugary` (the
+estimator) and `nabu` (voice: an owner adds it and no household starts with it; it answers the
+household's satellites unless the owner marks another agent to, and speaks the household's language,
+never a pinned one). What each template dials is its own header comment, and its own servers reach a turn only where the household set them up
+(`.claude/rules/household-config.md`, "The agents a household runs"). A household gives a template its
+id, name and custom instructions; everything else is the template's. The prompt snapshots cover the
+home's seeded agents (the eval's copies) and the voice template (`prompt.template.nabu.txt`,
+`AgentPromptFixture`'s `template.` ids) — otherwise a household's spoken agent's prompt is nowhere a
+reviewer reads it.
 
 ## A skill is a section the model reads on demand
 
-The glossary (`CONTEXT.md` § Prompt) pins four words. The **base prompt** is every section an
-agent reads on every turn. A **skill** is a body the model loads with one `load_skill` call when a
-request calls for it; only its name and one-line description stand in the base prompt. A **trigger
-claim** is what that description asserts: a request of a named kind gets it loaded. A **preload**
-is the host loading first: before the model's first call, `SkillsProvider` asks Jev (`ISkillPreloader`,
-`Domain/Skills/`) which skills the request needs, judged on the same descriptions, and a confident
-answer puts the body into the conversation — after the user message, persisted with the turn
-(and sent ahead of it),
-never twice. ADR 0039 (refined 2026-09-18) is the decision; these are the rules the next section
-lands on. A turn addressed to the Lemonade chat host asks
-nothing, and neither does a worker it spawns. The Jev client holds that rule
-(`.claude/rules/mcp-hosting.md`); the group and the provider only name the model on
-`SkillPreloadRequest.Caller` (`JudgmentCaller.TurnModel`) — from the request's own patch, which for a worker is the
-parent turn's, written onto its request by the run tool from the `ConversationContext` it also carries.
+Terms in `CONTEXT.md` § Prompt; ADR 0039 (refined 2026-09-18). The **base prompt** is read every turn;
+a **skill** body is loaded by one `load_skill` call, only its name and description in the base prompt;
+its **trigger claim** is that a request of a named kind gets it loaded. A **preload**: before the
+model's first call `SkillsProvider` asks Jev (`ISkillPreloader`, `Domain/Skills/`) on the same
+descriptions, and a confident answer puts the body in the conversation, recorded after the user message,
+never twice. A turn to the Lemonade chat host, and its workers, ask nothing (the Jev client holds it,
+`.claude/rules/mcp-hosting.md`); the group and provider only name the model on
+`SkillPreloadRequest.Caller` (`JudgmentCaller.TurnModel`) from the request's own patch — a worker's is
+the parent's, written onto its request by the run tool from the `ConversationContext` it carries.
 
-- **A skill may already be in the conversation when a turn starts, and one that is, is loaded.**
-  The `skills` section says so to the model; `SkillLoadTool.LoadedIn` says so to the preloader,
-  reading every load off the history whoever made it. There is no second record of what is loaded.
-- **A preload is recorded as a load and sent as a note.** The thread keeps the pair a `load_skill`
-  call leaves (`SkillLoadTool.AsPreloaded`, its call ids marked as the host's), which is what
-  `LoadedIn`, the truncator and every reader of a thread see. The model is never sent that pair:
-  `OpenRouterChatClient` writes it, last and on the copy that goes out, as one user-role message
-  ahead of the request (`SkillPreloadNote`; after it until 2026-11-18, where the provider's cache
-  could never hold the ~9.4k tokens of the home skill and its index, the same on every such turn) — "[Loaded for this request before your first call, by
-  the host: …]" and the wrapped body, then a part per read. A call the model did not make is an
-  assistant turn it never took, and each model and provider made something different of one:
-  Anthropic's were handed it with the host's reasoning dropped and carried on mid-turn (Haiku 5.5
-  opened slow spoken work with its word on 0 of 10, gpt-6-luna on 4; every model on 10 of 10 with
-  the note), DeepSeek's own host refused it without reasoning to take back, Mistral cut its call
-  ids to nine characters. So there is no host-made reasoning and no rule about ids any more, and
-  nothing per model. A `developer` or `system` item is not an alternative — OpenRouter hoists it
-  to the head of the conversation for chat-completions hosts, which moves the cached prefix —
-  and neither is the pair placed before the request, which cost Haiku the right entity. Pairs stored by earlier builds are sent as
-  the same note and never migrated. The note's wording was measured as written; changing it is a
-  new measurement on every model, not an edit.
-- **A preload makes the reads the body's first line orders.** `SkillDeclaration.PreloadReads`
-  names the files a body says to read in the same turn as the skill (the home skill: the setup
-  index), and a preload reads them through the session's own `file_read` and records the pair
-  beside the load — sent in the same note, under its own line — so the model's first call after a
-  head start is the action. A read that fails
-  is left out and the body tells the model to read. The event names the reads; the eval counts
-  each as a preloaded `file_read`, so the read every home scenario requires is met by either
-  reader.
-- **The description has two readers and one text.** Jev judges by `PromptSkill.Description`
-  verbatim — never a second criteria text — so a red trigger claim has one fix, in the description,
-  and a description that works on only one reader shows as a lopsided loader column on the eval
-  scorecard. Overlaps between descriptions are fixed in the descriptions.
-
-- **Timing decides what moves, never subject.** A rule the model needs *before* it decides what to
-  do — which mechanism, which tool, which mount — stays in the base prompt. A rule it needs only
-  *while* doing the thing — a file's layout, an action's arguments, how a result is read — moves into
-  a skill. A section with both splits into a standing stub carrying the choosing rules and their
-  claims, plus a body; the stub names the skill in one sentence.
-- **The size floor is about 500 tokens.** Below it the advertisement and the load hop cost more than
-  the body sheds, so the section stays whole. Persona, identity, delegation, memory, the mounts
-  list, voice, language, printing and Idealista stay for that reason or because they are read before
-  any choice.
-- **A skill is a manifest entry.** `PromptManifest.Skills` declares each one beside the sections:
-  name, the description that is the advertisement, a description budget, a body budget, the server
-  that serves it and its claims — read from its document's header, its text from the same
-  document's words, and the server publishes it through the hosting helper — never a hand-written
-  resource.
+- **A skill already in the conversation is loaded.** The `skills` section tells the model;
+  `SkillLoadTool.LoadedIn` tells the preloader, reading every load off the history whoever made it. No
+  second record exists.
+- **A preload is recorded as a load and sent as a note.** The thread keeps the `load_skill` pair
+  (`SkillLoadTool.AsPreloaded`, call ids marked the host's), which `LoadedIn`, the truncator and every
+  reader see. The model never gets the pair: `OpenRouterChatClient` writes it, last, on the outgoing
+  copy (the note is never stored), as one user-role message **ahead of** the request (`SkillPreloadNote`) so the provider caches it
+  — no host-made reasoning, no id rules, nothing per model (a call the model never made is an assistant
+  turn it never took, and every provider made something different of one; why in `SkillPreloadNote`). Not a `developer`/`system` item (OpenRouter
+  hoists it, moving the cached prefix). Earlier builds' stored pairs are sent as the same note, never
+  migrated. The wording was measured as written: changing it is a new measurement on every model.
+- **A preload makes the reads the body's first line orders** (`SkillDeclaration.PreloadReads`; the home
+  skill's setup index), through the session's own `file_read`, recorded beside the load and sent in the
+  same note, so the model's first call is the action. A failed read is left out (the body says to read).
+  The eval counts each as a preloaded `file_read`.
+- **The description has two readers and one text.** Jev judges `PromptSkill.Description` verbatim, never
+  a second criteria text, so a red trigger claim — and any overlap — is fixed in the description.
+- **Timing decides what moves, never subject.** A rule needed *before* choosing (mechanism, tool, mount)
+  stays in the base prompt; one needed *while* doing it (layout, arguments, reading a result) moves to a
+  skill. A section with both splits into a standing stub with the choosing rules, claims and one sentence
+  naming the skill, plus a body.
+- **The size floor is about 500 tokens**; below it the advertisement and hop cost more than they shed.
+  Persona, identity, delegation, memory, the mounts list, voice, language, printing and Idealista stay.
 - **The ceiling ratchets.** `PromptManifest.StandingTokens` is the largest agent's declared sections
-  rounded up to the hundred, and the budget tests refuse a figure left where it was. A move lowers
-  it by editing that one number.
-- **Red for a skill claim is demonstrated with the body's prose deleted and the description
-  intact.** That reddens the body claim. A red with the description deleted is a missing load — the
-  trigger claim's red, cited by every scenario of the family — and says nothing about the body. The
-  description deleted blinds both readers at once, Jev and the model, so the demonstration still
-  holds now that a trigger claim reads "a request of this kind gets the skill loaded" rather than
-  naming who loads it; the scorecard's `loader` column says who did. The commit that cites a skill
-  claim notes which demonstration it made.
+  rounded up to the hundred; the budget tests refuse a figure left where it was after a move.
+- **Red for a skill claim is demonstrated with the body's prose deleted and the description intact.**
+  Deleting the description reddens the trigger claim (both readers blinded) and says nothing about the
+  body; the scorecard's `loader` column says who loaded. The commit citing a skill claim notes which
+  demonstration it made.
 
 ## The tests are the point
 
-- `Tests/Snapshots/prompt.*.txt` hold each agent's whole assembled prompt, with a per-section
-  token/budget header. Regenerate with `UPDATE_PROMPT_SNAPSHOTS=1 dotnet test` and **read the
-  diff** — a prompt regression is otherwise the least diagnosable change there is.
-- `PromptStalenessTests` walks the prompts against the code they describe: every prompt a server
-  serves is declared, every declaration matches a prompt some server still serves, every service an
-  agent dials has its prompts declared, no section names an `fs_`-prefixed tool, and every path a
-  section teaches starts at a mount that exists. It caught `/Movies/Action/` in the library prompt,
-  where the real path is `/media/Movies/Action/`. Skills are walked the same way, in both
-  directions, and a skill body's paths are checked like a section's.
-- `Tests/Snapshots/skill.*.md` hold each skill's body under its budget, so a body that grows is a
-  diff somebody reads; the agent snapshots show the advertised list exactly as the model sees it.
-- `VoiceOverridesFormattingTests` proves the spoken rules beat the screen-oriented ones for the
-  agent that actually speaks. A channel's sections reach whichever agent its conversation group is
-  built for (`PromptManifest.ForChannel`), so the voice section is the satellite's, not one agent's.
+- `Tests/Snapshots/prompt.*.txt`: each agent's assembled prompt with per-section token/budget headers;
+  `Tests/Snapshots/skill.*.md`: each skill body. Regenerate with `UPDATE_PROMPT_SNAPSHOTS=1 dotnet test`
+  and **read the diff**.
+- `PromptStalenessTests` walks prompts and skills against the code both ways: every served prompt
+  declared and every declaration served, every dialled service's prompts declared, no `fs_`-prefixed
+  tool named, every taught path starting at a real mount.
+- `VoiceOverridesFormattingTests`: spoken rules beat screen rules for the speaking agent. A channel's
+  sections reach whichever agent its conversation group is built for (`PromptManifest.ForChannel`), so
+  the voice section is the satellite's, not one agent's.

@@ -78,6 +78,10 @@ internal static class AgentSpecProjection
 
     // A conversation keeps the session it was built with: a window that turns mid-conversation
     // moves the next conversation, not this one, whose history is already on its provider.
+    //
+    // The window is ours because OpenRouter's is no bound: it releases a session only after 60
+    // minutes with no request (each resets it) or on a provider error, so a household that kept
+    // talking would be held on one provider for good.
     private static string RoutingSession(
         AgentDefinition definition, AgentKey agentKey, string? tenantId, TimeProvider clock)
     {

@@ -87,7 +87,8 @@ public sealed class ApprovalService(
 
     // The question another channel asked, offered to its asker on every chat client they have open,
     // wherever they are — or, with none open, on their devices, waiting for them to open one. It
-    // needs no live session: it is put to a person, not to a topic.
+    // needs no live session: it is put to a person, not to a topic. Sent to the asker's account group
+    // alone: whoever sees all is never offered another person's question.
     public async Task<string> OfferApprovalAsync(OfferApprovalParams p, CancellationToken ct = default)
     {
         var approvalId = OwnIdOf(p.ApprovalId);

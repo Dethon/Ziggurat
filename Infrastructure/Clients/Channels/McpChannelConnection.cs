@@ -547,7 +547,9 @@ public sealed class McpChannelConnection(
         // the args dictionary directly avoids ChannelProtocol.ToArguments's reflection
         // SerializeToDocument + per-property Clone on the hot path; the wire JSON is
         // identical (same camelCase keys, ContentType.ToString() matches the
-        // JsonStringEnumConverter output).
+        // JsonStringEnumConverter output). This is the one sanctioned copy of ToArguments's shape:
+        // a property added to SendReplyParams is added to this dictionary in the same change, and
+        // no other call site may hand-build its arguments.
         var result = await client.CallToolAsync(
             ChannelProtocol.SendReplyTool,
             new Dictionary<string, object?>

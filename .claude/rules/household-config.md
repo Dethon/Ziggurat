@@ -27,389 +27,208 @@ paths:
 
 # Household configuration
 
-What a household *is* (CONTEXT.md, "Household configuration") is kept by the accounts service, in
-**sections**, and read by the agent and the shared servers through views
-(`.scratch/tenants-config/spec.md`, "Configuration in the accounts service"). The accounts service's
-own contracts are `.claude/rules/accounts.md`; this file is the configuration's.
+Kept by the accounts service in **sections**, read by the agent and the shared servers through views.
+The service's own contracts are `.claude/rules/accounts.md`.
 
 ## Sections
 
-Five, each one JSON document per household with a `schemaVersion` (`Domain/DTOs/Household`,
-`HouseholdSections`): the records there are the **current** shape, read and written with
-`SectionSchema.Json` (web casing, an unknown field refused, a null where the shape has none
-refused). A household that never saved a section reads it as its defaults — never a 404 — so a new
-household is readable before anything is seeded.
+Five JSON documents per household (`HouseholdSections`), each with a `schemaVersion`, read and written
+with the strict `SectionSchema.Json`. A section never saved reads as its defaults — never a 404. A
+document's problems name the field, never its value, which may be a key.
 
-| Section | Record | v1 shape | Default |
-|---|---|---|---|
-| `settings` | `HouseholdSettings` | `name` (1–200), `timeZone` (an IANA zone this host knows), `language` (a tag such as `es`, or none: agents follow the conversation) | the tenant row's name, the service's local zone (compose's shared `TZ`), no language |
-| `agents` | `AgentsSection` | `defaultAgent` (one of the ids below, or none), `agents`: each `{ id, template, name, customInstructions }` **or** `{ id, definition }` — a full `AgentDefinition` whose `id` is the entry's and which carries **no** `telegramBotToken` | none at all: accounts knows no template's body (06 decides what a household with none runs) |
-| `keys` | `KeysSection` | `openRouter: { apiKey }`, `idealista: { apiKey, secret }`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` or `lemonade: { throughKit: true }` (the household's own Lemonade box: its address, plain, and its key — or, behind its router, through its tenant kit's forwarder, with neither: the kit holds the key; one shape or the other, never both) — every key a secret | nothing set |
-| `features` | `FeaturesSection` | `scheduling`, `timers`, `sugary`, `idealista`, `memory`, `workers`, each a bool | all on but Idealista, which needs the household's own key |
-| `spaces` | `SpacesSection` | `spaces`: each `{ slug, name, accentColor, defaultAgent, order }`, slugs and colours as `SpaceConfig` checks them, at least one | the one `default` space, "Main", `#e9601f` |
+| Section | Record | Notes |
+|---|---|---|
+| `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation) |
+| `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
+| `keys` | `KeysSection` | `openRouter`, `idealista`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
+| `features` | `FeaturesSection` | six bools; default all on but Idealista |
+| `spaces` | `SpacesSection` | at least one space |
 
-An agent id is a slug (`HouseholdSections.IsAgentId`). An owner changes only an agent's name and
-custom instructions (4c): on a template entry its `name`/`customInstructions`, on a definition entry
-the definition's own — a definition entry carrying either beside it is refused, so each has one
-place. A bot is keyed by the agent it is bound to, so a household holds one bot per agent; the
-shared deployment bot is not in any section (its token is the deployment's).
-
-A seeded definition is read by System.Text.Json, not the configuration binder: a provider threshold
-is an object (`"preferredMaxLatency": { "p50": 1 }`), not the bare number `appsettings.json` takes
-through `ProviderThresholdConverter`. 06's seeding writes it so.
-
-## Versions
-
-`SectionSchema` holds a section's steps: step *n* carries a plain document from version *n* to
-*n + 1*, and the current version is the number of steps. Version 0 is a document naming no version,
-which the first step (`SectionSteps.Unversioned`) reads as the first shape. **Every read and every
-save** migrates: the stored document's sealed fields are opened, the plain document is migrated and
-written out whole (`Normalize`, every default filled), and a save seals the schema's secrets again
-for their places in the new shape — so a step is a pure function of the plain document and may move
-a secret like any field. A document at a newer version than the code knows is refused, never read as
-today's. Changing a shape is a **new step appended** and the record changed beside it; an old step is
-never edited, since stored rows and operators' files were written by it.
+- An owner changes only an agent's name and custom instructions (4c): a definition entry carrying a
+  `name`/`customInstructions` beside its definition is refused, so each has one place.
+- A bot is keyed by the agent it is bound to; the shared deployment bot is in no section.
+- A seeded definition is read by System.Text.Json, not the binder: a provider threshold is an object
+  (`"preferredMaxLatency": { "p50": 1 }`), not the bare number `appsettings.json` takes through
+  `ProviderThresholdConverter`. Seeding writes it so.
+- **Versions**: every read and save migrates through `SectionSchema`'s steps. Changing a shape is a
+  **new step appended** and the record changed beside it; an old step is never edited, since stored rows
+  and operators' files were written by it. A document at a newer version than the code knows is refused,
+  never read as today's.
 
 ## Secrets
 
-- **At rest** a secret is `{"sealed": "<base64 blob>"}` where its value was, so a stored document
-  says for itself what is sealed in whatever shape it was written. The schema names its secrets
-  (`SecretPaths`, `*` for any one name: `telegramBots/*/token`); nothing else is ever sealed.
-- **The associated data** is one convention (`HouseholdSealing.AssociatedData`): household, section
-  and field path (property names joined by `/`, escaped as a JSON pointer's), so a blob moved to
-  another household, section or field — one bot's token under another agent — does not open.
-- **The data key** is a random `SealingKey` per household (`HouseholdDataKey`, one row each), minted
-  when its first secret is sealed and kept only wrapped: `master.Seal(dataKey.Export(),
-  AssociatedData(household, "data-key", ""))` — `data-key` is a section no section is named. The row
-  records which master wrapped it (`MasterKeyId`, the start of the master's SHA-256), so a service
-  started with another master says so instead of failing every secret.
-- **The master key** is `HOUSEHOLDCONFIG__MASTERKEY` (`.env` `HOUSEHOLD_CONFIG_MASTER_KEY`, the base64
-  of 32 random bytes), the phase's one new deployment secret, handed to the accounts service alone
-  (`DeploymentConformanceTests`). Malformed stops the service and every command. **Empty** is a stack
-  with no household secrets: sections without one save and read, a save carrying one is refused, a
-  read of a sealed one is `SecretsUnavailable` — which is what the smoke and E2E stacks run on until
-  they need keys. Losing it loses every household's secrets; owners enter them again.
-- **Rotation rewraps data keys only**, never a sealed field: put the new key in `.env`, recreate
-  accounts, then `docker exec -i accounts dotnet Accounts.dll rewrap-household-keys <
-  previous-master.key` — the previous key on the input, never on the command line. It rewraps every
-  data key the previous key wrapped in one transaction (all or none), opens every sealed field to
-  prove it, and leaves a key already under the current master as it is, so a rerun changes nothing.
-  Between the recreate and the command, reads of secrets answer `SecretsUnavailable`.
+- **At rest** a secret is `{"sealed": "<base64 blob>"}` in its value's place; only the schema's
+  `SecretPaths` are ever sealed. Each is sealed for household + section + field
+  (`HouseholdSealing.AssociatedData`) under a per-household data key wrapped by the master
+  (`HouseholdDataKeys`), so a blob moved to another field or household does not open. A secret moves
+  only as a plain value — inside a schema step (steps run on the opened document; the save re-seals) or
+  entered again. `set-household-config` refuses a sealed blob in a file; `{"sealed": true}` keeps the
+  stored value, a clear value is sealed (`HouseholdConfigCommands`).
+- **The master key** is `HOUSEHOLDCONFIG__MASTERKEY` (`.env` `HOUSEHOLD_CONFIG_MASTER_KEY`), handed to
+  the accounts service alone (`DeploymentConformanceTests`). **Empty** is a stack with no household
+  secrets (a save carrying one refused, a sealed read `SecretsUnavailable`) — what smoke and E2E run on.
+  Losing it loses every household's secrets.
+- **Rotation rewraps data keys only**, never a sealed field: new key in `.env`, recreate accounts, then
+  `docker exec -i accounts dotnet Accounts.dll rewrap-household-keys < previous-master.key` — the
+  previous key on the input, never on the command line. It rewraps in one transaction (all or none),
+  opens every sealed field to prove it, and leaves keys already under the current master, so a rerun
+  changes nothing. Between the recreate and the command, secret reads answer `SecretsUnavailable`.
 
 ## Who reads what
 
-`POST /accounts/internal/household-config/<view>` (`HouseholdConfigProtocol`, `Internal/HouseholdConfiguration`),
-behind the internal API's caller filter like every route there. One view per route, answered only to
-the callers it is for (`InternalCallers`' view table) — anyone else is 403 before a row is read:
+`POST /accounts/internal/household-config/<view>` (`HouseholdConfigProtocol`). Each view is answered only
+to its callers (`InternalCallers`' view table); anyone else is 403 before a row is read.
 
-| View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
+| View | Caller | Proof | Secrets unsealed |
 |---|---|---|---|
-| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `lemonade` (its own box), `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin-operator.md`) | the OpenRouter key, the Lemonade box's key |
-| `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
-| `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
-| `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
-| `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
-| `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
-| `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
-| `sugary-people` (call token) | `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSugaryPeople>`: every person not disabled, in the order they joined, with display name and `readsEveryLog` (an owner's "Reads everyone's Sugary log", `MemberStore`), the same answer for everyone in the household since the reader keeps it per household; the `/sugary` mount decides who reads whose log by it (`.claude/rules/sugary.md`) | none |
-| `sugary-off` | `mcp-sugary` | `HouseholdsWithSugaryOff`: the ids of the households whose saved features turn Sugary off (one that never saved its features has it on), asked with no proof — Sugary's glucose poller and watch engine wake for nobody's request — and kept by the reader as one entry, dropped by any household's `features` save | none |
-| `member-names` | `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdMemberNames>`: every person of the household, disabled ones too (their topics are kept), in the order they joined, by id and display name, proven by the connection's assertion — the topic list's person filter for whoever sees all (`ChatHub.GetHouseholdPeople`) | none |
-| `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
-| `lemonade-boxes` | `agent` | `HouseholdLemonadeBoxes`: every household's own Lemonade box, on the agent's own token (as `people`), never kept — its discovery asks every minute; a kit box is `throughKit` alone | each box's key |
-| `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin-keys.md`, "Keys and probes"); proven as `agent` is | none |
+| `agent` (`AgentHouseholdConfig`: settings, agents, features, spaces, `lemonade`, `disabledPeople`, `suspended` — `.claude/rules/admin-operator.md`, `accounts.md` — `ownServers`) | `agent` | names the household + its own token | OpenRouter key, Lemonade box key |
+| `people`, `lemonade-boxes` (every household's, never kept) | `agent` | its own token alone, names none | each box's key |
+| `openrouter-key-refused` (204, not a view; `.claude/rules/admin-keys.md`) | `agent` | as `agent` | none |
+| `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | call token / assertion / delegation | none |
+| `idealista` | `mcp-idealista` | call token | Idealista's two |
+| `spaces`, `member-names` (disabled members too: their topics are kept) | `mcp-channel-signalr` | the session refresh's assertion (hub bullet below) | none |
+| `agent-names` (`HouseholdAgents.Names`, never custom instructions) | `mcp-scheduling` | call token | none |
+| `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | the person's assertion on the asker's channel | none |
+| `sugary-people` (no disabled member; one answer for the whole household: readers keep it per household) | `mcp-sugary` | call token | none |
+| `telegram-bots` (every household's) | `mcp-channel-telegram` | none (exception 2) | the bots' tokens |
+| `sugary-off` | `mcp-sugary` | none (exception 3) | none |
 
-A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
-A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
+`people` (dreaming walks every household with no call behind it) is never kept, since nothing
+announces a person joining.
 
-**The household comes from something signed, never from a parameter** (`HouseholdProofs`). The query
-is `HouseholdConfigQuery { householdId, callToken, assertion, delegation }`:
+A secret is unsealed into its own server's view and **left out** of every other, never sent sealed. A
+new view is a line in `InternalCallers`' table, a route, and a row here.
 
-- **A shared server** presents exactly one proof and names no household (a `householdId` is 400):
-  the agent's **call token** it was called with — verified against the agent's JWKS (`AgentKeysUrl`,
-  compose's `AGENTKEYSURL`, on the wall clock) **for the asker's own audience**
-  (`TokenAudiences.CallTo(ServerAddress.Named(<caller name>))`), so a token handed to one server
-  proves nothing to another — or the accounts service's own **assertion** on the asker's channel
-  (`InternalCallers.AssertionChannelOf`: the hub `signalr`, Telegram `telegram`, Sugary `sugary`), for
-  a server serving a person rather than a call (the hub's connection, Sugary's app). The household
-  is the claims' `tid`; a token naming nobody proves none. So a leaked server credential alone
-  reads nobody's section, and with a token it reads that one household's own section.
-- **A schedule's fire** has no call behind it, so the scheduling server alone (`InternalCallers.Scheduling`;
-  anyone else is 400) may present instead the **delegation** stored with the schedule
-  (`Schedule.Delegation`): verified against the agent's JWKS for `TokenAudiences.Delegation`, and only
-  a delegation of kind `schedule` (a watch's or a login's is 404 `Unproven`). It is the agent's word,
-  signed while that person's turn wrote the schedule, for the person behind it — so their `tid` is the
-  schedule's household. A schedule that delegates nothing has no proof, and is read in the server's
-  own zone (`.claude/rules/scheduling.md`). Rather than an all-households view: the scheduling
+**The household comes from something signed, never from a parameter** (`HouseholdProofs`,
+`HouseholdConfigQuery { householdId, callToken, assertion, delegation }`):
+
+- **A shared server** presents exactly one proof and names no household (a `householdId` is 400): the
+  agent's **call token**, verified against the agent's JWKS **for the asker's own audience**
+  (`TokenAudiences.CallTo`), or the accounts service's **assertion** on the asker's channel
+  (`InternalCallers.AssertionChannelOf`). The household is the claims' `tid`, so a leaked server
+  credential alone reads nobody's section.
+- **A schedule's fire**: the scheduling server alone (`InternalCallers.Scheduling`) may present the
+  **delegation** stored with the schedule (`Schedule.Delegation`), and only one of kind `schedule`. A
+  schedule that delegates nothing has no proof and is read in the server's own zone
+  (`.claude/rules/scheduling.md`). A delegation, not an all-households view, so the scheduling
   server's credential still opens no household's section by itself.
-- **Exception 1, the agent names the household by id.** It signs every call token there is, so
-  nothing it could present proves more than its word: for a turn it names the household of the
-  identity it verified, and for work with no call behind it — memory extraction, dreaming walking
-  households — the household the work carries. What it proves is that it **is** the agent: beside
-  `CALLERS__agent` (which is `AGENTAPI__SHAREDSECRET`, a secret SexyTime's server holds too) it
-  presents a token of its own signed for `TokenAudiences.HouseholdConfiguration`, acting for nobody
-  (`HouseholdConfigurationClient.AgentToken(callTokens)`), so the shared secret alone opens no
-  household's OpenRouter key.
-- **The agent's `people` view names no household** (a `householdId`, an assertion or a delegation is
-  400): dreaming walks every household and its people with no call behind it, so it presents its own
-  token alone (`HouseholdProofs.AgentItselfAsync`), and is answered every household, one nobody has
-  joined too. It is never kept: nothing announces a person joining, and dreaming asks once a night.
-- **Exception 2, Telegram reads every household's bots.** It long-polls its bots from startup,
-  before any call could name a household, so `telegram-bots` takes no proof and answers every
-  household's (a household whose secrets do not open is left out and logged, not fatal to the rest).
-  It is cached as one entry, dropped by any household's `keys` save (and its `features` save, which
-  drops every across-households entry the reader keeps).
-- **Exception 3, Sugary learns which households turn it off.** Its glucose poller and watch engine
-  wake for nobody's request (`SugaryOffHouseholds`, `.claude/rules/sugary.md`), so `sugary-off` takes
-  no proof and answers the ids of every household whose features turn Sugary off, and nothing else of
-  them. Kept as one entry, dropped by any household's `features` save (Sugary has no Redis: a minute).
+- **Exception 1, the agent names the household by id** — it signs every call token, so nothing it could
+  present proves more. It names only the household of the identity it verified for a turn, or the one
+  the work carries for extraction and dreaming (`IHouseholdConfiguration.ForAgentAsync`). It proves it **is** the agent: beside `CALLERS__agent` (=
+  `AGENTAPI__SHAREDSECRET`, which SexyTime's server holds too) it presents its own token for
+  `TokenAudiences.HouseholdConfiguration` (`HouseholdConfigurationClient.AgentToken`), so the shared
+  secret alone opens no OpenRouter key.
+- **Exceptions 2 and 3** take no proof: `telegram-bots` (Telegram polls from startup) and `sugary-off`
+  (only the ids of households turning Sugary off; `.claude/rules/sugary.md`).
 
-Refusals: 400 `BadQuery` (no proof, two, a shared server naming a household, or a delegation from
-anyone but scheduling), 404 `Unproven` (the
-detail says why: a `TokenRefusal`, another server's audience, another channel, nobody) or
-`UnknownHousehold`, 503 `SecretsUnavailable` (no master, or a data key under another), each a
-`HouseholdConfigRefused { reason, detail }` and never carrying a secret.
-
-The agent may name the home household as `@home` (`HouseholdConfigProtocol.HomeHousehold`; an id is 32
-hex characters, so no household is called that) and is answered the home's view under its real id:
-it asks so for what is the home's before any turn names an id — the catalogue it registers with its
-channels, a turn acting for nobody. Its reader keeps that answer under the name and drops it on any
-household's save, since a save names the home by an id the reader may not have been told.
+Refusals are `HouseholdConfigRefused { reason, detail }`, never carrying a secret: 400 `BadQuery`, 404
+`Unproven` / `UnknownHousehold`, 503 `SecretsUnavailable` — the reader takes 400/404 as a refusal and
+a 503 as an outage. The agent may name the
+home as `@home` (`HouseholdConfigProtocol.HomeHousehold`) before any turn names its id.
 
 ## The agents a household runs
 
-The agent builds a turn's agents from the turn's household's view (`HouseholdAgents.Of`, Domain, over
-`HouseholdAgentSource`, the agent's `IHouseholdAgentSource`):
+Built per turn from the household's view (`HouseholdAgents.Of` over `HouseholdAgentSource`):
 
-- **`lemonade` is never a tool server.** It is the household's Lemonade forwarder (`.claude/rules/tenant-kit.md`),
-  which carries chat to its box: the section's rules refuse a definition naming it among its servers
-  ("…is the household's Lemonade box, not a tool server"), and a turn never dials it whatever a
-  definition, a registered agent or a template names (`OwnServerEndpoints.Resolve` withholds it, so it
-  is not on the offline line either; `HouseholdKitLemonadeTests`).
-- **An entry is a template or a definition.** `{ id, template, name, customInstructions }` is the
-  shipped template (`AgentTemplates`, `Domain/Prompts/Agents/<name>.md`, `.claude/rules/prompts.md`) under
-  the entry's id, with the entry's name and custom instructions and nothing else of the owner's; it
-  keeps those of its URL servers the deployment runs as shared servers, and every own server it names
-  by name. `{ id, definition }` is its
-  definition as seeded (the home's jack, jonas, nabu and sugary), dialled as written. An entry naming a
-  template this build does not ship is left out and logged, not fatal to the household's other agents.
-- **A section that names no agent is the two templates** (`HouseholdAgents.Starting`): `jonas`, the
-  barebones Jonas, and `sugary`, under their own ids and names, `jonas` answering by default — so a new
-  household has agents before anything is saved, and the deployment's channel defaults (`sugary` for
-  the Sugary app) name an agent it has. The third template, `nabu`, answers aloud and is never a
-  starting one: an owner adds it on the Agents page, under the id voice's channel default names.
-- **The settings fill the prompt.** The language is every agent's that pins none (an agent's own pin
-  wins: nabu stays Spanish); the zone is the day's (`AgentSpec.TimeZone` → the `date` section's `zoned`
-  part, named only when it is not the host's own, so the home's prompts are the snapshots'), the
-  zone each turn's `[Current time: …]` is stamped in (`MultiAgentFactory` hands it to the chat client
-  as `turnZone`; a stamp in the host's zone beside a prompt in the household's gave the model two
-  clocks, and it answered a New York household with Madrid's evening), and the
-  zone a session reads a write's bare time in. The household's name is not in the prompt: an agent's
-  name is the entry's.
-- **The features withhold.** `sharedServers` in the agent's settings (`SharedServers`) maps each
-  feature to the address the deployment runs its server at; a feature turned off drops that address
-  from every definition — the household's, a person's registered agent's — and from every worker its
-  agents spawn (`SpawnContext.WithheldServers`), and `memory` off drops the `memory` feature, `workers`
-  off the `subagents` one. Only the household's own agents' endpoints present deployment credentials.
-- **An own server reaches a turn only where the household set it up.** The agent view's `ownServers`
-  are the server names the household holds a live tunnel credential for (`TunnelCredentialStore.SetUpServersAsync`;
-  a machine's `outpost-<NAME>` never counts, and a view without the field is none set up). At every
-  turn's start `McpAgent` asks the household's view again (`HouseholdAgents.NotSetUp`, through the
-  factory's `ForHouseholdAsync`) and withholds the own servers its endpoints name that are not among
-  them, by name (`OwnServerEndpoints.Resolve`): not resolved, not dialled, not
-  on the offline line. A set-up server not connected is offline as before. It is never applied to a
-  definition, because a conversation's agent is built by its first turn and outlives it: a server set
-  up mid-conversation must reach the next turn. A worker asks its parent's household by the same line,
-  and reaches no own server its parent does not name (`SpawnContext.OwnServers`, withheld the same way):
-  the worker profiles are the deployment's and name Home Assistant, which the voice template does too.
-  The home, and agents no household's configuration gave (a test's, the eval's), withhold none.
-- **What an owner changes about an agent reaches its open conversations' next turn.** A conversation's
-  agent is built by its first turn and outlives it, so before each later turn the conversation asks it
-  whether its household still defines it as built (`DisposableAgent.IsStaleAsync`): `McpAgent` compares
-  `HouseholdAgents.AsBuilt` — the definition as offered (name, instructions, what the features left
-  it), the zone and the key, the key compared as a key and never revealed — read again through the same
-  `ForHouseholdAsync`, with what it was built from, and `ConversationGroup.RebuildIfStaleAsync` builds a
-  stale one again as its first turn did, its history read back from the store. So a feature turned off,
-  an agent renamed or given new instructions, a zone or a key changed, is in every agent's next reply,
-  as the Features page says (before, a member's open conversation still set a timer with timers off). It
-  reaches the next turn because a save is announced and the reader drops what it kept; a save nobody
-  could be told of reaches it within the reader's minute. A person's registered agent and a worker are
-  never asked. Own servers stay per turn, above, since a tunnel opening is not a change to the definition.
+- **`lemonade` is never a tool server** — it is the household's Lemonade forwarder
+  (`.claude/rules/tenant-kit.md`). The section refuses a definition naming it, and a turn never dials it
+  whatever names it (`OwnServerEndpoints.Resolve`; `HouseholdKitLemonadeTests`).
+- **A template entry** is the shipped template (`AgentTemplates`, `.claude/rules/prompts.md`) with the
+  entry's id, name and custom instructions and nothing else of the owner's; a **definition entry** is
+  dialled as written. An unshipped template is left out and logged, never fatal to the others.
+- **No agents saved = the two templates** (`HouseholdAgents.Starting`): `jonas` (default) and `sugary`,
+  so the deployment's channel defaults name an agent every household has. `nabu` is never a starting one.
+- **The household's zone stamps every turn**: `AgentSpec.TimeZone` is the prompt's day and
+  `MultiAgentFactory` hands it to the chat client as `turnZone` for `[Current time: …]` — a host-zone
+  stamp beside a household-zone prompt gives the model two clocks. A write's bare `runAt` is read in the
+  same zone (`McpAgent.Zone` → `ThreadSession`'s `localZone`), as the scheduling server reads it. Language
+  fills every agent that pins none; the household's name is not in the prompt.
+- **The features withhold** their `SharedServers` address from every definition — the household's, a
+  person's registered agent's — and every worker (`SpawnContext.WithheldServers`). Only the household's
+  own agents' endpoints present deployment credentials.
+- **An own server reaches a turn only where the household set it up** (a live tunnel credential, never a
+  machine's `outpost-<NAME>`): checked at **every turn's start** (`HouseholdAgents.NotSetUp`) and
+  withheld by name (`OwnServerEndpoints.Resolve`), never applied to a definition — an agent outlives its
+  first turn, and a server set up mid-conversation must reach the next. A worker reaches no own server
+  its parent does not name (`SpawnContext.OwnServers`). The home withholds none.
+- **An owner's change reaches open conversations' next turn**: `DisposableAgent.IsStaleAsync` compares
+  `HouseholdAgents.AsBuilt` (key compared as a key, never revealed) and
+  `ConversationGroup.RebuildIfStaleAsync` rebuilds it before the next turn, its history read back from
+  the store. A person's registered agent and a worker are never
+  asked.
 - **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
-- **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its
-  parent's model for its parent's household, and the household's `workers` feature decides whether
-  its agents may spawn one at all.
+- **Worker profiles stay the deployment's** (`subAgents`); a worker runs its parent's model and
+  household.
 
 ## Who pays for a household's model calls
 
-Every model call made for a household goes out on its own OpenRouter key and is counted under it
-(`ModelPayer(TenantId, Key)`, `Domain/DTOs`; a null key is the host's own, the deployment's):
-
-- **`HouseholdAgents.Payer`** is the one rule: a household with its own `OpenRouterApiKey` pays with
-  it — **the home too: a key saved for it takes priority over the deployment's** (user, 2026-11-13), so
-  the deployment's `.env` may hold none — and the home with none, like agents no household's
-  configuration gave (`HouseholdAgents.Fixed`), pays with the deployment's key; any other household
-  with none is null, and
-  `MultiAgentFactory.CreateAsync` throws `HouseholdWithoutKeyException` before anything is built. The
-  conversation group answers that turn as a refused one ends (`ConversationGroup.WithoutKeyAnswer`,
-  an `Error` then `StreamComplete`; a fire, nobody waiting, only the errors feed's
-  `HouseholdWithoutKey`) and ends the group, so the first message after a key is saved runs. Its
-  agents are still listed: naming them costs nothing.
-- **The key travels as plain data**: `AgentSpec.Key`, `SpawnContext.Key` (a worker runs on its
-  parent's), `JudgmentCaller.Payer` (the skill preload — `DisposableAgent.Payer` in the group,
-  `SkillsProvider` in the agent — and the exec screen, `ToolApprovalChatClient`), `MemoryJudgmentContext.Payer`,
-  and the memory models' `ExtractAsync` / `ConsolidateAsync` / `SynthesizeProfileAsync` parameter,
-  asked through `PaidChatClients` (one OpenRouter client per payer, kept). `ModelKey` prints as
-  nothing and is never written or read as JSON, so a spec or a caller can be logged whole; only the
-  client sending a call reveals it, into the call's header.
-- **Extraction** reads the request's household (`MemoryExtractionRequest.TenantId`) before the gate:
-  no key, or a household the configuration cannot answer for just now (a `failed` extraction and an
-  error under the household), extracts nothing rather than pay on another's key; nor for a household
-  suspended, or a person disabled, after their turn was admitted (dreaming's rule, off the same view). A person's custom
-  agent is read under `Account(TenantId, UserId)`.
-- **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
-  household's key, its events and the merge's embeddings counted under it. A household that cannot
-  pay or be read is not dreamt for that night, nor one suspended, nor a member its view lists as
-  disabled; a user id in no household is left alone (one warning).
-- **Housekeeping stays the deployment's**: the keep-alive and model capabilities. With no deployment
-  key the keep-alive idles, and the agent's Jev still asks for every payer that brought a key
-  (`TypeSafeJudge`: a judgment with neither key is `Unconfigured`, no call).
-- **A shared server's Jev** (the voice approval reader, the web search modal judge) holds no
-  household's key, so `JudgmentCaller.For(context)` names the call's household for the figures and
-  asks on the server's own key.
-- A household's key OpenRouter refuses is logged once per household by the judge, never the key.
+- **`HouseholdAgents.Payer`** is the one rule: a household with its own OpenRouter key pays with it —
+  **the home too: a key saved for it takes priority over the deployment's** (user, 2026-11-13), so
+  `.env` may hold none. The home with none, and code-configured agents (`HouseholdAgents.Fixed`), pay
+  with the deployment's key; any other household with none gets `HouseholdWithoutKeyException` from
+  `MultiAgentFactory.CreateAsync` before anything is built, answered by `ConversationGroup.WithoutKeyAnswer`
+  (an `Error` then `StreamComplete`; a fire only the errors feed's `HouseholdWithoutKey`) and the group
+  ended, so the first message after a key is saved runs.
+- **The key travels as plain data** (`ModelPayer`, `AgentSpec.Key`, `SpawnContext.Key`,
+  `JudgmentCaller.Payer`, `MemoryJudgmentContext.Payer`, `PaidChatClients`), never ambient. `ModelKey`
+  prints as nothing and is never written or read as JSON.
+- **Extraction and dreaming** spend nothing for a household with no key, one unreadable just now, one
+  suspended, or a disabled person — never on another's key.
+- **Housekeeping stays the deployment's**; a shared server's Jev asks on the server's own key, naming
+  the household for the figures (`JudgmentCaller.For(context)`). A household key OpenRouter refuses is
+  logged once per household by the judge, never the key.
 
 ## Saves are announced; readers keep briefly
 
-A save publishes `HouseholdConfigSaved { householdId, section }` on Redis's
-`accounts:household-config:saved` (and so does a suspension or a resumption, naming
-`HouseholdConfigProtocol.SuspensionChanged`, which is no section: the readers drop the household either way) (`RedisAnnouncer`, the same lazily opened connection that
-announces tunnel revocations). The save stands if nobody could be told; the command says so and
-exits 1. A member disabled or re-enabled is announced the same way, as section
-`HouseholdConfigProtocol.PeopleChanged` (`people`, which no section is called): a reader drops all it
-kept of the household whatever section is named, so the agent's view — and its `disabledPeople` — is
-read again on the household's next turn. A tunnel credential minted or revoked is announced too, as
-`HouseholdConfigProtocol.OwnServersChanged` (`own-servers`), by `TunnelCredentialStore` itself — so the
-command and the admin route both — because it changes the view's `ownServers`: the agent's next turn
-reaches a server just set up and leaves one just revoked. An outpost's is announced the same way,
-which drops a view that has not changed. The credential stands if nobody could be told (the admin
-route's `AdminSections.NotToldWarning`, a line before the command's credential).
+Writer and readers share this contract (`HouseholdConfigProtocol`):
 
-**The reader** is `IHouseholdConfiguration` (`Domain/Contracts`), implemented by
-`HouseholdConfigurationClient` (`Infrastructure/Clients/Accounts`), registered by
-`AddHouseholdConfiguration(accountsConfig, credential, agentToken?)` — the agent passes its
-`CALLERS__agent` credential and `sp => HouseholdConfigurationClient.AgentToken(sp.GetRequiredService<CallTokens>())`;
-a shared server its own `MCP__SHAREDSECRET` and nothing else.
-
-- `ForAgentAsync(householdId)`, `SettingsAsync(householdId, proof)`, `IdealistaKeysAsync(householdId,
-  proof)` (null: none set), `SpacesAsync(householdId, proof)`, `AgentNamesAsync(householdId, proof)`, `TelegramBotsAsync()`. `HouseholdProof.OfCallToken`
-  / `.OfAssertion` / `.OfDelegation`. The `householdId` a shared server passes is the one **it** already verified (the
-  call's `tid`); it is the cache key, and an answer for any other household is refused, not kept.
-- Kept per (view, household) for `Accounts:ConfigurationLifetime` (1 minute) and dropped the moment a
-  save of that household is heard on the host's own `IConnectionMultiplexer`, subscribed before the
-  first ask. An answer asked while a save was announced is returned but not kept. A host with no
-  Redis — Idealista and Sugary — keeps for the lifetime alone; one whose Redis is away retries
-  the subscription once a lifetime. Idealista and Sugary are given no Redis for this, deliberately:
-  a saved key or zone reaching them within a minute is "without a restart", and Sugary's log keeps
-  off Redis (`docs/adr/0043`). Scheduling has its own Redis, so a save reaches it at once.
+- A save publishes `HouseholdConfigSaved { householdId, section }` on `accounts:household-config:saved`
+  (`RedisAnnouncer`). So do a suspension (`HouseholdConfigProtocol.SuspensionChanged`), a member
+  disabled or re-enabled (`HouseholdConfigProtocol.PeopleChanged`) and a tunnel credential minted or
+  revoked (`HouseholdConfigProtocol.OwnServersChanged`, by `TunnelCredentialStore`) — none a section. A
+  reader drops **all** it kept of the household whatever section is named.
+- The save stands if nobody could be told; the command exits 1, the admin route warns
+  (`AdminSections.NotToldWarning`).
+- **The reader** is `IHouseholdConfiguration` / `HouseholdConfigurationClient`, registered by
+  `AddHouseholdConfiguration(accountsConfig, credential, agentToken?)`. The `householdId` a shared
+  server passes is the one **it** verified; an answer for another household is refused, not kept.
+  Kept per (view, household) for `Accounts:ConfigurationLifetime` (1 minute) or until a heard save; the
+  across-household entries (`telegram-bots`, `sugary-off`) drop on any household's `keys`/`features`
+  save. An answer asked while a save was announced is returned but not kept. A refusal is
+  `HouseholdConfigRefusedException`; an outage or a 503 is `HttpRequestException`.
+- Idealista and Sugary are given no Redis for this, deliberately: a minute is "without a restart", and
+  Sugary keeps off Redis (`docs/adr/0043`).
 
 ## A shared server's accessor
 
-A shared server never holds the reader in its tool code. It reads its own section of the household a
-call acts for through **one accessor**, `Mcp.Hosting/CallHousehold.cs` (`CallHousehold :
-ICallHousehold`, `Domain/Contracts`), beside `CallTurn`:
+Tool code never holds the reader: it reads its section through **one accessor**,
+`Mcp.Hosting/CallHousehold.cs` (`CallHousehold : ICallHousehold`) — `call.Household` (the call token
+`CallTokenGate` verified), `CallHousehold.OfPerson` or `CallHousehold.OfFire`.
+`CallHouseholdConformanceTests` fails on tool code naming the reader or a proof, a call-token proof
+built anywhere else, or the verified token read past it. A refusal (`HouseholdConfigRefusedException`)
+or an outage (`HttpRequestException`) is never mistaken for a household with nothing set.
 
-- **`call.Household`** (`CallTurn`): null when the call acts for nobody or names no household;
-  otherwise the verified identity's `tid` and, as its proof, the very call token `CallTokenGate`
-  verified, which the gate leaves on the call's `Items` (`CallTurn.VerifiedTokenKey`) only once it
-  verified. `SettingsAsync(ct)`, `IdealistaKeysAsync(ct)`; `ICallHousehold.ZoneAsync(fallback, ct)`
-  (`CallHouseholds`) is the zone its dates are read in — the server's own for a call for nobody or a
-  zone this host's time zone database does not know. The reader is resolved from the call's services
-  when a section is asked, so every filesystem server can hand its mount the call's household
-  (`FileSystemCaller.Household`) and only those that read configuration register
-  `AddHouseholdConfiguration`; one that did not and asks is an `InvalidOperationException` naming it.
-- **`CallHousehold.OfPerson(householdId, assertion, reader)`**: a person a server's own app serves, on
-  the assertion its request carried (Sugary's `HomeCalendar.BindAsync`).
-- **`CallHousehold.OfFire(householdId, delegation, reader)`**: a schedule's fire, on its delegation.
+## Operator commands and seeding
 
-Who reads what through it: Idealista searches on the household's own keys (`IdealistaClients`, one
-client per key pair, so each account's token is its own; no keys is an `authentication` tool error and
-nothing is searched — the deployment holds no Idealista key at all, so on the deploy that removed
-`IDEALISTA__*` from `.env` the operator puts the home's keys into its `keys` section with
-`set-household-config`, and until then the home's searches say none is set); scheduling reads and fires in the
-household's zone; Sugary reads her times and her calendar's days in it; timers show when a timer fires in
-it (`status.json`'s `firesAt`). `CallHouseholdConformanceTests`
-fails on tool code (a server's tool types, `Domain/Tools`) naming the reader or a proof, on a call
-token's proof built anywhere but the accessor, and on the verified token read past it.
-- `HouseholdConfigRefusedException` for a refusal, `HttpRequestException` for an outage or a 503: a
-  reader never mistakes either for a household with nothing set.
-
-## Operator commands
-
-The admin area (4c, `.claude/rules/admin.md`) saves through the same `HouseholdConfigStore.SaveAsync` and
-schema as these commands, section by section as its pages come (the settings first), so neither can
-save what the other would refuse. `get-household-config --household <id> --section <name>` prints the
-section at its current shape with every secret as `{"sealed": true}`; `set-household-config
---household <id> --section <name> --file <path|->` (`-` is the input: `docker exec -i accounts dotnet
-Accounts.dll set-household-config ... --file - < keys.json`, so no secret sits in a file in the
-volume) saves a document of any known version, sealing each secret written in clear and keeping the
-stored one wherever the file says `{"sealed": true}` — so get, edit, set round-trips without retyping
-keys. A sealed blob in a file is refused (it was sealed for elsewhere). Exit 2 for an unknown section
-or a document that is not one (each problem listed, never a value), 1 for a household that does not
-exist, secrets with no master, or readers not told. Saving `settings` also renames the tenant row.
-`--household home` names the home household, for a stack being set up that does not know its id yet.
-The smoke stack does not seed by hand: `scripts/smoke-stack.sh up` runs the household migration as
-the deploy does (no keys), and the smoke tier checks what it made (`StackSmokeTests`: the home's
-agents by their seeded names, a reply's topic and usage under the home, a schedule moved into it).
-
-## For the tickets that build on it
-
-- **06** (done): "The agents a household runs" above; the agent reads with `CALLERS__agent`
-  (`AGENTAPI__SHAREDSECRET`) and its own token. The household migration's `HomeConfiguration` seeds
-  the home's settings (the deployment's zone, no language), its agents (`HouseholdMigration/Home/agents.json`,
-  today's definitions, a threshold an object) and its features (every one on, Idealista too) through
-  the seed route below; the keys are 13's and 15's.
-- **07** (done): who pays, below.
-- **08** (done): the accessor above (`CallHousehold`), its fire proof and the three `CALLERS__` entries.
-- **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
-  assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
-  with, which lives ten minutes while a chat client stays connected for hours. The chat client's host
-  keeps no list and reads no header; see `.claude/rules/chat-hub.md`, "Spaces". The picker
-  (`ChatHub.GetAgents`, `ValidateAgent`) reads `agent-names` the same way: the household's agents under
-  its names and on its models, with the patchable models and what a model accepts taken from the
-  catalogue the agent registered (`AgentCatalogBuilder.ForHousehold`).
-- **Seeding a section the household never saved** is `POST /accounts/internal/household-config-seed`
-  (`HouseholdConfigSeedApi`, `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved }`,
-  400 with the problems), admitted for `CALLERS__household-migration` alone like the import. A section
-  the household already saved is left as it is, so a rerun changes nothing and an owner's own edits
-  are never put over; a dry run checks the document and writes nothing. **A section of secrets (`keys`)
-  is the exception**: its keys are credentials, each its own — `openRouter`, `idealista`, and each bot
-  under `telegramBots` by its agent — so a saved one is given each seeded key it lacks and keeps every
-  one it holds, saved only when something was given (`{ saved, alreadySaved, kept }`, `kept` naming the
-  keys left as they were). The operator may so save the home's Idealista keys before the migration
-  without losing its bots, and a rerun saves nothing. The document is laid over the
-  section as the household reads it now, top-level field by field, so what it leaves out stays the
-  household's (the settings' name its row carries, the features it does not name). Any section: 06 seeds the
-  agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
-  readers as any save does but ignores a failure to, since nothing has read a section before it exists.
-  A document carrying a secret on a service with no master key is 503, dry run or not, with the reason
-  (the smoke stack runs so: a migration given no keys seeds none and needs none).
-- **06**, from 08 (done): a session reads a write's bare `runAt` in the household's zone (`McpAgent.Zone`
-  into `ThreadSession`'s `localZone`), as the scheduling server does.
-- **13** (done): the Telegram server reads `telegram-bots` at its start and every `Bots:Refresh` (five
-  seconds; the reader's cache makes that free, and a `keys` save drops it), starting and stopping each
-  household's bots as the answer changes, and `agent-names` for `/agent` on the asking person's
-  assertion (`.claude/rules/telegram.md`). The household migration's `HomeTelegramBots` seeded
-  the home's jack and jonas bots into its `keys` through the seed route, from tokens piped into the run
-  (`--telegram-bots -`). **15** (done) made that step `HomeKeys`, seeding Idealista's pair from the old
-  `.env` beside the bots, and made the seed route give a saved keys section the keys it lacks, so the
-  order of the migration and an operator's own `keys` save no longer matters
-  (`.scratch/tenants-config/deploy.md`).
+- The admin area (`.claude/rules/admin.md`) saves through the same `HouseholdConfigStore.SaveAsync` and
+  schema as `get-household-config` / `set-household-config` (`HouseholdConfigCommands`).
+  `set-household-config --file -` reads the input, so no secret sits in a file in the volume.
+- The deployment holds no Idealista key: the home's go in its `keys` section.
+- **Seeding** is `POST /accounts/internal/household-config-seed` (`HouseholdConfigSeedApi`,
+  `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved, kept }`, 400 with the problems),
+  for `CALLERS__household-migration` alone. A section already saved is left as it is (a rerun changes
+  nothing; an owner's edits are never put over); **`keys` is the exception**: each seeded key it lacks is
+  added, every held one kept, saving only when something was given (`kept` names those left). The document is laid over the section as the household reads it now, field
+  by top-level field, so what it leaves out stays the household's. A secret on a service with no master
+  key is 503, dry run or not. A failure to tell readers is ignored (nothing read the section before).
+- **Telegram** re-reads `telegram-bots` every `Bots:Refresh` (`.claude/rules/telegram.md`).
+- **The hub** (`ChatHub.GetSpaces`, `JoinSpace`, `GetAgents`, `ValidateAgent`) proves with the **session
+  refresh's** assertion (`ISessionAccounts.SessionAsync`), not the connection's, which lives ten minutes
+  (`.claude/rules/chat-hub.md`, "Spaces"). The picker's `agent-names` are the household's agents with
+  their patchable models and model facts taken from the catalogue the agent registered
+  (`AgentCatalogBuilder.ForHousehold`).
 
 ## Tests
 
-Seam 1: `HouseholdConfigurationTests` drives the routes raw and the commands through `AccountsServer`
-(a master key by default, `AgentKeysUrl` at `TestJwks`, call tokens from `McpTestSecret.CallTokens`,
-assertions from the server's own `Assertions`; a second server over the same directory for the
-rotation); `HouseholdConfigurationClientTests` drives the client against a running service and a
-real Redis (`RedisFixture`), changing a row behind the service's back to see what is kept.
-Pub/sub ignores the leased database, so a test listens for its own household's saves only.
+`HouseholdConfigurationTests`, `HouseholdConfigurationClientTests` (real Redis). Pub/sub ignores the
+leased database, so a test listens for its own household's saves only.

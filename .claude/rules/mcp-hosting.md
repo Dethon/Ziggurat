@@ -9,128 +9,98 @@ paths:
 
 # MCP Server Hosting
 
-`Mcp.Hosting` holds what being an MCP server means, so no server hand-writes it. The project
-references Domain, the MCP server package and the configuration binder alone, never Infrastructure —
-a reference there would hand every server Infrastructure's whole stack. A server that needs an
-Infrastructure adapter takes the reference itself and says why (Telegram dictates, so it holds the
-shared transcription client); `Mcp.Hosting` must never make that choice on a server's behalf.
+`Mcp.Hosting` holds what being an MCP server means, so no server hand-writes it. It references Domain,
+the MCP server package and the configuration binder alone, **never Infrastructure** — that would hand
+every server Infrastructure's whole stack. A server needing an Infrastructure adapter takes the
+reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never makes that choice for it.
 
 - **`IConfigurationBuilder.BindSettings<TSettings>()` is the only way a server reads configuration.**
-  A server may wrap it in a one-line helper (voice's `ConfigModule.GetVoiceSettings()`), but the
-  wrapper must delegate to `BindSettings` — the invariant is the binder, not the call site.
-  Environment variables first, user secrets last, so **user secrets win** — deliberately, and the
-  reverse of the framework default. Read `docs/adr/0005-user-secrets-outrank-environment-variables.md`
-  before touching the order; reversing it silently switches off CapSolver, web push and the Music
-  Assistant action on every containerised deployment. The secrets id comes off the entry assembly, so
-  the five servers with no `UserSecretsId` simply have no such source. The **outpost** is the one
-  server that adds a source of its own on top: it is configured by the flags its operator types, and
-  the host puts the command line *underneath* the environment, so `OutpostFlags` re-applies
-  it above `BindSettings`' sources — a `Jailed` variable that happens to be set must not overrule a
-  `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
-  copy it. Nested sections bind through
-  the plain call. A `required` member that bound to null fails startup naming it; **null only, never
-  empty** — four shipped servers carry required members that ship as `""` and are filled from secrets
-  (Telegram, WebSearch, HomeAssistant, Library).
+  A one-line wrapper (voice's `ConfigModule.GetVoiceSettings()`) must delegate to it. **User secrets
+  win** over environment variables — deliberately, the reverse of the framework default; read
+  `docs/adr/0005` before touching the order (reversing it silently switches off CapSolver, web push and
+  the Music Assistant action on every containerised deployment). The **outpost** alone adds a source on
+  top: `OutpostFlags` re-applies its command line above `BindSettings`' sources, so a stray `Jailed`
+  variable never overrules a typed `--jailed`; `McpServerTableTests` names that exemption by file and
+  nothing else may copy it. A `required` member that bound to null fails startup naming it — **null
+  only, never empty** (several servers ship required members as `""`, filled from secrets).
 - **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
   singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
-  call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers). All
-  fourteen use it. The credential lets a caller talk to a server; only the agent's call token says
+  call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers).
+  Every server uses it. The credential lets a caller talk to a server; only the agent's call token says
   who a tool call acts for (`.claude/rules/service-identity.md`, "Call tokens").
-- **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
-  believes whatever `ConversationContext` a call's `_meta` claims, so a call must present
-  `Authorization: Bearer <secret>` first. `AddMcpHost` constrains its settings to
-  `IMcpHostSettings` — a server cannot be hosted without saying which secret guards it — and
-  registers `McpSecretGate`, an `IStartupFilter` that answers 401 ahead of routing, comparing with
-  `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
-  server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — that server's own
-  credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one opens no
-  other. A server given a tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`) — every household server,
-  the tenant kit's sandbox among them — asks for its tunnel credential instead, which the relay presents — no deployment holds a household
-  server's secret. The agent binds every server's under `Mcp:Secrets` keyed by the
-  name it answers to (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
-  each endpoint the deployment's own settings name its server's (`AgentSpecProjection`, agents and
-  workers alike; `DeploymentEndpoints` is the list) and each channel connection likewise; a host it
-  is configured to dial without a credential stops the agent at startup. A registered agent's
-  endpoints are whatever `POST /api/agents` said, so one the settings do not name is dialled bare —
-  no credential may follow a registration to an address of its choosing. The **outpost**
-  answers the member with its tunnel (`OutpostSettings.Mcp` is computed from its flags and the
-  `CREDENTIAL` in its environment), so its `/mcp` asks for that credential and it never sees the
-  deployment's. **The gate guards
-  the `/mcp` path and nothing else**: a server's other endpoints are called by browsers, Home
-  Assistant and satellites, and the ones that need a gate carry their own token, so every server
-  must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
-  unset secret refuses every call. The SDK's legacy SSE endpoints are off, so streamable HTTP is the
-  one transport; `McpSecretGateTests` pins all three verbs, `CallTokenGateTests` the token's refusals,
-  and a test that boots a server through
-  the hosting library presents `Tests/McpTestSecret`.
+- **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool believes
+  the `ConversationContext` a call's `_meta` claims, so a call must first present
+  `Authorization: Bearer <secret>`. `AddMcpHost` constrains settings to `IMcpHostSettings` and registers
+  `McpSecretGate`, an `IStartupFilter` (401 ahead of routing, compared by `Domain/Security/SharedSecret.cs`, the one comparison every
+  shared-secret gate uses). A deployment server binds `McpGateSettings Mcp` from `MCP__SHAREDSECRET`,
+  its own compose variable (`MCP_SECRET_<SERVER>`), so holding one opens no other. A server given a
+  tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`) — every household server, the kit's sandbox among
+  them — asks for its tunnel credential instead, which the relay presents: **no deployment holds a
+  household server's secret**. The agent binds each server's under `Mcp:Secrets` keyed by the name it
+  answers to (`MCP__SECRETS__<host>`, the same variable on both ends). `McpCredentials` gives a credential
+  only to an endpoint the deployment's own settings name (`DeploymentEndpoints`; via `AgentSpecProjection`,
+  for agents and workers alike, and for channel connections); a configured host with no credential stops
+  the agent at startup. A registered agent's endpoints (whatever `POST /api/agents` said) that the settings
+  do not name are dialled bare — **no credential may follow a registration to an address of its
+  choosing**. The outpost's `OutpostSettings.Mcp` is
+  computed from its flags and `CREDENTIAL`, so it never sees the deployment's. **The gate guards the
+  `/mcp` path and nothing else**, so every server maps its endpoint at exactly `"/mcp"`
+  (`McpServerTableTests`). A server's other endpoints (browsers, Home Assistant, satellites) hold no
+  deployment secret, so one that needs a gate carries its own token. An unset secret refuses every call. Streamable HTTP is the one transport
+  (legacy SSE off). `McpSecretGateTests`, `CallTokenGateTests`; a test booting a server through the
+  library presents `Tests/McpTestSecret`.
 - **A server is keyed by its `ServerAddress` and never by a URL's host** (`Domain/Security/ServerAddress.cs`).
-  `Name` is the name it answers to — the call token's audience (`TokenAudiences.CallTo`), the key
-  `McpCredentials` finds its credential by, what the server binds as `MCP__AUDIENCE`
-  (`CallTokenGate`, through `ServerAddress.Named`); `Qualifier` is what its tools are qualified with
-  (`mcp__<qualifier>__<tool>`); `CacheKey` is what its prompts and skills are cached under (the
-  qualifier for a URL, the full name for a household's server); the address itself, equal
-  as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outposts a session
-  dialled (`McpClientManager.DialledServers`) compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
-  `Qualifier` the host or `host-port` off the default port, so a server on `:8080` is
-  `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
-  URL of its own gets another factory there, which every one of those keys then follows: a
-  household's server reached through its tunnel is `ServerAddress.Tunnelled(household, name)`
-  (`.claude/rules/own-servers.md`). `FromUrl` takes only http(s) with a host, so a server named by its
-  name is never read as a URL.
+  `Name` is the call token's audience (`TokenAudiences.CallTo`), the key `McpCredentials` finds its
+  credential by and what the server binds as `MCP__AUDIENCE` (`CallTokenGate`, via
+  `ServerAddress.Named`); `Qualifier` qualifies its tools (`mcp__<qualifier>__<tool>`; the host, or
+  `host-port` off the scheme's default port, so `http://mcp-vault:8080` is `mcp-vault` to its token and
+  credential and `mcp-vault-8080` to its tools); `CacheKey` caches its prompts and skills (a household server's
+  full name, so one household's prompts never serve another); the address itself, equal as a server,
+  is what `DeploymentEndpoints` and `McpClientManager.DialledServers` compare. URLs go through
+  `ServerAddress.FromUrl` (http(s) with a host only); a household's tunnelled server is
+  `ServerAddress.Tunnelled(household, name)` (`.claude/rules/own-servers.md`).
   `ServerAddressConformanceTests` fails on any other `Agent`, `Infrastructure`, `Domain` or
-  `Mcp.Hosting` file reading a `.Host`; a web page's site (the browser, logins, search, push) is not
-  a server and is left out of the scan by path.
-- **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
-  today: the browse server's login handoff and logins pages answer on its second listener (8081),
-  `/mcp` on the first (8080), both named by its `Listeners` settings and bound in `Program.cs`
-  (`ListenAnyIP`, so its image clears `ASPNETCORE_HTTP_PORTS` rather than have Kestrel warn it
-  overrode it). `PagesListener` keys on the socket a request arrived on — never `RequireHost`, which
-  reads the Host header the proxy passes on as the browser sent it — and answers 404 for anything
-  outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
-  inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
-  for a credential. The proxy reaches the pages through the relay alone, which opens its streams
-  to the pages listener by the `pages` tag the server registers for it (`.claude/rules/tunnel-forwarding.md`,
-  "Browse pages"); no route names the server (`DeploymentConformanceTests`). `WebIdentityServerHarness`
-  opens both listeners, so the handoff tests reach the pages on the listener the tunnel lands on.
-- **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
-  nine servers that offer the agent things to call. Being a tool server and being a channel server
-  are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
-- **The error filter is one shared registration, installed at most once.** A cancelled call
-  propagates as the abort it is; anything else is logged, reported as a `ToolCallFailed`
-  `ErrorEvent` under the verified call's household (`.claude/rules/observability.md`, "Households"),
-  and becomes the caller's error result.
-  **Who is calling travels as data, never as an ambient**: a tool reads the call's
-  `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
-  (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. Its principal
-  is the identity the call token verified as (`call.Identity`, left on the call's `Items` by the gate),
-  never the one the `_meta` claims. The household it acts for is read the same way, `call.Household`
-(`Mcp.Hosting/CallHousehold.cs`), which proves it to the accounts service with the token the gate
-verified, so a tool reads its section of that household's configuration and no other's
-(`.claude/rules/household-config.md`, "A shared server's accessor"). No server parses the raw `_meta` for the turn or the token
-  (`CallTurnConformanceTests` reads the sources; the token is read in `CallTokenGate.cs` alone), so no
-  tool reads around the check; the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for
-  that alone. And
-  a filesystem backend — whose operations never see the request — is asked by the registrar for
-  itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
-  conversation context and, on an exec the agent minted one for, the exec bridge's call token —
-  `HaWatchFileSystem` and `SugaryWatchFileSystem` read the first, `SandboxFileSystem` the second). Absent means the call carried
-  none, and a consumer refuses rather than guesses. There is no `AsyncLocal` on this path; don't add one to save a parameter. The context
-  also carries `ConfigPatchModel`, the model the turn asked for. **The Jev client holds the local-box rule and the bill, and every use feeds it explicitly**:
-  `JudgmentRequest.Caller` (a `JudgmentCaller`: the turn's model, the sender, the agent and the
-  conversation) is a required field. `TypeSafeJudge` sends nothing for a `lemonade/` turn model and
-  answers `AbsenceReason.LocalTurn`, so a use cannot be written without saying which turn it asks
-  for, and none checks for itself — it only decides what that absence means to it (not a miss to
-  count). Every answered judgment publishes a `TokenUsageEvent` billed to the caller, as a chat turn
-  does, so Jev's cost lands on the dashboard's token totals with every other model's. No use
-  publishes a usage event of its own; a use's own event (`SkillPreloadEvent`, `ExecScreenEvent`)
-  may keep a copy of the cost for its dashboard family, and the eval's spend ignores that copy. The value is passed down as plain data, never read from an ambient: a
-  server's tool takes it from the call (`JudgmentCaller.For(context.Turn)`)
-  and hands it on as a parameter, the agent host takes it from the message (and the household's key
-  with it, `JudgmentCaller.Payer`; a server's names the household and asks on its own key), and a question with no
-  turn behind it (memory) names the user with a null turn model. Two
-  filters nested around each other would let the outer one convert the very cancellation the inner
-  rethrows, so a second ask is a no-op and the first ask's error shape wins.
-- **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table.** Fourteen
-  rows, each driving the real `ConfigModule`; `McpServerContractTests` asserts every server resolves
-  its settings as a singleton, registered the host, has exactly one call-tool filter and exactly one
-  `/mcp` gate holding the secret its settings carry. A new server is one new row.
+  `Mcp.Hosting` file reading a `.Host` (web sites — browser, logins, search, push — are excluded by path).
+- **A server whose pages the proxy routes keeps them on a listener of their own.** The browse server's
+  login handoff and logins pages answer on its second listener (8081), `/mcp` on the first (8080),
+  both named by its `Listeners` settings and bound in `Program.cs` with `ListenAnyIP` (its image clears
+  `ASPNETCORE_HTTP_PORTS`). `PagesListener` keys on the arrival socket — **never `RequireHost`**, whose
+  Host header the proxy passes through from the browser — answering 404 outside `/browse` on the pages
+  listener and for `/browse` on the other; inserted first, ahead of the gate, so `/mcp` is absent there.
+  The proxy reaches the pages through the relay alone, by the `pages` tag the server registers
+  (`.claude/rules/tunnel-forwarding.md`, "Browse pages"); no route names the server
+  (`DeploymentConformanceTests`). `WebIdentityServerHarness` opens both listeners.
+- **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for servers
+  that offer the agent things to call. Tool server and channel server are independent: a dual-role
+  server calls `AddToolServer` then `AddChannelServer`.
+- **The error filter is one shared registration, installed at most once** (`CallToolErrorFilter`): a
+  cancelled call propagates as the abort it is; anything else is logged, reported as a `ToolCallFailed`
+  `ErrorEvent` under the verified call's household (`.claude/rules/observability.md`, "Households"), and
+  becomes the caller's error result. A second ask is a no-op — nested filters would let the outer one
+  convert the cancellation the inner rethrows — so the first ask's error shape wins.
+- **Who is calling travels as data, never as an ambient.** A tool reads the call's
+  `ConversationContext` through the one accessor, `Mcp.Hosting/CallTurn.cs` (`call.Turn`,
+  `call.TryScope`); its principal is the identity the call token verified (`call.Identity`), never the
+  one `_meta` claims. The household is `call.Household` (`Mcp.Hosting/CallHousehold.cs`), proven to the
+  accounts service with the verified token, so a tool reads its own section of that household's
+  configuration and no other's (`.claude/rules/household-config.md`, "A shared server's accessor"). No
+  server parses the raw `_meta` for the turn or the token (`CallTurnConformanceTests`; the token is read
+  in `CallTokenGate.cs` alone); the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for that
+  alone. A filesystem backend gets the caller through `FileSystemBackendBase.For(FileSystemCaller)` per
+  call (the context, and on a bridged exec its call token). Absent means the call carried none, and a
+  consumer refuses rather than guesses. There is no `AsyncLocal` on this path; don't add one to save a
+  parameter.
+- **The Jev client holds the local-box rule and the bill, and every use feeds it explicitly**:
+  `JudgmentRequest.Caller` (a `JudgmentCaller`: the turn's model, the sender, the agent, the
+  conversation) is required; the call's context carries `ConfigPatchModel`, the model the turn asked for. `TypeSafeJudge` sends nothing for a `lemonade/` turn model and answers
+  `AbsenceReason.LocalTurn`; no use checks for itself, it only decides what that absence means to it
+  (not a miss). Every answered judgment publishes a `TokenUsageEvent` billed to the caller; no use
+  publishes one of its own (a use's own event, `SkillPreloadEvent` or `ExecScreenEvent`, may keep a copy
+  of the cost, which the eval's spend ignores). The caller is passed down as data: a server's tool takes
+  `JudgmentCaller.For(context.Turn)` and hands it on, the agent host takes it from the message with the
+  household's key (`JudgmentCaller.Payer`), a server's caller names the household and asks on its own
+  key, and a question with no turn (memory) names the user with a null turn model.
+- **`Tests/Integration/McpServers/McpServerRegistrations.cs` is the one server table**: one row per
+  server, each driving the real `ConfigModule`; `McpServerContractTests` asserts each resolves its
+  settings as a singleton, registers the host, has exactly one call-tool filter and exactly one `/mcp`
+  gate holding its settings' secret. A new server is one new row.

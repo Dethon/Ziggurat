@@ -81,7 +81,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         IncludeDetailedErrors = true;
         MaximumIterationsPerRequest = 50;
         // Every call of a message is handed over at once; which of them actually run at once is
-        // decided call by call, by what each says it touches (WrittenOrder).
+        // decided call by call, by what each says it touches (WrittenOrder). It must stay on for
+        // steering too: a steered turn's Terminate on the sequential path would leave the batch's
+        // later calls without results.
         AllowConcurrentInvocation = true;
         MaximumConsecutiveErrorsPerRequest = 3;
     }

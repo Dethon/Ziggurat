@@ -20,258 +20,62 @@ Home Assistant is a household's: it runs in the tenant kit (`TenantKit/`) beside
 3. Set `HOMEASSISTANT__TOKEN=...` in `TenantKit/.env` and restart the kit's `mcp-homeassistant`.
 4. For the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**; the vacuum appears as `vacuum.<name>`.
 
-`McpServerHomeAssistant` reaches HA on the kit's own network at `http://homeassistant:8123`, and the agent reaches the server through its tunnel as `homeassistant` (`.claude/rules/own-servers.md`); the watch callback and announcement targets stay inside the kit, between it and the kit's voice server, under the kit's own `Announce__Token`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
+`McpServerHomeAssistant` reaches HA on the kit's network at `http://homeassistant:8123`; the agent reaches the server through its tunnel as `homeassistant` (`.claude/rules/own-servers.md`). The watch callback and announcement targets stay inside the kit, under the kit's own `Announce__Token`.
 
-The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`. Each action an entity admits is an
-**action file** named for its service with no extension (`turn_on`, `music_assistant.play_media`),
-run from the entity directory as `./turn_on` or `turn_on` alike — `./` is the spelling taught,
-because a real shell needs it once exec runs in the sandbox. An action file is executable-only:
-a read refuses it (`FsError.ExecutableOnly`), info reports `executable`, glob lists it under
-`executables`, and its usage is `--help`; `/ha` overrides no write at all (a watch is written at
-`/watchers`). The old `<service>.sh` spelling
-names nothing and answers 127 with the available names. Since any leaf other than `state.json`
-parses as an action, whether one exists is the catalog's answer, never the parser's.
+**Voice alarms** are events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`) that an HA automation bridges to the voice announce endpoint. The prompt never hard-codes the calendar id — it says "the calendar the setup index lists as alarms". The `rest_command` + automation are provisioned by hand in the HA instance (`docs/home-assistant-bridges.md` has the YAML); without them an event is created and nothing rings.
+
+## Action files (`Domain/Tools/HomeAssistant/Vfs/`)
+
+- Each action an entity admits is an **action file** named for its service, no extension (`turn_on`, `music_assistant.play_media`), run as `./turn_on` or `turn_on`; `./` is the spelling taught, because a real shell needs it once exec runs in the sandbox. Executable-only: a read refuses it (`FsError.ExecutableOnly`), its usage is `--help`. `/ha` overrides no write at all (watches are written at `/watchers`). The old `<service>.sh` spelling answers 127 with the available names.
+- Any leaf other than `state.json` parses as an action, so **whether one exists is the catalog's answer, never the parser's**.
+- **Served actions** replace or add to HA's catalog where HA cannot do the job, declared as `HaServiceDefinition`s so glob/`--help`/exec resolve them like real services (`HaCatalogProvider` `extraServices`; one named like a published service **replaces** it, so an action file resolves to exactly one definition). The list is `McpServerHomeAssistant/Modules/ConfigModule.cs`, which the eval's fake mount builds from too.
+- The exec tokeniser honours bash quoting (`HaFileSystem.Exec.cs`), and the prompt shows a JSON argument single-quoted; keep the two in step.
 
 ## The calendar's action files are served, not forwarded
 
-HA's service catalog cannot drive a calendar: `calendar.get_events` answers without the `uid` an
-event is addressed by (its response is filtered to start/end/summary/description/location/status),
-`calendar.create_event` takes no `rrule`, and there is **no delete or update service** — those exist
-only as WebSocket commands (`calendar/event/create|delete|update`). A real turn hit this: asked to
-move an alarm, the agent found `update_event` missing and created a second event beside the first.
+HA's service catalog cannot drive a calendar (no uid on `get_events`, no `rrule`, no delete or update service), so `HaCalendarActions` serves `create_event`, `get_events` and `delete_event`, run by `HaCalendarEvents` over REST (`ListCalendarEventsAsync`) and WebSocket (`CreateCalendarEventAsync`, `DeleteCalendarEventAsync`). There is **deliberately no update**: a change is delete-by-uid plus create, which the prompt says to do silently.
 
-So `HaCalendarActions` declares `create_event`, `get_events` and `delete_event` as served actions
-(the podcast pattern), always registered, and `HaCatalogProvider` **replaces** the catalog's
-same-named definitions with them — an action file resolves to exactly one definition.
-`HaCalendarEvents` runs them through three `IHomeAssistantClient` members: `ListCalendarEventsAsync`
-(REST `GET /api/calendars/{entity}?start&end`, the one read that carries uids), and
-`CreateCalendarEventAsync` / `DeleteCalendarEventAsync` (one WebSocket connection per command:
-`auth_required` → `auth` → `auth_ok`, then an id-correlated `result` frame). There is deliberately
-no update: a change is delete-by-uid plus create, which the prompt says to do silently.
+Date-times cross as the caller's strings, never parsed into an instant: HA reads a naive one in its own zone and the container may sit in another, so the only arithmetic (an end one minute after a start, a listing window from now) keeps the string's shape (`HaDateTimeText`).
 
-Date-times cross as the caller's strings. HA reads a naive one in its own zone and the container
-may sit in another, so parsing into an instant here would move an alarm by the difference; the only
-arithmetic (an end one minute after a start, a listing window from now) keeps the string's shape.
-
-Testing: `FakeHomeAssistantSocket` (Tests/Integration/Fixtures) speaks the protocol over a shared
-`FakeCalendarStore`; the eval's `FakeHomeAssistant` serves the calendars endpoint from the same
-store, points the client's base url at the socket (REST still goes through the handler), and
-counts events in its snapshot (`AlarmsEventCountKey`) so a create or a delete is a declared change.
-`HomeAssistantSeed` boots the real container with a Local Calendar config entry for the round trip.
-
-The exec tokeniser honours bash quoting (`\"` and `\\` inside double quotes, a literal single-quoted
-string, an unquoted backslash escape). Before it did, `--description "{\"target\":…}"` reached HA
-as `{\target\:…}` and the bridge could not read the alarm's target. The prompt now shows the
-description single-quoted.
+Testing: `FakeHomeAssistantSocket` and the eval's `FakeHomeAssistant` share `FakeCalendarStore` (snapshot key `AlarmsEventCountKey`); `HomeAssistantSeed` boots the real container with a Local Calendar.
 
 ## Every entity has `history`, served by the mount
 
-The service catalog cannot read the recorder — the history endpoint (`GET /api/history/period/
-{start}`) is REST only — so `HaHistoryActions.History` is a served action (the calendar pattern)
-with `AppliesToEveryEntity`, the one flag that puts an action in **every** entity directory under
-its bare name, read-only classes included. `HaActionResolver` honours the flag before its
-domain rules; `HomeAssistantSetupSummary` says such an action once, on an `every entity:` line,
-and keeps it off the per-class lines. `HaHistory` runs it through `IHomeAssistantClient.
-ListHistoryAsync` (asked with `minimal_response&no_attributes`, so a change is state plus
-instant). Window strings cross as written (naive = HA's zone), like the calendar's; the shared
-arithmetic is `HaDateTimeText`. Plain listing keeps the latest `--limit` changes; `--every N`
-buckets numeric states per N minutes (min/max/mean/last/samples) and is an argument error on an
-entity with no numeric state, or beside `--limit`. **Home Assistant stamps everything in UTC
-whatever the home's zone** (`recorder/history/__init__.py` formats `last_changed` from a UTC
-timestamp, and a state's `last_changed`/`last_updated` come the same way), so `HaCatalogProvider`
-reads the home's zone once from `GET /api/config` (`IHomeAssistantClient.GetTimeZoneAsync`,
-`HaCatalog.HomeZone`) and **every instant the mount says goes through `HaDateTimeText.Stamp` on
-that clock**: `state.json`'s stamps, a listing's changes, a summary's buckets, a statistics row,
-a watch's `status.json`, the window an action echoes. A real turn read a glucose `last_updated`
-of `02:13+00:00` beside a turn prefix saying 04:13 local and called a thirty-second-old reading
-two hours old; the skill now tells the model the stamps are local and never to convert. Buckets
-align to the same clock, so a day bucket opens at the home's midnight; a zone it cannot read or
-resolve leaves the catalog whole, keeps the stamps as they came and buckets on UTC, logged once as
-a warning, and the payload's `bucket_zone` says which. The model-facing JSON uses relaxed escaping
-so an offset's `+` is not written `\u002B`. An empty window under `--every` is an empty summary with
-the retention note, never an error. The seeded test container is `time_zone: UTC`, so only the unit test with Madrid
-stamps pins this. The first entry is the state at the window's start,
-stamped there (pinned by `HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere` against the real recorder). What
-comes back is bounded by the recorder's retention (10 days by default, 90 on prod); nothing in
-the API says which, so the help and the empty answer say "unless this home raised it" rather
-than naming a bound the model would treat as fact. See `docs/adr/0037`.
-
-**`statistics` is the read that outlives retention.** Long-term statistics (hourly mean/min/max,
-or state/sum/change for a total) are WebSocket-only (`recorder/statistics_during_period`), compiled
-at :12 each hour for every sensor with a `state_class`, and kept for good. `HaStatisticsActions.
-Statistics` is the same every-entity served action narrowed by `RequiresAttribute = "state_class"`,
-so it appears in exactly the directories that have rows behind it — the resolver now takes the
-`HaEntityState`, not its id, for that reason — and the index says `every entity with state_class:
-statistics`. `HaStatistics` runs it through `ListStatisticsAsync` (`--days`, `--period
-5minute|hour|day|week|month`, `--limit`); `HaWindow` resolves both reads' windows. Rows render only
-the measures the sensor's kind has. `FakeHomeAssistantSocket` answers the command from its
-`Statistics` map; the real-container test imports rows with `recorder.import_statistics` and
-reads them back. A sensor that lacks a `state_class` (LibreLink's glucose did) gets one through
-HA's `customize:`; prod has that and `purge_keep_days: 90` since 2026-09-04.
+- `HaHistoryActions.History` carries `AppliesToEveryEntity` — the one flag that puts an action in **every** entity directory, read-only classes included; `HaActionResolver` honours it before its domain rules, and `HomeAssistantSetupSummary` says it once on an `every entity:` line.
+- **Home Assistant stamps everything in UTC whatever the home's zone**, so `HaCatalogProvider` reads the zone once (`IHomeAssistantClient.GetTimeZoneAsync`, `HaCatalog.HomeZone`) and **every instant the mount says goes through `HaDateTimeText.Stamp`** — `state.json`, history, summaries, statistics rows, a watch's `status.json`, echoed windows. The `home-assistant` skill tells the model the stamps are local and never to convert; the two stay in step. A zone that cannot be read leaves stamps as they came and buckets on UTC (`bucket_zone` says which). The seeded test container is `time_zone: UTC`, so only the unit test with Madrid stamps pins this.
+- An empty window under `--every` is an empty summary with the retention note, never an error (`HaHistoryActionTests.NoChanges_UnderEvery_IsAnEmptySummary_WithTheRetentionNote`); a non-empty history with no number in it is an argument error.
+- The first entry is the state at the window's start, stamped there (`HomeAssistantClientTests.ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere`).
+- Retention is 10 days by default (90 on prod) and nothing in the API says which, so the help and the empty answer say "unless this home raised it" rather than naming a bound. See `docs/adr/0037`.
+- **`statistics` is the read that outlives retention** (`HaStatisticsActions.Statistics`, `HaStatistics`): every-entity but narrowed by `RequiresAttribute = "state_class"`, so the resolver takes the `HaEntityState`, not its id; the index says it once on an `every entity with state_class:` line, never on per-class lines. A sensor without a `state_class` gets one through HA's `customize:` (prod has that and `purge_keep_days: 90`).
 
 ## The setup index is a file, and the guide is two skills and a stub
 
-`/ha/setup-index.md` is the one-page account of the home (`HomeAssistantSetupSummary`, rendered
-by `HaFileSystem` on every read from the catalog, the watches and the satellite roster), so it is
-as old as the read rather than as old as the conversation. The served `home_assistant_guide`
-(`Domain/Prompts/HomeAssistantPrompt.cs`) is the standing stub: scope, which mechanism a request
-is (calendar alarm, timer, schedule, watch), that an area id is read rather than derived, and the
-instruction to load the `home-assistant` skill and read the index in the same turn before any
-home task. When the host preloads the skill it makes that read too (`PreloadReads` on the
-declaration, `SkillPreloadReads` over the session's mounts): the index lands beside the body, as
-fresh as that moment, and the model's first call is the action. The doing rules — layout, workflow, reading results, history, alarms, music — are the
-`home-assistant` skill (`Domain/Prompts/HomeAssistantSkill.cs`), which says to re-read the index
-when a name does not resolve; the doing rules of a watch are the `home-watches` skill
-(`Domain/Prompts/HomeWatchesSkill.cs`), the one home task that loads its own skill instead. A
-watch on a person's glucose is not the home's wherever Sugary serves the `glucose-watches` skill
-beside it: the stub and the `home-watches` description say so, so the two descriptions divide by
-subject (the home's entities, a person's sensor) and a home watch on the home's glucose entity is
-left for an agent with no Sugary (one in a household that turned Sugary off) or one that acts on the home. Both
-are shipped by the server through `AddSkills` and loaded by the model with `load_skill`. See
-`docs/adr/0039` and `.claude/rules/prompts.md`.
+- `/ha/setup-index.md` (`HomeAssistantSetupSummary`, rendered by `HaFileSystem` on every read) is the home's one-page account.
+- `home_assistant_guide` (`Domain/Prompts/HomeAssistantPrompt.cs`) is the standing stub: scope, which mechanism a request is (calendar alarm, timer, schedule, watch), that an area id is read rather than derived, and to load the `home-assistant` skill and read the index in the same turn. When the host preloads the skill it makes that read too (`PreloadReads`, `SkillPreloadReads`).
+- The doing rules are the `home-assistant` skill (`HomeAssistantSkill.cs`) and, for watches, the `home-watches` skill (`HomeWatchesSkill.cs`) — both shipped through `AddSkills`, loaded with `load_skill`.
+- **A watch on a person's glucose is not the home's** wherever Sugary serves `glucose-watches`: the stub and the `home-watches` description say so, so the two descriptions divide by subject (the home's entities vs a person's sensor), and a home watch on the home's glucose entity is left for an agent with no Sugary (a household that turned Sugary off) or one that acts on the home. See `docs/adr/0039`, `.claude/rules/prompts.md`, `.claude/rules/sugary.md`.
 
 ## Watches are Home Assistant automations, written as files
 
-A watch is `/watchers/<id>/watch.json`, with a read-only `status.json` beside it, on a filesystem of
-its own: `HaWatchFileSystem` (`ha-watches`, served by the Home Assistant server after `ha`, so a call
-naming no filesystem still reaches the home). `/ha` is read-only and `/ha/watches` names nothing.
-`/watchers` is a **union** mount point (`.claude/rules/virtual-filesystem.md`): the home's watches
-declare `routeBy: /triggers/*/trigger` with `fallback: true` — every Home Assistant trigger is a kind
-no other member claims — so each watch is a top-level `<id>/` entry the union finds by listing, and
-other servers' watches (Sugary's glucose watches) sit beside them. `HaWatchPath` parses the mount's
-four kinds; the listing is read live from the home, and a home that cannot list its automations
-fails the listing retryably rather than answering empty, so the union says the home's watches are
-unavailable instead of that there are none. A watch **is** a real automation written through the config API
-(`IHomeAssistantClient.{List,Get,Upsert,Delete}Automation*`): `HaWatchSpec` parses the file and
-names the field it refuses, `HaWatchAutomation.Render` turns it into the automation — id
-`assistant_watch_<id>`, alias = name, `mode: single`, triggers/conditions verbatim, the effects in
-order, and for `once` a final `automation.turn_off` on `{{ this.entity_id }}` guarded by a template
-condition over each prompt callback's `response_variable` (`watch_fire_<n>.status < 400`), because
-a `rest_command` does not abort the sequence on an error status and an unguarded turn_off would
-spend the watch on a 503 nobody received; every callback call is `continue_on_error`, once or not,
-because a stack that is down does raise in the home and the effects after the prompt must still
-fire — and `Project`
-reads one back; the metadata the automation cannot carry (creating agent, effects as authored, once,
-deliverTo, userId, createdAt, the on/off the agent last wrote, and the delegation the agent signed
-for the write that last set it) is JSON in its description (`HaWatchMetadata`). A watch's fire acts
-for the person that delegation names: the callback looks the watch up at fire time and sends the
-delegation with what the watch does now (`WatchDelegation.Of`), a write carrying none (a turn acting
-for nobody) leaves the watch nobody's, and a home the callback cannot ask fires for nobody
-(`.claude/rules/delegations.md`, "Deferred turns"). `WatchDelegationStore` answers the agent's
-`delegations_list` / `delegations_replace`, rewriting the config alone so a spent one-shot is not
-re-armed. A one-shot is spent only when it is off with a fire on record **and** the
-agent last wrote it armed: a refused fire stamps `last_triggered` on a watch that stays on, and a
-pause after it would otherwise read as spent and be removed. Only a prefixed
-automation with parsable metadata is a watch; the alarm bridge and blueprints are invisible to the
-subtree and untouchable through it. `enabled` is the entity's on/off, synced with
-`automation.turn_on/off` after every write; `status.json` is rendered, read-only. Text fields cross
-as Jinja and are rendered by the home inside a `variables` step, so the rest_command payloads are
-composed with `to_json` and a quote in a prompt cannot break them. The creating agent comes from
-the call's `_meta`: the fs-tool registrar asks the mount for itself as that caller sees it
-(`HaWatchFileSystem.For`), never an ambient. The view is a shallow copy with the caller swapped, not a
-second construction — a hand rebuild falls behind the constructor silently, and
-`HaWatchFileSystemCallerViewTests` pins that a view differs from its mount in the caller alone; a file naming no
-`deliverTo` takes the caller's origin channel and address, because the model is never told which
-channel a turn came from, and a file naming no `userId` takes the caller's user for the same
-reason (a fire attributed to nobody would run as the sender label "watch"); a replace naming
-neither keeps the watch's own. A watch written paused whose entity the home has not loaded within
-the store's five polls is armed, and the write's `Note` says so. A prefixed automation whose
-description is not the metadata is not a watch and is logged by id once per listing. The hub answering an
-error status at that check is `VoiceHubRejectedException` (Infrastructure's `HttpSatelliteCatalog`
-throws it, `ToolError.CodeFor` maps it by status), refused as `authentication` for a token
-mismatch and `transient_dependency` otherwise. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
-The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoint.cs`, guarded by
-the announce token, 202/401/400/503 as the automation's trace reads them) posts the rendered prompt
-and, as a literal, which of the watch's prompts it is (`promptIndex`); the fire asks the agent that
-prompt as the watch keeps it and carries what the home posted as its report, never as what is asked
-(`.claude/rules/delegations.md`, Deferred turns). The bridges document is
-`docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
-and `HaWatchEffectsTests` over `FakeHaClient`'s automation store; `WatchFiredEndpointTests` at the
-HTTP boundary over a real inbox; `HomeAssistantFixture` seeds the rest_command towards a listener
-it owns and `HomeAssistantWatchFireTests` drives a real crossing through it; the eval's fake home
-serves the config API and counts watches (`WatchCountKey`), with `WatchScenarios` per effect kind.
+- A watch is `/watchers/<id>/watch.json` with a read-only `status.json`, on `HaWatchFileSystem` (`ha-watches`, served after `ha` so a call naming no filesystem still reaches the home). `/ha/watches` names nothing. `/watchers` is a **union** (`.claude/rules/virtual-filesystem.md`): the home's watches declare `routeBy: /triggers/*/trigger` with `fallback: true`, beside Sugary's glucose watches. A home that cannot list its automations **fails the listing retryably, never answers empty**.
+- A watch **is** a real automation (`IHomeAssistantClient.{List,Get,Upsert,Delete}Automation*`), id `assistant_watch_<id>`, rendered by `HaWatchAutomation.Render`; metadata the automation cannot carry is JSON in its description (`HaWatchMetadata`). **Only a prefixed automation with parsable metadata is a watch** — the alarm bridge and blueprints are invisible and untouchable through the subtree.
+- **The automation's contract with the stack**: every prompt callback is `continue_on_error`; a `once` watch's final `automation.turn_off` is guarded on each prompt callback's `response_variable` being `< 400`, because a `rest_command` does not abort on an error status and the callback answers 503 when no agent is connected. Text crosses as Jinja rendered in a `variables` step and payloads are composed with `to_json`. The home's rest_command posts the rendered prompt and, as a literal, `promptIndex`; the callback (`WatchFiredEndpoint`, guarded by the announce token) reads them, answers 202/401/400/503 for the automation's trace to read, and buffers nothing.
+- **A fire acts for the person the watch's delegation names** (`.claude/rules/delegations.md`, "Deferred turns"): the callback looks the watch up at fire time and asks the prompt **as the watch keeps it**, carrying what the home posted only as its report, never as what is asked (anything with the announce token can post); a home the callback cannot ask fires for nobody. `WatchDelegation.Of` describes a watch the same way on both ends (agent and HA server). A write carrying no delegation leaves the watch nobody's. `WatchDelegationStore` (`delegations_list` / `delegations_replace`) rewrites the config alone, so a spent one-shot is not re-armed.
+- **Spent** = off with a fire on record **and** the agent last wrote it armed (`HaWatchAutomation.cs`): a refused fire stamps `last_triggered` on a watch that stays on, and a paused one must not read as spent (the guide says to remove spent watches).
+- The creating agent comes from the call's `_meta` via `HaWatchFileSystem.For`, never an ambient; the view is a shallow copy with the caller swapped, never a second construction (`HaWatchFileSystemCallerViewTests`). A file naming no `deliverTo` takes the caller's origin channel and address, and no `userId` the caller's user, because the model is never told either; a replace naming neither keeps the watch's own. The default `deliverTo` of a fire is `Domain/delivery.json`.
+- An announcement target is checked against the voice hub at write time; a hub error status is `VoiceHubRejectedException` (`HttpSatelliteCatalog`, mapped by `ToolError.CodeFor`): `authentication` for a token mismatch, `transient_dependency` otherwise.
+- Decision `docs/adr/0038`; tests `HaWatchesTests`, `HaWatchEffectsTests`, `WatchFiredEndpointTests`, `HomeAssistantWatchFireTests`; eval `WatchScenarios` (`WatchCountKey`).
 
 ## Music Assistant (podcast episodes)
 
-Almost everything media goes through HA's `music_assistant.*` services. One thing cannot: **listing a
-podcast's episodes**. `media_player.browse_media` has no podcast branch and raises `BrowseError`,
-`search_media` / `music_assistant.search` never return episodes, and `get_library` only holds saved
-items. That matters because `music_assistant.play_media` resolves a name across tracks/albums/
-playlists/artists/radio/**shows** — never episodes — so an episode title silently plays the show's
-newest episode and still reports success.
-
-So a podcast episode is playable **only** by its exact MA uri (`<provider>://podcast_episode/<id>`),
-and only MA's own websocket API can produce it. `IMusicAssistantClient` /
-`Infrastructure/Clients/MusicAssistant/MusicAssistantClient.cs` talks to `ws://<ma>/ws` directly
-(no HTTP command endpoint exists); it authenticates with a long-lived MA token, and accumulates
-frames flagged `partial: true`.
-
-The capability reaches the agent as `music_assistant.podcast_episodes` in every media_player
-directory. It is a **virtual action**: `HaMusicActions.PodcastEpisodes` is a synthetic
-`HaServiceDefinition` injected via `HaCatalogProvider(extraServices:)` so glob/`--help`/exec resolve
-it like a real service, and `HaFileSystem.ExecAsync` intercepts it and runs `HaPodcastEpisodes`
-instead of calling HA. It is registered only when `MusicAssistant:Token` is set, so a deployment
-without MA never advertises an action that cannot work.
-
-MA runs `network_mode: host`, so `mcp-homeassistant` reaches it over `host.docker.internal`
-(`extra_hosts: host-gateway`), not a container name.
+A podcast episode is playable **only** by its exact MA uri (`<provider>://podcast_episode/<id>`) — `music_assistant.play_media` given a title silently plays the show's newest episode and reports success — and only MA's own websocket API lists episodes (`IMusicAssistantClient`, `MusicAssistantClient`). `music_assistant.podcast_episodes` is a **virtual action** (`HaMusicActions.PodcastEpisodes`, intercepted by `HaFileSystem.ExecAsync`, run by `HaPodcastEpisodes`), registered only when `MusicAssistant:Token` is set. MA runs `network_mode: host`, so `mcp-homeassistant` reaches it over `host.docker.internal` (`extra_hosts: host-gateway`), not a container name.
 
 ## Music Assistant (restarting an episode)
 
-MA keeps a **resume point** per podcast episode and audiobook, and `play_index` reads its
-`seek_position` argument as falsy-or-set: a 0 means "no seek requested", so it substitutes
-`resume_position_ms - 500` and the stream restarts half a second behind where the listener already
-was (`music_assistant/controllers/player_queues.py`, MA 2.9.9). Both routes into it are affected —
-`music_assistant.play_media` always resumes, and `media_player.media_seek` forwards straight to
-`play_index` — and HA's `music_assistant.play_media` exposes no start-position field, so nothing the
-agent can say means "second zero".
-
-`HaFileSystem.NormalizeMediaSeek` therefore rewrites a `media_player.media_seek` of 0 to 1 second:
-truthy for MA, inaudible to a listener. Keep that rewrite as long as MA reads the field this way —
-without it "play it from the beginning" silently becomes "jump back half a second".
+`HaFileSystem.NormalizeMediaSeek` rewrites a `media_player.media_seek` of 0 to 1 second, because MA's `play_index` reads a 0 `seek_position` as "no seek" and resumes half a second behind the listener (MA 2.9.9); HA exposes no start-position field. **Keep that rewrite** as long as MA reads the field this way.
 
 ## The setup index says what an entity offers; the registry says what it hides
 
-"Turn on the TV and put Crunchyroll" took ten model turns on a 36-second task, seven of them
-spent learning that `remote.turn_on --activity <app>` opens an app and which apps exist. Two
-things fix that:
-
-- **A choosing entity's index line carries its choices and the action that takes them.**
-  `HomeAssistantSetupSummary` appends ` — ./<service> --<flag>: a, b, c` for the lists that ARE
-  an action's argument (`activity_list` → `turn_on --activity`, `source_list` → `select_source
-  --source`, `options` → `select_option --option`), only when the entity admits that action and
-  the list is non-empty. The header says the segment stops at the dash. Widen the table only for
-  a list that is literally a flag's value — a climate's mode lists would say a lot for a call the
-  model already knows.
-- **An unavailable entity's choice lists come from where Home Assistant persists them, not from
-  a memory and not from anything loaded.** The set goes `unavailable` seconds into standby and
-  the states endpoint then serves the entity with a name and its features and no lists — at the
-  one moment the apps are asked for. `HaCatalogProvider.WithPersistedChoicesAsync` puts them
-  back, only for what the states endpoint left blank, so a home with everything on reads nothing:
-  - one **entity registry** read (`config/entity_registry/get_entries`,
-    `IHomeAssistantClient.ListRegistryEntriesAsync`) for every unavailable entity serving no
-    choice list. The registry persists `source_list` and `options` as capabilities, current from
-    the last state write, and the entity gets exactly the choice lists it holds. The same entry
-    names the entity's platform and config entry.
-  - a `remote`'s `activity_list` is **no capability** (and the Android TV Remote's media player
-    leaves `source_list` empty), so a remote the registry puts on `androidtv_remote` gets its apps
-    from the one place HA keeps them, the config entry's options — whose only window is the
-    entry's options flow, opened, read at its first form (each app labelled `Name (key)`) and
-    deleted unanswered, so nothing is saved or reloaded (`ListAndroidTvAppsAsync`). The flow
-    opens whether or not the entry is loaded.
-  The entry comes from the registry and never from the integration's live entities: a set that
-  is off when the home starts leaves `androidtv_remote` in `setup_retry` (its setup raises
-  `ConfigEntryNotReady`) until the set is next seen, and a template's `integration_entities`
-  lists nothing for it — a real index built four minutes after a restart listed the TV with no
-  apps for exactly that reason, and the model spent nine turns finding Plex. A read that fails
-  leaves the entities as served and the catalog whole, logged. There is deliberately no
-  process-wide memory of a list seen while the entity was on: it was empty after every restart
-  with the set off, and it never fired on prod anyway, because a live disconnect is served
-  without the `restored` flag it keyed on. The eval's fake home serves the flow and a bare
-  unavailable stub the way prod does, and its socket's `Registry` names the remote's entry.
-- **An entity hidden in Home Assistant's registry never enters the catalog.** The states endpoint
-  serves hidden entities regardless, so `HaCatalogProvider`'s area template also renders the
-  `is_hidden_entity` list and the provider drops those states before the catalog is built — no
-  tree entry, no index line, no path resolves. Hide an entity in HA (the entity's settings →
-  Visibility) when it exists for an automation rather than for a person: the TV's wake button and
-  the automation that presses it were the first two.
+- **A choosing entity's index line carries its choices and the action that takes them** (`HomeAssistantSetupSummary`: ` — ./<service> --<flag>: a, b, c` for `activity_list`, `source_list`, `options`, only when the entity admits that action and the list is non-empty). Widen that table only for a list that is literally a flag's value.
+- **An unavailable entity's choice lists come from where Home Assistant persists them, never from a memory** (`HaCatalogProvider.WithPersistedChoicesAsync`): the entity registry (`ListRegistryEntriesAsync`) for `source_list`/`options`, and for an `androidtv_remote` remote the config entry's options flow, opened, read and deleted unanswered (`ListAndroidTvAppsAsync`). The entry comes from the registry, **never from the integration's live entities** (a set off at boot leaves the integration in `setup_retry`). There is **deliberately no process-wide memory** of a list seen while the entity was on — it was empty after every restart with the set off.
+- **An entity hidden in Home Assistant's registry never enters the catalog** (the area template renders `is_hidden_entity` and the provider drops those states). Hide an entity in HA when it exists for an automation rather than a person (the TV's wake button and its automation).
