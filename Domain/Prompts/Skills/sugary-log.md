@@ -17,7 +17,10 @@ description-budget: 110
 # Raised to 1010 when her glucose became a table of this log (2026-11-18): where the readings are and
 # that the README holds the clinic's statistics, in place of three pointers to /ha that a household
 # with no home could not follow.
-body-budget: 1010
+# Raised to 1100 when the log came to hold who they are and their pens (2026-11-19): profile, heights,
+# weights and pens, and that none of them is a number to dose from - their weight or their insulin's
+# name invites a ratio or an action time they never gave.
+body-budget: 1100
 served-by: mcp-sugary
 claims:
 # The trigger claim: a request of this kind loads the skill.
@@ -48,6 +51,7 @@ The log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 - `foods` — the foods they keep, one row each: what they call it, its carbs per 100 g or ml, the amount they usually have and, for a food kept only as a portion, the carbs in that portion.
 - `periods` — their menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what they wrote about a day. Both are days on the home's calendar: read `glucose` for those days beside them.
 - `glucose` — one row per reading their sensor measured, in mg/dL with the arrow; `sensors` — the sensors they wore. The README gives time in range, mean, GMI and CV as SQL to copy.
+- `profile` — one row: their `sex`, `diabetes_type` and `diagnosed_on`, an empty cell being unsaid. `heights`, `weights` — over time, the latest row for now. `pens` — which insulin each dose `kind` is, the one with no `replaced_on` in use. Context, never a number to dose from.
 
 Every time is on the home's clock, so a meal, its dose and the readings after them line up. Beside each is `<column>_local`, its wall time, for a day or an hour of their life: `eaten_at_local::date = '2026-10-03'`.
 
