@@ -27,6 +27,10 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
   const [measurements, setMeasurements] = useState<Measurement[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ kind: MeasurementKind; measurement?: Measurement } | null>(null);
+  // The day as she types it, saved when she leaves the field: a typed year passes through 0002 and 0020
+  // on its way to 2015, and each save of those would race the next.
+  const [diagnosed, setDiagnosed] = useState(profile.diagnosedOn ?? "");
+  useEffect(() => setDiagnosed(profile.diagnosedOn ?? ""), [profile.diagnosedOn]);
 
   const load = useCallback(async () => {
     try {
@@ -68,7 +72,6 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
   // Every one, the newest included, so the latest can be corrected too: the rows above add a new one.
   const history = measurements ?? [];
   const opened = sheet?.measurement;
-  const newest = sheet && latest(measurements ?? [], sheet.kind);
 
   return (
     <section className="card setting" aria-labelledby={`${id}-title`}>
@@ -124,10 +127,11 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
           id={`${id}-diagnosed`}
           type="date"
           max={today}
-          value={profile.diagnosedOn ?? ""}
-          onChange={(event) => {
-            const value = event.target.value || null;
-            if (value === null || value <= today) {
+          value={diagnosed}
+          onChange={(event) => setDiagnosed(event.target.value)}
+          onBlur={() => {
+            const value = diagnosed || null;
+            if (value !== profile.diagnosedOn && (value === null || (value >= "1900-01-01" && value <= today))) {
               void save({ diagnosedOn: value });
             }
           }}
@@ -197,7 +201,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
           initial={
             opened
               ? { on: opened.on, value: String(opened.value) }
-              : { on: today, value: newest ? String(newest.value) : "" }
+              : { on: today, value: "" }
           }
           others={measurements ?? []}
           today={today}
