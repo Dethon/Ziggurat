@@ -38,89 +38,92 @@ export function SettingsScreen({ profile, onProfile }: { profile: Profile; onPro
         {t("settingsTitle")}
       </h1>
 
-      <ProfileCard profile={profile} onChange={onProfile} />
+      {/* Her cards, in two columns on a desktop. */}
+      <div className="cards">
+        <ProfileCard profile={profile} onChange={onProfile} />
 
-      <PensCard />
+        <PensCard />
 
-      <section className="card setting" aria-labelledby="ration-title">
-        <h2 id="ration-title">{t("rationSize")}</h2>
-        <div className="segmented" role="group" aria-labelledby="ration-title">
-          {RATION_SIZES.map((size) => (
-            <button
-              key={size}
-              type="button"
-              className={rationSize === size ? "segment segment-on" : "segment"}
-              aria-pressed={rationSize === size}
-              onClick={() => update({ rationSize: size })}
-            >
-              {t("grams", { n: size })}
-            </button>
-          ))}
-        </div>
-        <p className="muted small">{t("rationSizeHint")}</p>
-      </section>
+        <section className="card setting" aria-labelledby="ration-title">
+          <h2 id="ration-title">{t("rationSize")}</h2>
+          <div className="segmented" role="group" aria-labelledby="ration-title">
+            {RATION_SIZES.map((size) => (
+              <button
+                key={size}
+                type="button"
+                className={rationSize === size ? "segment segment-on" : "segment"}
+                aria-pressed={rationSize === size}
+                onClick={() => update({ rationSize: size })}
+              >
+                {t("grams", { n: size })}
+              </button>
+            ))}
+          </div>
+          <p className="muted small">{t("rationSizeHint")}</p>
+        </section>
 
-      <section className="card setting" aria-labelledby="language-title">
-        <h2 id="language-title">{t("language")}</h2>
-        <div className="segmented" role="group" aria-labelledby="language-title">
-          {LANGUAGES.map((option) => (
-            <button
-              key={option.code}
-              type="button"
-              lang={option.code}
-              className={language === option.code ? "segment segment-on" : "segment"}
-              aria-pressed={language === option.code}
-              onClick={() => update({ language: option.code })}
-            >
-              {option.name}
-            </button>
-          ))}
-        </div>
-      </section>
+        <section className="card setting" aria-labelledby="language-title">
+          <h2 id="language-title">{t("language")}</h2>
+          <div className="segmented" role="group" aria-labelledby="language-title">
+            {LANGUAGES.map((option) => (
+              <button
+                key={option.code}
+                type="button"
+                lang={option.code}
+                className={language === option.code ? "segment segment-on" : "segment"}
+                aria-pressed={language === option.code}
+                onClick={() => update({ language: option.code })}
+              >
+                {option.name}
+              </button>
+            ))}
+          </div>
+        </section>
 
-      <section className="card setting" aria-labelledby="theme-title">
-        <h2 id="theme-title">{t("theme")}</h2>
-        <div className="segmented" role="group" aria-labelledby="theme-title">
-          {THEMES.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={theme === option ? "segment segment-on" : "segment"}
-              aria-pressed={theme === option}
-              onClick={() => update({ theme: option })}
-            >
-              {t(`theme_${option}`)}
-            </button>
-          ))}
-        </div>
-      </section>
+        <section className="card setting" aria-labelledby="theme-title">
+          <h2 id="theme-title">{t("theme")}</h2>
+          <div className="segmented" role="group" aria-labelledby="theme-title">
+            {THEMES.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={theme === option ? "segment segment-on" : "segment"}
+                aria-pressed={theme === option}
+                onClick={() => update({ theme: option })}
+              >
+                {t(`theme_${option}`)}
+              </button>
+            ))}
+          </div>
+        </section>
 
-      <section className="card setting" aria-labelledby="data-title">
-        <div>
-          <h2 id="data-title">{t("exportTitle")}</h2>
-          <p className="muted small">{t("exportHint")}</p>
-        </div>
-        <ul className="rows">
-          {EXPORTS.map(({ table, label }) => (
-            <li key={table}>
-              <a className="row-link" href={api.exportUrl(table)} download>
-                <Icon name="file" />
-                <span>{t(label)}</span>
-                <span className="row-tag">CSV</span>
-                <Icon name="download" size={20} />
-              </a>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <section className="card setting" aria-labelledby="data-title">
+          <div>
+            <h2 id="data-title">{t("exportTitle")}</h2>
+            <p className="muted small">{t("exportHint")}</p>
+          </div>
+          <ul className="rows">
+            {EXPORTS.map(({ table, label }) => (
+              <li key={table}>
+                <a className="row-link" href={api.exportUrl(table)} download>
+                  <Icon name="file" />
+                  <span>{t(label)}</span>
+                  <span className="row-tag">CSV</span>
+                  <Icon name="download" size={20} />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
 
-      <details className="card setting about">
-        <summary>
-          <h2>{t("about")}</h2>
-          <Icon name="chevron" size={20} />
-        </summary>
-        <p className="muted">{t("aboutText")}</p>
-      </details>
+        <details className="card setting about">
+          <summary>
+            <h2>{t("about")}</h2>
+            <Icon name="chevron" size={20} />
+          </summary>
+          <p className="muted">{t("aboutText")}</p>
+        </details>
+      </div>
 
       {/* Signing in and out is the deployment's, once for every app: its account page lists the
           person's passkeys and devices and ends a device's session, and leads back here. A full

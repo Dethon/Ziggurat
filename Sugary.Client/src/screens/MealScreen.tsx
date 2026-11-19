@@ -322,201 +322,10 @@ export function MealScreen({
   const started = hasMeal || photos.length > 0 || clip !== null;
   const shown = ACTIONS[action ?? "save"];
 
-  return (
-    <div className="screen meal">
-      <header className="screen-header">
-        <div>
-          {!started && (
-            <p className="wordmark">
-              <Icon name="slice" size={22} />
-              Sugary
-            </p>
-          )}
-          {started ? (
-            // Once a photo, a clip or a food is in, this is her meal: the wordmark steps aside and the
-            // slice stays with the title, short enough to share its line with Start over.
-            <h1 className="title-small marked">
-              <Icon name="slice" size={24} />
-              {t("mealDraftTitle")}
-            </h1>
-          ) : (
-            <h1>{t("captureTitle")}</h1>
-          )}
-          {!started && <Drip />}
-        </div>
-        {started && (
-          <button
-            type="button"
-            className="button button-quiet button-small start-over"
-            aria-label={t("discard")}
-            onClick={askStartOver}
-          >
-            <Icon name="restart" size={20} />
-            <span className="start-over-label">{t("discard")}</span>
-          </button>
-        )}
-      </header>
-
-      {error && (
-        <div className="notice notice-error" role="alert">
-          <Icon name="alert" size={18} />
-          <span className="notice-body">
-            <span>{error}</span>
-            {stale && <strong>{t("staleAfterError")}</strong>}
-          </span>
-        </div>
-      )}
-
-      {hasMeal && (
-        <>
-          <TotalCard
-            total={sum}
-            axis={axis.current}
-            stale={stale}
-            thumbnail={draft.estimated ? draft.thumbnail : null}
-            questions={questions.length}
-            onJumpToQuestions={() => questionsCard.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          />
-
-          {estimatedItems.length > 0 && (
-            <section className="card item-group" aria-labelledby="estimated-title">
-              <h2 id="estimated-title">{t("itemsTitle")}</h2>
-              <ul className="items">
-                {estimatedItems.map((item) => (
-                  <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
-                ))}
-              </ul>
-              {draft.notes.map((note) => (
-                <p key={note} className="notice">
-                  <Icon name="info" size={18} /> <span>{bindUnits(note)}</span>
-                </p>
-              ))}
-            </section>
-          )}
-
-          {countedItems.length > 0 && (
-            <section className="card item-group counted" aria-labelledby="counted-title">
-              <div>
-                <h2 id="counted-title">{t("countedTitle")}</h2>
-                <p className="muted small">{t("countedHint")}</p>
-              </div>
-              <ul className="items">
-                {countedItems.map((item) => (
-                  <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {questions.length > 0 && (
-            <section ref={questionsCard} className="card questions" aria-labelledby="questions-title">
-              <div>
-                <h2 id="questions-title">{t("questionsTitle")}</h2>
-                <p className="muted small">{t("questionsHint")}</p>
-              </div>
-              {questions.map((question) => (
-                <fieldset key={question.text} className="question">
-                  <legend>{bindUnits(question.text)}</legend>
-                  <div className="chips">
-                    {question.options.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className={draft.answers[question.text] === option ? "chip chip-on" : "chip"}
-                        aria-pressed={draft.answers[question.text] === option}
-                        onClick={() => {
-                          dispatch({ type: "answer", question: question.text, answer: option });
-                          setUnsentAnswers(true);
-                        }}
-                      >
-                        {bindUnits(option)}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-              ))}
-            </section>
-          )}
-
-          {sentAnswers.length > 0 && (
-            <section className="card answers" aria-labelledby="answers-title">
-              <h2 id="answers-title">{t("answersTitle")}</h2>
-              <ul className="answer-list">
-                {sentAnswers.map(([text, answer]) => {
-                  const question = asked[text];
-                  const canChange = question !== undefined && !photosGone;
-                  return (
-                    <li key={text} className="answer">
-                      <div className="answer-row">
-                        <span className="item-text">
-                          <span className="item-meta">{bindUnits(text)}</span>
-                          <span className="answer-given">{bindUnits(answer)}</span>
-                        </span>
-                        {canChange && changing !== text && (
-                          <button
-                            type="button"
-                            className="button button-quiet button-small"
-                            aria-label={t("changeAnswerSpoken", { question: text })}
-                            onClick={() => setChanging(text)}
-                          >
-                            {t("changeAnswer")}
-                          </button>
-                        )}
-                      </div>
-                      {canChange && changing === text && (
-                        <div className="chips" role="group" aria-label={text}>
-                          {question.options.map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              className={answer === option ? "chip chip-on" : "chip"}
-                              aria-pressed={answer === option}
-                              onClick={() => {
-                                if (option !== answer) {
-                                  dispatch({ type: "answer", question: text, answer: option });
-                                  setUnsentAnswers(true);
-                                }
-                                setChanging(null);
-                              }}
-                            >
-                              {bindUnits(option)}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
-
-          {draft.estimated && !photosGone && (
-            <section className="correction">
-              {correcting || correction ? (
-                <label className="field">
-                  <span className="field-label">{t("correctionToggle")}</span>
-                  <textarea
-                    rows={2}
-                    autoFocus={correcting && !correction}
-                    value={correction}
-                    placeholder={t("correctionPlaceholder")}
-                    onChange={(event) => setCorrection(event.target.value)}
-                  />
-                </label>
-              ) : (
-                <button type="button" className="row-button" onClick={() => setCorrecting(true)}>
-                  <Icon name="pencil" size={20} />
-                  <span>{t("correctionToggle")}</span>
-                  <Icon name="chevron" size={20} />
-                </button>
-              )}
-            </section>
-          )}
-          {photosGone && <p className="muted small">{t("photosGone")}</p>}
-        </>
-      )}
-
+  // Taking her photos leads the screen until there is a meal, whose total leads it then; on a desktop
+  // the lead stands beside the rest.
+  const capture = (
+    <>
       {!draft.estimated && !estimates && (
         <p className="notice">
           <Icon name="info" size={18} /> <span>{t("estimatesUnavailable")}</span>
@@ -604,67 +413,275 @@ export function MealScreen({
           </label>
         </section>
       )}
+    </>
+  );
 
-      {!draft.estimated && usuals(foods).length > 0 && (
-        <section className="usuals" aria-labelledby="usuals-title">
-          <h2 id="usuals-title">{t("usualsTitle")}</h2>
-          {/* A few fit as they are; more run in one row that scrolls sideways. */}
-          <div className={usuals(foods).length > 4 ? "chips chips-scroll" : "chips"}>
-            {usuals(foods).map((food) => (
-              <button key={food.id} type="button" className="chip chip-food" onClick={() => setUsual(food)}>
-                <Icon name="plus" size={18} />
-                {food.name}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="add-more" aria-labelledby="add-title">
-        {/* "No photo?" only while there is none: once a photo or a clip is in, the rest is added to it. */}
-        <h2 id="add-title">{t(started ? "addMore" : "otherWaysTitle")}</h2>
-        <div className="tiles">
-          <button type="button" className="tile" onClick={() => setSheet("foods")}>
-            <Icon name="jar" size={26} />
-            {t("myFoods")}
-          </button>
-          <button type="button" className="tile" onClick={() => setSheet("packaged")}>
-            <Icon name="barcode" size={26} />
-            {t(labels ? "packaged" : "packagedHintBarcode")}
-          </button>
-          <button type="button" className="tile" onClick={() => setSheet("manual")}>
-            <Icon name="pencil" size={26} />
-            {t("manual")}
-          </button>
+  return (
+    <div className="screen meal">
+      <header className="screen-header">
+        <div>
+          {!started && (
+            <p className="wordmark">
+              <Icon name="slice" size={22} />
+              Sugary
+            </p>
+          )}
+          {started ? (
+            // Once a photo, a clip or a food is in, this is her meal: the wordmark steps aside and the
+            // slice stays with the title, short enough to share its line with Start over.
+            <h1 className="title-small marked">
+              <Icon name="slice" size={24} />
+              {t("mealDraftTitle")}
+            </h1>
+          ) : (
+            <h1>{t("captureTitle")}</h1>
+          )}
+          {!started && <Drip />}
         </div>
-      </section>
+        {started && (
+          <button
+            type="button"
+            className="button button-quiet button-small start-over"
+            aria-label={t("discard")}
+            onClick={askStartOver}
+          >
+            <Icon name="restart" size={20} />
+            <span className="start-over-label">{t("discard")}</span>
+          </button>
+        )}
+      </header>
 
-      {hasMeal && (
-        <section className="card insulin-taken" aria-labelledby="insulin-title">
-          <div className="field">
-            <label id="insulin-title" className="field-label" htmlFor="insulin-units">
-              <Icon name="bolt" size={18} />
-              {t("insulinTaken")}
-            </label>
-            <UnitsControl
-              id="insulin-units"
-              text={insulinText}
-              invalid={typeof insulin === "string"}
-              describedBy="insulin-hint"
-              onChange={(text) => dispatch({ type: "insulin", text })}
-            />
-            {typeof insulin === "string" ? (
-              <span className="field-problem" role="alert">
-                {t(insulin, { max: MAX_UNITS })}
-              </span>
-            ) : (
-              <span id="insulin-hint" className="muted small">
-                {t("insulinTakenHint")}
-              </span>
-            )}
-          </div>
-        </section>
+      {error && (
+        <div className="notice notice-error" role="alert">
+          <Icon name="alert" size={18} />
+          <span className="notice-body">
+            <span>{error}</span>
+            {stale && <strong>{t("staleAfterError")}</strong>}
+          </span>
+        </div>
       )}
+
+      <div className={hasMeal ? "panes panes-meal" : "panes panes-capture"}>
+        <div className="pane pane-lead">
+          {hasMeal ? (
+            <TotalCard
+              total={sum}
+              axis={axis.current}
+              stale={stale}
+              thumbnail={draft.estimated ? draft.thumbnail : null}
+              questions={questions.length}
+              onJumpToQuestions={() => questionsCard.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            />
+          ) : (
+            capture
+          )}
+        </div>
+
+        <div className="pane">
+          {hasMeal && (
+            <>
+              {estimatedItems.length > 0 && (
+                <section className="card item-group" aria-labelledby="estimated-title">
+                  <h2 id="estimated-title">{t("itemsTitle")}</h2>
+                  <ul className="items">
+                    {estimatedItems.map((item) => (
+                      <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
+                    ))}
+                  </ul>
+                  {draft.notes.map((note) => (
+                    <p key={note} className="notice">
+                      <Icon name="info" size={18} /> <span>{bindUnits(note)}</span>
+                    </p>
+                  ))}
+                </section>
+              )}
+
+              {countedItems.length > 0 && (
+                <section className="card item-group counted" aria-labelledby="counted-title">
+                  <div>
+                    <h2 id="counted-title">{t("countedTitle")}</h2>
+                    <p className="muted small">{t("countedHint")}</p>
+                  </div>
+                  <ul className="items">
+                    {countedItems.map((item) => (
+                      <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {questions.length > 0 && (
+                <section ref={questionsCard} className="card questions" aria-labelledby="questions-title">
+                  <div>
+                    <h2 id="questions-title">{t("questionsTitle")}</h2>
+                    <p className="muted small">{t("questionsHint")}</p>
+                  </div>
+                  {questions.map((question) => (
+                    <fieldset key={question.text} className="question">
+                      <legend>{bindUnits(question.text)}</legend>
+                      <div className="chips">
+                        {question.options.map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className={draft.answers[question.text] === option ? "chip chip-on" : "chip"}
+                            aria-pressed={draft.answers[question.text] === option}
+                            onClick={() => {
+                              dispatch({ type: "answer", question: question.text, answer: option });
+                              setUnsentAnswers(true);
+                            }}
+                          >
+                            {bindUnits(option)}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                </section>
+              )}
+
+              {sentAnswers.length > 0 && (
+                <section className="card answers" aria-labelledby="answers-title">
+                  <h2 id="answers-title">{t("answersTitle")}</h2>
+                  <ul className="answer-list">
+                    {sentAnswers.map(([text, answer]) => {
+                      const question = asked[text];
+                      const canChange = question !== undefined && !photosGone;
+                      return (
+                        <li key={text} className="answer">
+                          <div className="answer-row">
+                            <span className="item-text">
+                              <span className="item-meta">{bindUnits(text)}</span>
+                              <span className="answer-given">{bindUnits(answer)}</span>
+                            </span>
+                            {canChange && changing !== text && (
+                              <button
+                                type="button"
+                                className="button button-quiet button-small"
+                                aria-label={t("changeAnswerSpoken", { question: text })}
+                                onClick={() => setChanging(text)}
+                              >
+                                {t("changeAnswer")}
+                              </button>
+                            )}
+                          </div>
+                          {canChange && changing === text && (
+                            <div className="chips" role="group" aria-label={text}>
+                              {question.options.map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  className={answer === option ? "chip chip-on" : "chip"}
+                                  aria-pressed={answer === option}
+                                  onClick={() => {
+                                    if (option !== answer) {
+                                      dispatch({ type: "answer", question: text, answer: option });
+                                      setUnsentAnswers(true);
+                                    }
+                                    setChanging(null);
+                                  }}
+                                >
+                                  {bindUnits(option)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              )}
+
+              {draft.estimated && !photosGone && (
+                <section className="correction">
+                  {correcting || correction ? (
+                    <label className="field">
+                      <span className="field-label">{t("correctionToggle")}</span>
+                      <textarea
+                        rows={2}
+                        autoFocus={correcting && !correction}
+                        value={correction}
+                        placeholder={t("correctionPlaceholder")}
+                        onChange={(event) => setCorrection(event.target.value)}
+                      />
+                    </label>
+                  ) : (
+                    <button type="button" className="row-button" onClick={() => setCorrecting(true)}>
+                      <Icon name="pencil" size={20} />
+                      <span>{t("correctionToggle")}</span>
+                      <Icon name="chevron" size={20} />
+                    </button>
+                  )}
+                </section>
+              )}
+              {photosGone && <p className="muted small">{t("photosGone")}</p>}
+              {capture}
+            </>
+          )}
+
+          {!draft.estimated && usuals(foods).length > 0 && (
+            <section className="usuals" aria-labelledby="usuals-title">
+              <h2 id="usuals-title">{t("usualsTitle")}</h2>
+              {/* A few fit as they are; more run in one row that scrolls sideways. */}
+              <div className={usuals(foods).length > 4 ? "chips chips-scroll" : "chips"}>
+                {usuals(foods).map((food) => (
+                  <button key={food.id} type="button" className="chip chip-food" onClick={() => setUsual(food)}>
+                    <Icon name="plus" size={18} />
+                    {food.name}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="add-more" aria-labelledby="add-title">
+            {/* "No photo?" only while there is none: once a photo or a clip is in, the rest is added to it. */}
+            <h2 id="add-title">{t(started ? "addMore" : "otherWaysTitle")}</h2>
+            <div className="tiles">
+              <button type="button" className="tile" onClick={() => setSheet("foods")}>
+                <Icon name="jar" size={26} />
+                {t("myFoods")}
+              </button>
+              <button type="button" className="tile" onClick={() => setSheet("packaged")}>
+                <Icon name="barcode" size={26} />
+                {t(labels ? "packaged" : "packagedHintBarcode")}
+              </button>
+              <button type="button" className="tile" onClick={() => setSheet("manual")}>
+                <Icon name="pencil" size={26} />
+                {t("manual")}
+              </button>
+            </div>
+          </section>
+
+          {hasMeal && (
+            <section className="card insulin-taken" aria-labelledby="insulin-title">
+              <div className="field">
+                <label id="insulin-title" className="field-label" htmlFor="insulin-units">
+                  <Icon name="bolt" size={18} />
+                  {t("insulinTaken")}
+                </label>
+                <UnitsControl
+                  id="insulin-units"
+                  text={insulinText}
+                  invalid={typeof insulin === "string"}
+                  describedBy="insulin-hint"
+                  onChange={(text) => dispatch({ type: "insulin", text })}
+                />
+                {typeof insulin === "string" ? (
+                  <span className="field-problem" role="alert">
+                    {t(insulin, { max: MAX_UNITS })}
+                  </span>
+                ) : (
+                  <span id="insulin-hint" className="muted small">
+                    {t("insulinTakenHint")}
+                  </span>
+                )}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
 
       {action && (
         <ActionBar active={active}>

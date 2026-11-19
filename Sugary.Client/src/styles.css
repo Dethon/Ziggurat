@@ -119,7 +119,7 @@ label.button:focus-within,
 /* Layout */
 
 main {
-  max-width: 560px;
+  max-width: var(--page-width);
   margin: 0 auto;
   /* Room to scroll the last field above the pinned action, and above the keyboard while it is up. */
   padding-bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px) + var(--keyboard, 0px));
@@ -1072,7 +1072,7 @@ h1.title-small {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  max-width: 560px;
+  max-width: var(--page-width);
   margin: 0 auto;
   padding: var(--space-3) var(--space-4);
 }
@@ -2975,4 +2975,294 @@ h1.marked .icon {
 .measurement-kind {
   border-top: 1px solid var(--color-line);
   padding-top: var(--space-2);
+}
+
+/* Two panes and a deck of cards: on a phone they are not there at all, their sections laid out in
+   the screen's one column as they always were; a desktop (below) sets them side by side. */
+.panes,
+.pane,
+.cards {
+  display: contents;
+}
+
+.rail-brand {
+  display: none;
+}
+
+/* A desktop: a window as wide as a laptop's. The tab bar becomes a rail down the left, the page
+   beside it, and screens with more than one thing to show set them side by side; sheets open in the
+   middle of the window rather than rising from its bottom edge. Narrower than this — a phone turned
+   sideways, a tablet upright — keeps the phone's layout. The width is a literal: a media query reads
+   no custom property. */
+@media (min-width: 64rem) {
+  :root {
+    --tabs-height: 0px;
+    --rail-width: var(--rail-width-desktop);
+    --page-width: var(--page-width-desktop);
+  }
+
+  /* A desktop has no keyboard to step aside for: a field's focus while the window is resized must
+     never take the rail away. */
+  :root[data-typing] .tabs {
+    display: flex;
+  }
+
+  /* The page is the room beside the rail, its screen centred in it up to the page's width; the pinned
+     action lines up with the screen's edges. */
+  main {
+    max-width: none;
+    margin: 0 0 0 var(--rail-width);
+  }
+
+  main > * {
+    max-width: var(--page-width);
+    margin-inline: auto;
+  }
+
+  .screen {
+    padding: var(--space-8) var(--space-8) var(--space-10);
+    gap: var(--space-5);
+  }
+
+  /* The rail names the app, so the meal's title stands without the wordmark over it. */
+  .screen-header .wordmark {
+    display: none;
+  }
+
+  /* The rail */
+
+  .tabs {
+    inset: 0 auto 0 0;
+    width: var(--rail-width);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--space-1);
+    padding: var(--space-6) var(--space-3);
+    border-top: 0;
+    border-right: 1px solid var(--color-line);
+  }
+
+  .rail-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 var(--space-3) var(--space-5);
+    font-family: var(--font-display);
+    font-variation-settings: "SOFT" 100;
+    font-weight: 600;
+    font-size: var(--text-sheet-title);
+    color: var(--color-primary-strong);
+  }
+
+  .tab {
+    flex: none;
+    max-width: none;
+    height: 48px;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--space-3);
+    padding: 0 var(--space-3) 0 var(--space-1);
+    border-radius: var(--radius-m);
+    font-size: var(--text-body);
+    transition: background-color var(--dur-fast) var(--ease-out);
+  }
+
+  .tab-icon {
+    width: 40px;
+  }
+
+  .tab-on {
+    background: var(--color-primary-soft);
+  }
+
+  .tab-on .tab-icon {
+    background: none;
+  }
+
+  /* What is pinned to the bottom sits beside the rail */
+
+  .action-bar {
+    left: var(--rail-width);
+  }
+
+  .action-bar-inner {
+    padding-inline: var(--space-8);
+  }
+
+  /* A screen's actions read as a desktop's: at the end of the row, as wide as their words. */
+  .action-bar .footer-row {
+    justify-content: flex-end;
+  }
+
+  .action-bar .button-grow {
+    flex: 0 1 auto;
+    min-width: 200px;
+  }
+
+  .toast {
+    left: calc(50% + var(--rail-width) / 2);
+    max-width: calc(100% - var(--rail-width) - 2 * var(--space-8));
+  }
+
+  /* Sheets open in the middle of the window */
+
+  .sheet {
+    max-height: none;
+    margin: auto;
+  }
+
+  .sheet-panel {
+    max-height: min(86dvh, 880px);
+    padding-top: var(--space-3);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+  }
+
+  .sheet-panel::before {
+    display: none;
+  }
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(12px) scale(0.98);
+      opacity: 0;
+    }
+  }
+
+  /* Panes */
+
+  .panes {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--side-width);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .pane {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    min-width: 0;
+  }
+
+  /* A pane with nothing in it leaves the other the page's whole width. */
+  .pane:empty {
+    display: none;
+  }
+
+  .panes:has(> .pane:empty) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The side that leads (the Log's adding and searching, the Cycle's where-you-are, a meal's total)
+     comes first, at the left, and stays in sight while the rest scrolls. A side too tall for the
+     window scrolls on its own. */
+  .panes-log,
+  .panes-cycle,
+  .panes-meal {
+    grid-template-columns: var(--side-width) minmax(0, 1fr);
+  }
+
+  .panes-log > .pane-side,
+  .panes-cycle > .pane-side,
+  .panes-meal > .pane-lead {
+    position: sticky;
+    top: var(--space-8);
+    max-height: calc(100dvh - var(--space-8) - var(--footer-space, 0px) - var(--space-4));
+    overflow-y: auto;
+    /* Room for the focus ring and the cards' shadows inside the scrolling box. */
+    margin: calc(-1 * var(--space-1));
+    padding: var(--space-1);
+    scrollbar-width: thin;
+  }
+
+  /* An empty meal: taking the photo beside her usuals and the other ways in, half and half. */
+  .panes-capture {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Her usuals wrap rather than run off in one row: a mouse has no sideways swipe. */
+  .chips-scroll {
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    mask-image: none;
+  }
+
+  .chips-scroll .chip {
+    white-space: normal;
+  }
+
+  /* Settings: her cards in two columns, each kept whole. */
+  .cards {
+    display: block;
+    columns: 2;
+    column-gap: var(--space-5);
+  }
+
+  .cards > * {
+    break-inside: avoid;
+    margin-bottom: var(--space-5);
+  }
+
+  .account {
+    max-width: calc(50% - var(--space-5) / 2);
+  }
+
+  /* The pantry: two columns of rows in its card. */
+  .foods-card {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--space-8);
+  }
+
+  .foods-card li + li {
+    border-top: 0;
+  }
+
+  .foods-card li:nth-child(n + 3) {
+    border-top: 1px solid var(--color-line);
+  }
+}
+
+/* A mouse shows what it is over; a finger has no hover, and a phone's sticks after a tap. */
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover:not(.tab-on) {
+    color: var(--color-ink);
+  }
+
+  .tab:hover:not(.tab-on) .tab-icon {
+    background: var(--color-sponge);
+  }
+
+  .button-primary:hover:not(:disabled) {
+    background: var(--color-primary-strong);
+  }
+
+  .button-secondary:hover:not(:disabled),
+  .chip:hover:not(.chip-on),
+  .tile:hover,
+  .row-button:hover,
+  .meal-row:hover,
+  .food-row:hover,
+  .row-link:hover {
+    background-color: var(--color-sponge);
+  }
+
+  .button-quiet:hover:not(:disabled),
+  .icon-button:hover {
+    background-color: var(--color-sponge);
+    color: var(--color-ink);
+  }
+}
+
+@media (min-width: 64rem) and (hover: hover) and (pointer: fine) {
+  .tab:hover:not(.tab-on) {
+    background: var(--color-sponge);
+  }
+
+  .tab:hover:not(.tab-on) .tab-icon {
+    background: none;
+  }
 }

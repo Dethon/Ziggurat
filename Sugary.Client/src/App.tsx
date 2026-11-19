@@ -137,7 +137,12 @@ function Shell({
         {tab === "settings" && <SettingsScreen profile={profile} onProfile={onProfile} />}
       </main>
 
+      {/* A bar along the bottom on a phone, a rail down the left on a desktop, which names the app. */}
       <nav className="tabs" aria-label="Sugary">
+        <p className="rail-brand" aria-hidden="true">
+          <Icon name="slice" size={24} />
+          Sugary
+        </p>
         {TABS.filter(({ id }) => shown.includes(id)).map(({ id, label, icon }) => (
           <button
             key={id}

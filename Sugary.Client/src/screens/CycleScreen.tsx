@@ -108,137 +108,144 @@ export function CycleScreen() {
         </p>
       )}
 
-      {periods !== null && (
-        <section className={`card cycle-status cycle-status-${status.kind}`} aria-labelledby="cycle-status-title">
-          {status.kind === "none" ? (
-            <div>
-              <h2 id="cycle-status-title" className="section-title">
-                {t("cycleNone")}
-              </h2>
-              <p className="muted small">{t("cycleNoneHint")}</p>
-            </div>
-          ) : (
-            <div className="cycle-status-line">
-              <span className="cycle-status-mark" aria-hidden="true">
-                <Icon name="drop" size={26} />
-              </span>
-              <div>
-                <h2 id="cycle-status-title" className="section-title">
-                  {t(status.kind === "period" ? "periodDay" : "cycleDay", { n: status.day })}
-                </h2>
-                {status.kind === "period" && status.period.end === null && status.day > LONG_PERIOD_DAY && (
-                  <p className="muted small">{t("periodLongHint")}</p>
-                )}
-              </div>
-            </div>
-          )}
-          {status.kind === "period" && status.period.end === null ? (
-            <div className="cycle-actions">
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={busy}
-                onClick={() => void quick({ start: status.period.start, end: today }, status.period)}
-              >
-                {t("periodEndToday")}
-              </button>
-              <button
-                type="button"
-                className="button button-quiet"
-                onClick={() => setSheet({ period: status.period, initial: { start: status.period.start, end: today } })}
-              >
-                {t("anotherDay")}
-              </button>
-            </div>
-          ) : (
-            status.kind !== "period" && (
-              <div className="cycle-actions">
-                <button type="button" className="button button-primary" disabled={busy} onClick={() => void quick({ start: today, end: null })}>
-                  {t("periodStartToday")}
-                </button>
-                <button type="button" className="button button-quiet" onClick={() => setSheet({ initial: { start: today, end: null } })}>
-                  {t("anotherDay")}
-                </button>
-              </div>
-            )
-          )}
-        </section>
-      )}
-
-      {all.length > 0 && (
-        <section className="card forecast" aria-labelledby="forecast-title">
-          <h2 id="forecast-title" className="section-title">
-            {t("forecastTitle")}
-          </h2>
-          {expected ? (
-            <>
-              <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
-              {expected.earliest !== expected.latest && (
-                <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
-              )}
-              {expected.fertile && (
-                <p className="forecast-fertile">
-                  {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
-                </p>
-              )}
-              <p className="notice forecast-disclaimer">
-                <Icon name="info" size={18} />
-                <span>
-                  {expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })} {t("forecastDisclaimer")}
-                </span>
-              </p>
-            </>
-          ) : (
-            <p className="muted small">{t("forecastNeedsTwo")}</p>
-          )}
-        </section>
-      )}
-
-      {periods !== null && (
-        <CycleCalendar
-          month={month}
-          periods={all}
-          noted={noted}
-          today={today}
-          forecast={expected}
-          onMonth={setMonth}
-          onDay={setOpenDay}
-        />
-      )}
-
-      {all.length > 0 && (
-        <section className="card" aria-labelledby="periods-title">
-          <h2 id="periods-title" className="section-title">
-            {t("pastPeriods")}
-          </h2>
-          <ul className="rows">
-            {history(all).map(({ period, days, cycleDays }) => (
-              <li key={period.id}>
-                <button
-                  type="button"
-                  className="row-link period-row"
-                  aria-haspopup="dialog"
-                  onClick={() => setSheet({ period, initial: { start: period.start, end: period.end } })}
-                >
-                  <Icon name="drop" />
-                  <span className="period-row-text">
-                    <span className="item-name">
-                      {period.end === null
-                        ? t("periodSince", { date: formatDays(period.start, period.start, language, thisYear) })
-                        : formatDays(period.start, period.end, language, thisYear)}
-                    </span>
-                    <span className="item-meta">
-                      {days === null ? t("periodOngoing") : days === 1 ? t("periodDaysOne") : t("periodDays", { n: days })}
-                      {cycleDays !== null && ` · ${t("cycleDays", { n: cycleDays })}`}
-                    </span>
+      {/* On a desktop where her cycle is stands beside its calendar. */}
+      <div className="panes panes-cycle">
+        <div className="pane pane-side">
+          {periods !== null && (
+            <section className={`card cycle-status cycle-status-${status.kind}`} aria-labelledby="cycle-status-title">
+              {status.kind === "none" ? (
+                <div>
+                  <h2 id="cycle-status-title" className="section-title">
+                    {t("cycleNone")}
+                  </h2>
+                  <p className="muted small">{t("cycleNoneHint")}</p>
+                </div>
+              ) : (
+                <div className="cycle-status-line">
+                  <span className="cycle-status-mark" aria-hidden="true">
+                    <Icon name="drop" size={26} />
                   </span>
-                  <Icon name="chevronRight" size={20} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+                  <div>
+                    <h2 id="cycle-status-title" className="section-title">
+                      {t(status.kind === "period" ? "periodDay" : "cycleDay", { n: status.day })}
+                    </h2>
+                    {status.kind === "period" && status.period.end === null && status.day > LONG_PERIOD_DAY && (
+                      <p className="muted small">{t("periodLongHint")}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {status.kind === "period" && status.period.end === null ? (
+                <div className="cycle-actions">
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    disabled={busy}
+                    onClick={() => void quick({ start: status.period.start, end: today }, status.period)}
+                  >
+                    {t("periodEndToday")}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-quiet"
+                    onClick={() => setSheet({ period: status.period, initial: { start: status.period.start, end: today } })}
+                  >
+                    {t("anotherDay")}
+                  </button>
+                </div>
+              ) : (
+                status.kind !== "period" && (
+                  <div className="cycle-actions">
+                    <button type="button" className="button button-primary" disabled={busy} onClick={() => void quick({ start: today, end: null })}>
+                      {t("periodStartToday")}
+                    </button>
+                    <button type="button" className="button button-quiet" onClick={() => setSheet({ initial: { start: today, end: null } })}>
+                      {t("anotherDay")}
+                    </button>
+                  </div>
+                )
+              )}
+            </section>
+          )}
+
+          {all.length > 0 && (
+            <section className="card forecast" aria-labelledby="forecast-title">
+              <h2 id="forecast-title" className="section-title">
+                {t("forecastTitle")}
+              </h2>
+              {expected ? (
+                <>
+                  <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
+                  {expected.earliest !== expected.latest && (
+                    <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
+                  )}
+                  {expected.fertile && (
+                    <p className="forecast-fertile">
+                      {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
+                    </p>
+                  )}
+                  <p className="notice forecast-disclaimer">
+                    <Icon name="info" size={18} />
+                    <span>
+                      {expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })} {t("forecastDisclaimer")}
+                    </span>
+                  </p>
+                </>
+              ) : (
+                <p className="muted small">{t("forecastNeedsTwo")}</p>
+              )}
+            </section>
+          )}
+        </div>
+
+        <div className="pane">
+          {periods !== null && (
+            <CycleCalendar
+              month={month}
+              periods={all}
+              noted={noted}
+              today={today}
+              forecast={expected}
+              onMonth={setMonth}
+              onDay={setOpenDay}
+            />
+          )}
+
+          {all.length > 0 && (
+            <section className="card" aria-labelledby="periods-title">
+              <h2 id="periods-title" className="section-title">
+                {t("pastPeriods")}
+              </h2>
+              <ul className="rows">
+                {history(all).map(({ period, days, cycleDays }) => (
+                  <li key={period.id}>
+                    <button
+                      type="button"
+                      className="row-link period-row"
+                      aria-haspopup="dialog"
+                      onClick={() => setSheet({ period, initial: { start: period.start, end: period.end } })}
+                    >
+                      <Icon name="drop" />
+                      <span className="period-row-text">
+                        <span className="item-name">
+                          {period.end === null
+                            ? t("periodSince", { date: formatDays(period.start, period.start, language, thisYear) })
+                            : formatDays(period.start, period.end, language, thisYear)}
+                        </span>
+                        <span className="item-meta">
+                          {days === null ? t("periodOngoing") : days === 1 ? t("periodDaysOne") : t("periodDays", { n: days })}
+                          {cycleDays !== null && ` · ${t("cycleDays", { n: cycleDays })}`}
+                        </span>
+                      </span>
+                      <Icon name="chevronRight" size={20} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      </div>
 
       {openDay && (
         <DaySheet
