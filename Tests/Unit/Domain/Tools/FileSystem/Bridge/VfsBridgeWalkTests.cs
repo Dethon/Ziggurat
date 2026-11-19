@@ -88,6 +88,34 @@ public class VfsBridgeWalkTests
         result["vfsTruncated"].ShouldBeNull();
     }
 
+    // A filesystem sharing the mount point that did not answer may hold the name a command asks
+    // for, so the listing is short rather than complete: the daemon must not answer ENOENT from it.
+    [Fact]
+    public async Task AListingAMemberDidNotAnswer_IsCutShort()
+    {
+        var result = await Tool(new PartlyAnsweringMount(), async (call, ct) =>
+                (await call.ListAsync("/vault", ct)).ShouldBeOfType<BridgeAnswer<BridgeListing>.Ok>().Value.Truncated.ShouldBeTrue())
+            .RunAsync("/sandbox", "ls /vault", arguments: BridgeFixtures.Whitelisted);
+
+        result["vfsTruncated"]!.AsArray().Select(p => p!.GetValue<string>()).ShouldBe(["/vault"]);
+    }
+
+    private sealed class PartlyAnsweringMount : FileSystemBackendBase
+    {
+        public override string FilesystemName => "vault";
+
+        public override string DescribeMount => "A shared mount point one member of which is away.";
+
+        public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsGlobResult>>(new FsResult<FsGlobResult>.Ok(new FsGlobResult
+            {
+                Entries = ["porch/"],
+                Truncated = false,
+                Total = 1,
+                Unavailable = ["sugary-watches"]
+            }));
+    }
+
     private sealed class BudgetedMount : FileSystemBackendBase
     {
         public override string FilesystemName => "vault";

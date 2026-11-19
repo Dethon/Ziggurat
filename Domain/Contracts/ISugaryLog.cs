@@ -5,8 +5,8 @@ namespace Domain.Contracts;
 
 // One person's carb log as the /sugary mount and the app's downloads read it, straight from the store
 // on every call: nothing here is cached, so what a reader sees is what the database holds at that
-// moment. Every read names whose log it is: the person's own meals, doses, exercise, periods and
-// notes, and their household's foods — never anyone else's, and never a row nobody owns yet.
+// moment. Every read names whose log it is: the person's own meals, doses, exercise, periods,
+// notes and glucose, and their household's foods — never anyone else's, and never a row nobody owns yet.
 public interface ISugaryLog
 {
     // When every meal was eaten, oldest first: enough to say which months have a file without
@@ -35,6 +35,22 @@ public interface ISugaryLog
     Task<IReadOnlyList<LoggedPeriod>> PeriodsAsync(Account owner, CancellationToken ct);
 
     Task<IReadOnlyList<LoggedDayNote>> DayNotesAsync(Account owner, CancellationToken ct);
+
+    // The months on this clock holding at least one of the person's glucose readings, "yyyy-MM", oldest
+    // first. A reading a minute is half a million a year, too many to load for a listing of a few
+    // dozen months, so the store finds each month's first reading instead.
+    Task<IReadOnlyList<string>> GlucoseMonthsAsync(Account owner, TimeZoneInfo zone, CancellationToken ct);
+
+    // The readings measured in [from, to), oldest first.
+    Task<IReadOnlyList<LoggedGlucose>> GlucoseAsync(
+        Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
+
+    // Every sensor the person has worn as LibreLinkUp listed it, a few a month.
+    Task<IReadOnlyList<LoggedSensor>> GlucoseSensorsAsync(Account owner, CancellationToken ct);
+
+    // The person's unit and target range as their LibreLinkUp link keeps them; null while there is no
+    // link (never linked, or unlinked: the readings stay).
+    Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct);
 
     // The foods the person's household keeps, by name.
     Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct);

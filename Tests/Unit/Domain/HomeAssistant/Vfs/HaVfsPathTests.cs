@@ -40,19 +40,15 @@ public class HaVfsPathTests
         n.Service.ShouldBe(service);
     }
 
+    // The watches moved to their own mount (/watchers, HaWatchFileSystem); under /ha the old
+    // subtree names nothing, so a path spelled there is refused as not found rather than served.
     [Theory]
-    [InlineData("watches", HaVfsKind.WatchesRoot, null)]
-    [InlineData("watches/laura-sugar-high", HaVfsKind.WatchDir, "laura-sugar-high")]
-    [InlineData("watches/laura-sugar-high/watch.json", HaVfsKind.WatchFile, "laura-sugar-high")]
-    [InlineData("watches/laura-sugar-high/status.json", HaVfsKind.WatchStatusFile, "laura-sugar-high")]
-    [InlineData("watches/laura-sugar-high/other.json", HaVfsKind.Unknown, null)]
-    [InlineData("watches/a/b/c", HaVfsKind.Unknown, null)]
-    public void Parse_WatchShapes(string path, HaVfsKind kind, string? watchId)
-    {
-        var n = HaVfsPath.Parse(path);
-        n.Kind.ShouldBe(kind);
-        n.WatchId.ShouldBe(watchId);
-    }
+    [InlineData("watches")]
+    [InlineData("watches/laura-sugar-high")]
+    [InlineData("watches/laura-sugar-high/watch.json")]
+    [InlineData("watches/laura-sugar-high/status.json")]
+    public void Parse_TheOldWatchesSubtree_IsUnknown(string path) =>
+        HaVfsPath.Parse(path).Kind.ShouldBe(HaVfsKind.Unknown);
 
     [Theory]
     [InlineData("nope")]

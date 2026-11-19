@@ -84,17 +84,65 @@ public class StopReturnsQueueE2ETests(WebChatE2EFixture fixture)
                 await Assertions.Expect(UserMessage(page, $"CHARLIE{tag}")).ToHaveCountAsync(0);
             }
 
-            var fresh = await carlosContext.NewPageAsync();
-            await GotoWebChatAsync(fresh, fixture.WebChatUrl);
-            await SelectAgentAsync(fresh);
-            await OpenTopicPastTheOverlayAsync(fresh, topic);
-            await UserMessage(fresh, $"{topic}: IMPORTANT").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+            // A fresh load reads what was stored, once, and the stopped turn is stored only when the
+            // agent's turn has unwound — after the stop answered, and later still behind a held
+            // approval — with nothing on the page told when. So the conversation is loaded afresh until
+            // the stopped message is in it, and then asked what else is.
+            var fresh = await FreshlyLoadedWithAsync(carlosContext, topic, $"{topic}: IMPORTANT");
             await Assertions.Expect(UserMessage(fresh, $"ALPHA{tag}")).ToHaveCountAsync(0);
             await Assertions.Expect(UserMessage(fresh, $"CHARLIE{tag}")).ToHaveCountAsync(0);
         }
         finally
         {
             await DrainPendingApprovalsAsync(ana);
+        }
+    }
+
+    private async Task<IPage> FreshlyLoadedWithAsync(IBrowserContext context, string topic, string words)
+    {
+        var deadline = DateTime.UtcNow.AddMinutes(2);
+        var page = await context.NewPageAsync();
+        while (true)
+        {
+            await GotoWebChatAsync(page, fixture.WebChatUrl);
+            await SelectAgentAsync(page);
+            await OpenTopicPastTheOverlayAsync(page, topic);
+            try
+            {
+                await UserMessage(page, words).First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+                return page;
+            }
+            catch (TimeoutException) when (DateTime.UtcNow < deadline)
+            {
+                // Loaded before the turn was stored: load it again.
+            }
+            catch (TimeoutException e)
+            {
+                // Never kept: what the store holds for the conversation says which of the keep's refusals
+                // it met — the line moved on, the turn handed back, or a turn still in flight.
+                var dump = new System.Text.StringBuilder();
+                foreach (var key in (await fixture.RedisAsync("--scan", "--pattern", "topic@*")).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var record = await fixture.RedisAsync("GET", key);
+                    if (!record.Contains(topic))
+                    {
+                        continue;
+                    }
+
+                    dump.AppendLine($"TOPIC {record}");
+                    var chat = System.Text.RegularExpressions.Regex.Match(record, "\"ChatId\":(\\d+)").Groups[1].Value;
+                    var thread = System.Text.RegularExpressions.Regex.Match(record, "\"ThreadId\":(\\d+)").Groups[1].Value;
+                    foreach (var k in (await fixture.RedisAsync("--scan", "--pattern", $"*{chat}:{thread}*")).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+                    {
+                        var type = (await fixture.RedisAsync("TYPE", k)).Trim();
+                        var v = type switch { "list" => await fixture.RedisAsync("LRANGE", k, "0", "-1"), "string" => await fixture.RedisAsync("GET", k), "hash" => await fixture.RedisAsync("HGETALL", k), _ => type };
+                        dump.AppendLine($"KEY {k} ({type}) TTL {(await fixture.RedisAsync("PTTL", k)).Trim()}\n{(v.Length > 3000 ? v[..3000] : v)}");
+                    }
+                }
+                var log = new[] { dump.ToString() };
+                throw new TimeoutException(
+                    $"The stopped turn was never kept ({words}). The store holds:\n{string.Join('\n', log)}", e);
+            }
         }
     }
 }

@@ -8,7 +8,7 @@ Two things the agent leaves in the home come back into the stack through Home As
   event's start to the voice hub's announce endpoint. The event's `summary` is the spoken text; its
   `description` is the JSON the agent writes — `{"target": {...}, "insistent": {...}}` — and travels
   through unchanged. An event with no `insistent` announces once.
-- **The watch callback.** A watch (`/ha/watches/<id>/watch.json`, ADR 0038) is an automation the
+- **The watch callback.** A watch (`/watchers/<id>/watch.json`, ADR 0038) is an automation the
   agent writes through the config API; nothing needs provisioning for its announcement and
   home-action effects — the announcement uses the same `voice_announce` command. A **prompt**
   effect is rendered as a call to `rest_command.assistant_watch_fired`, which POSTs the rendered

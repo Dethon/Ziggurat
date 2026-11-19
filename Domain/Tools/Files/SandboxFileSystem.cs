@@ -89,7 +89,7 @@ public class SandboxFileSystem(
     private VfsBridgeGrant? _bridge;
 
     // A shallow copy with the token swapped, so the view keeps every dependency the mount was built
-    // with, as HaFileSystem's caller view does.
+    // with, as HaWatchFileSystem's caller view does.
     public override FileSystemBackendBase For(FileSystemCaller caller)
     {
         var view = (SandboxFileSystem)MemberwiseClone();

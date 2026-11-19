@@ -10,7 +10,7 @@ namespace Tests.E2E.WebChat;
 // queued message, and once the tool has run the reply ends there, without asking the model again; the
 // steer follows it as the person's next message and is answered. The held approval is the tool
 // boundary: the steer is in before the tool returns, so the cut cannot miss it.
-[Collection(WebChatE2ECollections.Queue)]
+[Collection(WebChatE2ECollections.People)]
 [Trait("Category", "E2E")]
 public class SteerNowE2ETests(WebChatE2EFixture fixture)
 {

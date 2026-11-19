@@ -337,6 +337,31 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         elsewhere.ShouldNotBe(household);
     }
 
+    // Sugary's poller and watch engine wake for nobody's request, so no call or assertion proves a
+    // household to them: they ask on Sugary's credential alone which households turn Sugary off, and are
+    // told those ids and nothing else. A household that never saved its features has Sugary on.
+    [Fact]
+    public async Task Sugary_IsToldWhichHouseholdsTurnItOff_AndNothingElse()
+    {
+        await using var server = await StartAsync();
+        var off = await server.SeedHouseholdAsync("Off");
+        var on = await server.SeedHouseholdAsync("On");
+        var never = await server.SeedHouseholdAsync("Never saved");
+        await SetAsync(server, off, HouseholdSections.Features, """{ "sugary": false }""");
+        await SetAsync(server, on, HouseholdSections.Features, """{ "memory": false }""");
+        await SetAsync(server, off, HouseholdSections.Keys, Keys);
+
+        var body = await RawAsync(server, Sugary, HouseholdConfigProtocol.SugaryOffView, new HouseholdConfigQuery());
+        var answer = JsonSerializer.Deserialize<HouseholdsWithSugaryOff>(body, JsonSerializerOptions.Web)!;
+
+        answer.Households.ShouldBe([off]);
+        answer.Households.ShouldNotContain(never);
+        foreach (var secret in new[] { OpenRouterKey, IdealistaKey, JackToken, "Off" })
+        {
+            body.ShouldNotContain(secret);
+        }
+    }
+
     public static TheoryData<string, string> AnotherServersViews => new()
     {
         { Scheduling, HouseholdConfigProtocol.IdealistaView },
@@ -351,7 +376,10 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Agent, HouseholdConfigProtocol.TelegramBotsView },
         { Scheduling, HouseholdConfigProtocol.SugaryPeopleView },
         { SignalR, HouseholdConfigProtocol.SugaryPeopleView },
-        { Agent, HouseholdConfigProtocol.SugaryPeopleView }
+        { Agent, HouseholdConfigProtocol.SugaryPeopleView },
+        { Scheduling, HouseholdConfigProtocol.SugaryOffView },
+        { Telegram, HouseholdConfigProtocol.SugaryOffView },
+        { Agent, HouseholdConfigProtocol.SugaryOffView }
     };
 
     [Theory]

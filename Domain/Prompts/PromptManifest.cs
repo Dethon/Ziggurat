@@ -28,7 +28,9 @@ public static class PromptManifest
     // the same way: the figure follows the declarations and is never set ahead of them. The mounts
     // section's budget covering its real mount list (2,800 where it covered its own words at 600) is
     // most of what it stands at: the prompt did not grow, the figure stopped leaving the list out.
-    public const int StandingTokens = 11_400;
+    // Nabu dialling Sugary (its log and glucose watches advertised beside the voice section) made him
+    // the largest agent, at 11,700.
+    public const int StandingTokens = 11_700;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a

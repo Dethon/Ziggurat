@@ -105,9 +105,10 @@ public class McpSugaryServerTests
         SugarySkill.Description.ShouldContain("exercise");
     }
 
-    // "Was she on her period the week her glucose ran high" is a query beside /ha.
+    // "Was she on her period the week her glucose ran high" is one query: her glucose is a table of
+    // the same log now, not Home Assistant's history.
     [Fact]
-    public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHa()
+    public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHerGlucose()
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -116,19 +117,58 @@ public class McpSugaryServerTests
 
         body.ShouldContain("- `periods` —");
         body.ShouldContain("`day_notes`");
-        body.ShouldContain("read `/ha` history for those days");
+        body.ShouldContain("read `glucose` for those days");
         SugarySkill.Description.ShouldContain("period");
     }
 
+    // Her glucose is read where Sugary keeps it: the log skill names the tables and the README's
+    // statistics, and sends no glucose question to the home's mount, which a household without one
+    // does not have.
     [Fact]
-    public async Task AnEmptyLog_HasItsReadmeItsThreeTablesAndThreeEmptyDirectories()
+    public async Task TheLogSkill_SendsHerGlucoseToTheLogsOwnTables_NeverToTheHome()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("- `glucose` —");
+        body.ShouldContain("`sensors`");
+        body.ShouldNotContain("/ha");
+        SugarySkill.Description.ShouldContain("glucose");
+    }
+
+    // A glucose watch is written where its readings are: Sugary ships the skill that teaches the file,
+    // its four trigger kinds, the unit and how an alarm is stopped.
+    [Fact]
+    public async Task TheGlucoseWatchesSkill_IsServed_WithTheTriggerKindsTheUnitAndTheStop()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(GlucoseWatchesSkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/watchers/<id>/watch.json");
+        body.ShouldContain("`glucose_trend`");
+        body.ShouldContain("`glucose_forecast`");
+        body.ShouldContain("`no_readings`");
+        body.ShouldContain("`link_failing`");
+        body.ShouldContain("18.016");
+        body.ShouldContain("`person`");
+        body.ShouldContain("./dismiss");
+        body.ShouldNotContain("entity_id");
+    }
+
+    [Fact]
+    public async Task AnEmptyLog_HasItsReadmeItsTablesAndItsEmptyDirectories()
     {
         await using var server = await SugaryServer.StartAsync();
 
         (await server.GlobAsync("**")).ShouldBe([
             "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/exercise/", "/foods.parquet",
-            "/items/", "/meals/", "/periods.parquet"
+            "/glucose/", "/items/", "/meals/", "/periods.parquet", "/sensors.parquet"
         ]);
+        (await server.TableRowsAsync("/sensors.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/dose-meals.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/foods.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/periods.parquet")).ShouldBeEmpty();
@@ -244,18 +284,28 @@ public class McpSugaryServerTests
         rows.Select(row => row![0]!.GetValue<string>()).ShouldBe(["craving chocolate"]);
     }
 
-    // The only way to change her log is through Sugary itself, so the mount offers nothing that
-    // writes, moves or deletes; it is read as Parquet and asked with query.
+    // The only way to change her log is through Sugary itself, so the log's mount offers nothing that
+    // writes, moves or deletes; it is read as Parquet and asked with query. The server's writing tools are
+    // its glucose watches', at /watchers.
     [Fact]
     public async Task TheMount_OffersReadingAndNothingThatWrites()
     {
         await using var server = await SugaryServer.StartAsync();
 
+        var log = await server.Client.ReadResourceAsync("filesystem://sugary");
+        var watches = await server.Client.ReadResourceAsync("filesystem://sugary-watches");
         var tools = await server.Client.ListToolsAsync();
 
+        Operations(log).ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
+        Operations(watches).ShouldBe(
+            ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"], ignoreOrder: true);
         tools.Select(tool => tool.Name).Where(name => name.StartsWith("fs_", StringComparison.Ordinal))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
+            .ShouldBe(Operations(log).Union(Operations(watches)), ignoreOrder: true);
     }
+
+    private static IReadOnlyList<string> Operations(ReadResourceResult resource) =>
+        System.Text.Json.Nodes.JsonNode.Parse(string.Join("", resource.Contents.OfType<TextResourceContents>().Select(c => c.Text)))!
+            ["operations"]!.AsArray().Select(o => o!.GetValue<string>()).ToList();
 
     // The server holds the row cap to its bounds itself, whoever is calling.
     [Fact]
@@ -392,7 +442,7 @@ public class McpSugaryServerTests
 
         (await server.GlobAsync("**/*.parquet")).ShouldBe([
             "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
-            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet"
+            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet", "/sensors.parquet"
         ]);
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.parquet" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");

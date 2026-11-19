@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Shouldly;
+using Tests.Integration.Fixtures;
 using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Channels;
@@ -184,7 +185,7 @@ public class McpChannelConnectionToolCacheTests
         (await CreateAsync(connection)).ShouldBe("conv-1");
 
         await Should.ThrowAsync<Exception>(
-            () => connection.ReconnectAsync("http://localhost:1/mcp", CancellationToken.None));
+            () => connection.ReconnectAsync(DeadEnd.Url("/mcp"), CancellationToken.None));
 
         (await CreateAsync(connection)).ShouldBeNull();
         await Should.NotThrowAsync(() => connection.RegisterAgentsAsync(

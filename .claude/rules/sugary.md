@@ -15,9 +15,9 @@ Sugary's log is SQLite in its own volume (`docs/adr/0043`); its channel is in `.
 
 ## Who owns a row
 
-Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions and push subscriptions are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys.
+Each person keeps a log of their own while the household shares its kitchen. Meals, doses, pens, periods, day notes, exercise sessions, push subscriptions, the glucose link, glucose readings and sensors are `IPersonal` (`UserId` and `TenantId`, both the accounts service's opaque ids); foods and recipes are `IHousehold` (`TenantId`). A day note's key is `(UserId, Day)`; a glucose link's is `UserId`, one per person; a glucose reading's `(UserId, At)` and a sensor's `(UserId, Serial)`, with no key into the link, so unlinking keeps them. A meal item's food or recipe id and a dose's meal ids stay plain values, not keys. A glucose watch (`GlucoseWatch`, key `(TenantId, Id)`, ids unique per household) and what the engine judged of each of its triggers (`GlucoseWatchState`, key `(TenantId, WatchId, TriggerIndex)`, cascading with the watch) are `IHousehold`: a watch is about one person's sensor (`SubjectUserId`) and written by somebody (`WriterUserId`), and who is shown it — its subject, its writer, a holder of everyone's log — is said in `SqliteGlucoseWatches.ListAsync`, not by a filter (`SugaryWatchFileSystem`, `sugary-watches` at `/watchers`).
 
-`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, and a push subscription changing hands.
+`SugaryDbContext` holds every query to one owner with **query filters** on its `Owner` (`Account?`), so no route, no mount read and no find, update or delete has a predicate of its own to forget. It is opened for a person by `SugaryStore.For(account)`. A row a person's context adds is stamped with that owner in `SaveChanges`. The factory's context (`IDbContextFactory`, `Owner` null) owns nothing: its filters match no row, and a row it adds must already name its owner or `SaveChanges` throws, because a row nobody owns would be kept and never seen. What needs every owner's rows says `IgnoreQueryFilters()` in so many words, and only these do: the pen reminders, the import's already-there check, a push subscription changing hands, the glucose poller (`GlucosePoller`, every live link and each owner's readings and sensors, the owner spelled out in every query), the glucose import (`GlucoseImport`, the named person's readings), the glucose watch engine (`GlucoseWatchEngine`, each subject's armed watches, their states, readings, link, sensors and phones' zones, the household and subject spelled out) and the glucose watches' delegation store (`GlucoseWatchDelegationStore`, every household's watches for the agent's `redelegate`, rewriting the delegation column alone).
 
 ## Rows from before
 
@@ -31,8 +31,9 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - A route's `SugaryDbContext` parameter is **bound**, not resolved: `SugaryDbContext.BindAsync` (in `App/PersonsLog.cs`) opens the store for the request's `Person` and disposes it with the response. Minimal APIs prefer `BindAsync` to the container for a parameter, so a route cannot be handed the unowned context. A route that needs the person itself (an estimate, a label, a push subscription) takes `Person` too.
 - A push subscription's key is its endpoint, one browser: a browser that subscribes as somebody else becomes their phone (`UserId` reassigned), so her reminders stop reaching it.
 - Foods' and recipes' use counts come from the asking person's own meals.
-- **A person's log changes run one at a time** (`OneLogWriteAtATime`, on meals, doses, pens, exercise, periods and
-  day notes; never an estimate or a label, which wait on a model): a change is checked against the log as it is,
+- **A person's log changes run one at a time** (`OneLogWriteAtATime`, on meals, doses, pens, exercise, periods,
+  day notes and glucose; never an estimate or a label, which wait on a model; linking LibreLinkUp waits on its login,
+  so that route is marked `TakesItsOwnTurn` and takes her turn around its write alone, `TurnAsync`): a change is checked against the log as it is,
   so two phones tapping "my period started today" at once kept two periods, and a day's note written twice at once
   was a 500. A save the server refuses is read again on the page (`refusedBecause`), so the clash another phone made
   is said in her language rather than as a bad number.
@@ -47,6 +48,99 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   untouched time would read as her change and another phone's change of it as a clash; the server compares a
   note, a name and a dose's meals as it would keep them. The household's pantry changes (`/foods`, `/recipes`) wait for each other across the household in the same queue (keyed by household), since two saves of one recipe at the same instant each read it before the other wrote (one change lost, or a 500).
 
+- **Her glucose link** (`GlucoseLink`, `/api/glucose`): `PUT /link` logs in and lists who the account follows
+  before anything is kept, so a refusal leaves the link she had; the region kept is the one LibreLinkUp found
+  the account at. The password is sealed (`GlucoseCredentials`, AES-GCM under `SealingKey`, compose's
+  `SEALINGKEY` from `.env`'s `SUGARY_SEALING_KEY`, the associated data her household's and her own id) and no
+  route answers it. Without the key linking answers 503 `linking-off` and the rest of Sugary works. Every
+  refusal carries a `code` the app words (`GlucoseEndpoints`).
+- **The poller** (`GlucosePoller`, its loop `GlucosePollLoop`, key or no key) asks every live
+  link — a person chosen, a password not refused — once per `Glucose:PollSeconds` (appsettings, 60), each at its
+  own moment of the period (from its owner's id), at most four at a time. A link is first polled at its next
+  moment. Every current reading is kept as `current` with its arrow (one at an instant she has is not kept
+  again), then the curve as `graph`, a point within 2.5 minutes (`GlucoseReadingRules.Spacing`) of one she has
+  skipped, so the curve fills only gaps. Readings, sensors and the link's state are written in
+  one transaction, and only where `LinkedAt` and `PatientId` are still what the poll read: a poll out while she
+  linked again writes nothing. A refused password stops the link until she links again. **A password this server cannot open** (the sealing key changed or removed, a link copied onto somebody else's) is recorded as the link failing, `CredentialsUnreadable` (the app's `credentials-unreadable`, which asks her to link again and opens the form), with `FailingSince` and through the same `LinkedAt`/`PatientId` guard, LibreLinkUp never asked: skipped with nothing written, it left the tab showing a working link and every `link_failing` watch quiet. It stays live on the doubling backoff below, so the key put back opens it at its next ask with nothing to link again; nobody linked asks the accounts service nothing; a rate limit waits its
+  `Retry-After` (five minutes when it says none); anything else waits a period doubling to fifteen minutes while
+  it lasts, `FailingSince` kept from the first failure. **A household whose features turn Sugary off is
+  polled as any** (user's decision, 2026-11-18): the feature takes Sugary from the household's agents and
+  refuses estimates, never the app, so its log, pens and Glucose tab stay open and its readings stay live;
+  only its watches go quiet (below). `FailureDetail` is a step's component or a minimum
+  version, never a reason (the app shows it); reasons go to the log. After each poll that wrote, the
+  `IGlucosePollObserver` (her watches, `GlucoseWatchEngine`) is told what was kept, the newest reading
+  LibreLinkUp gave and the link's state; its failure, like any of one person's poll, touches nobody else's.
+- **Her glucose watches are judged by the server** (`GlucoseWatchEngine`, the rules in `GlucoseTriggers`, Domain,
+  pure): after each poll every trigger of the polled person's armed watches (`Enabled` and not `Spent`), a
+  reading trigger only on a newest reading under ten minutes old, and once a minute on the clock
+  (`GlucoseWatchLoop`, key or no key) the sensor's triggers of everyone's, since a link backing off or
+  refused is asked rarely or never. Readings are her own (`current`, `graph`), never `import`/`import-hourly`.
+  `no_readings` is judged on LibreLinkUp's last answer (`LastSuccessAt` minus her newest reading), never while
+  the link fails; `link_failing` on `FailingSince`; `ending` on the latest-started sensor of those last seen,
+  fourteen days. **A household whose features turn Sugary off has nothing judged and nothing fired**, on a
+  poll or the clock (`SugaryOffHouseholds`, the accounts service's `sugary-off` view on Sugary's own
+  credential, kept a minute, `.claude/rules/household-config.md`; features that cannot be read just now are
+  taken as on and logged once per outage, the failure remembered a minute — a medical alarm must not go
+  silent because the accounts service blinked), and what was judged of its watches is forgotten (its state rows deleted): back on, its
+  watches are judged as if just written, so nothing that happened while off fires late — a low still going
+  when it came back on included — and the next crossing fires as before. A trigger fires on entering its condition (after `for`) and not again until it left; a
+  trigger with no state row is judged without firing, its condition recorded as fired if it holds (written
+  while she is low: fires at the next crossing); one that cannot be judged keeps its row, or gets none.
+  Time conditions are read on the zone her phones last saved (`HomeCalendar.OnSaved`, the pen reminders'
+  rule), else the server's, and gate the fire, not the episode: a low that began before the window fires when
+  it opens if still low. One judgement per person at a time. A fire calls `IGlucoseWatchEffects` (`GlucoseWatchEffects`:
+  the watch's effects in order — a `prompt` composed by `FirePlanning` as a schedule's fire is, `GlucoseWatchFire`:
+  the watch's own words as what is asked, `GlucoseFireReport` beside them as the fire's report (what fired, the
+  reading in mg/dL and mmol/L, trend, rate or forecast, when on the zone the engine judged on, the unit she reads),
+  the principal the watch's `userId`, the subject's household, origin Watch with the id, sender
+  `ServiceSenders.GlucoseWatch`, and the delegation the watch keeps — emitted gate-on-live on Sugary's channel
+  and counted only when an agent took it, never awaited past that; an `announce` handed to
+  `IGlucoseAnnounceEffect`, `GlucoseAnnounce`: the household's satellites through the relay as an `Alarm`, else — no target, every satellite offline, the hub unreachable — an insistent channel alert to the subject and the writer; `/timers ./dismiss` stops it on a satellite, a channel's Dismiss on channels), whose throw is contained. **A fire that reached nobody leaves its episode unfired** (no prompt an agent took, no announcement rung — the agent away while a deploy reconnects it, every effect failing; logged at each attempt), so the next judgement that still finds the condition holding tries again — a reading trigger at the next poll, a sensor trigger at the next poll or clock pass, one attempt a judgement — and one that finds it left says nothing late; `LastFiredAt` is stamped only by a fire that reached somebody. A fire that reached somebody fires its episode, as one whose prompt nobody took beside an announcement that rang does; a `once`
+  watch is spent (`Spent`, `Enabled` false on the columns) only by a fire that reached somebody, and the states,
+  `LastFiredAt` and spent are written in one transaction guarded on the watch's `Spec`, `Enabled`, `!Spent`
+  and its state-row count being what was read, so a watch rewritten or removed meanwhile gets nothing.
+  **A watch's prompt runs as the person whose turn last wrote it**, on the agent's delegation
+  (`.claude/rules/service-identity.md`, "Deferred turns"): the agent signs one for a write to `sugary-watches`
+  (`DelegatedWrites`, described by `GlucoseWatchDelegation` as a `watch` — the home watch's description, since
+  the agent checks the same of both fires), the mount keeps it on the watch when it names this watch and the
+  writer (`GlucoseWatchDelegation.KeptFor`), every write replacing it and a write carrying none leaving the
+  watch nobody's. `userId` (who the fire is labelled for; the agent believes the delegation) is the writer,
+  the subject, or what the watch already said, else refused naming the field. The zone a fire's report and
+  time conditions use stays the phones' saved one: the accounts service takes a delegation as proof of a
+  household only for a schedule, from the scheduling server.
+- **What the agent is told about her glucose** is Sugary's to serve (`AddSkills`): the `sugary-log` skill names
+  the `glucose` and `sensors` tables beside her meals and doses and sends no glucose question to `/ha` (a
+  household with no home has none), and the `glucose-watches` skill (`Domain/Prompts/Skills/glucose-watches.md`)
+  teaches a glucose watch's file — the four trigger kinds in mg/dL (mmol/L × 18.016), `for`/`within`,
+  `person` for a granted reader, prompt and announce effects (no actions), the crossing rule with her newest
+  reading said when already past, `no_readings` against `link_failing`, an urgent alarm insistent in the
+  named room, channels where there is no satellite, and how an alarm is stopped. The home's `home-watches`
+  description and guide stub hand a glucose watch to it wherever it is offered, so the two descriptions
+  divide by subject (a person's sensor, the home's entities) rather than compete; a misspelled kind is still
+  the home's (the fallback) and refused in Home Assistant's words. The eval's glucose watches are
+  `GlucoseWatchScenarios`, over `EvalSugaryLog`'s seeded readings and links, with Sugary's watches in the
+  run's snapshot (`EvalSugaryLog.SnapshotAsync`).
+- **Her glucose from Home Assistant** (`import-glucose`, `GlucoseImport`): an operator's one-off, `docker exec
+  mcp-sugary dotnet McpServerSugary.dll import-glucose --ha <url> --token-file <path> --entity <sensor> --tenant
+  <household id> --user <user id> [--days 90]`, reading the recorder's history, then the statistics' hourly means
+  before it (`import`, `import-hourly`), skipped beside readings she has, so a rerun adds nothing. Unlike
+  `import`, its rows are the named person's, never `legacy`. The token is read from a file and never printed;
+  `--token` is refused. Imported rows never reach `IGlucosePollObserver`: the command is a process with the
+  store alone.
+
+- **What the Glucose tab reads** (`GlucoseEndpoints`, GETs, so never queued behind her writes): `/current`
+  is her newest reading with its arrow and `ageSeconds`, her link (null without one), `canLink` and the unit
+  and range she reads in (mg/dL and 70–180 without a link, since readings outlive it); `/readings?from&to`
+  (the last day by default, at most 90 days, `bad-window`/`window-too-long`) answers as read up to two days,
+  quarter-hour means up to sixteen, hourly beyond (`GlucoseCurve`), a bucket with no reading left out so the
+  app breaks the line; `/statistics?days=1|7|14|90` (`bad-period`) is `GlucoseStatistics`, the one
+  implementation: each reading weighs the minutes to the next, at most twenty (`GlucoseQueries.MaxMinutesPerReading`; LibreLinkUp backfills every fifteen, a point often a minute late, and the chart breaks its line at the same step), so a gap counts for nothing
+  and mean and SD are of the time, not of the readings; shares are of the covered time, the bands under 70
+  and over 180 include under 54 and over 250, in range is her range; everything but count and coverage is
+  null with no readings. The app keeps every value in mg/dL and shows mmol/L as mg/dL / 18.016 to one
+  decimal (`glucose.ts`); its range is saved with `loaded` and `overRecord`, so a range shown rounded in
+  mmol/L goes back as recorded when untouched. A refusal's `code` reaches the app on `ApiError.code`.
+
 ## Turns, the mount and reminders
 
 - **Sugary turned off refuses the app.** The agent refuses a Sugary turn of a household whose features turn Sugary off (`RefusalAnswers.SugaryOff`), and the server answers the app's estimate or label **403** with the refusal's code (`RefusalAnswers.CodeOf`: `sugary-off`, `key-refused`, `out-of-credit`, `without-key`, `disabled`, …) whenever the agent refused the turn for the household; the app says each in the person's language with who can fix it (`errors.ts`), never the agent's English. Any other failure stays the 502 it was.
@@ -54,6 +148,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - An estimate's and a label's turn carry `Principal("sugary", <user id>, Account)`, and their `Sender` is the account's id: the assertion names nothing more, and a resolution call per estimate would put the accounts service on every meal's path. They also carry that very assertion (`Person.Assertion`, the request's `X-Ziggurat-Assertion`) as the notification's `Assertion`, which is what the agent believes about the turn — and its own check is for channel `sugary` too. `OpenEstimates` remembers who opened a meal's conversation, and anyone else's answers on it are the same 410 as a closed one.
 - **Everyone's log, for a reader an owner granted it** (user, 2026-11-12: one member's agent running analytics on another's diabetes): the members page's "Reads everyone's Sugary log" (`User.ReadsSugaryLogs`, owner-granted like sees-all, never a role; each account page names who holds it). The mount asks the call's household for its `sugary-people` view (`ICallHousehold.SugaryPeopleAsync`, on the call token) and, when it lists the reader as granted and the household is the reader's own, shows each other person not disabled under `people/<folder>/` with the same files; a query at or under `people/<folder>` reads that person's whole log, anywhere else the reader's own. A folder is the display name's letters and digits lowercased (`SugaryPath.FolderOf`), twins numbered in the order they joined. The owner's `Account` is built from the reader's tenant and the view's user id, never parsed from a path. Without the grant there is no `people/` in a listing and anything under it is `permission_denied`, never empty. Agent only: the app stays each person's own log. Sugary keeps the view a minute (no Redis), so a withdrawn grant still reads for up to a minute.
 - The `/sugary` mount answers for the account on the principal the call's `_meta` carries (`SugaryFileSystem.For`, `Principal.Of(caller.Conversation)?.Account`), never an ambient. A call naming nobody — a voice guest, a fire with no person behind it, a call with no context — is refused `permission_denied`, never shown an empty log: "she logged nothing" would be a false fact about a health record. The byte read overrides `ReadBlobAsync` for that refusal, because one thrown from the chunk stream reaches the wire as a failure to retry. The eval stamps every turn with `EvalRun.Account` and seeds its log under it.
+- **Her glucose on the mount**: `glucose/<YYYY-MM>.parquet` (`read_at`, `mg_dl`, `mmol_l` = mg/dL ÷ 18.016 to one decimal, `trend` in snake_case words, `source` in the store's words) and `sensors.parquet` (`ends_at` = activation + `SugaryTables.SensorLifetime`, 14 days: LibreLinkUp names a product, not its lifetime), tables `glucose` and `sensors`. The months come from `ISugaryLog.GlucoseMonthsAsync` (each month's first reading by index, never every instant). `query` leaves `glucose` out only of a statement that names other tables and never says glucose (`SugaryFileSystem.OtherTable`), since a year of minute readings is ~650 ms per statement; every listing of the catalog gets it, and left out it is absent, never empty. A file's info and every chunk of a read of it are one version (`IReadSnapshots`, `.claude/rules/virtual-filesystem.md`), since the current month's glucose file changes every minute. The README is rendered per log (`SugaryReadme.For(zone, targets)`), so `people/<folder>/README.md` names that person's unit and range; its glucose statements are `GlucoseQueries`, which the tests run, time-weighted (each reading stands for the minutes to the next, at most 20, the period's end ending the last), as the app's `GlucoseStatistics` is, so the two agree.
 - A phone is subscribed by a signed-in session (`PushSubscription.SessionId`, the `sid` of the request's assertion) and hears only while that session lives: before telling it anything `PenReminders` asks the accounts service (`ISessionAccounts`, `/accounts/internal/session` answered on Sugary's own channel), drops a phone whose session ended — signed out from the account page, its person disabled — and tells nothing to one it could not ask about just now.
 - `PenReminders` sends each due pen's reminder to its owner's phones only, at the reminder hour and on the day of the owner's household's clock: a phone's subscription keeps the zone of its person's household as of its last save (`PushSubscription.TimeZone`, saved on every open), since the reminders wake for nobody's request and can prove no household; a phone saved before it, or a zone this host does not know, is the server's own.
 - **Her clock is her household's** (`settings.timeZone`, `.claude/rules/household-config.md`): the mount reads every time, `_local` column and month file in the zone of the call's household (`FileSystemCaller.Household`), and a route's `HomeCalendar` is bound per request (`HomeCalendar.BindAsync`) on the zone of the household the request's assertion names, proved with that assertion (`CallHousehold.OfPerson`). `HomeZone` (compose's `TZ`) is the server's own zone: a zone this host does not know falls back to it, as does a pen reminder for a phone that never saved its household's zone. The server has no Redis, so a saved zone reaches it when its kept answer runs out (a minute). The mount's description names no zone (local time, the README naming it): it is served per session, before any call.

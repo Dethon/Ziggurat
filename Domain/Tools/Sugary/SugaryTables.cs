@@ -7,7 +7,8 @@ namespace Domain.Tools.Sugary;
 
 // The log as tables another tool can lay beside glucose readings: one with a row per meal, one
 // with a row per food eaten, one with her saved foods, one with a row per insulin dose, one with a
-// row per session of exercise, one with a row per period and one with a row per day she wrote a note on. The first three's columns, order
+// row per session of exercise, one with a row per period, one with a row per day she wrote a note on,
+// one with a row per glucose reading and one with a row per sensor. The first three's columns, order
 // and spelling are the standalone app's export, so a reader of either reads both; the rest are
 // Sugary's own. A dose is joined to the meals it was for through dose_meals, a row per link, so
 // doses stays a row per dose and a sum of its units counts a bolus for two meals once.
@@ -61,6 +62,26 @@ public static class SugaryTables
     ];
 
     private static readonly TableColumn[] _dayNoteColumns = [new("date", ColumnType.Date), new("note", ColumnType.Text)];
+
+    private static readonly TableColumn[] _glucoseColumns =
+    [
+        new("read_at", ColumnType.Instant), new("mg_dl", ColumnType.Decimal), new("mmol_l", ColumnType.Decimal),
+        new("trend", ColumnType.Text), new("source", ColumnType.Text)
+    ];
+
+    private static readonly TableColumn[] _sensorColumns =
+    [
+        new("serial", ColumnType.Text), new("activated_at", ColumnType.Instant), new("ends_at", ColumnType.Instant),
+        new("last_seen_at", ColumnType.Instant)
+    ];
+
+    // mg/dL per mmol/L, glucose's molar mass over ten.
+    public const double MgDlPerMmolL = 18.016;
+
+    // How long a sensor lasts. LibreLinkUp says which product a sensor is but not how long that
+    // product lasts, and a lifetime guessed per product would be a wrong end date said as a fact; the
+    // usual one is fourteen days, which the README says.
+    public static readonly TimeSpan SensorLifetime = TimeSpan.FromDays(14);
 
     public static readonly string[] MealColumns = Names(_mealColumns);
     public static readonly string[] ItemColumns = Names(_itemColumns);
@@ -121,6 +142,48 @@ public static class SugaryTables
     public static Table DayNotes(IEnumerable<LoggedDayNote> notes) =>
         new("day_notes", _dayNoteColumns, [.. notes.OrderBy(note => note.Day).Select(note => Row(note.Day, note.Text))]);
 
+    // Oldest first. mmol/L is worked out on every read, to one decimal as a meter shows it, so the two
+    // columns never disagree.
+    public static Table Glucose(IEnumerable<LoggedGlucose> readings, TimeZoneInfo zone) =>
+        new("glucose", _glucoseColumns, [.. readings.OrderBy(reading => reading.At).Select(reading => Row(
+            On(reading.At, zone), reading.MgPerDl,
+            Math.Round(reading.MgPerDl / MgDlPerMmolL, 1, MidpointRounding.AwayFromZero),
+            TrendWord(reading.Trend), SourceWord(reading.Source)))]);
+
+    // In the order they were put on.
+    public static Table Sensors(IEnumerable<LoggedSensor> sensors, TimeZoneInfo zone) =>
+        new("sensors", _sensorColumns, [.. sensors.OrderBy(sensor => sensor.ActivatedAt).Select(sensor => Row(
+            sensor.Serial, On(sensor.ActivatedAt, zone), On(sensor.ActivatedAt + SensorLifetime, zone),
+            On(sensor.LastSeenAt, zone)))]);
+
+    public static string TrendWord(GlucoseTrend trend) => trend switch
+    {
+        GlucoseTrend.FallingFast => "falling_fast",
+        GlucoseTrend.Falling => "falling",
+        GlucoseTrend.Steady => "steady",
+        GlucoseTrend.Rising => "rising",
+        GlucoseTrend.RisingFast => "rising_fast",
+        _ => "unknown"
+    };
+
+    public static string SourceWord(GlucoseSource source) => source switch
+    {
+        GlucoseSource.Current => "current",
+        GlucoseSource.Graph => "graph",
+        GlucoseSource.Import => "import",
+        GlucoseSource.ImportHourly => "import-hourly",
+        _ => throw new ArgumentOutOfRangeException(nameof(source), source, null)
+    };
+
+    public static GlucoseSource SourceOf(string word) => word switch
+    {
+        "current" => GlucoseSource.Current,
+        "graph" => GlucoseSource.Graph,
+        "import" => GlucoseSource.Import,
+        "import-hourly" => GlucoseSource.ImportHourly,
+        _ => throw new ArgumentOutOfRangeException(nameof(word), word, null)
+    };
+
     // By name, the order a list of things she keeps is looked through in.
     public static Table Foods(IEnumerable<SavedFood> foods) =>
         new("foods", _foodColumns, [.. foods.OrderBy(food => food.Name, StringComparer.Ordinal).Select(food => Row(
@@ -130,6 +193,16 @@ public static class SugaryTables
     // The month a meal is filed under is the month its eaten_at shows: the home's calendar, not UTC's.
     public static string Month(DateTimeOffset instant, TimeZoneInfo zone) =>
         TimeZoneInfo.ConvertTime(instant, zone).ToString("yyyy-MM", CultureInfo.InvariantCulture);
+
+    // When the month after the one an instant falls in begins, on this clock. A clock change can skip
+    // the first's midnight, and then the month begins when the clock reads the next minute that exists.
+    public static DateTimeOffset NextMonthStart(DateTimeOffset instant, TimeZoneInfo zone)
+    {
+        var local = TimeZoneInfo.ConvertTime(instant, zone);
+        var first = new DateTime(local.Year, local.Month, 1).AddMonths(1);
+        var start = Enumerable.Range(0, 24 * 60).Select(minutes => first.AddMinutes(minutes)).First(time => !zone.IsInvalidTime(time));
+        return new DateTimeOffset(start, zone.GetUtcOffset(start));
+    }
 
     // Enums are written the way the API spells them.
     public static string Word<T>(T value) where T : struct, Enum =>

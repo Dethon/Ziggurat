@@ -5,8 +5,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServerSugary.Import;
 
-// The server's one verb besides serving: `import <directory>` reads the standalone app's three
-// downloads into the database the server uses, then exits. A verb rather than something the server
+// The server's verbs besides serving, each run once and then exiting: `import <directory>` reads the
+// standalone app's three downloads into the database the server uses; `import-glucose` carries one
+// person's glucose over from Home Assistant (GlucoseImportCommand). A verb rather than something the server
 // does on start, because an import that ran on every start would bring back a meal she has since
 // deleted for as long as the files stayed in the volume.
 //
@@ -15,11 +16,17 @@ public static class SugaryCommand
 {
     public const string Import = "import";
 
-    public static bool IsCommand(IReadOnlyList<string> args) => args is [Import, ..];
+    public static bool IsCommand(IReadOnlyList<string> args) => args is [Import or GlucoseImportCommand.Verb, ..];
 
     public static async Task<int> RunAsync(
-        IReadOnlyList<string> args, SugarySettings settings, TextWriter output, CancellationToken ct)
+        IReadOnlyList<string> args, SugarySettings settings, TextWriter output, CancellationToken ct,
+        TimeProvider? time = null)
     {
+        if (args is [GlucoseImportCommand.Verb, ..])
+        {
+            return await GlucoseImportCommand.RunAsync(args, settings, output, time ?? TimeProvider.System, ct);
+        }
+
         if (args is not [Import, var directory])
         {
             await output.WriteLineAsync(

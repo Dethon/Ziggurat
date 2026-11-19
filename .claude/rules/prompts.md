@@ -123,7 +123,8 @@ dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant 
 name, with files, workers and memory; `sugary`, the estimator; and `nabu`, the home's Nabu without
 the home — the voice section and its spoken-reply tuning, every one of the kit's own servers by name
 (Home Assistant and the library included: a command spoken to it reaches everything the agent can
-do), the household's language rather than a pinned one — which an owner adds and no household starts
+do) and the shared servers Jonas dials but Idealista (Sugary among them, so a person asks aloud after
+their glucose or sets a glucose watch), the household's language rather than a pinned one — which an owner adds and no household starts
 with, and which answers the household's satellites unless the owner marks another agent to (any
 agent serving a satellite reads the voice section, `.claude/rules/channels.md`). A template's own server reaches a
 turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household

@@ -4,26 +4,35 @@ using Tests.Eval.Harness;
 
 namespace Tests.Eval.Scenarios;
 
-// Reacting to the home: a watch is a file under /ha/watches that becomes a real automation, and
+// Reacting to the home: a watch is a file under /watchers that becomes a real automation, and
 // what these assert is the automation the fake home received — its effect kind, its triggers, its
 // delivery — and the watch count moving or holding still. The fake home starts with one watch
-// (Laura's sugar below 70, on Telegram), so creating shows as one becoming two and changing,
-// pausing or removing act on that one.
+// (the living room's humidity above 70, on Telegram), so creating shows as one becoming two and
+// changing, pausing or removing act on that one.
+//
+// Every watch here is on the home's own things — the fridge, the freezer, the temperature, the
+// humidity — because Jonas and Nabu both dial Sugary, and a watch on somebody's glucose is Sugary's
+// glucose watch (GlucoseWatchScenarios), not a home watch on the home's glucose entity.
 public static class WatchScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
-        CloseTheBlindsWhenHot, WakeMeIfHerSugarDrops, WarnMeOnTelegram, WarnMeByVoice, WarnMeOutsideARange,
+        CloseTheBlindsWhenHot, WakeMeIfTheFreezerWarms, WarnMeOnTelegram, WarnMeByVoice, WarnMeOutsideARange,
         AnUrgentWarning, TellMeWhenTheWashingMachineFinishes, ChangeTheThreshold, NotTonight, RemoveTheWatch
     ];
 
-    private const string WatchFile = @"^/ha/watches/[^/]+/watch\.json$";
+    private const string WatchFile = @"^/watchers/[^/]+/watch\.json$";
 
     // The home skill's load is tolerated beside the watches skill: a watch names an entity, the
     // entity layout is the home skill's, and both models reach for it about one run in three.
     // The watches skill stays required; this only stops the detour reading as a wrong choice.
+    // Looking at the watches themselves (listing /watchers, reading a watch before changing it) is
+    // looking too.
     private static IReadOnlyList<CallPermission> LookingAtTheHome =>
-        [.. CallPermission.LookingAndManuals("/ha*"), CallPermission.Load(HomeAssistantSkill.Name)];
+    [
+        .. CallPermission.LookingAndManuals("/ha*"), .. CallPermission.Looking("/watchers*"),
+        CallPermission.Load(HomeAssistantSkill.Name)
+    ];
 
     private static string Kind(string kind) => $@"""kind""\s*:\s*""{kind}""";
 
@@ -115,16 +124,15 @@ public static class WatchScenarios
 
     // Urgency, at night, in the room the request came from: an insistent announcement rings until
     // it is acknowledged, with no agent involved, and a time condition keeps it to the night.
-    public static Scenario WakeMeIfHerSugarDrops => new()
+    public static Scenario WakeMeIfTheFreezerWarms => new()
     {
         Name = "a night-time warning is an insistent announcement with a condition",
         AgentId = "nabu",
         Turn = new EvalTurn
         {
-            // Above, not below: the seeded watch is "below 70", and a night-time "below 55" read as a
-            // tightening of it on a third of runs — a defensible reading the fixture invited, not the
-            // add-beside rule being ignored. A high threshold cannot be the same watch.
-            Text = "si el azúcar de Laura pasa de 250 por la noche despiértame aquí, que suene hasta que lo apague",
+            // The freezer, not Laura's sugar: Nabu dials Sugary, so a watch on her glucose is Sugary's
+            // (GlucoseWatchScenarios.WakeMeHereIfLaurasSugarClimbs keeps this wording for it).
+            Text = "si el congelador pasa de menos diez grados por la noche despiértame aquí, que suene hasta que lo apague",
             Sender = "fran",
             Room = "office",
             SatelliteId = "office-01"
@@ -143,15 +151,15 @@ public static class WatchScenarios
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("announce")),
                     Arg.Matches("content", @"""insistent"""),
-                    Arg.Matches("content", @"""above""\s*:\s*250"),
-                    Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
+                    Arg.Matches("content", @"""above""\s*:\s*-10(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.FreezerTemperatureEntityId),
                     Arg.Matches("content", @"""condition""\s*:\s*""time"""),
                     Arg.Matches("content", AnnounceTarget("office", "office-01"))
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("above", "250")),
+        Changes = OneMoreWatch(("above", "-10")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
@@ -168,7 +176,7 @@ public static class WatchScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Avísame cuando el azúcar de Laura pase de 180.",
+            Text = "Avísame cuando la temperatura de la nevera pase de 8 grados.",
             Sender = "fran",
             Channel = "telegram"
         },
@@ -185,15 +193,15 @@ public static class WatchScenarios
                 [
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("prompt")),
-                    Arg.Matches("content", @"""above""\s*:\s*180"),
-                    Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
+                    Arg.Matches("content", @"""above""\s*:\s*8(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.FridgeTemperatureEntityId),
                     Arg.Lacks("content", Kind("announce")),
                     Arg.Lacks("content", @"""(voice|signalr)")
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("above", "180")),
+        Changes = OneMoreWatch(("above", "8")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Claims =
@@ -213,7 +221,7 @@ public static class WatchScenarios
         AgentId = "nabu",
         Turn = new EvalTurn
         {
-            Text = "avísame cuando el azúcar de Laura pase de 180",
+            Text = "avísame cuando la temperatura del salón pase de 28 grados",
             Sender = "fran",
             Room = "kitchen",
             SatelliteId = "kitchen-01"
@@ -231,15 +239,15 @@ public static class WatchScenarios
                 [
                     Arg.PathMatches(WatchFile),
                     Arg.Matches("content", Kind("prompt")),
-                    Arg.Matches("content", @"""above""\s*:\s*180"),
-                    Arg.Matches("content", FakeHomeAssistant.GlucoseEntityId),
+                    Arg.Matches("content", @"""above""\s*:\s*28(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.SalonTemperatureEntityId),
                     Arg.Lacks("content", Kind("announce")),
                     Arg.Lacks("content", "telegram")
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("above", "180")),
+        Changes = OneMoreWatch(("above", "28")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Reply = new ReplyExpectation { Spoken = true, MaxSentences = 2 },
@@ -295,7 +303,7 @@ public static class WatchScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Si el azúcar de Laura baja de 50, que suene una alarma insistente en la cocina y mándame aquí los detalles.",
+            Text = "Si el congelador pasa de -10 grados, que suene una alarma insistente en la cocina y mándame aquí los detalles.",
             Sender = "fran",
             Channel = "telegram"
         },
@@ -314,13 +322,14 @@ public static class WatchScenarios
                     Arg.Matches("content", Kind("announce")),
                     Arg.Matches("content", @"""insistent"""),
                     Arg.Matches("content", Kind("prompt")),
-                    Arg.Matches("content", @"""below""\s*:\s*50"),
+                    Arg.Matches("content", @"""above""\s*:\s*-10(?![\d.])"),
+                    Arg.Matches("content", FakeHomeAssistant.FreezerTemperatureEntityId),
                     Arg.Matches("content", AnnounceTarget("kitchen", "kitchen-01"))
                 ]
             }
         ],
         Permitted = LookingAtTheHome,
-        Changes = OneMoreWatch(("below", "50")),
+        Changes = OneMoreWatch(("above", "-10")),
         Ordering = [new OrderingConstraint("skill", "watch")],
         CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.UrgencyIsAnInsistentAnnouncement.Id],
@@ -375,7 +384,7 @@ public static class WatchScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Cambia el aviso del azúcar baja de Laura: que avise por debajo de 65, no de 70.",
+            Text = "Cambia el aviso de la humedad del salón: que avise por encima de 65, no de 70.",
             Sender = "fran",
             Channel = "telegram"
         },
@@ -390,7 +399,7 @@ public static class WatchScenarios
                 Tool = EvalTools.Edit,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.SugarWatchPathPattern),
+                    Arg.PathMatches(FakeHomeAssistant.SeededWatchPathPattern),
                     // The number alone: an edit that replaced every "70" with "65" is the same
                     // change and names no key. The state change below is what holds the file to
                     // having landed on the right threshold.
@@ -401,11 +410,11 @@ public static class WatchScenarios
         Permitted =
         [
             .. LookingAtTheHome,
-            new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
+            new CallPermission(EvalTools.Create, $"/watchers/{FakeHomeAssistant.SeededWatchId}/*")
         ],
         // The outcome, not only the edit: the home's automation now fires below 65, and it is
         // still the one watch.
-        Changes = [new StateChange(FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below"), "65")],
+        Changes = [new StateChange(FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SeededWatchEntityId, "above"), "65")],
         Ordering = [new OrderingConstraint("skill", "edit")],
         CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.ChangeReplacesInPlace.Id],
@@ -419,7 +428,7 @@ public static class WatchScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Esta noche no me avises del azúcar baja de Laura, ya lo reactivo yo mañana.",
+            Text = "Esta noche no me avises de la humedad del salón, ya lo reactivo yo mañana.",
             Sender = "fran",
             Channel = "telegram"
         },
@@ -434,7 +443,7 @@ public static class WatchScenarios
                 Tool = EvalTools.Edit,
                 Arguments =
                 [
-                    Arg.PathMatches(FakeHomeAssistant.SugarWatchPathPattern),
+                    Arg.PathMatches(FakeHomeAssistant.SeededWatchPathPattern),
                     Arg.Mentions("edits", @"\\""enabled\\""\s*:\s*false")
                 ]
             }
@@ -442,9 +451,9 @@ public static class WatchScenarios
         Permitted =
         [
             .. LookingAtTheHome,
-            new CallPermission(EvalTools.Create, $"/ha/watches/{FakeHomeAssistant.SugarWatchId}/*")
+            new CallPermission(EvalTools.Create, $"/watchers/{FakeHomeAssistant.SeededWatchId}/*")
         ],
-        Changes = [new StateChange(FakeHomeAssistant.SugarWatchEntityId, "off")],
+        Changes = [new StateChange(FakeHomeAssistant.SeededWatchEntityId, "off")],
         Ordering = [new OrderingConstraint("skill", "pause")],
         CallCeiling = 8,
         Claims = [HomeWatchesSkill.LoadsForAWatchRequest.Id, HomeWatchesSkill.PauseIsEnabledFalse.Id],
@@ -457,7 +466,7 @@ public static class WatchScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "Quita el aviso del azúcar baja de Laura.",
+            Text = "Quita el aviso de la humedad del salón.",
             Sender = "fran",
             Channel = "telegram"
         },
@@ -465,13 +474,13 @@ public static class WatchScenarios
         Required =
         [
             // The index is tolerated, not required: a removal names no entity, and the watch is
-            // found by listing /ha/watches — a model that went straight there did nothing wrong.
+            // found by listing /watchers — a model that went straight there did nothing wrong.
             LoadsTheSkill,
             new CallExpectation
             {
                 Label = "delete",
                 Tool = EvalTools.Remove,
-                Arguments = [Arg.PathMatches(FakeHomeAssistant.SugarWatchPathPattern)]
+                Arguments = [Arg.PathMatches(FakeHomeAssistant.SeededWatchPathPattern)]
             }
         ],
         Permitted = LookingAtTheHome,

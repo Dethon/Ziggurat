@@ -171,6 +171,21 @@ public class HistoryRewriteTests
         after.Versions["u1"].Inactive.Single().Messages.Single().GetEntryId().ShouldBe("a1");
     }
 
+    // The wall clock is not monotonic: a host that set its clock back a second between a reply and its
+    // reroll dated the reply after the moment it was put aside, and the slot then sorted the reroll's
+    // new version first, 1/2 where it is 2/2. What was put aside always comes before what replaces it.
+    [Fact]
+    public void PutAsideReply_OfAReplyDatedAfterTheRerollByAClockSetBack_StillComesBeforeWhatReplacesIt()
+    {
+        var history = Line(("u1", "user"), ("a1", "assistant"));
+        history.Messages[1].SetTimestamp(Now.AddSeconds(1.3));
+
+        var after = Apply(history, new PutAsideReply("u1", "a1"), Now);
+        after = after with { Messages = [.. after.Messages, Message("a2", "assistant")] };
+
+        after.PositionAt("u1").ShouldBe(new VersionPosition(1, 2));
+    }
+
     [Fact]
     public void PutAsideReply_ToAServicesTurn_IsNotRunAgain()
     {

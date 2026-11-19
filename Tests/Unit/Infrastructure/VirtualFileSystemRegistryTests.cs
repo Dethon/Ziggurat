@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Moq;
 using Shouldly;
@@ -220,6 +221,142 @@ public class VirtualFileSystemRegistryTests
         _registry.Resolve("/libraryextra/file.md").TryGetValue(out _, out var error).ShouldBeFalse();
 
         error!.Message.ShouldContain("No filesystem mounted");
+    }
+
+    private static FileSystemMount Watches(string name, FileSystemUnion? union, string description = "") =>
+        new(name, "/watchers", description == "" ? $"The {name}." : description)
+        {
+            Capabilities = name == "ha-watches" ? ["file_read", "text_create", "glob", "remove"] : ["file_read", "glob", "text_create"],
+            Union = union
+        };
+
+    private static readonly FileSystemUnion _homeUnion = new("/triggers/*/trigger", [], Fallback: true);
+    private static readonly FileSystemUnion _sugaryUnion = new("/triggers/*/trigger", ["glucose", "sensor"]);
+
+    // Filesystems that all declare a union share their mount point: one mount, both members behind
+    // it, its description theirs, its operations every member's.
+    [Fact]
+    public void TryMount_UnionMembersAtOneMountPoint_AreOneMount()
+    {
+        _registry.TryMount(Watches("ha-watches", _homeUnion, "Home watches."), CreateMockBackend("ha-watches")).ShouldBeTrue();
+        _registry.TryMount(Watches("sugary-watches", _sugaryUnion, "Glucose watches."), CreateMockBackend("sugary-watches")).ShouldBeTrue();
+
+        var mount = _registry.GetMounts().ShouldHaveSingleItem();
+        mount.MountPoint.ShouldBe("/watchers");
+        mount.Name.ShouldBe("ha-watches+sugary-watches");
+        mount.Description.ShouldBe("Home watches. Glucose watches.");
+        mount.Capabilities.ShouldBe(["file_read", "text_create", "glob", "remove"]);
+        mount.ShellReach.ShouldBeNull();
+        mount.Workspace.ShouldBeNull();
+        mount.IsLandingTarget.ShouldBeFalse();
+        Resolve("/watchers/low/watch.json").Backend.ShouldBeOfType<UnionFileSystem>()
+            .Members.Select(m => m.Name).ShouldBe(["ha-watches", "sugary-watches"]);
+    }
+
+    // A household with Sugary off is not dialled Sugary's server, so the home's watches are the only
+    // member that arrives: /watchers is theirs alone, and every watch goes to them.
+    [Fact]
+    public void TryMount_TheHomesWatchesWithNoOtherMember_AreWatchersByThemselves()
+    {
+        var home = CreateMockBackend("ha-watches");
+
+        _registry.TryMount(Watches("ha-watches", _homeUnion, "Home watches."), home).ShouldBeTrue();
+
+        var mount = _registry.GetMounts().ShouldHaveSingleItem();
+        mount.MountPoint.ShouldBe("/watchers");
+        mount.Name.ShouldBe("ha-watches");
+        Resolve("/watchers/door/watch.json").Backend.ShouldBe(home);
+    }
+
+    [Fact]
+    public void TryMount_AThirdMember_JoinsTheUnion()
+    {
+        _registry.TryMount(Watches("ha-watches", _homeUnion), CreateMockBackend("ha-watches"));
+        _registry.TryMount(Watches("sugary-watches", _sugaryUnion), CreateMockBackend("sugary-watches"));
+
+        _registry.TryMount(Watches("weather", new FileSystemUnion("/triggers/*/trigger", ["rain"])), CreateMockBackend("weather"))
+            .ShouldBeTrue();
+
+        Resolve("/watchers").Backend.ShouldBeOfType<UnionFileSystem>()
+            .Members.Select(m => m.Name).ShouldBe(["ha-watches", "sugary-watches", "weather"]);
+    }
+
+    // A mount that did not ask to share keeps first-wins, whichever side declared the union.
+    [Fact]
+    public void TryMount_AUnionMemberMeetingAPlainMount_IsShadowed()
+    {
+        var plain = CreateMockBackend("plain");
+        _registry.TryMount(Watches("plain", null), plain).ShouldBeTrue();
+
+        _registry.TryMount(Watches("sugary-watches", _sugaryUnion), CreateMockBackend("sugary-watches"), out var refusal)
+            .ShouldBeFalse();
+
+        refusal.ShouldNotBeNull();
+        Resolve("/watchers/x").Backend.ShouldBe(plain);
+    }
+
+    [Fact]
+    public void TryMount_APlainMountMeetingAUnion_IsShadowed()
+    {
+        _registry.TryMount(Watches("ha-watches", _homeUnion), CreateMockBackend("ha-watches"));
+
+        _registry.TryMount(Watches("plain", null), CreateMockBackend("plain")).ShouldBeFalse();
+
+        _registry.GetMounts().ShouldHaveSingleItem().Name.ShouldBe("ha-watches");
+    }
+
+    public static TheoryData<string, FileSystemMount> MembersThatCannotShare() => new()
+    {
+        { "workspace", Watches("box", _sugaryUnion) with { Workspace = "home" } },
+        { "shell reach", Watches("box", _sugaryUnion) with { ShellReach = ShellReach.Contained } },
+        { "landing target", Watches("box", _sugaryUnion) with { IsLandingTarget = true } }
+    };
+
+    // A member is a store of entries: where a command runs or a person's files land is no merge.
+    // Refused whether it arrives first or second, so the outcome does not hang on dial order.
+    [Theory]
+    [MemberData(nameof(MembersThatCannotShare))]
+    public void TryMount_AUnionMemberWithAWorkspaceShellOrLanding_IsRefusedAsAMember(string claim, FileSystemMount member)
+    {
+        _registry.TryMount(member, CreateMockBackend("box"), out var first).ShouldBeFalse(claim);
+        first.ShouldNotBeNull().ShouldContain("box");
+
+        _registry.TryMount(Watches("ha-watches", _homeUnion), CreateMockBackend("ha-watches")).ShouldBeTrue();
+        _registry.TryMount(member, CreateMockBackend("box"), out var second).ShouldBeFalse(claim);
+        second.ShouldNotBeNull();
+        _registry.GetMounts().ShouldHaveSingleItem().Name.ShouldBe("ha-watches");
+    }
+
+    [Fact]
+    public void TryMount_ASecondFallback_IsRefused()
+    {
+        _registry.TryMount(Watches("ha-watches", _homeUnion), CreateMockBackend("ha-watches"));
+
+        _registry.TryMount(Watches("other", _homeUnion), CreateMockBackend("other"), out var refusal).ShouldBeFalse();
+
+        refusal.ShouldNotBeNull().ShouldContain("fallback");
+    }
+
+    [Fact]
+    public void TryMount_AValueAlreadyClaimed_IsRefused()
+    {
+        _registry.TryMount(Watches("sugary-watches", _sugaryUnion), CreateMockBackend("sugary-watches"));
+
+        _registry.TryMount(Watches("other", new FileSystemUnion("/triggers/*/trigger", ["sensor"])), CreateMockBackend("other"), out var refusal)
+            .ShouldBeFalse();
+
+        refusal.ShouldNotBeNull().ShouldContain("'sensor'");
+    }
+
+    [Fact]
+    public void TryMount_AMemberRoutingByAnotherPointer_IsRefused()
+    {
+        _registry.TryMount(Watches("ha-watches", _homeUnion), CreateMockBackend("ha-watches"));
+
+        _registry.TryMount(Watches("other", new FileSystemUnion("/kind", ["x"])), CreateMockBackend("other"), out var refusal)
+            .ShouldBeFalse();
+
+        refusal.ShouldNotBeNull().ShouldContain("/kind");
     }
 
     private FileSystemResolution Resolve(string virtualPath)

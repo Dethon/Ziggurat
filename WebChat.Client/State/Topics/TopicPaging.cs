@@ -50,13 +50,16 @@ public sealed record TopicPaging
     // the same write the higher message count. A fetched page can be older than a row it lands
     // under — a topic that gained a push during the round trip — so arrival order alone is not
     // freshness. Only a perfect tie falls back to first wins, so whichever side is presumed
-    // fresher is passed first.
+    // fresher is passed first. A copy the server has written to beats one it never has: the row a
+    // page makes for the conversation it starts is dated by the browser's clock, and a browser ahead
+    // of the server kept its empty row over every copy the server sent.
     private static IReadOnlyList<StoredTopic> Merge(
         IEnumerable<StoredTopic> fresher, IEnumerable<StoredTopic> held) =>
         fresher.Concat(held)
             .GroupBy(t => t.TopicId)
             .Select(copies => copies
-                .OrderByDescending(t => t.LastWriteAt)
+                .OrderByDescending(t => t.LastMessageAt is not null)
+                .ThenByDescending(t => t.LastWriteAt)
                 .ThenByDescending(t => t.MessageCount)
                 .First())
             .OrderByDescending(t => t.LastWriteAt)

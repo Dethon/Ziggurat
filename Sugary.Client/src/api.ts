@@ -3,6 +3,12 @@ import type {
   Dose,
   Exercise,
   Food,
+  GlucoseCurve,
+  GlucoseLink,
+  GlucoseNow,
+  GlucoseSettings,
+  GlucoseStatistics,
+  LinkGlucose,
   Meal,
   MealEstimate,
   PackagedFood,
@@ -24,6 +30,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    // The problem's own code, where the route words its refusals by one (the glucose link's).
+    readonly code: string | null = null,
   ) {
     super(message);
   }
@@ -56,7 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
-    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? "");
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? "", typeof problem?.code === "string" ? problem.code : null);
   }
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }
@@ -188,6 +196,18 @@ export const api = {
   updatePeriod: (id: string, period: SavePeriod, loaded: SavePeriod) =>
     request<Period>(`/periods/${id}`, json("PUT", { ...period, loaded })),
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
+  // Her newest reading with her link's state; then her curve over a window and a clinic's figures.
+  glucoseNow: () => request<GlucoseNow>("/glucose/current"),
+  glucoseCurve: (from: string, to: string) =>
+    request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  glucoseStatistics: (days: number) => request<GlucoseStatistics>(`/glucose/statistics?days=${days}`),
+  // Logs in at LibreLinkUp before anything is kept, so it may take a while and is refused by code.
+  linkGlucose: (account: LinkGlucose) => request<GlucoseLink>("/glucose/link", json("PUT", account)),
+  chooseGlucoseConnection: (patientId: string) =>
+    request<GlucoseLink>("/glucose/link/connection", json("PUT", { patientId })),
+  saveGlucoseSettings: (settings: GlucoseSettings, loaded: GlucoseSettings) =>
+    request<GlucoseLink>("/glucose/settings", json("PUT", { ...settings, loaded })),
+  unlinkGlucose: () => request<void>("/glucose/link", { method: "DELETE" }),
   dayNotes: () => request<DayNote[]>("/day-notes"),
   // Empty text deletes the note; the server then answers with nothing.
   setDayNote: (day: string, text: string) => request<DayNote | undefined>(`/day-notes/${day}`, json("PUT", { text })),

@@ -12,10 +12,12 @@ using Domain.Tools.Printing;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Vfs;
+using Domain.Tools.Sugary.Watches;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using McpServerSandbox.McpPrompts;
+using McpServerSugary.Tables;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using Moq;
@@ -24,8 +26,9 @@ using Tests.Integration.McpServers;
 
 namespace Tests.Unit.Infrastructure;
 
-// The point of the whole feature: for every filesystem server, the fs_* tools it advertises, the
-// operations its backend overrides, and the capabilities the mount publishes are the same set.
+// The point of the whole feature: for every filesystem, the operations its backend overrides, the
+// operations its resource publishes and the capabilities its mount gets are the same set, and a
+// server's fs_* tools are the union of its filesystems' — a server may serve several.
 // A server that registered a tool its backend does not implement fails here — which is how the
 // timers move lie was found: fs_move was advertised by a method that only said "unsupported".
 public class FileSystemServerConformanceTests
@@ -38,11 +41,13 @@ public class FileSystemServerConformanceTests
         { "schedules", "scheduling", typeof(ScheduleFileSystem) },
         { "print-queue", "printer", typeof(PrinterQueueFileSystem) },
         { "ha", "homeassistant", typeof(HaFileSystem) },
+        { "ha-watches", "homeassistant", typeof(HaWatchFileSystem) },
         { "media", "library", typeof(MediaLibraryDiskFileSystem) },
         { "vault", "vault", typeof(TextDiskFileSystem) },
         { "sandbox", "sandbox", typeof(SandboxFileSystem) },
         { "outpost", "outpost", typeof(OutpostFileSystem) },
-        { "sugary", "sugary", typeof(SugaryFileSystem) }
+        { "sugary", "sugary", typeof(SugaryFileSystem) },
+        { "sugary-watches", "sugary", typeof(SugaryWatchFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -62,15 +67,13 @@ public class FileSystemServerConformanceTests
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit",
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write"
             ],
-            // Read and exec over the home, plus the one writable subtree: a watch is created, edited
-            // and deleted as a file, and every other path refuses those three by name. The byte read
-            // is the rendered file itself, which is what a sandbox command reads: the text read
-            // numbers its lines.
-            ["ha"] =
-            [
-                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_delete", "fs_exec",
-                "fs_blob_read"
-            ],
+            // Read and exec over the home, and nothing written: the watches moved to their own mount.
+            // The byte read is the rendered file itself, which is what a sandbox command reads: the
+            // text read numbers its lines.
+            ["ha"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_exec", "fs_blob_read"],
+            // The home's watches, at /watchers: a watch is created, edited and deleted as a file, its
+            // status read beside it. The byte read serves the rendering, as /ha's does.
+            ["ha-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"],
             // The media library reads only the overlay's status file and writes no text, so it keeps
             // the plain disk surface plus read. It is also the one mount with a move-out rule, and
             // the only one that registers the check.
@@ -102,7 +105,10 @@ public class FileSystemServerConformanceTests
             ],
             // Her log, rendered from the database on every read. Nothing that writes: the only way to
             // change it is through Sugary itself.
-            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"]
+            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"],
+            // Glucose watches, at /watchers beside the home's: the home watches' surface, kept in
+            // Sugary's store.
+            ["sugary-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent
@@ -116,12 +122,14 @@ public class FileSystemServerConformanceTests
             ["schedules"] = null,
             ["print-queue"] = null,
             ["ha"] = null,
+            ["ha-watches"] = null,
             ["media"] = null,
             ["vault"] = null,
             ["sandbox"] = "home/sandbox_user",
             // The working directory it was started with: where files land and commands run.
             ["outpost"] = "home/someone/project",
-            ["sugary"] = null
+            ["sugary"] = null,
+            ["sugary-watches"] = null
         };
 
     // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
@@ -135,13 +143,15 @@ public class FileSystemServerConformanceTests
             ["schedules"] = false,
             ["print-queue"] = false,
             ["ha"] = false,
+            ["ha-watches"] = false,
             ["media"] = false,
             ["vault"] = false,
             ["sandbox"] = true,
             // Never, exec or not. A person's attachments belong in the deployment's own container,
             // not on whichever of their machines happens to be switched on.
             ["outpost"] = false,
-            ["sugary"] = false
+            ["sugary"] = false,
+            ["sugary-watches"] = false
         };
 
     // How far each mount's shell reaches, which is what the exec screen asks before a command runs
@@ -156,11 +166,32 @@ public class FileSystemServerConformanceTests
             ["schedules"] = null,
             ["print-queue"] = null,
             ["ha"] = null,
+            ["ha-watches"] = null,
             ["media"] = null,
             ["vault"] = null,
             ["sandbox"] = ShellReach.Contained,
             ["outpost"] = null,
-            ["sugary"] = null
+            ["sugary"] = null,
+            ["sugary-watches"] = null
+        };
+
+    // Where each mount is published, where that is not `/<name>`: an outpost is a separate machine
+    // at its own address, and the home's watches share /watchers with every other server's.
+    private static string ExpectedMountPoint(string name, FileSystemBackendBase backend) => backend switch
+    {
+        OutpostFileSystem => $"outpost:{name}",
+        HaWatchFileSystem or SugaryWatchFileSystem => "/watchers",
+        _ => $"/{name}"
+    };
+
+    // Which mounts share their mount point, and how a new entry finds its member. Written out, as
+    // the rest are. The home's watches take every watch whose triggers nobody else claims; Sugary's
+    // take the glucose kinds.
+    private static readonly IReadOnlyDictionary<string, FileSystemUnion?> _unions =
+        new Dictionary<string, FileSystemUnion?>(StringComparer.Ordinal)
+        {
+            ["ha-watches"] = new("/triggers/*/trigger", [], Fallback: true),
+            ["sugary-watches"] = new("/triggers/*/trigger", ["glucose", "glucose_trend", "glucose_forecast", "sensor"])
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -179,12 +210,18 @@ public class FileSystemServerConformanceTests
             .Where(FileSystemOperations.ToolNames.Contains)
             .ToList();
 
-        registered.ShouldBe(_advertised[name], ignoreOrder: true, serverId);
+        // A tool per operation any of the server's filesystems overrides, and no other.
+        registered.ShouldBe(
+            ServedBy(serverId).SelectMany(served => _advertised[served]).Distinct(), ignoreOrder: true, serverId);
 
         var mount = provider.GetServices<McpServerResource>()
             .SingleOrDefault(resource => resource.ProtocolResource?.Uri == $"filesystem://{name}");
         mount.ShouldNotBeNull($"{serverId} must publish its {name} mount");
         mount.ProtocolResource!.Name.ShouldBe(name);
+        provider.GetServices<McpServerResource>()
+            .Select(resource => resource.ProtocolResource?.Uri)
+            .Where(uri => uri?.StartsWith("filesystem://", StringComparison.Ordinal) == true)
+            .ShouldBe(ServedBy(serverId).Select(served => $"filesystem://{served}"), ignoreOrder: true, serverId);
 
         // The shipped backend, so the workspace this pins is the one the server was configured with
         // rather than one a test constructed. The sandbox's comes from its own HomeDir setting: the
@@ -196,11 +233,11 @@ public class FileSystemServerConformanceTests
         var describedMount = Published(FileSystemServerResource.Describe(configured));
         describedMount.Workspace.ShouldBe(_workspaces[name], serverId);
         describedMount.LandingTarget.ShouldBe(_landingTargets[name], serverId);
-        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!
-            .ShellReach.ShouldBe(_shellReaches[name], serverId);
+        McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), new HashSet<string>())!
+            .Mount.ShellReach.ShouldBe(_shellReaches[name], serverId);
 
         // Only a shell has a root of its own for the other mounts' links to collide with.
-        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), [])!.OccupiedNames;
+        var occupied = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(configured), new HashSet<string>())!.Mount.OccupiedNames;
         (occupied is not null).ShouldBe(_shellReaches[name] == ShellReach.Contained, serverId);
 
         // The backend's own declaration of the same set: what it overrides is what the server
@@ -208,14 +245,23 @@ public class FileSystemServerConformanceTests
         FileSystemServerTools.SupportedToolNames(backendType)
             .ShouldBe(_advertised[name], ignoreOrder: true, serverId);
 
-        // What the mount publishes to the model: every advertised operation the model can call, and
-        // nothing else. The two blob tools are transfer machinery, not model-facing.
-        McpFileSystemDiscovery.DeriveCapabilities(McpFileSystemDiscovery.AdvertisedOperations(registered)).ShouldBe(
-            FileSystemOperations.All
-                .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
-                .Select(o => o.Capability!),
-            serverId);
+        // What the filesystem's resource says are its own operations, beside the server's union.
+        describedMount.Operations.ShouldBe(_advertised[name], ignoreOrder: true, serverId);
+
+        // What the mount publishes to the model: every operation of its own the model can call, and
+        // nothing else — not another filesystem's on the same server. The blob tools and the move-out
+        // check are transfer machinery, not model-facing.
+        McpFileSystemDiscovery.ReadMount(
+                FileSystemServerResource.Describe(configured), McpFileSystemDiscovery.AdvertisedOperations(registered))!
+            .Mount.Capabilities.ShouldBe(
+                FileSystemOperations.All
+                    .Where(o => o.Capability is not null && _advertised[name].Contains(o.ToolName))
+                    .Select(o => o.Capability!),
+                serverId);
     }
+
+    private static IEnumerable<string> ServedBy(string serverId) =>
+        Backends().Select(row => ((string)row[0], (string)row[1])).Where(row => row.Item2 == serverId).Select(row => row.Item1);
 
     private static ServiceProvider ConfiguredServer(string serverId)
     {
@@ -240,6 +286,8 @@ public class FileSystemServerConformanceTests
                 Mock.Of<IPrintSpool>(), Mock.Of<IPrinterClient>(), new PrintQueueGate(), "text,jpeg"),
             ["ha"] = new HaFileSystem(
                 new HaCatalogProvider(Mock.Of<IHomeAssistantClient>), Mock.Of<IHomeAssistantClient>),
+            ["ha-watches"] = new HaWatchFileSystem(
+                new HaCatalogProvider(Mock.Of<IHomeAssistantClient>), Mock.Of<IHomeAssistantClient>),
             ["media"] = new MediaLibraryDiskFileSystem(
                 Mock.Of<IFileSystemClient>(), new LibraryPathConfig("/media"),
                 new DownloadsOverlay(
@@ -254,7 +302,9 @@ public class FileSystemServerConformanceTests
                 "/sandbox/home/sandbox_user"),
             ["outpost"] = new OutpostFileSystem(
                 "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
-            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>())
+            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>(), new ReadSnapshots(TimeProvider.System)),
+            ["sugary-watches"] = new SugaryWatchFileSystem(
+                Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System)
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server
@@ -285,8 +335,20 @@ public class FileSystemServerConformanceTests
         published.Name.ShouldBe(name);
         // An outpost is a separate machine, so its name is a machine address rather than a branch
         // of the one tree every other mount shares.
-        published.MountPoint.ShouldBe(backend is OutpostFileSystem ? $"outpost:{name}" : $"/{name}");
+        published.MountPoint.ShouldBe(ExpectedMountPoint(name, backend));
         published.Description.ShouldBe(backend.DescribeMount);
+
+        // The union as published and as the agent reads it back: a member alone at its mount point
+        // (the home's watches before any other server's join them) is mounted there all the same.
+        var expectedUnion = _unions.GetValueOrDefault(name);
+        published.Union?.RouteBy.ShouldBe(expectedUnion?.RouteBy, name);
+        published.Union?.Claims.ShouldBe(expectedUnion?.Claims ?? [], name);
+        published.Union?.Fallback.ShouldBe(expectedUnion?.Fallback ?? false, name);
+        (published.Union is null).ShouldBe(expectedUnion is null, name);
+        var discovered = McpFileSystemDiscovery.ReadMount(FileSystemServerResource.Describe(backend), new HashSet<string>())!.Mount;
+        discovered.MountPoint.ShouldBe(ExpectedMountPoint(name, backend), name);
+        (discovered.Union?.RouteBy, discovered.Union?.Fallback).ShouldBe((expectedUnion?.RouteBy, expectedUnion?.Fallback), name);
+        (discovered.Union?.Claims ?? []).ShouldBe(expectedUnion?.Claims ?? [], name);
         published.Description.ShouldNotBeNullOrWhiteSpace(name);
     }
 
@@ -367,7 +429,10 @@ public class FileSystemServerConformanceTests
             json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
     private record PublishedMount(
-        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget);
+        string Name, string MountPoint, string Description, string? Workspace, bool LandingTarget,
+        IReadOnlyList<string>? Operations, PublishedUnion? Union);
+
+    private record PublishedUnion(string RouteBy, IReadOnlyList<string> Claims, bool Fallback);
 
     // The move-out check inverts what an override means: elsewhere overriding declares "I can do
     // this", here it declares "I have something to refuse". So a backend with no rule registers no

@@ -66,6 +66,7 @@ public static class SugaryApp
         api.MapPushEndpoints();
         api.MapExerciseEndpoints();
         api.MapPeriodEndpoints();
+        api.MapGlucoseEndpoints();
         api.MapDayNoteEndpoints();
         api.MapFoodEndpoints();
         api.MapRecipeEndpoints();

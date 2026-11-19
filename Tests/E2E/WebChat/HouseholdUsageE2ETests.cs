@@ -81,6 +81,11 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
 
         await page.GotoAsync($"{fixture.DefaultSpaceUrl}admin/usage");
 
+        // The app's boot first, given what every page's first boot is given: as its collection's first
+        // case this one boots while every other collection boots its own, and beside a second suite
+        // the boot alone outlasted the minute that was meant for the boot and the answer together.
+        await Assertions.Expect(page.Locator("#app .loading-screen"))
+            .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
         await Assertions.Expect(page.GetByRole(AriaRole.Alert))
             .ToContainTextAsync("could not be read", new LocatorAssertionsToContainTextOptions { Timeout = 60_000 });
         (await page.GetByRole(AriaRole.Table).CountAsync()).ShouldBe(0, "no figures are shown as nothing used");

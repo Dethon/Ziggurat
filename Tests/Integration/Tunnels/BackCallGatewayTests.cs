@@ -218,21 +218,23 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         using var daemon = new HttpClient { BaseAddress = Loopback(port) };
         daemon.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", call.Token);
 
-        var median = await MedianMsAsync(async () =>
+        var fastest = await FastestMsAsync(async () =>
         {
             using var answer = await daemon.PostAsync(
                 $"{BackCallTargets.BridgeRoute.TrimStart('/')}/write?path=/notes/done.md", new ByteArrayContent("eggs"u8.ToArray()));
             answer.EnsureSuccessStatusCode();
         });
 
-        median.ShouldBeLessThan(DelayedAckFloorMs, "a back-call waited on the relay socket's delayed acknowledgement");
+        fastest.ShouldBeLessThan(DelayedAckFloorMs, "every back-call waited on the relay socket's delayed acknowledgement");
     }
 
-    // Half Linux's 40 ms minimum delayed ACK: a request held back once is never under it, and one
-    // that is not runs in a couple of milliseconds even with the suite at full width.
+    // Half Linux's 40 ms minimum delayed ACK: a request held back is never under it — with Nagle on,
+    // all fifteen read 43.6 to 50 ms — and one that is not runs in a couple of milliseconds. The
+    // fastest rather than the median: load only ever adds time, and with a second suite running the
+    // median of requests that were not held back read 28 and 42 ms.
     private const double DelayedAckFloorMs = 20;
 
-    private static async Task<double> MedianMsAsync(Func<Task> request)
+    private static async Task<double> FastestMsAsync(Func<Task> request)
     {
         await request();
         var times = new List<double>();
@@ -243,7 +245,7 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
             times.Add(clock.Elapsed.TotalMilliseconds);
         }
 
-        return times.Order().ElementAt(times.Count / 2);
+        return times.Min();
     }
 
     public static TheoryData<string, string> OtherPaths => new()

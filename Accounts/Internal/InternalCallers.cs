@@ -74,7 +74,11 @@ public static class InternalCallers
         ],
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
-        [Sugary] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SugaryPeopleView],
+        [Sugary] =
+        [
+            HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SugaryPeopleView,
+            HouseholdConfigProtocol.SugaryOffView
+        ],
         [Timers] = [HouseholdConfigProtocol.SettingsView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.MemberNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]

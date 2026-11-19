@@ -1,0 +1,302 @@
+using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary.Watches;
+using McpServerSugary.Store;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace McpServerSugary.Glucose;
+
+// Judges a person's glucose watches (GlucoseTriggers): after each poll of her link, every trigger, and on
+// the clock's pass (GlucoseWatchLoop), the sensor's triggers alone — a link refused or backing off is
+// asked rarely or never, so "failing for an hour" and "the sensor ends tomorrow" cannot wait for a poll.
+// What was judged is kept per trigger, so a restart neither fires an episode again nor forgets a `for`.
+// A fire runs the watch's effects (IGlucoseWatchEffects), and the states, the fire's time and a `once`
+// watch spent are then written together — only while the watch is still the one judged, so a watch
+// rewritten or removed meanwhile is never given back what was judged of the old one.
+//
+// A household whose features turn Sugary off has nothing judged and nothing fired (SugaryOffHouseholds),
+// and what was judged of its watches is forgotten, so once it is back on they are judged as if just
+// written: nothing that happened while off fires late, a low still going when it came back on included.
+//
+// Every watch's subject is somebody's, and the engine wakes for nobody's request, so the factory's
+// context is used and every query says IgnoreQueryFilters with the owner spelled out.
+public sealed class GlucoseWatchEngine(
+    IDbContextFactory<SugaryDbContext> contexts,
+    IGlucoseWatchEffects effects,
+    HomeCalendar calendar,
+    SugaryOffHouseholds sugaryOff,
+    TimeProvider clock,
+    ILogger<GlucoseWatchEngine> logger) : IGlucosePollObserver
+{
+    // One judgement per person at a time: a poll and the clock's pass judging her at once would each read
+    // an episode as not fired and fire it twice.
+    private readonly ConcurrentDictionary<Account, SemaphoreSlim> _turns = new();
+
+    public Task PolledAsync(GlucosePoll poll, CancellationToken ct) => JudgeAsync(poll.Person, poll, ct);
+
+    // The clock's pass: everyone with an armed watch, one after another, one person's failure touching
+    // nobody else's.
+    public async Task TickAsync(CancellationToken ct)
+    {
+        List<Account> subjects;
+        await using (var db = await contexts.CreateDbContextAsync(ct))
+        {
+            subjects = (await db.GlucoseWatches.IgnoreQueryFilters().AsNoTracking()
+                    .Where(w => w.Enabled && !w.Spent)
+                    .Select(w => new { w.TenantId, w.SubjectUserId })
+                    .Distinct()
+                    .ToListAsync(ct))
+                .Select(s => new Account(s.TenantId, s.SubjectUserId))
+                .ToList();
+        }
+
+        foreach (var subject in subjects)
+        {
+            try
+            {
+                await JudgeAsync(subject, null, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Judging the glucose watches of {User} on the clock failed; judged again on the next pass",
+                    subject.UserId);
+            }
+        }
+    }
+
+    private async Task JudgeAsync(Account person, GlucosePoll? poll, CancellationToken ct)
+    {
+        var turn = _turns.GetOrAdd(person, _ => new SemaphoreSlim(1, 1));
+        await turn.WaitAsync(ct);
+        try
+        {
+            var now = clock.GetUtcNow();
+            await using var db = await contexts.CreateDbContextAsync(ct);
+            if (await sugaryOff.IsOffAsync(person.TenantId, ct))
+            {
+                await ForgetAsync(db, person, ct);
+                return;
+            }
+
+            var watches = await db.GlucoseWatches.IgnoreQueryFilters().AsNoTracking()
+                .Where(w => w.TenantId == person.TenantId && w.SubjectUserId == person.UserId && w.Enabled && !w.Spent)
+                .OrderBy(w => w.Id)
+                .ToListAsync(ct);
+            if (watches.Count == 0)
+            {
+                return;
+            }
+
+            var ids = watches.Select(w => w.Id).ToList();
+            var states = (await db.GlucoseWatchStates.IgnoreQueryFilters().AsNoTracking()
+                    .Where(s => s.TenantId == person.TenantId && ids.Contains(s.WatchId))
+                    .ToListAsync(ct))
+                .ToLookup(s => s.WatchId);
+            var facts = await FactsAsync(db, person, poll, now, ct);
+            // What a fire tells the agent is in the unit she reads, her link's; mg/dL without one.
+            var unit = await db.GlucoseLinks.IgnoreQueryFilters().AsNoTracking()
+                .Where(l => l.UserId == person.UserId && l.TenantId == person.TenantId)
+                .Select(l => (GlucoseUnit?)l.Unit)
+                .FirstOrDefaultAsync(ct) ?? GlucoseUnit.Mgdl;
+
+            foreach (var watch in watches)
+            {
+                await JudgeAsync(person, watch, [.. states[watch.Id]], facts, unit, ct);
+            }
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
+
+    // What was judged of her watches, gone while her household has Sugary off: a fire's guarded save
+    // counts the rows it read, so one racing this writes nothing.
+    private static Task ForgetAsync(SugaryDbContext db, Account person, CancellationToken ct) =>
+        db.GlucoseWatchStates.IgnoreQueryFilters()
+            .Where(s => s.TenantId == person.TenantId && db.GlucoseWatches.IgnoreQueryFilters()
+                .Any(w => w.TenantId == s.TenantId && w.Id == s.WatchId && w.SubjectUserId == person.UserId))
+            .ExecuteDeleteAsync(ct);
+
+    // Her own readings only: an imported one is history brought in, and can be minutes old when Home
+    // Assistant's history reaches now.
+    private async Task<GlucoseTriggerFacts> FactsAsync(
+        SugaryDbContext db, Account person, GlucosePoll? poll, DateTimeOffset now, CancellationToken ct)
+    {
+        var hers = db.GlucoseReadings.IgnoreQueryFilters().AsNoTracking()
+            .Where(r => r.UserId == person.UserId && r.TenantId == person.TenantId
+                                                  && (r.Source == GlucoseSource.Current || r.Source == GlucoseSource.Graph));
+        var since = now - GlucoseTriggers.Lookback;
+        var recent = (await hers.Where(r => r.At >= since).OrderBy(r => r.At).ToListAsync(ct))
+            .Select(r => new SensorReading(r.At, r.MgPerDl, r.Trend))
+            .ToList();
+        var stored = await hers.OrderByDescending(r => r.At).FirstOrDefaultAsync(ct);
+        var newest = new[] { poll?.Newest, stored is null ? null : new SensorReading(stored.At, stored.MgPerDl, stored.Trend) }
+            .OfType<SensorReading>()
+            .MaxBy(r => r.At);
+
+        var link = poll is not null
+            ? new GlucoseLinkHealth(poll.Link.LinkedAt, poll.Link.LastSuccessAt, poll.Link.FailingSince)
+            : await db.GlucoseLinks.IgnoreQueryFilters().AsNoTracking()
+                .Where(l => l.UserId == person.UserId && l.TenantId == person.TenantId)
+                .Select(l => new GlucoseLinkHealth(l.LinkedAt, l.LastSuccessAt, l.FailingSince))
+                .FirstOrDefaultAsync(ct);
+
+        // LibreLinkUp may list several sensors, all stamped by the poll that saw them: the one on her is
+        // the latest started among those last seen.
+        var sensors = await db.GlucoseSensors.IgnoreQueryFilters().AsNoTracking()
+            .Where(s => s.UserId == person.UserId && s.TenantId == person.TenantId)
+            .ToListAsync(ct);
+        var lastSeen = sensors.Count == 0 ? (DateTimeOffset?)null : sensors.Max(s => s.LastSeenAt);
+        var worn = sensors.Where(s => s.LastSeenAt == lastSeen).MaxBy(s => s.ActivatedAt);
+
+        var zones = await db.PushSubscriptions.IgnoreQueryFilters().AsNoTracking()
+            .Where(p => p.UserId == person.UserId && p.TenantId == person.TenantId)
+            .Select(p => p.TimeZone)
+            .ToListAsync(ct);
+
+        return new GlucoseTriggerFacts
+        {
+            Now = now,
+            Zone = calendar.OnSaved(zones).Zone,
+            Occasion = poll is null ? GlucoseOccasion.Clock : GlucoseOccasion.Poll,
+            Recent = recent,
+            Newest = newest,
+            Link = link,
+            SensorActivatedAt = worn?.ActivatedAt
+        };
+    }
+
+    private async Task JudgeAsync(
+        Account person, GlucoseWatch watch, IReadOnlyList<GlucoseWatchState> rows, GlucoseTriggerFacts facts,
+        GlucoseUnit unit, CancellationToken ct)
+    {
+        GlucoseWatchSpec spec;
+        try
+        {
+            spec = GlucoseWatchSpec.Parse(watch.Spec);
+        }
+        catch (GlucoseWatchSpecException ex)
+        {
+            logger.LogWarning("Glucose watch {WatchId} of household {HouseholdId} no longer reads ({Reason}); not judged",
+                watch.Id, watch.TenantId, ex.Message);
+            return;
+        }
+
+        var prior = rows
+            .Select(s => new GlucoseTriggerCondition(s.TriggerIndex, s.Holding, s.HoldingSince, s.FiredThisEpisode))
+            .OrderBy(s => s.TriggerIndex)
+            .ToList();
+        var judgement = GlucoseTriggers.Judge(spec, prior, facts);
+        if (judgement.Fired.Count == 0 && judgement.States.SequenceEqual(prior))
+        {
+            return;
+        }
+
+        var fired = new FiredGlucoseWatch(person, SqliteGlucoseWatches.ToStored(watch), spec)
+        {
+            Zone = facts.Zone,
+            Unit = unit
+        };
+        var spent = false;
+        var unheard = new HashSet<int>();
+        // A loop, not a query: each fire's effects are awaited in turn, and a one-shot stops at the first
+        // that reached somebody, however many of its triggers fired together.
+        foreach (var fire in judgement.Fired)
+        {
+            if (spent)
+            {
+                break;
+            }
+
+            var outcome = await EffectsOfAsync(fired, fire, ct);
+            if (!outcome.AnyDelivered)
+            {
+                unheard.Add(fire.TriggerIndex);
+            }
+
+            spent = watch.Once && outcome.AnyDelivered;
+        }
+
+        await SaveAsync(watch, rows.Count, Unfired(judgement, unheard), spent, facts.Now, ct);
+    }
+
+    // A fire that reached nobody — the agent away while it reconnects, every effect failing — leaves its
+    // episode unfired, so the next judgement that still finds the condition holding tries again (a reading
+    // trigger at the next poll, a sensor trigger at the next poll or clock pass: an attempt a judgement,
+    // never a tighter loop), and one that finds it left says nothing late. A low crossed during a deploy
+    // was lost for as long as she stayed low when the episode counted as fired whatever was delivered.
+    private static GlucoseJudgement Unfired(GlucoseJudgement judgement, IReadOnlySet<int> unheard) =>
+        unheard.Count == 0
+            ? judgement
+            : judgement with
+            {
+                States = [.. judgement.States.Select(s => unheard.Contains(s.TriggerIndex) ? s with { FiredThisEpisode = false } : s)],
+                Fired = [.. judgement.Fired.Where(f => !unheard.Contains(f.TriggerIndex))]
+            };
+
+    private async Task<GlucoseEffectsOutcome> EffectsOfAsync(FiredGlucoseWatch watch, GlucoseTriggerFire fire, CancellationToken ct)
+    {
+        try
+        {
+            var outcome = await effects.FireAsync(watch, fire, ct);
+            if (!outcome.AnyDelivered)
+            {
+                logger.LogWarning(
+                    "Glucose watch {WatchId} of household {HouseholdId} fired on trigger {TriggerIndex} and reached nobody; tried again at its next judgement while it holds",
+                    watch.Watch.Id, watch.Subject.TenantId, fire.TriggerIndex);
+            }
+
+            return outcome;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex,
+                "The effects of glucose watch {WatchId} of household {HouseholdId} failed on trigger {TriggerIndex}; tried again at its next judgement while it holds",
+                watch.Watch.Id, watch.Subject.TenantId, fire.TriggerIndex);
+            return GlucoseEffectsOutcome.None;
+        }
+    }
+
+    private async Task SaveAsync(
+        GlucoseWatch watch, int priorRows, GlucoseJudgement judgement, bool spent, DateTimeOffset now, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var fired = judgement.Fired.Count > 0;
+        var still = await db.GlucoseWatches.IgnoreQueryFilters()
+            .Where(w => w.TenantId == watch.TenantId && w.Id == watch.Id && w.Spec == watch.Spec && w.Enabled && !w.Spent)
+            .ExecuteUpdateAsync(set =>
+            {
+                set.SetProperty(w => w.Spent, spent).SetProperty(w => w.Enabled, !spent);
+                if (fired)
+                {
+                    set.SetProperty(w => w.LastFiredAt, now);
+                }
+            }, ct);
+        // A rewrite clears the states it found, so rows gone (or come) since they were read are a rewrite
+        // even where the spec came back word for word.
+        var rows = db.GlucoseWatchStates.IgnoreQueryFilters().Where(s => s.TenantId == watch.TenantId && s.WatchId == watch.Id);
+        if (still == 0 || await rows.CountAsync(ct) != priorRows)
+        {
+            logger.LogDebug("Glucose watch {WatchId} of household {HouseholdId} was rewritten or removed while judged; what was judged is dropped",
+                watch.Id, watch.TenantId);
+            return;
+        }
+
+        await rows.ExecuteDeleteAsync(ct);
+        db.GlucoseWatchStates.AddRange(judgement.States.Select(s => new GlucoseWatchState
+        {
+            TenantId = watch.TenantId,
+            WatchId = watch.Id,
+            TriggerIndex = s.TriggerIndex,
+            Holding = s.Holding,
+            HoldingSince = s.HoldingSince,
+            FiredThisEpisode = s.FiredThisEpisode
+        }));
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+}

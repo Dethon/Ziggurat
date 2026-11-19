@@ -1,7 +1,19 @@
+using System.Globalization;
+using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary.Watches;
+using Infrastructure.Clients.Voice;
+using McpServerSugary.Glucose;
+using McpServerSugary.Modules;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
 
@@ -21,8 +33,65 @@ public static class EvalSugaryLog
         // Nothing in an eval looks a barcode up; an address nothing listens on says so.
         OpenFoodFactsUrl = "http://127.0.0.1:9/",
         Uploads = new UploadSettings { StoragePath = Path.Combine(directory, "uploads") },
+        // The household's voice server dialled directly, as the eval's fake hub answers it: the relay a
+        // deployment reaches it through is the agent's, and the eval runs none.
+        VoiceHub = new SugaryVoiceHubSettings { BaseUrl = "http://voice-hub.eval/" },
         Mcp = McpTestSecret.Gate
     };
+
+    // Sugary's server as a run stands it up: its own module, then what the eval has instead of an accounts
+    // service — her household on the home's zone, its people whoever the scenario says Sugary's view lists
+    // (nobody, and so nobody granted, by default) — and the run's fake hub, dialled directly (Settings), as
+    // the one a glucose alarm's target is resolved against, so a room the roster lacks is refused as in prod.
+    public static IServiceCollection Configure(
+        IServiceCollection services, SugarySettings settings, IReadOnlyList<SugaryPerson> people, FakeVoiceHub hub)
+    {
+        services.ConfigureSugary(settings);
+        // Nothing polls or judges on the clock in a run: its links are seeded, no LibreLinkUp answers, and
+        // a watch a turn writes is read back, never fired.
+        foreach (var loop in services.Where(d => d.ServiceType == typeof(IHostedService)
+                                                 && (d.ImplementationType == typeof(GlucosePollLoop)
+                                                     || d.ImplementationType == typeof(GlucoseWatchLoop))).ToList())
+        {
+            services.Remove(loop);
+        }
+
+        services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+            new EveryHouseholdIn(ConfigModule.HomeZone(settings), sugaryPeople: new HouseholdSugaryPeople([.. people]))));
+        services.AddHttpClient(VoiceHubHttp.ClientName).ConfigurePrimaryHttpMessageHandler(() => hub);
+        return services;
+    }
+
+    // Laura, who shares the run's household and wears a sensor of her own: her log is somebody else's,
+    // seen only by a scenario whose household grants the run's person everyone's log.
+    public const string LauraUserId = "eval-laura";
+    public const string LauraFolder = "laura";
+    public static readonly Account Laura = new(EvalRun.Tenant, LauraUserId);
+
+    // The household as Sugary's view lists it when its owner let the run's person read everyone's log.
+    public static IReadOnlyList<SugaryPerson> EveryoneReadable =>
+    [
+        new(EvalRun.UserId, "Fran", ReadsEveryLog: true),
+        new(LauraUserId, "Laura", ReadsEveryLog: false)
+    ];
+
+    // Her week of glucose before the scenarios' evening, read every five minutes on the home's clock:
+    // low from 02:00 to 04:00, high from 14:00 to 18:00, in range the rest of the day — so any week of
+    // it is 75 % in 70–180, 8.3 % below 70 and 16.7 % above 180, however its edges are drawn — and the
+    // last half hour climbing gently to 130, still in range — a dose worked out tonight meets no high
+    // nobody mentioned — and just past 126 (7 mmol/L), which the mmol scenario's level is.
+    public const double TimeInRangePercent = 75.0;
+    public const int NewestMgPerDl = 130;
+    private static readonly DateTimeOffset _glucoseFrom = new(2026, 8, 3, 0, 0, 0, TimeSpan.FromHours(2));
+    private static readonly int[] _climb = [110, 115, 119, 123, 127, NewestMgPerDl];
+
+    // Every glucose watch the household keeps, as the snapshot names it: how many, whose sensor each
+    // watches, and what each of its triggers waits for — levels to the whole mg/dL, so a level asked in
+    // mmol/L lands on the same value whichever way it was rounded.
+    public const string WatchCountKey = "glucose-watch#count";
+    public static string SubjectKey(string watchId) => $"glucose-watch.{watchId}#subject";
+    public static string TriggersKey(string watchId) => $"glucose-watch.{watchId}#triggers";
+    public const string AnyWatch = "*";
 
     // Hers: the account every eval turn acts for, so the mount reads it on a scenario's turn as it
     // reads a person's log on theirs, and nothing else in the database answers.
@@ -32,8 +101,101 @@ public static class EvalSugaryLog
         db.Foods.AddRange(Foods);
         db.Meals.AddRange(Meals);
         db.Doses.AddRange(Doses);
+        db.GlucoseLinks.Add(Link("fran@example.invalid", "eval-patient-fran", "Fran"));
+        db.GlucoseReadings.AddRange(HerGlucose());
+        db.GlucoseSensors.Add(Sensor("EVAL-FRAN"));
         await db.SaveChangesAsync();
+
+        await using var laura = services.GetRequiredService<SugaryStore>().For(Laura);
+        laura.GlucoseLinks.Add(Link("laura@example.invalid", "eval-patient-laura", "Laura"));
+        laura.GlucoseReadings.AddRange(LaurasGlucose());
+        laura.GlucoseSensors.Add(Sensor("EVAL-LAURA"));
+        await laura.SaveChangesAsync();
     }
+
+    // The household's glucose watches as the turn left them, keyed for Scenario.Changes.
+    public static async Task<IReadOnlyDictionary<string, string>> SnapshotAsync(IServiceProvider services)
+    {
+        await using var db = services.GetRequiredService<SugaryStore>().For(EvalRun.Account);
+        var watches = await db.GlucoseWatches.AsNoTracking().OrderBy(w => w.Id).ToListAsync();
+
+        return new Dictionary<string, string>([
+            new(WatchCountKey, watches.Count.ToString(CultureInfo.InvariantCulture)),
+            .. watches.SelectMany(watch => new KeyValuePair<string, string>[]
+            {
+                new(SubjectKey(watch.Id), watch.SubjectUserId),
+                new(TriggersKey(watch.Id), Triggers(watch.Spec))
+            })
+        ]);
+    }
+
+    public static string Triggers(string spec) =>
+        string.Join("; ", GlucoseWatchSpec.Parse(spec).Triggers.Select(trigger => trigger switch
+        {
+            GlucoseLevelTrigger level => $"glucose {Bound(level.Bound)} {Whole(level.MgPerDl)}",
+            GlucoseForecastTrigger forecast => $"glucose_forecast {Bound(forecast.Bound)} {Whole(forecast.MgPerDl)}",
+            GlucoseTrendTrigger trend => $"glucose_trend {(trend.Direction == GlucoseTrendDirection.Falling ? "falling" : "rising")}",
+            SensorTrigger sensor => $"sensor {sensor.State switch
+            {
+                SensorState.NoReadings => "no_readings",
+                SensorState.LinkFailing => "link_failing",
+                _ => "ending"
+            }}",
+            _ => trigger.Kind
+        }));
+
+    private static string Bound(GlucoseBound bound) => bound == GlucoseBound.Below ? "below" : "above";
+
+    private static string Whole(double mgPerDl) =>
+        Math.Round(mgPerDl, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture);
+
+    // Linked and answering, as a person whose sensor Sugary reads: what the README states their unit and
+    // range from. Nothing polls it — the eval's Sugary has no sealing key — so the password is a stand-in.
+    private static GlucoseLink Link(string email, string patientId, string name) => new()
+    {
+        Email = email,
+        SealedPassword = [0],
+        PatientId = patientId,
+        Connections = [new GlucoseConnectionOffered { PatientId = patientId, Name = name }],
+        LinkedAt = _glucoseFrom.AddDays(-30),
+        LastSuccessAt = EvalInstant.Evening.AddMinutes(-1)
+    };
+
+    private static GlucoseSensor Sensor(string serial) => new()
+    {
+        Serial = serial,
+        ActivatedAt = EvalInstant.Evening.AddDays(-6),
+        LastSeenAt = EvalInstant.Evening.AddMinutes(-1)
+    };
+
+    private static IEnumerable<GlucoseReading> HerGlucose()
+    {
+        var climbFrom = EvalInstant.Evening.AddMinutes(-5 * _climb.Length);
+        var steady = Enumerable.Range(0, int.MaxValue)
+            .Select(step => _glucoseFrom.AddMinutes(5 * step))
+            .TakeWhile(at => at < climbFrom)
+            .Select(at => Reading(at, at.Hour switch
+            {
+                2 or 3 => 62,
+                >= 14 and < 18 => 215,
+                _ => 110 + at.Minute % 25
+            }, GlucoseTrend.Steady));
+        var climb = _climb.Select((value, step) => Reading(climbFrom.AddMinutes(5 * step), value, GlucoseTrend.Rising));
+        return [.. steady, .. climb];
+    }
+
+    // Two quiet days at 110, her newest a little lower: nothing a watch on her is already past.
+    private static IEnumerable<GlucoseReading> LaurasGlucose() =>
+        Enumerable.Range(1, 2 * 24 * 12)
+            .Select(back => Reading(EvalInstant.Evening.AddMinutes(-5 * back), back == 1 ? 105 : 110, GlucoseTrend.Steady));
+
+    private static GlucoseReading Reading(DateTimeOffset at, double mgPerDl, GlucoseTrend trend) => new()
+    {
+        At = at.ToUniversalTime(),
+        MgPerDl = mgPerDl,
+        Trend = trend,
+        Source = GlucoseSource.Current
+    };
 
     private static Food[] Foods =>
     [

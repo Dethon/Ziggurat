@@ -36,6 +36,11 @@ const paths = {
   trash: "M5 7h14M10 7V5h4v2M7 7l1 12.5h8L17 7",
   restart: "M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4v3.5H8",
   eye: "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  // Her glucose: the tab's curve, the sensor's arrow (one, turned to its five directions) and, for a
+  // reading with no arrow, three dashes where the arrow would be.
+  curve: "M3.5 15.5c2.2 0 2.8-6 5.2-6s2.6 8 5.2 8 2.8-5.5 6.6-5.5",
+  trend: "M5 12h13.5M13 6.5 18.5 12 13 17.5",
+  trendUnknown: "M5 12h2.5M10.75 12h2.5M16.5 12h2.5",
   eyeOff:
     "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4 4l16 16",
   torch: "M8 3h8l-1 5 2 3v2h-4v8h-2v-8H7v-2l2-3-1-5Z",

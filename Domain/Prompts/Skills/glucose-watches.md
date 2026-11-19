@@ -1,0 +1,96 @@
+---
+name: glucose-watches
+description: Writing, changing, pausing or removing a watch on a person's glucose as Sugary reads their sensor: warned or woken when it goes under or over a level, falls or rises fast, is about to go low, or their glucose sensor stops sending readings ("warn me if my sugar drops under 70", "wake me in the bedroom if it goes under 60 at night", "tell me if my sensor stops"), their own or someone's under `/sugary/people/`. Never home-watches'. The watch.json shape, trigger kinds in mg/dL, effects, alarms, who sees it.
+# A watch on glucose is told apart from a home watch by its subject, a person's sensor, rather than by
+# the word "watch", so the advertisement names the kinds of request and the folder another person's
+# glucose is under; it costs more than a one-line description for that.
+description-budget: 130
+# The four trigger kinds and their units, the crossing rule and the reading before it, the outage that
+# is not a silent sensor, the alarm and how it is stopped, and who a watch is shown to: the shape the
+# server refuses by name, written down once so the first write is the right one.
+body-budget: 1600
+served-by: mcp-sugary
+claims:
+# The trigger claim: a request of this kind loads the skill. Cited by every glucose watch scenario, so
+# a skill nobody loads shows as a red description rather than a red body.
+- glucose-watches.loads-for-a-glucose-watch-request: A request to write, change, pause or remove a watch on a person's glucose loads the glucose-watches skill before the watch is touched.
+- glucose-watches.plain-warning-is-a-prompt: A plain 'warn me' on a glucose level is a glucose trigger with a prompt effect delivered where the request came from, with no announce effect.
+- glucose-watches.urgency-is-an-insistent-alarm-in-the-room: A request to be woken or alarmed adds an insistent announce effect targeting the room named, and a night-only alarm carries a time condition.
+- glucose-watches.falling-fast-is-a-trend-trigger: Being warned when glucose falls fast is a glucose_trend trigger with a falling rate in mg/dL a minute, never a level.
+- glucose-watches.silent-sensor-is-no-readings: Being warned when the sensor stops sending is a sensor trigger in state no_readings with a for duration, never link_failing alone.
+- glucose-watches.another-persons-glucose-names-their-folder: A watch on another person's glucose names their /sugary/people folder as each trigger's person, and is never written on a glucose entity of the home.
+- glucose-watches.levels-are-mg-dl: A level asked in mmol/L is written in mg/dL, the value times 18.016 rounded to a whole number.
+- glucose-watches.crossing-only-is-said: When the person's newest reading is already past the level at creation, the reply says that reading and that the watch fires at the next crossing.
+---
+
+A glucose watch is a file: `domain__filesystem__text_create` on `/watchers/<id>/watch.json` (`<id>` is a
+descriptive slug you choose). It sits beside the home's watches at `/watchers`; Sugary keeps it, because
+its triggers are glucose kinds, and judges it on every reading of the person's sensor. The same `<id>` is
+the same watch, so a change replaces it in place. The example is a shape, not a watch to copy.
+
+```json
+{"name": "Low under 70",
+ "triggers": [{"trigger": "glucose", "below": 70, "for": {"minutes": 10}}],
+ "effects": [{"kind": "prompt", "prompt": "My glucose went low. Say where it is and where it is heading."}],
+ "once": false}
+```
+
+- Every level is **mg/dL**. A level asked in mmol/L is multiplied by 18.016 and rounded to a whole
+  number — 3.9 is 70, 10 is 180 — and said back in the unit they asked in.
+- `triggers` (required), each one of these four kinds — `glucose`, `glucose_trend`, `glucose_forecast`,
+  `sensor` — spelled exactly so: a misspelled kind goes to the home and is refused in Home Assistant's
+  words.
+  - `{"trigger": "glucose", "below": 70}` (or `"above"`), with an optional `"for": {"minutes": 15}` to
+    fire only once it has held that long. A range to leave ("outside 70–180") is one watch with two
+    triggers.
+  - `{"trigger": "glucose_trend", "falling": 2}` (or `"rising"`): mg/dL a minute over the last 15
+    minutes. Falling fast, the sensor's double arrow, is 2; falling is 1.
+  - `{"trigger": "glucose_forecast", "below": 70, "within": {"minutes": 20}}` (or `"above"`): the last
+    20 minutes carried on would cross the level within that time — "before I go low".
+  - `{"trigger": "sensor", "state": "no_readings", "for": {"minutes": 30}}`: Sugary reached the sensor's
+    account and nothing new was measured for that long — "my sensor stopped", "it's not reading".
+    `"state": "link_failing", "for": …` is Sugary unable to reach LibreLinkUp at all (refused, down,
+    rate-limited) for that long. An outage never counts as `no_readings`, so a provider's hiccup never
+    rings as a silent sensor; add `link_failing` only when they ask about the link. `"state":
+    "ending", "within": {"hours": 24}` warns before the sensor's fourteen days run out.
+  - `person`, on any trigger, names whose sensor: left out, the asker's own. Another person's glucose is watched only
+    by someone who may read their log: their folder under `/sugary/people/` (`"person": "laura"`) on
+    each trigger — never a glucose entity of the home. Refused there, say you cannot watch their glucose.
+- `conditions` (optional) are only `{"condition": "time", "after": "23:00", "before": "07:00"}` and/or
+  `"weekday": ["sat", "sun"]`, on the household's clock; `after` later than `before` spans midnight.
+  "At night" is that.
+- A trigger fires when its condition starts and not again until it has ended — never at creation.
+  Before writing a level, read their newest reading with `domain__filesystem__query` on `/sugary` (on
+  `/sugary/people/<name>` for theirs): `select read_at_local, mg_dl, trend from glucose order by
+  read_at desc limit 1`. If it is already past the level, say that value and that the watch fires at
+  the next crossing.
+- `effects` (required, in order), each one of:
+  - `{"kind": "prompt", "prompt": "…"}` — YOU run it when it fires, and your answer goes to
+    `deliverTo`. The default for a plain "warn me". The fire brings what fired — the reading in mg/dL
+    and mmol/L, its trend, the rate or forecast, when — so the prompt need not repeat it.
+  - `{"kind": "announce", "text": "…", "target": {"room": "…"}, "insistent": {}}` — a fixed sentence,
+    said as written, rung as an alarm with no agent involved. `target` is `{"room": "…"}`,
+    `{"satelliteId": "…"}`, `{"satelliteIds": [ … ]}` or `{"all": true}`, a room or id from
+    `/timers/satellites.json`. `insistent: {}` rings until it is stopped (the alarm's defaults, with
+    their wake-up ramp); left out, it rings like a timer, about two minutes. Add it only when the
+    request carries urgency — "wake me", "an alarm", "urgently" — in the room named, followed by a
+    `prompt` effect so the detail follows in writing. With no satellites, or "on my phone", leave
+    `target` out: it rings as an alarm on the person's chat and Telegram, as one does whose satellites
+    are all offline when it fires.
+  - There is no `actions` effect: a glucose watch acts on nothing in the home.
+- A satellite's alarm is stopped on the satellite or with `./dismiss` in `/timers`; one ringing on chat
+  and Telegram is stopped by its own Dismiss button there.
+- `deliverTo` (prompt effects; `channelId[:address]`): omit it and the answer goes where the request
+  came from. `userId`: omit it, it is the person asking.
+- `once: true` for "only the next time": it turns itself off after its first fire that reached
+  someone. `enabled: false` pauses ("not tonight") and `true` resumes — an edit, never a delete.
+- A change the user points at edits that watch's `watch.json` (`text_edit`); any other request is a
+  new watch under its own id. `domain__filesystem__remove` on `/watchers/<id>` removes it.
+- `domain__filesystem__glob` on `/watchers/*/` lists the home's watches and the glucose watches
+  together; read each `watch.json`. `status.json` says whose sensor it watches (`subject`), when it was
+  made and last fired, `spent`, and whether each trigger holds now. A glucose watch is shown only to
+  the person it watches, whoever wrote it, and whoever may read everyone's log. A listing that names
+  something `unavailable` could not read it: say so, never that there are none.
+- A watch needs no approval: write it in the same turn, then say it back in one sentence — whose
+  glucose, the level in their unit (or the trend, or the sensor's state), any `for` or `within`, what
+  it does and where — from what you wrote. A refused write names its field: fix it and write again.

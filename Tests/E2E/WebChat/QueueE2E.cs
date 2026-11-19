@@ -23,7 +23,9 @@ public static class QueueE2E
     public static async Task HoldOnAnApprovalAsync(IPage page, string demand)
     {
         await SendAsync(page, demand);
-        await page.Locator(".approval-modal").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        // A turn to the agent, a model call and a tool's approval back through the hub: beside a second
+        // suite that round trip passed thirty seconds once. A wait returns when the prompt shows.
+        await page.Locator(".approval-modal").WaitForAsync(new LocatorWaitForOptions { Timeout = 90_000 });
     }
 
     // The held approval's overlay can reach a page and covers the whole viewport, and rejecting it would

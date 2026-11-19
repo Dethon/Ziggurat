@@ -15,4 +15,10 @@ public sealed record FsInfoResult
     // existed, and a response from an older server still deserializes.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Executable { get; init; }
+
+    // An entry is here that this caller may not see (with Exists false): its name is taken, and nothing
+    // more about it is said. A filesystem sharing a mount point asks so before it creates an entry of
+    // that name. Off the wire while false, as Executable is.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Hidden { get; init; }
 }

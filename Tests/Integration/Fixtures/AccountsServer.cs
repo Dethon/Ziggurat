@@ -61,34 +61,37 @@ public sealed partial class AccountsServer : IAsyncDisposable
     public static async Task<AccountsServer> StartAsync(
         Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null)
     {
-        var port = TestPort.GetAvailable();
         var ownsDirectory = directory is null;
         directory ??= Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
-        var settings = new AccountsSettings
-        {
-            DatabasePath = Path.Combine(directory, "accounts.db"),
-            PublicBaseUrl = $"http://localhost:{port}",
-            AllowedOrigins = [$"http://localhost:{port}"],
-            WebAuthn = new WebAuthnSettings { RelyingPartyId = "localhost" },
-            HouseholdConfig = new HouseholdConfigSettings { MasterKey = MasterKey },
-            // The suite's agent key, which every test signs its call tokens with (McpTestSecret).
-            AgentKeysUrl = TestJwks.AgentUrl
-        };
-        settings = configure?.Invoke(settings) ?? settings;
         var clock = new FakeTimeProvider(StartedAt);
-        await FromTemplateAsync(settings.DatabasePath);
+        AccountsSettings settings = null!;
+        var (port, app) = await TestPort.StartWebAsync(async port =>
+        {
+            settings = new AccountsSettings
+            {
+                DatabasePath = Path.Combine(directory, "accounts.db"),
+                PublicBaseUrl = $"http://localhost:{port}",
+                AllowedOrigins = [$"http://localhost:{port}"],
+                WebAuthn = new WebAuthnSettings { RelyingPartyId = "localhost" },
+                HouseholdConfig = new HouseholdConfigSettings { MasterKey = MasterKey },
+                // The suite's agent key, which every test signs its call tokens with (McpTestSecret).
+                AgentKeysUrl = TestJwks.AgentUrl
+            };
+            settings = configure?.Invoke(settings) ?? settings;
+            await FromTemplateAsync(settings.DatabasePath);
 
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.AddAccounts(settings, new AccountsClock(clock));
-        // The model diff EF makes on every migration is asked once, by MigrationsMatchTheModelTests;
-        // a store copied from the template has nothing left to migrate.
-        builder.Services.ConfigureDbContext<AccountsDbContext>(options =>
-            options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
-        var app = builder.Build();
-        app.MapAccounts();
-        await app.StartAsync();
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+            builder.Services.AddAccounts(settings, new AccountsClock(clock));
+            // The model diff EF makes on every migration is asked once, by MigrationsMatchTheModelTests;
+            // a store copied from the template has nothing left to migrate.
+            builder.Services.ConfigureDbContext<AccountsDbContext>(options =>
+                options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+            var built = builder.Build();
+            built.MapAccounts();
+            return built;
+        });
         return new AccountsServer(app, settings, clock, port, directory, ownsDirectory);
     }
 

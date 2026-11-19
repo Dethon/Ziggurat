@@ -25,4 +25,8 @@ public record FileSystemMount(string Name, string MountPoint, string Description
     // For a mount with a shell: the names at its root the session's other mounts cannot be linked
     // at, so a command reaches those only at /vfs/<name>. Null where the mount has no shell.
     public IReadOnlyList<string>? OccupiedNames { get; init; }
+
+    // Where the mount shares its mount point with other filesystems (FileSystemUnion), or null
+    // where it is the only thing there — which is every mount but a union's members.
+    public FileSystemUnion? Union { get; init; }
 }

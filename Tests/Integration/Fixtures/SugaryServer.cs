@@ -8,6 +8,7 @@ using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
 using McpServerSugary.App;
 using McpServerSugary.Channel;
+using McpServerSugary.Glucose;
 using McpServerSugary.Modules;
 using McpServerSugary.Store;
 using Microsoft.Data.Sqlite;
@@ -15,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -39,6 +41,50 @@ public sealed class SugaryServer : IAsyncDisposable
         {
             HouseholdAgents.RemoveAll(agent => agent.Id == entry.Id);
             HouseholdAgents.Add(new HouseholdAgentName(entry.Id, entry.Name, Model: entry.DefaultModel));
+        }
+    }
+
+    // Which households turn Sugary off, as the accounts service would answer Sugary's poller and watch
+    // engine; a test switches one off and on again, or makes the answer fail.
+    public SugaryOffSwitch SugaryOff { get; private init; } = new();
+
+    public sealed class SugaryOffSwitch
+    {
+        private readonly Lock _gate = new();
+        private readonly HashSet<string> _off = new(StringComparer.Ordinal);
+        private bool _unreadable;
+
+        public void Off(string household, bool off = true)
+        {
+            lock (_gate)
+            {
+                if (off)
+                {
+                    _off.Add(household);
+                }
+                else
+                {
+                    _off.Remove(household);
+                }
+            }
+        }
+
+        public void Unreadable(bool unreadable = true)
+        {
+            lock (_gate)
+            {
+                _unreadable = unreadable;
+            }
+        }
+
+        public IReadOnlyList<string> Answer()
+        {
+            lock (_gate)
+            {
+                return _unreadable
+                    ? throw new HttpRequestException("The accounts service could not answer the sugary-off view (503)")
+                    : [.. _off];
+            }
         }
     }
 
@@ -102,6 +148,7 @@ public sealed class SugaryServer : IAsyncDisposable
         // assertion: what a photo sent to the sugary agent is checked against. Empty until a test
         // says, which is a household naming no sugary agent — as silent as nothing registered.
         List<HouseholdAgentName> householdAgents = [];
+        var sugaryOff = new SugaryOffSwitch();
         var server = await InMemoryMcpServer.StartAsync(
             collection =>
             {
@@ -113,7 +160,7 @@ public sealed class SugaryServer : IAsyncDisposable
                 collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
                     new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents,
                         householdZones?.ToDictionary(z => z.Key, z => TimeZoneInfo.FindSystemTimeZoneById(z.Value)),
-                        sugaryPeople)));
+                        sugaryPeople, sugaryOff.Answer)));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
@@ -131,11 +178,21 @@ public sealed class SugaryServer : IAsyncDisposable
                 collection.ConfigureDbContext<SugaryDbContext>(options =>
                     options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
 
+                // The glucose poller's and the watches' loops run on the wall clock, with or without a
+                // key: a test drives a poll or a pass itself, or adds a loop on its own clock, so nothing
+                // it seeded is rewritten behind it (a link it made would be found unreadable).
+                foreach (var loop in collection.Where(d => d.ServiceType == typeof(IHostedService)
+                                                           && (d.ImplementationType == typeof(GlucosePollLoop)
+                                                               || d.ImplementationType == typeof(GlucoseWatchLoop))).ToList())
+                {
+                    collection.Remove(loop);
+                }
+
                 // A test's own stand-ins, registered last so they win.
                 services?.Invoke(collection);
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);
-        return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents };
+        return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents, SugaryOff = sugaryOff };
     }
 
     // A store migrated once per run, copied for each server whose file does not exist yet — a test
@@ -277,6 +334,28 @@ public sealed class SugaryServer : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    // What the poller keeps: her readings, the sensors LibreLinkUp listed, and her link's unit and range.
+    public async Task SaveAsync(params GlucoseReading[] readings)
+    {
+        await using var db = Hers();
+        db.GlucoseReadings.AddRange(readings);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SaveAsync(params GlucoseSensor[] sensors)
+    {
+        await using var db = Hers();
+        db.GlucoseSensors.AddRange(sensors);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SaveAsync(params GlucoseLink[] links)
+    {
+        await using var db = Hers();
+        db.GlucoseLinks.AddRange(links);
+        await db.SaveChangesAsync();
+    }
+
     // What the migration into the home household does with a log from before it was per person (or
     // brought in by the import): gives every row nobody owns to the person whose log it is, and the
     // kitchen to their household. Until then the rows are kept and seen by nobody.
@@ -380,8 +459,14 @@ public sealed class SugaryServer : IAsyncDisposable
             eof = chunk["eof"]!.GetValue<bool>();
         }
 
+        return await ParquetRowsAsync(bytes.ToArray());
+    }
+
+    // Parquet's bytes opened by DuckDB as any Parquet file: every value as text, times on UTC's clock.
+    public static async Task<IReadOnlyList<string?[]>> ParquetRowsAsync(byte[] bytes)
+    {
         var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"sugary-{Guid.NewGuid():N}.parquet");
-        await File.WriteAllBytesAsync(file, bytes.ToArray());
+        await File.WriteAllBytesAsync(file, bytes);
         try
         {
             await using var connection = new DuckDB.NET.Data.DuckDBConnection("DataSource=:memory:");

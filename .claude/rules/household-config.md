@@ -112,6 +112,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
 | `sugary-people` (call token) | `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSugaryPeople>`: every person not disabled, in the order they joined, with display name and `readsEveryLog` (an owner's "Reads everyone's Sugary log", `MemberStore`), the same answer for everyone in the household since the reader keeps it per household; the `/sugary` mount decides who reads whose log by it (`.claude/rules/sugary.md`) | none |
+| `sugary-off` | `mcp-sugary` | `HouseholdsWithSugaryOff`: the ids of the households whose saved features turn Sugary off (one that never saved its features has it on), asked with no proof — Sugary's glucose poller and watch engine wake for nobody's request — and kept by the reader as one entry, dropped by any household's `features` save | none |
 | `member-names` | `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdMemberNames>`: every person of the household, disabled ones too (their topics are kept), in the order they joined, by id and display name, proven by the connection's assertion — the topic list's person filter for whoever sees all (`ChatHub.GetHouseholdPeople`) | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
 | `lemonade-boxes` | `agent` | `HouseholdLemonadeBoxes`: every household's own Lemonade box, on the agent's own token (as `people`), never kept — its discovery asks every minute; a kit box is `throughKit` alone | each box's key |
@@ -155,7 +156,12 @@ is `HouseholdConfigQuery { householdId, callToken, assertion, delegation }`:
 - **Exception 2, Telegram reads every household's bots.** It long-polls its bots from startup,
   before any call could name a household, so `telegram-bots` takes no proof and answers every
   household's (a household whose secrets do not open is left out and logged, not fatal to the rest).
-  It is cached as one entry, dropped by any household's `keys` save.
+  It is cached as one entry, dropped by any household's `keys` save (and its `features` save, which
+  drops every across-households entry the reader keeps).
+- **Exception 3, Sugary learns which households turn it off.** Its glucose poller and watch engine
+  wake for nobody's request (`SugaryOffHouseholds`, `.claude/rules/sugary.md`), so `sugary-off` takes
+  no proof and answers the ids of every household whose features turn Sugary off, and nothing else of
+  them. Kept as one entry, dropped by any household's `features` save (Sugary has no Redis: a minute).
 
 Refusals: 400 `BadQuery` (no proof, two, a shared server naming a household, or a delegation from
 anyone but scheduling), 404 `Unproven` (the

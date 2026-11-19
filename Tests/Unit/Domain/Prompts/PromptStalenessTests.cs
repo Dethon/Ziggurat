@@ -8,6 +8,7 @@ using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Vfs;
 using Domain.Tools.Timers.Vfs;
+using Domain.Tools.Watches;
 using Infrastructure.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
@@ -22,9 +23,10 @@ namespace Tests.Unit.Domain.Prompts;
 // turn dies somewhere else entirely. These walk the prompts against the code they describe.
 public class PromptStalenessTests
 {
-    // Mount roots that exist. The first six are the filesystems' own names; the last two are the
-    // disk roots their servers construct by name (`McpServerVault`, `McpServerSandbox`), which is
-    // a deployment's choice rather than a constant here.
+    // Mount roots that exist. The first six are the filesystems' own names; then /watchers, a mount
+    // point several filesystems share (the home's watches among them); the last two are the disk
+    // roots their servers construct by name (`McpServerVault`, `McpServerSandbox`), which is a
+    // deployment's choice rather than a constant here.
     private static readonly string[] _mountRoots =
     [
         ScheduleFileSystem.Name,
@@ -33,6 +35,7 @@ public class PromptStalenessTests
         PrinterQueueFileSystem.Name,
         MediaLibraryDiskFileSystem.Name,
         SugaryFileSystem.Name,
+        Watchers.MountPoint[1..],
         "vault",
         "sandbox"
     ];

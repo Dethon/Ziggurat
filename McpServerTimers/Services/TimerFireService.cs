@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Microsoft.Extensions.Hosting;
@@ -112,9 +113,13 @@ public sealed class TimerFireService(
 
     // The same accepted trade as a satellite's: one attempt, and an agent that was not listening to
     // take it is a timer that did not ring.
+    // Create refuses a timer with no target and no owner, so a fire without one has no person to ring
+    // for and is not rung.
     private async Task RingOnChannelsAsync(ArmedTimer armed, CancellationToken ct)
     {
-        if (await alerts.RingAsync(armed, ct))
+        if (armed.Owner is { } owner
+            && await alerts.RingAsync(
+                new ChannelAlertRequest(owner, armed.Text ?? $"{armed.Id} timer", AnnounceKind.Timer, armed.AgentId), ct))
         {
             logger.LogInformation("Timer {TimerId} fired on its owner's channels", armed.Id);
         }

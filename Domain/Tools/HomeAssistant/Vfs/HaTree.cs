@@ -5,12 +5,9 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 
 public static class HaTree
 {
-    // The watches subtree is listed from the ids handed in rather than from the catalog: watches are
-    // read live from the home on every glob that can reach them, while the catalog is a cache.
-    public static IReadOnlyList<string> Directories(HaCatalog catalog, IReadOnlyList<string>? watchIds = null)
+    public static IReadOnlyList<string> Directories(HaCatalog catalog)
     {
-        var dirs = new List<string> { "entities", "areas", HaVfsPath.WatchesRootName };
-        dirs.AddRange((watchIds ?? []).Select(id => $"{HaVfsPath.WatchesRootName}/{id}"));
+        var dirs = new List<string> { "entities", "areas" };
 
         dirs.AddRange(catalog.ClassDomains().Select(c => $"entities/{c}"));
         dirs.AddRange(catalog.Entities.Select(e =>
@@ -26,14 +23,9 @@ public static class HaTree
         return dirs.OrderBy(d => d, StringComparer.Ordinal).ToList();
     }
 
-    public static IReadOnlyList<string> Files(HaCatalog catalog, IReadOnlyList<string>? watchIds = null)
+    public static IReadOnlyList<string> Files(HaCatalog catalog)
     {
         var files = new List<string> { HaVfsPath.SetupIndexFileName };
-        files.AddRange((watchIds ?? []).SelectMany(id => new[]
-        {
-            $"{HaVfsPath.WatchesRootName}/{id}/{HaVfsPath.WatchFileName}",
-            $"{HaVfsPath.WatchesRootName}/{id}/{HaVfsPath.WatchStatusFileName}"
-        }));
 
         foreach (var e in catalog.Entities)
         {
@@ -64,15 +56,15 @@ public static class HaTree
         }
     }
 
-    public static IReadOnlyList<string> Glob(HaCatalog catalog, GlobScope scope, IReadOnlyList<string>? watchIds = null)
+    public static IReadOnlyList<string> Glob(HaCatalog catalog, GlobScope scope)
     {
-        var dirs = Directories(catalog, watchIds).Where(scope.Matches).Select(p => p + "/");
+        var dirs = Directories(catalog).Where(scope.Matches).Select(p => p + "/");
         if (scope.DirsOnly)
         {
             return dirs.OrderBy(p => p, StringComparer.Ordinal).ToList();
         }
 
-        var files = Files(catalog, watchIds).Where(scope.Matches);
+        var files = Files(catalog).Where(scope.Matches);
         return dirs.Concat(files).OrderBy(p => p, StringComparer.Ordinal).ToList();
     }
 }

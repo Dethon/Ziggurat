@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Judgments;
@@ -359,6 +360,37 @@ public class EvalWebTests : IAsyncLifetime
             WaitForNavigation: true));
         (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
             .ShouldContain(EvalWeb.Raffle2025Total);
+    }
+
+    // Back, then on again from the page Back returned to, and again: each click is answered once its
+    // edition is there. Chromium let the wait for the new document's DOMContentLoaded miss it now
+    // and then, after a click that committed at once, and the wait spent its fifteen seconds before
+    // reading a page that had been there all along (the case above paid that in one run in four).
+    [Fact]
+    public async Task BackAndOnAgain_EachClickIsAnsweredOnceItsEditionIsThere()
+    {
+        const string session = "proof-archive-back-and-on";
+        await _browsing.NavigateAsync(new BrowseRequest(session, _web.ArchiveUrl) { Caller = JudgmentCaller.None });
+
+        var slowest = TimeSpan.Zero;
+        foreach (var year in new[] { 2024, 2025, 2024, 2025, 2024, 2025 })
+        {
+            var snapshot = await _browsing.SnapshotAsync(new SnapshotRequest(session));
+            var watch = Stopwatch.StartNew();
+            var opened = await _browsing.ActionAsync(new WebActionRequest(
+                session, RefBy(snapshot, "button", $"La rifa de {year}"), WebActionType.Click,
+                WaitForNavigation: true));
+            watch.Stop();
+            slowest = watch.Elapsed > slowest ? watch.Elapsed : slowest;
+
+            opened.Status.ShouldBe(WebActionStatus.Success, opened.ErrorMessage);
+            (await _browsing.GetCurrentPageAsync(session)).Content.ShouldNotBeNull()
+                .ShouldContain(year == 2024 ? EvalWeb.Raffle2024Total : EvalWeb.Raffle2025Total);
+            (await _browsing.ActionAsync(new WebActionRequest(session, Action: WebActionType.Back)))
+                .Status.ShouldBe(WebActionStatus.Success);
+        }
+
+        slowest.ShouldBeLessThan(TimeSpan.FromSeconds(10));
     }
 
     // The path an armed run takes and the test above does not: it reads the edition by browsing

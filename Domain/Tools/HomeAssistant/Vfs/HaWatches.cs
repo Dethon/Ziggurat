@@ -46,7 +46,7 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         if (watch is null)
         {
             _logger.LogWarning(
-                "Automation {AutomationId} carries the watch prefix but its description is not watch metadata; it is not listed under /ha/watches and still runs in the home",
+                "Automation {AutomationId} carries the watch prefix but its description is not watch metadata; it is not listed under /watchers and still runs in the home",
                 automationId);
         }
         return watch;

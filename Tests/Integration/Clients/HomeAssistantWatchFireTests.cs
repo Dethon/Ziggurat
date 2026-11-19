@@ -28,12 +28,12 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.Token);
         await SetStateAsync(http, "120");
 
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client), () => client,
+        var fs = new HaWatchFileSystem(new HaCatalogProvider(() => client), () => client,
             // The user is a Telegram chat id, as a person with no username is known: the home
             // renders the watch's literals through a `variables` step, and this pins that a value
             // which looks like a number still reaches the callback as the string the mount wrote.
             caller: new ConversationContext("jonas", "conv-1", "123456789", new ReplyTarget("telegram", "conv-1")));
-        var created = await fs.CreateAsync($"watches/{watchId}/watch.json", $$$"""
+        var created = await fs.CreateAsync($"{watchId}/watch.json", $$$"""
             {"name": "Laura's sugar above 180",
              "triggers": [{"trigger": "numeric_state", "entity_id": "{{{Sensor}}}", "above": 180}],
              "effects": [{"kind": "prompt", "prompt": "Her sugar is {{ trigger.to_state.state }}: look into it."}]}
@@ -77,13 +77,13 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
             await Eventually.Until(() => fixture.Fires.Count > firesBefore + 1, "the second crossing to reach the callback");
             fixture.Fires[^1].Payload["toState"]!.GetValue<string>().ShouldBe("185");
 
-            var status = (await fs.ReadAsync($"watches/{watchId}/status.json", null, null, CancellationToken.None))
+            var status = (await fs.ReadAsync($"{watchId}/status.json", null, null, CancellationToken.None))
                 .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
             status.ShouldContain("\"lastTriggeredAt\": \"20");
         }
         finally
         {
-            await fs.DeleteAsync($"watches/{watchId}", CancellationToken.None);
+            await fs.DeleteAsync($"{watchId}", CancellationToken.None);
         }
     }
 
@@ -99,9 +99,9 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", fixture.Token);
         await SetStateAsync(http, "120");
 
-        var fs = new HaFileSystem(new HaCatalogProvider(() => client), () => client,
+        var fs = new HaWatchFileSystem(new HaCatalogProvider(() => client), () => client,
             caller: new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1")));
-        var created = await fs.CreateAsync($"watches/{watchId}/watch.json", $$$"""
+        var created = await fs.CreateAsync($"{watchId}/watch.json", $$$"""
             {"name": "Laura's sugar above 180, once",
              "triggers": [{"trigger": "numeric_state", "entity_id": "{{{Sensor}}}", "above": 180}],
              "effects": [{"kind": "prompt", "prompt": "Look into it."}],
@@ -137,12 +137,12 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
         finally
         {
             fixture.CallbackStatus = 202;
-            await fs.DeleteAsync($"watches/{watchId}", CancellationToken.None);
+            await fs.DeleteAsync($"{watchId}", CancellationToken.None);
         }
     }
 
-    private static async Task<string> StatusAsync(HaFileSystem fs, string watchId) =>
-        (await fs.ReadAsync($"watches/{watchId}/status.json", null, null, CancellationToken.None))
+    private static async Task<string> StatusAsync(HaWatchFileSystem fs, string watchId) =>
+        (await fs.ReadAsync($"{watchId}/status.json", null, null, CancellationToken.None))
             .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
 
     private static async Task SetStateAsync(HttpClient http, string state)

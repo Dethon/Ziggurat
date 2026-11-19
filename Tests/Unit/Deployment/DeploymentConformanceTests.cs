@@ -186,6 +186,7 @@ public class DeploymentConformanceTests
     [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
     [InlineData("TELEGRAM_SHARED_BOT_TOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
+    [InlineData("SUGARY_SEALING_KEY", new[] { "mcp-sugary" })]
     [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
     [InlineData("HOUSEHOLD_CONFIG_MASTER_KEY", new[] { "accounts" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
@@ -869,23 +870,26 @@ public class DeploymentConformanceTests
         }
     }
 
-    // The timers server rings the household's voice server through the relay's endpoint alone, and
-    // presents there the credential the agent dials it with under the name the agent dials it at; it
-    // holds no address of the voice server, nor the deployment's announce secret, which the voice
-    // server reached through its tunnel never asks it for.
-    [Fact]
-    public void TheTimersServer_ReachesTheHouseholdsVoiceThroughTheRelayAlone()
+    // The timers server (a timer) and Sugary (a glucose alarm) ring the household's voice server
+    // through the relay's endpoint alone, and present there the credential the agent dials them with
+    // under the name the agent dials them at; neither holds an address of the voice server, nor the
+    // deployment's announce secret, which the voice server reached through its tunnel never asks for.
+    [Theory]
+    [InlineData("mcp-timers")]
+    [InlineData("mcp-sugary")]
+    public void ARelayedCaller_ReachesTheHouseholdsVoiceThroughTheRelayAlone(string caller)
     {
         var compose = DeploymentFiles.Compose();
-        var timers = compose.Service("mcp-timers");
+        var server = compose.Service(caller);
 
-        timers.Environment.GetValueOrDefault("VOICEHUB__BASEURL")
+        server.Environment.GetValueOrDefault("VOICEHUB__BASEURL")
             .ShouldBe($"http://agent:8080{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/");
-        compose.Service("agent").Environment.GetValueOrDefault($"MCP__SECRETS__{timers.Environment["MCP__AUDIENCE"]}")
-            .ShouldBe(timers.Environment["MCP__SHAREDSECRET"]);
-        timers.Environment.Keys.ShouldNotContain(key => key.StartsWith("Announce__", StringComparison.OrdinalIgnoreCase));
-        timers.Environment.Values.ShouldNotContain(value => value.Contains("mcp-channel-voice", StringComparison.Ordinal));
-        timers.DependsOn.ShouldNotContain("mcp-channel-voice");
+        server.Environment.GetValueOrDefault("MCP__AUDIENCE").ShouldBe(caller);
+        compose.Service("agent").Environment.GetValueOrDefault($"MCP__SECRETS__{caller}")
+            .ShouldBe(server.Environment["MCP__SHAREDSECRET"]);
+        server.Environment.Keys.ShouldNotContain(key => key.StartsWith("Announce__", StringComparison.OrdinalIgnoreCase));
+        server.Environment.Values.ShouldNotContain(value => value.Contains("mcp-channel-voice", StringComparison.Ordinal));
+        server.DependsOn.ShouldNotContain("mcp-channel-voice");
     }
 
     // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the

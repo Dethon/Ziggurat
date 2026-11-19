@@ -26,7 +26,7 @@ namespace Infrastructure.Tunnels;
 // name alone — another household's of the same name is never reached instead. A caller on the list
 // is a shared server, which serves every household and so may act for any of them; it names the
 // household each request is for from what it holds, the timers server from the verified call that
-// armed the timer. A request naming none is refused: there is no household it could be for.
+// armed the timer, Sugary from the person whose glucose it watches. A request naming none is refused: there is no household it could be for.
 public sealed class RelayedCalls(
     TunnelForwarder forwarder,
     McpCredentials credentials,
@@ -36,10 +36,11 @@ public sealed class RelayedCalls(
     public const string RefusedErrorType = "RelayedCallRefused";
 
     // The timers server rings, dismisses and validates satellites on the household's voice server, its
-    // announce API beside /mcp on the same listener.
+    // announce API beside /mcp on the same listener; Sugary rings a glucose alarm there the same way.
     private static readonly IReadOnlyList<Reach> _reaches =
     [
-        new("mcp-timers", HouseholdServerNames.Voice, "/api/voice")
+        new("mcp-timers", HouseholdServerNames.Voice, "/api/voice"),
+        new("mcp-sugary", HouseholdServerNames.Voice, "/api/voice")
     ];
 
     // What the caller sent for the relay alone, and the deployment's own secret for the voice API,

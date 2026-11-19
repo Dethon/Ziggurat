@@ -102,7 +102,7 @@ public class TimerFileSystemJourneyTests
     {
         public Dictionary<string, List<DismissedAlert>> Ringing { get; } = [];
 
-        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct) => Task.FromResult(true);
+        public Task<bool> RingAsync(ChannelAlertRequest alert, CancellationToken ct) => Task.FromResult(true);
 
         public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<DismissedAlert>>(Ringing.Remove(tenantId, out var ringing) ? ringing : []);

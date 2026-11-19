@@ -47,7 +47,7 @@ public sealed class SugaryAgentRequestTests
     }
 
     [Fact]
-    public async Task JonasDiallingTheSugaryServer_GetsTheMountAndTheSkillButNotTheEstimatingPrompt()
+    public async Task JonasDiallingTheSugaryServer_GetsTheMountAndItsSkillsButNotTheEstimatingPrompt()
     {
         await using var server = await SugaryServer.StartAsync();
         var wire = new RecordingResponsesHandler();
@@ -63,7 +63,7 @@ public sealed class SugaryAgentRequestTests
         instructions.ShouldContain("`/sugary`");
         Tools(body).ShouldContain("domain__filesystem__text_search");
         Tools(body).ShouldContain(SkillLoadTool.Name);
-        agent.GetSkills(session).Select(s => s.Name).ShouldBe([SugarySkill.Name]);
+        agent.GetSkills(session).Select(s => s.Name).ShouldBe([SugarySkill.Name, GlucoseWatchesSkill.Name]);
     }
 
     // The shipped definition, its endpoints pointed at this server, projected as the factory

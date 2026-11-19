@@ -40,6 +40,28 @@ public class TopicPagingTests
         bumped.Topics.Select(t => t.TopicId).ShouldBe(["c", "a", "b"]);
     }
 
+    // A conversation this page just started is a row the page made, stamped by the browser's clock, and
+    // the server's first copy of it is stamped by the agent's. A browser a second ahead kept its empty
+    // row over every copy the server sent, and the conversation showed no preview until a reload: a row
+    // the server never wrote to is never fresher than one it has.
+    [Fact]
+    public void Upsert_TheServersFirstCopyOfARowThePageStarted_WinsWhateverTheBrowsersClockSays()
+    {
+        var started = new StoredTopic
+        {
+            TopicId = "new", ChatId = 1, ThreadId = 1, AgentId = "agent", Name = "Started here",
+            CreatedAt = _base.AddSeconds(2)
+        };
+        var paging = TopicPaging.FirstPage([started], "50");
+        var written = new StoredTopic
+        {
+            TopicId = "new", ChatId = 1, ThreadId = 1, AgentId = "agent", Name = "Started here",
+            CreatedAt = _base.AddSeconds(2), LastMessageAt = _base, MessageCount = 2, LastMessageSnippet = "OK, noted."
+        };
+
+        paging.Upsert(written).Topics.ShouldHaveSingleItem().LastMessageSnippet.ShouldBe("OK, noted.");
+    }
+
     // The row the cursor will now never reach: it was below the cursor, so paging backwards
     // will never fetch it again.
     [Fact]

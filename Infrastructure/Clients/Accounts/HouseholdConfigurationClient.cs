@@ -83,6 +83,12 @@ public sealed class HouseholdConfigurationClient(
         KeptAsync(HouseholdConfigProtocol.TelegramBotsView, EveryHousehold, async () =>
             (await AskAsync<HouseholdTelegramBots>(HouseholdConfigProtocol.TelegramBotsView, new HouseholdConfigQuery(), ct)).Bots, ct);
 
+    // Sugary's, across households on its credential alone; kept as one entry, dropped by any household's
+    // features saved.
+    public Task<IReadOnlyList<string>> HouseholdsWithSugaryOffAsync(CancellationToken ct) =>
+        KeptAsync(HouseholdConfigProtocol.SugaryOffView, EveryHousehold, async () =>
+            (await AskAsync<HouseholdsWithSugaryOff>(HouseholdConfigProtocol.SugaryOffView, new HouseholdConfigQuery(), ct)).Households, ct);
+
     // Asked once a minute by the agent's Lemonade discovery and never kept: a box saved or removed is
     // in the next answer.
     public async Task<IReadOnlyList<HouseholdLemonadeBox>> LemonadeBoxesAsync(CancellationToken ct)
@@ -254,7 +260,9 @@ public sealed class HouseholdConfigurationClient(
         }
 
         Drop(saved.HouseholdId);
-        if (saved.Section == HouseholdSections.Keys)
+        // The views across households: the bots are in the keys, which households turn Sugary off in the
+        // features.
+        if (saved.Section is HouseholdSections.Keys or HouseholdSections.Features)
         {
             Drop(EveryHousehold);
         }

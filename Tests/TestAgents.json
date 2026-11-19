@@ -70,7 +70,7 @@
             "id": "nabu",
             "usesOutposts": true,
             "name": "Nabu",
-            "description": "Voice assistant with the full personal-assistant toolset (vault notes, web search, home automation, printing, timers, scheduled tasks), driven by speech; every reply is spoken aloud, so answers are one short sentence of plain words — no formatting, no narration, no explanation.",
+            "description": "Voice assistant with the full personal-assistant toolset (vault notes, web search, home automation, printing, timers, scheduled tasks, the Sugary log and glucose), driven by speech; every reply is spoken aloud, so answers are one short sentence of plain words — no formatting, no narration, no explanation.",
             "model": "deepseek/deepseek-v4.1-flash-1017",
             "providerRouting": {
                 "sort": "throughput",
@@ -90,7 +90,8 @@
                 "homeassistant",
                 "http://mcp-scheduling:8080/mcp",
                 "printer",
-                "http://mcp-timers:8080/mcp"
+                "http://mcp-timers:8080/mcp",
+                "http://mcp-sugary:8080/mcp"
             ],
             "enabledFeatures": [
                 "filesystem",

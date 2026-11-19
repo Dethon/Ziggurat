@@ -76,24 +76,26 @@ public sealed class FakeOpenRouter : IAsyncDisposable
     // On every address when a container asks it, which reaches this process through the host's gateway.
     public static async Task<FakeOpenRouter> StartAsync(bool forContainers = false)
     {
-        var fake = new FakeOpenRouter { _port = TestPort.GetAvailable() };
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(options => options.Listen(forContainers ? IPAddress.Any : IPAddress.Loopback, fake._port));
-        fake._app = builder.Build();
-
-        fake._app.MapPost("/api/v1/responses", (HttpContext http, CancellationToken ct) => fake.AnswerAsync(http, ct));
-        fake._app.MapPost("/api/alpha/decisions", (HttpContext http, CancellationToken _) =>
-            Results.Json(new { error = new { message = "Jev is not faked", code = 503 } }, statusCode: 503));
-        fake._app.MapGet("/api/v1/models", () => Results.Json(new { data = Array.Empty<object>() }));
-        fake._app.MapGet("/api/v1/key", () => Results.Json(new { data = new { label = "sk-or-v1-fake", usage = 0 } }));
-        fake._app.MapFallback((HttpContext http) =>
+        var fake = new FakeOpenRouter();
+        (fake._port, fake._app) = await TestPort.StartWebAsync(port =>
         {
-            fake._unhandled.Enqueue($"{http.Request.Method} {http.Request.Path}");
-            return Results.NotFound();
-        });
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.Logging.ClearProviders();
+            builder.WebHost.UseKestrel(options => options.Listen(forContainers ? IPAddress.Any : IPAddress.Loopback, port));
+            var app = builder.Build();
 
-        await fake._app.StartAsync();
+            app.MapPost("/api/v1/responses", (HttpContext http, CancellationToken ct) => fake.AnswerAsync(http, ct));
+            app.MapPost("/api/alpha/decisions", (HttpContext http, CancellationToken _) =>
+                Results.Json(new { error = new { message = "Jev is not faked", code = 503 } }, statusCode: 503));
+            app.MapGet("/api/v1/models", () => Results.Json(new { data = Array.Empty<object>() }));
+            app.MapGet("/api/v1/key", () => Results.Json(new { data = new { label = "sk-or-v1-fake", usage = 0 } }));
+            app.MapFallback((HttpContext http) =>
+            {
+                fake._unhandled.Enqueue($"{http.Request.Method} {http.Request.Path}");
+                return Results.NotFound();
+            });
+            return app;
+        });
         return fake;
     }
 

@@ -26,7 +26,11 @@ public class VfsVirtualPathConformanceTests
     // Where the hostile backend is mounted: a branch of the one tree, and a separate machine. The
     // invariant is the same at both, and resolving each is the registry's own job rather than this
     // test's, so the real one answers.
-    public static readonly IReadOnlyList<string> Mounts = ["/mnt", "outpost:mnt"];
+    // The third is a mount point the hostile backend shares with another filesystem (a union): the
+    // union answers in its members' spellings, and the tool still translates every one.
+    public static readonly IReadOnlyList<string> Mounts = ["/mnt", "outpost:mnt", Union];
+
+    private const string Union = "/union";
 
     // The three spellings a backend really answers in. A disk root reports the container-absolute
     // path; the virtual filesystems disagree with each other about the leading slash. Every tool
@@ -154,7 +158,24 @@ public class VfsVirtualPathConformanceTests
     private static VirtualFileSystemRegistry Registry(Func<string, string> spell, string mount)
     {
         var registry = new VirtualFileSystemRegistry();
-        registry.Mount(new FileSystemMount("mnt", mount, "The hostile backend"), new HostileBackend(spell));
+        if (mount == Union)
+        {
+            // The hostile backend holds `docs` and claims a value; the other member is the fallback
+            // and holds nothing, so every path here reaches the hostile one by its listing alone.
+            registry.TryMount(new FileSystemMount("quiet", mount, "Holds nothing")
+            {
+                Union = new FileSystemUnion("/kind", [], Fallback: true)
+            }, new QuietBackend()).ShouldBeTrue();
+            registry.TryMount(new FileSystemMount("mnt", mount, "The hostile backend")
+            {
+                Union = new FileSystemUnion("/kind", ["hostile"])
+            }, new HostileBackend(spell)).ShouldBeTrue();
+        }
+        else
+        {
+            registry.Mount(new FileSystemMount("mnt", mount, "The hostile backend"), new HostileBackend(spell));
+        }
+
         registry.Mount(new FileSystemMount("elsewhere", Elsewhere, "The sink"), new StreamingSink());
         return registry;
     }
@@ -214,16 +235,19 @@ public class VfsVirtualPathConformanceTests
             }));
 
         // Two entries under the requested directory and one outside it — the case with no virtual
-        // path, which a transfer reports without a source.
+        // path, which a transfer reports without a source. Its root listing is honest about what it
+        // holds, in its own spelling, which is how a union finds the member holding `docs`.
         public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
-            Task.FromResult<FsResult<FsGlobResult>>(new FsResult<FsGlobResult>.Ok(new FsGlobResult
-            {
-                Entries = [spell("docs/note.md"), spell("docs/sub/"), spell("elsewhere/secret.md")],
-                Truncated = false,
-                Total = 3,
-                // The executable marks name entries too, so they are translated like them.
-                Executables = [spell("docs/note.md")]
-            }));
+            Task.FromResult<FsResult<FsGlobResult>>(new FsResult<FsGlobResult>.Ok(basePath.Length == 0 && pattern == "*"
+                ? new FsGlobResult { Entries = [spell("docs/")], Truncated = false, Total = 1 }
+                : new FsGlobResult
+                {
+                    Entries = [spell("docs/note.md"), spell("docs/sub/"), spell("elsewhere/secret.md")],
+                    Truncated = false,
+                    Total = 3,
+                    // The executable marks name entries too, so they are translated like them.
+                    Executables = [spell("docs/note.md")]
+                }));
 
         public override Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
             string? directoryPath, string? filePattern, int maxResults, int contextLines,
@@ -286,6 +310,14 @@ public class VfsVirtualPathConformanceTests
             await Task.CompletedTask;
             yield return Encoding.UTF8.GetBytes("bytes");
         }
+    }
+
+    // The union's other member: it holds nothing and does nothing, so it adds nothing to a listing.
+    private sealed class QuietBackend : FileSystemBackendBase
+    {
+        public override string FilesystemName => "quiet";
+
+        public override string DescribeMount => "Holds nothing.";
     }
 
     // The other end of a cross-mount transfer: it takes bytes and says nothing about paths.

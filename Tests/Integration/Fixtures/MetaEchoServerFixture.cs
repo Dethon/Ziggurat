@@ -26,14 +26,16 @@ public class MetaEchoServerFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var port = TestPort.GetAvailable();
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.AddMcpServer().WithHttpTransport().WithTools<MetaEchoTool>();
-        var app = builder.Build();
-        app.MapMcp("/mcp");
+        var (port, app) = await TestPort.StartWebAsync(port =>
+        {
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+            builder.Services.AddMcpServer().WithHttpTransport().WithTools<MetaEchoTool>();
+            var built = builder.Build();
+            built.MapMcp("/mcp");
+            return built;
+        });
         _host = app;
-        await app.StartAsync();
         McpEndpoint = $"http://127.0.0.1:{port}/mcp";
     }
 

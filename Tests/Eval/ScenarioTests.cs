@@ -184,6 +184,31 @@ public class WatchScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalSc
         EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
 }
 
+// A person's glucose watches, beside the home's, written and spoken: two classes of four.
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class GlucoseWatchScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(GlucoseWatchScenarios.All, 0, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class GlucoseWatchScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(GlucoseWatchScenarios.All, 1, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
 [Trait("Category", "Eval")]
 [Trait("Tier", "Full")]
 public class VaultScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>

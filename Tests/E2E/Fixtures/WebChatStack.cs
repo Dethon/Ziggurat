@@ -433,6 +433,56 @@ internal sealed partial class WebChatStack
     // that reaches an app past the proxy presents to act as that person.
     public async Task<Account> AccountForAsync(int userIndex) => (await SeededAsync(userIndex)).Account;
 
+    // What the stack's Redis holds, read inside its container: the stack keeps its Redis to itself, and
+    // a failure whose cause is the store's state says so through this.
+    public async Task<string> RedisAsync(params string[] command)
+    {
+        if (_redis is null)
+        {
+            return "";
+        }
+
+        var result = await _redis.ExecAsync(["redis-cli", .. command]);
+        return result.Stdout + result.Stderr;
+    }
+
+    private async Task<string> CaddyDiagnosisAsync()
+    {
+        var said = new StringBuilder();
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            using var answer = await http.GetAsync($"http://127.0.0.1:{_caddyPort}/accounts/sign-in");
+            var body = await answer.Content.ReadAsStringAsync();
+            said.AppendLine($"From here: {(int)answer.StatusCode} {answer.Headers.Server} {body[..Math.Min(200, body.Length)]}");
+        }
+        catch (Exception e)
+        {
+            said.AppendLine($"From here: {e.GetType().Name} {e.Message}");
+        }
+
+        foreach (var (name, container) in new[] { ("caddy", _caddy), ("accounts", _accounts) })
+        {
+            try
+            {
+                if (name == "caddy" && container is not null)
+                {
+                    var inside = await container.ExecAsync(["wget", "-S", "-O-", "-T", "5", "http://localhost/accounts/sign-in"]);
+                    said.AppendLine($"Inside caddy: exit {inside.ExitCode} {(inside.Stderr + inside.Stdout)[..Math.Min(600, (inside.Stderr + inside.Stdout).Length)]}");
+                }
+
+                var (stdout, stderr) = container is null ? ("", "") : await container.GetLogsAsync();
+                said.AppendLine($"--- {name} ({container?.State}):\n{string.Join('\n', (stdout + stderr).Split('\n').TakeLast(25))}");
+            }
+            catch (Exception e)
+            {
+                said.AppendLine($"--- {name}: {e.Message}");
+            }
+        }
+
+        return said.ToString();
+    }
+
     private Task<Seeded> SeededAsync(int userIndex) =>
         _sessions.GetOrAdd(userIndex, index => new Lazy<Task<Seeded>>(() => SeedAsync(NameOf(index)))).Value;
 
@@ -873,7 +923,17 @@ internal sealed partial class WebChatStack
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/accounts/sign-in")))
             .Build();
         await webUiStarted;
-        await E2ETrace.TimeAsync("start:caddy", () => _caddy.StartAsync(ct));
+        try
+        {
+            await E2ETrace.TimeAsync("start:caddy", () => _caddy.StartAsync(ct));
+        }
+        catch (Exception e) when (e is TimeoutException or OperationCanceledException)
+        {
+            // Ready once sign-in answers through it from here; a Caddy that never is could be the
+            // published port answering something else, Caddy failing to reach accounts, or Caddy
+            // itself: each is asked.
+            throw new TimeoutException($"Caddy never answered sign-in through port {_caddyPort}. {await CaddyDiagnosisAsync()}", e);
+        }
         await Task.WhenAll(agentStarted, vaultStarted, sugaryStarted);
 
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate

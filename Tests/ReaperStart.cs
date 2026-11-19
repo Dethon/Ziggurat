@@ -18,15 +18,21 @@ namespace Tests;
 // every fixture then shares is one that came up.
 internal static class ReaperStart
 {
+    // Each attempt has a span of its own: a start Docker never answered held the run's whole budget, and
+    // every collection waited a minute before its first test. One that hangs is left, what it left behind
+    // removed, and the next made.
     internal static async Task<bool> RunAsync(
         Func<CancellationToken, Task> start, Func<CancellationToken, Task> removeLeftover, int attempts,
-        CancellationToken ct)
+        CancellationToken ct, TimeSpan? attemptSpan = null)
     {
         foreach (var _ in Enumerable.Range(0, attempts))
         {
             try
             {
-                await start(ct);
+                using var attempt = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                attempt.CancelAfter(attemptSpan ?? Timeout.InfiniteTimeSpan);
+                // Waited for up to its span even if the start itself never looks at the token.
+                await start(attempt.Token).WaitAsync(attempt.Token);
                 return true;
             }
             catch (Exception) when (!ct.IsCancellationRequested)
@@ -71,7 +77,8 @@ internal static class ReaperStart
                     new Docker.DotNet.Models.ContainerRemoveParameters { Force = true }, ct);
             },
             attempts: 3,
-            cts.Token);
+            cts.Token,
+            attemptSpan: TimeSpan.FromSeconds(20));
     }
 }
 

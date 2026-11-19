@@ -67,15 +67,26 @@ public static class ConfigModule
                     timeProvider: sp.GetRequiredService<TimeProvider>(),
                     watches: sp.GetRequiredService<HaWatches>(),
                     satellites: sp.GetRequiredService<ISatelliteCatalog>()))
+                .AddSingleton(sp => new HaWatchFileSystem(
+                    sp.GetRequiredService<HaCatalogProvider>(),
+                    sp.GetRequiredService<IHomeAssistantClient>,
+                    timeProvider: sp.GetRequiredService<TimeProvider>(),
+                    watches: sp.GetRequiredService<HaWatches>(),
+                    satellites: sp.GetRequiredService<ISatelliteCatalog>()))
                 .AddToolServer(settings, ToolResponse.Create)
                 // Broadcast, so an agent that is merely reconnecting still receives a fire; the
                 // callback answers Home Assistant 503 only when nobody is registered at all, and
                 // buffers nothing itself (docs/adr/0038).
                 .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true)
+                // The home first: a call naming no filesystem (an agent from before the watches had a
+                // mount of their own) reaches the first registered. The watches are their own
+                // filesystem, at /watchers, which other servers' watches share.
                 .AddFileSystemTools<HaFileSystem>()
+                .AddFileSystemTools<HaWatchFileSystem>()
                 // The watches' delegations, for the agent's redelegate and retire-signing-keys.
                 .AddDelegationStore<WatchDelegationStore>()
                 .AddFileSystemResource<HaFileSystem>()
+                .AddFileSystemResource<HaWatchFileSystem>()
                 // The skills that teach this server's tools ship beside them, so a deployment
                 // without the home cannot advertise how to watch it.
                 .AddSkills(HomeWatchesSkill.Text, HomeAssistantSkill.Text)

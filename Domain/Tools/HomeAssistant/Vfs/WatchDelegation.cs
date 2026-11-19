@@ -9,7 +9,7 @@ namespace Domain.Tools.HomeAssistant.Vfs;
 public static class WatchDelegation
 {
     public static DelegatedObject Of(HaWatch watch) =>
-        Describe(watch.Id, watch.Meta.AgentId, watch.Meta.Effects, watch.Meta.DeliverTo);
+        Describe(watch.Id, watch.Meta.AgentId, PromptsOf(watch.Meta.Effects), watch.Meta.DeliverTo);
 
     // What writing this text at this path makes the watch do. `agentId` is the writing turn's agent,
     // which runs a new watch's prompts — a rewrite by another agent's turn leaves the watch on the
@@ -20,8 +20,8 @@ public static class WatchDelegation
     // to write anyway.
     public static DelegatedObject? OfWrite(string path, string text, string? existing, string agentId, ReplyTarget? origin)
     {
-        var node = HaVfsPath.Parse(path);
-        if (node.Kind != HaVfsKind.WatchFile || !HaWatchAutomation.IsValidWatchId(node.WatchId)
+        var node = HaWatchPath.Parse(path);
+        if (node.Kind != HaWatchKind.WatchFile || !HaWatchAutomation.IsValidWatchId(node.WatchId)
             || TryParse(text) is not { } spec)
         {
             return null;
@@ -29,16 +29,23 @@ public static class WatchDelegation
 
         var deliverTo = spec.DeliverTo
                         ?? (existing is null ? null : TryParse(existing)?.DeliverTo)
-                        ?? (origin is null ? null : [origin.Address is null ? origin.ChannelId : $"{origin.ChannelId}:{origin.Address}"]);
-        return Describe(node.WatchId!, agentId, spec.Effects, deliverTo);
+                        ?? OriginDelivery(origin);
+        return Describe(node.WatchId!, agentId, PromptsOf(spec.Effects), deliverTo);
     }
 
-    private static DelegatedObject Describe(
-        string id, string agentId, IReadOnlyList<HaWatchEffect> effects, IReadOnlyList<string>? deliverTo) =>
+    // What any watch does as far as the agent is concerned, whoever keeps it: a home watch and a glucose
+    // watch are described by this one shape, so the agent's check of a watch's fire is one check.
+    public static DelegatedObject Describe(
+        string id, string agentId, IReadOnlyList<string> prompts, IReadOnlyList<string>? deliverTo) =>
         DelegatedObject.Of(DelegatedObject.Watch, id, new DelegatedWatch(
-            agentId,
-            [.. effects.OfType<HaPromptEffect>().Select(p => p.Prompt)],
-            deliverTo is { Count: > 0 } ? deliverTo : null));
+            agentId, prompts, deliverTo is { Count: > 0 } ? deliverTo : null));
+
+    // Where a watch naming no delivery answers: the writing turn's own channel and address.
+    public static IReadOnlyList<string>? OriginDelivery(ReplyTarget? origin) =>
+        origin is null ? null : [origin.Address is null ? origin.ChannelId : $"{origin.ChannelId}:{origin.Address}"];
+
+    private static IReadOnlyList<string> PromptsOf(IReadOnlyList<HaWatchEffect> effects) =>
+        [.. effects.OfType<HaPromptEffect>().Select(p => p.Prompt)];
 
     private static HaWatchSpec? TryParse(string text)
     {

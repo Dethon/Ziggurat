@@ -223,6 +223,42 @@ public sealed class StreamingServiceTests : IDisposable
         MessagesFor(topic.TopicId).Last().IsInterrupted.ShouldBeTrue();
     }
 
+    // The row's preview and badge are read off the conversation's record, which the agent writes as it
+    // keeps the turn, and the keep can come after the stream's end. Read at the end, the row kept the
+    // preview it had (none, for a new conversation) until a reload: it is read once the history shows
+    // the turn kept, and the conversation on screen marked read up to it then.
+    [Fact]
+    public async Task SendMessageAsync_AReplyKeptAfterItsStreamEnded_ItsRowAndReadMarkAreReadOnceItIsKept()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+            [new ChatMessageModel { Role = "user", Content = "test", CorrelationId = "mine" }]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+        var rowReads = new List<bool>();
+        using var counting = _dispatcher.RegisterHandler<RefreshTopicList>(_ =>
+        {
+            lock (rowReads)
+            {
+                rowReads.Add(MessagesFor(topic.TopicId).All(m => m.EntryId is not null));
+            }
+        });
+        _messagingService.EnqueueMessages(new ChatStreamMessage { Content = "Done", MessageId = "m1" });
+        _topicService.HistoryAnswers.Enqueue([]);
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "Done", null, null, EntryId: "e2"));
+
+        await SendAndDrainAsync(topic);
+
+        await Eventually.Until(() => { lock (rowReads) { return rowReads.Count > 0; } }, "the row to be read");
+        lock (rowReads)
+        {
+            rowReads.ShouldBe([true], "read once, with the turn kept");
+        }
+
+        _topicService.MarkedReadTopicIds.ShouldBe([topic.TopicId]);
+    }
+
     // Carlos says "ok" twice in a shared topic: the second is a message of its own, not the first one
     // again — the page drew only the first until a reload.
     [Fact]
@@ -285,11 +321,17 @@ public sealed class StreamingServiceTests : IDisposable
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
-        _messagingService.EnqueueContent("Done");
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "Done", MessageId = "m1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "m1" });
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage(null, "user", "test", null, null, EntryId: "e1"),
+            new ChatHistoryMessage("m1", "assistant", "Done", null, null, EntryId: "e2"));
 
         await SendAndDrainAsync(topic);
 
         _streamingStore.State.StreamingTopics.Contains(topic.TopicId).ShouldBeFalse();
+        await Eventually.Until(() => _topicService.MarkedReadTopicIds.Count > 0, "the kept reply marked read");
         _topicService.MarkedReadTopicIds.ShouldBe([topic.TopicId]);
         _topicService.SavedTopics.ShouldBeEmpty();
     }
@@ -667,8 +709,12 @@ public sealed class StreamingServiceTests : IDisposable
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" }
         );
 
+        _topicService.SetHistory(topic.ChatId, topic.ThreadId,
+            new ChatHistoryMessage("msg-1", "assistant", "New content", null, null, EntryId: "e1"));
+
         await ResumeAndDrainAsync(topic, existingMessage, "msg-1");
 
+        await Eventually.Until(() => _topicService.MarkedReadTopicIds.Count > 0, "the kept reply marked read");
         _topicService.MarkedReadTopicIds.ShouldBe([topic.TopicId]);
         _topicService.SavedTopics.ShouldBeEmpty();
     }

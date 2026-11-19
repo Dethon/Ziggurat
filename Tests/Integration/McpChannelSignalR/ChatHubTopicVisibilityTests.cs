@@ -706,7 +706,9 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
 
         (await Listed(TopicFilter.Mine)).ShouldBe([olgas.TopicId]);
         (await Listed(TopicFilter.Of(Fran))).ShouldBe([frans.TopicId]);
-        (await Listed(TopicFilter.Everyone)).ShouldBe([olgas.TopicId, lauras.TopicId, frans.TopicId]);
+        // Which topics, not in what order: three started within the same few milliseconds tie on
+        // their times, and a loaded run listed them in another order.
+        (await Listed(TopicFilter.Everyone)).ShouldBe([olgas.TopicId, lauras.TopicId, frans.TopicId], ignoreOrder: true);
         (await olga.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
             .Topics.Select(t => t.TopicId).ShouldContain(frans.TopicId);
     }

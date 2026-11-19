@@ -25,15 +25,31 @@ public static class InMemoryMcpServer
         string? webRoot = null)
     {
         var owned = port is null;
-        port ??= TestPort.GetAvailable();
-        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = webRoot });
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port.Value));
-        configure(builder.Services);
+        WebApplication Build(int on)
+        {
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = webRoot });
+            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, on));
+            configure(builder.Services);
 
-        var app = builder.Build();
-        app.MapMcp("/mcp");
-        map?.Invoke(app);
-        await app.StartAsync();
+            var built = builder.Build();
+            built.MapMcp("/mcp");
+            map?.Invoke(built);
+            return built;
+        }
+
+        // A port the server takes for itself moves when it was taken before the bind; one a test
+        // named is the address that test already handed out, so it stays.
+        WebApplication app;
+        if (port is null)
+        {
+            (var taken, app) = await TestPort.StartWebAsync(Build);
+            port = taken;
+        }
+        else
+        {
+            app = Build(port.Value);
+            await app.StartAsync();
+        }
 
         var endpoint = $"http://localhost:{port}/mcp";
         // Presented whether or not the server is gated: a server booted from a hosting call asks for

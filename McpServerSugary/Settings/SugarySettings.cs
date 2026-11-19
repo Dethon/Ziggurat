@@ -14,6 +14,17 @@ public record SugarySettings : IMcpHostSettings
     // (ACCOUNTS__JWKSURL). The app resolves no identity, so nothing else here is read.
     public AccountsClientConfig Accounts { get; init; } = new();
 
+    // The household's voice server, which rings a glucose alarm on its satellites (VOICEHUB__BASEURL).
+    // It has no address on the deployment's network: it is reached through the relay's endpoint on
+    // the agent, which asks this server's name (Mcp:Audience) and its own credential above, and goes
+    // down the household's tunnel. No announce token: a relayed call never presents one.
+    public SugaryVoiceHubSettings VoiceHub { get; init; } = new();
+
+    // Where a glucose watch's prompt is answered when the watch names no channel: the deployment's one
+    // default for every unprompted fire, the shared policy file the scheduler and the home's watches read
+    // too (Domain/delivery.json).
+    public DeliverySettings Delivery { get; init; } = new();
+
     // The SQLite file, in the server's own volume. Its directory is created on first start.
     public string DatabasePath { get; init; } = "/data/sugary.db";
 
@@ -50,6 +61,14 @@ public record SugarySettings : IMcpHostSettings
     // no reminders and none are sent.
     public WebPushConfig WebPush { get; init; } = new();
 
+    // The base64 of 32 random bytes (SEALINGKEY, .env's SUGARY_SEALING_KEY) that a linked LibreLinkUp
+    // account's password is sealed under. Empty is no glucose linking: the app is told so and the rest
+    // of Sugary works; malformed stops startup.
+    public string SealingKey { get; init; } = "";
+
+    // How her linked LibreLinkUp account is read (Glucose:PollSeconds).
+    public GlucoseSettings Glucose { get; init; } = new();
+
     // The hour on the home's clock from which a pen's reminder is sent: not in the night, and early
     // enough to pick up a new pen on the way out.
     public int PenReminderHour { get; init; } = 9;
@@ -63,6 +82,13 @@ public record SugarySettings : IMcpHostSettings
     // The deployment's retention policy, read from Domain's retention.json like every host's: the
     // upload store keeps a photo as long as an attachment is kept anywhere (ADR-0020).
     public RetentionSettings Retention { get; init; } = new();
+}
+
+public record GlucoseSettings
+{
+    // How often each linked account is asked for its newest reading: the sensor reads every minute,
+    // and LibreLinkUp's own app asks about as often.
+    public int PollSeconds { get; init; } = 60;
 }
 
 public record UploadSettings

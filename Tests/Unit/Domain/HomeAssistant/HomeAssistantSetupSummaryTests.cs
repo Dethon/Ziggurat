@@ -222,7 +222,7 @@ public class HomeAssistantSetupSummaryWatchesTests
 
         var line = text.Split('\n').Single(l => l.StartsWith("watches:", StringComparison.Ordinal));
         line.ShouldBe(
-            "watches: `/ha/watches/<id>/watch.json` — 3 defined (`laura-sugar-high`, `night-sugar` (paused), `washing-done` (spent)); "
+            "watches: `/watchers/<id>/watch.json` — 3 defined (`laura-sugar-high`, `night-sugar` (paused), `washing-done` (spent)); "
             + "load the `home-watches` skill to write or change one.");
     }
 

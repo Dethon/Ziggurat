@@ -43,7 +43,7 @@ public sealed class ScheduleFileSystem(
             ? new HouseholdAgentCatalog(await household.AgentNamesAsync(ct))
             : unprovenAgents;
 
-    // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
+    // A shallow copy with the caller swapped, as HaWatchFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
     public override FileSystemBackendBase For(FileSystemCaller caller)
     {

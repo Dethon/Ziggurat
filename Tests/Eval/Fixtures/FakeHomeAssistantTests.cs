@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs.FileSystem;
 using Domain.Exceptions;
 using Domain.Tools.HomeAssistant.Vfs;
+using Domain.Tools.Watches;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.MusicAssistant;
 using McpServerHomeAssistant.Modules;
@@ -435,12 +436,12 @@ public class FakeHomeAssistantTests
     {
         var home = new FakeHomeAssistant();
         var before = home.Snapshot();
-        var key = FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SugarWatchEntityId, "below");
+        var key = FakeHomeAssistant.ThresholdKey(FakeHomeAssistant.SeededWatchEntityId, "above");
         before[key].ShouldBe("70");
 
-        var result = await Mount(home).EditAsync(
-            Relative($"/ha/watches/{FakeHomeAssistant.SugarWatchId}/watch.json"),
-            [new Domain.DTOs.TextEdit("\"below\": 70", "\"below\": 65")], CancellationToken.None);
+        var result = await WatchMount(home).EditAsync(
+            RelativeToWatchers($"/watchers/{FakeHomeAssistant.SeededWatchId}/watch.json"),
+            [new Domain.DTOs.TextEdit("\"above\": 70", "\"above\": 65")], CancellationToken.None);
 
         result.ShouldBeOfType<FsResult<FsEditResult>.Ok>();
         var after = home.Snapshot();
@@ -473,9 +474,19 @@ public class FakeHomeAssistantTests
             musicClientFactory: music is null ? null : musicClient);
     }
 
+    // The home's watches, at /watchers, over the same fake home.
+    private static HaWatchFileSystem WatchMount(FakeHomeAssistant home)
+    {
+        IHomeAssistantClient client() => new HomeAssistantClient(
+            new HttpClient(home) { BaseAddress = new Uri("http://home-assistant.eval") }, FakeHomeAssistant.Token);
+        return new HaWatchFileSystem(new HaCatalogProvider(client), client);
+    }
+
     // The backend is handed mount-relative paths; the `/ha` prefix a scenario asserts on is the
     // router's, and it is stripped before the backend ever sees it.
     private static string Relative(string path) => path["/ha/".Length..];
+
+    private static string RelativeToWatchers(string path) => path[(Watchers.MountPoint.Length + 1)..];
 
     private static IReadOnlyList<string> Paths(FsResult<FsGlobResult> result) =>
         result.ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;

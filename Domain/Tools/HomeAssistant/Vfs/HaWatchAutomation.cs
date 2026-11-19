@@ -104,7 +104,7 @@ public static class HaWatchAutomation
 {
     // The marker that makes an automation a watch: its config id starts with this. Hand-made
     // automations — the alarm bridge, blueprints — carry no prefix and are invisible to
-    // `/ha/watches`, while still appearing under `/ha/entities/automation/` as entities.
+    // `/watchers`, while still appearing under `/ha/entities/automation/` as entities.
     public const string IdPrefix = "assistant_watch_";
 
     // The two hand-provisioned rest_commands the home carries (docs/home-assistant-bridges.md).

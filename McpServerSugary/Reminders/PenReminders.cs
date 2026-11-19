@@ -90,15 +90,7 @@ public sealed class PenReminders(
         }
     }
 
-    // The zone a person's phones last saved, else the server's own: a zone this host does not know
-    // falls back to it too, as a request's does.
-    private HomeCalendar ClockOf(IEnumerable<PushSubscription> phones) =>
-        phones.Select(p => p.TimeZone).OfType<string>()
-            .Select(id => TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : null)
-            .OfType<TimeZoneInfo>()
-            .FirstOrDefault() is { } zone
-            ? calendar.In(zone)
-            : calendar;
+    private HomeCalendar ClockOf(IEnumerable<PushSubscription> phones) => calendar.OnSaved(phones.Select(p => p.TimeZone));
 
     private async Task<bool> SendAsync(
         SugaryDbContext db, IReadOnlyList<PushSubscription> phones, Pen pen, PenReminder reminder, DateOnly today,

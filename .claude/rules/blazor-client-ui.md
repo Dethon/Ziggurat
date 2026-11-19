@@ -127,3 +127,9 @@ model a page or a household server talked into echoing something — and the pag
 the admin API, so markup in it ran as the reader (pass 18: a member's `<img onerror>` in a shared topic
 ran in the owner's page). Never render message text as a `MarkupString` any other way
 (`ChatMarkdownTests`, `WebChatConversationE2ETests.AMessageCarryingMarkup_IsShownAsText_AndRunsNothing`).
+- The browser's clock is not the server's. A time the page stamps itself (a conversation it just
+  started) is never compared with a time the server stamped to decide which copy is newer: the page's
+  row for a new conversation, dated a second ahead by the browser, won every merge against the server's
+  copy and the conversation showed no preview until a reload (`TopicPaging.Merge` now lets a copy the
+  server has written to win). Freshness between server copies is the server's times; a page-made value
+  only stands until the server's first copy arrives

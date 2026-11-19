@@ -52,7 +52,7 @@ internal static class McpFileSystemDiscovery
                 continue;
             }
 
-            if (registry.TryMount(mount, backend))
+            if (registry.TryMount(mount, backend, out var refusal))
             {
                 logger.LogInformation("Discovered filesystem '{Name}' at mount point '{MountPoint}'",
                     mount.Name, mount.MountPoint);
@@ -60,6 +60,14 @@ internal static class McpFileSystemDiscovery
             }
 
             shadowed.Add(mount.Name);
+            if (refusal is not null)
+            {
+                logger.LogWarning(
+                    "Filesystem '{Name}' declares a union at '{MountPoint}' but was not mounted as a member: {Refusal}",
+                    mount.Name, mount.MountPoint, refusal);
+                continue;
+            }
+
             logger.LogWarning(
                 "Filesystem '{Name}' is shadowed: mount point '{MountPoint}' is already another "
                 + "mount's, so it was not mounted and the existing one is untouched",
@@ -82,13 +90,13 @@ internal static class McpFileSystemDiscovery
             return [];
         }
 
-        // Tool registration is per-server, so the same capability set applies to every filesystem
-        // this client exposes; list once. The backends get the whole set, not just the model-facing
-        // part of it: the move-out check is advertised like any other operation, and the proxy asks
-        // it only of a server that registered it.
+        // Tool registration is per server, so the tool list is the union of every filesystem the
+        // server serves; each resource says which of them are its own, and a resource from before
+        // that says nothing gets the whole list. The backends get the whole set, not just the
+        // model-facing part of it: the move-out check is advertised like any other operation, and
+        // the proxy asks it only of a mount that has it.
         var advertisedTools = await client.ListToolsAsync(cancellationToken: ct);
         var advertised = AdvertisedOperations(advertisedTools.Select(t => t.Name));
-        var capabilities = DeriveCapabilities(advertised);
 
         var mounts = await Task.WhenAll(filesystemResources.Select(async resource =>
         {
@@ -99,14 +107,15 @@ internal static class McpFileSystemDiscovery
                     .OfType<TextResourceContents>()
                     .Select(c => c.Text));
 
-                var mount = ReadMount(text, capabilities);
-                if (mount is null)
+                var discovered = ReadMount(text, advertised);
+                if (discovered is null)
                 {
                     logger.LogWarning("Invalid filesystem resource metadata at {Uri}", resource.Uri);
                     return ((FileSystemMount Mount, McpFileSystemBackend Backend)?)null;
                 }
 
-                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger, localZone);
+                var (mount, operations) = discovered;
+                var backend = new McpFileSystemBackend(client, mount.Name, operations, logger, localZone);
                 return (mount, backend);
             }
             catch (Exception ex)
@@ -143,8 +152,12 @@ internal static class McpFileSystemDiscovery
             .Select(o => o.Capability!)
             .ToList();
 
-    // The mount a filesystem resource body describes, or null for a body that names no mount.
-    internal static FileSystemMount? ReadMount(string json, IReadOnlyList<string> capabilities)
+    // The mount a filesystem resource body describes and the operations it serves, or null for a
+    // body that names no mount. The operations are the ones the resource publishes among those the
+    // server advertised — a published operation with no tool behind it cannot be called — and the
+    // server's whole set where the resource publishes none, as every server did before one could
+    // serve several filesystems (an outpost or a kit server may still be that old).
+    internal static DiscoveredMount? ReadMount(string json, IReadOnlySet<string> serverOperations)
     {
         var metadata = JsonSerializer.Deserialize<FileSystemResourceMetadata>(json, _metadataJson);
         if (metadata is null || string.IsNullOrEmpty(metadata.Name) || string.IsNullOrEmpty(metadata.MountPoint))
@@ -152,15 +165,24 @@ internal static class McpFileSystemDiscovery
             return null;
         }
 
-        return new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
+        IReadOnlySet<string> operations = metadata.Operations is { } published
+            ? published.Where(serverOperations.Contains).ToHashSet(StringComparer.Ordinal)
+            : serverOperations;
+
+        return new DiscoveredMount(new FileSystemMount(metadata.Name, metadata.MountPoint, metadata.Description ?? "")
         {
-            Capabilities = capabilities,
+            Capabilities = DeriveCapabilities(operations),
             Workspace = metadata.Workspace,
             IsLandingTarget = metadata.LandingTarget,
             ShellReach = ParseShellReach(metadata.ShellReach),
-            OccupiedNames = metadata.OccupiedNames
-        };
+            OccupiedNames = metadata.OccupiedNames,
+            Union = metadata.Union is { RouteBy: { Length: > 0 } routeBy } union
+                ? new FileSystemUnion(routeBy, union.Claims ?? [], union.Fallback)
+                : null
+        }, operations);
     }
+
+    internal sealed record DiscoveredMount(FileSystemMount Mount, IReadOnlySet<string> Operations);
 
     // A reach this agent does not know reads as none rather than refusing the mount: the mount
     // still works, and a screen that cannot place a shell does not pretend to.
@@ -174,7 +196,14 @@ internal static class McpFileSystemDiscovery
     // LandingTarget is not nullable: a server that predates the claim publishes no field, which
     // binds to false, and false is what a mount that never said so must mean. ShellReach is read as
     // a string for the same reason in the other direction: absent, null and unknown all mean none.
+    // Operations is null where the server published none, which is not the empty list a mount
+    // serving nothing would publish.
+    // Union is null for a mount that keeps its mount point to itself, and one that names no pointer to
+    // route by reads as none: with nothing to read, no new entry could be placed.
     private record FileSystemResourceMetadata(
         string Name, string MountPoint, string? Description, string? Workspace, bool LandingTarget,
-        string? ShellReach, IReadOnlyList<string>? OccupiedNames);
+        string? ShellReach, IReadOnlyList<string>? OccupiedNames, IReadOnlyList<string>? Operations,
+        UnionMetadata? Union);
+
+    private record UnionMetadata(string? RouteBy, IReadOnlyList<string>? Claims, bool Fallback);
 }

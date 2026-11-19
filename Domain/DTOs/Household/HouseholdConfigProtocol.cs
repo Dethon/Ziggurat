@@ -42,6 +42,11 @@ public static class HouseholdConfigProtocol
     // reader keeps a view per household.
     public const string SugaryPeopleView = "sugary-people";
 
+    // Sugary's, asked naming no household and proving none: its glucose poller and watch engine wake for
+    // nobody's request, and must leave alone every household whose features turn Sugary off. Answers
+    // those households' ids and nothing else.
+    public const string SugaryOffView = "sugary-off";
+
     // The chat hub's, on its connection's assertion: the household's people by name, for whoever sees
     // every topic to pick whose they list.
     public const string MemberNamesView = "member-names";
@@ -138,6 +143,10 @@ public sealed record HouseholdConfigAnswer<T>(string HouseholdId, T Section);
 // The Telegram server's view: every bot of every household, each bound to one of its agents.
 [PublicAPI]
 public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> Bots);
+
+// The households whose features turn Sugary off; every other household, one that never saved its
+// features included, has it on.
+public sealed record HouseholdsWithSugaryOff(IReadOnlyList<string> Households);
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);

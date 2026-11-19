@@ -64,6 +64,15 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
                   + "matches deeper in it are not here: scope basePath to a narrower directory for the rest.";
         }
 
+        // A filesystem sharing the mount point that did not answer is not one that holds nothing.
+        if (result is FsResult<FsGlobResult>.Ok { Value.Unavailable: { Count: > 0 } away })
+        {
+            var said = node["hint"]?.GetValue<string>();
+            node["hint"] = (said is null ? "" : said + " ")
+                + $"{string.Join(", ", away)} did not answer, so whatever it holds is missing from this listing: "
+                + "say that part could not be read right now, never that it has nothing.";
+        }
+
         return node;
     }
 }

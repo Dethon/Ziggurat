@@ -1,11 +1,12 @@
 using Domain.DTOs.Channel;
 using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Scheduling.Vfs;
+using Domain.Tools.Sugary.Watches;
 
 namespace Domain.Security;
 
 // The writes a later turn acts on, as the agent sees them leave: a schedule.json in the schedules
-// mount, a watch.json in the home's. What one makes its object do is read off the text the write
+// mount, a watch.json in the home's watches or Sugary's glucose watches (both at /watchers). What one makes its object do is read off the text the write
 // leaves there — a create's content, an edit's edits laid over what the agent read just before, a
 // move's file as it was read under its new name — so the agent signs what the turn wrote and never a
 // description a server handed it to sign. An edit and a move do rest on what the server answered
@@ -18,7 +19,7 @@ public static class DelegatedWrites
     public static bool Delegates(string filesystem, string path) => filesystem switch
     {
         ScheduleFileSystem.Name => SchedulePath.Parse(path).Kind is ScheduleNodeKind.ScheduleFile or ScheduleNodeKind.ScheduleDir,
-        HaFileSystem.Name => HaVfsPath.Parse(path).Kind == HaVfsKind.WatchFile,
+        HaWatchFileSystem.Name or SugaryWatchFileSystem.Name => HaWatchPath.Parse(path).Kind == HaWatchKind.WatchFile,
         _ => false
     };
 
@@ -29,13 +30,22 @@ public static class DelegatedWrites
         filesystem switch
         {
             ScheduleFileSystem.Name => ScheduleDelegation.OfWrite(path, text, zone),
-            HaFileSystem.Name when writer is not null => WatchDelegation.OfWrite(path, text, existing, writer.AgentId, writer.Origin),
+            HaWatchFileSystem.Name when writer is not null => WatchDelegation.OfWrite(path, text, existing, writer.AgentId, writer.Origin),
+            SugaryWatchFileSystem.Name when writer is not null =>
+                GlucoseWatchDelegation.OfWrite(path, text, existing, writer.AgentId, writer.Origin),
             _ => null
         };
 
     // The file a create over an existing object keeps part of: a watch replaced by a file that names
     // no delivery keeps the watch's own. A schedule cannot be created over another.
-    public static bool CreateReadsFirst(string filesystem, bool overwrite) => overwrite && filesystem is HaFileSystem.Name;
+    public static bool CreateReadsFirst(string filesystem, bool overwrite) =>
+        overwrite && filesystem is HaWatchFileSystem.Name or SugaryWatchFileSystem.Name;
+
+    // The file a read before a write answered, as the mount keeps it: the watch mounts number every line
+    // they answer the model with, and a watch.json under numbers parses as nothing, so an edit or a
+    // replace would describe no watch and its fires would act for nobody.
+    public static string FileText(string filesystem, string read) =>
+        filesystem is HaWatchFileSystem.Name or SugaryWatchFileSystem.Name ? HaReadResult.Unnumbered(read) : read;
 
     // The file a move carries to its new name: a schedule directory's schedule.json. Watches do not move.
     public static string? MovedFile(string filesystem, string sourcePath) =>

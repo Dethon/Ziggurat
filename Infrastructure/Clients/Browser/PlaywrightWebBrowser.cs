@@ -671,9 +671,14 @@ public class PlaywrightWebBrowser(
                         new() { Timeout = 15000 });
                 }
 
+                // The document's own word rather than Playwright's record of its events: after a click
+                // from a page Back returned to, Chromium's record now and then missed a DOMContentLoaded
+                // that came right on the commit, and the wait spent its fifteen seconds on a page that
+                // had been there all along.
                 try
                 {
-                    await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 15000 });
+                    await page.WaitForFunctionAsync("() => document.readyState !== 'loading'", null,
+                        new() { Timeout = 15000, PollingInterval = 50 });
                 }
                 catch (TimeoutException)
                 {
