@@ -234,6 +234,8 @@ export const api = {
   deleteRecipe: (id: string) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
 
   // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.
-  exportUrl: (table: "meals" | "items" | "doses" | "exercise" | "periods" | "day-notes" | "foods") =>
+  exportUrl: (
+    table: "meals" | "items" | "doses" | "exercise" | "periods" | "day-notes" | "foods" | "profile" | "heights" | "weights" | "pens",
+  ) =>
     `/api/export/${table}.csv?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
 };

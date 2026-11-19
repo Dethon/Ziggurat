@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { dayTaken, latest, measurementProblem, showsCycle } from "./profile";
+import { dayTaken, history, latest, measurementProblem, plotted, showsCycle } from "./profile";
 import type { Measurement } from "./types";
 
 describe("the Cycle tab", () => {
   it("is shown to a woman and to anyone who has not said, so nobody already logging periods loses it", () => {
-    expect(showsCycle({ sex: "female", diabetesType: null, diagnosedOn: null })).toBe(true);
-    expect(showsCycle({ sex: null, diabetesType: null, diagnosedOn: null })).toBe(true);
+    expect(showsCycle({ sex: "female", diabetesType: null, diagnosedOn: null, bornOn: null })).toBe(true);
+    expect(showsCycle({ sex: null, diabetesType: null, diagnosedOn: null, bornOn: null })).toBe(true);
     expect(showsCycle(null)).toBe(true);
   });
 
   it("is hidden from a man", () => {
-    expect(showsCycle({ sex: "male", diabetesType: "type1", diagnosedOn: null })).toBe(false);
+    expect(showsCycle({ sex: "male", diabetesType: "type1", diagnosedOn: null, bornOn: null })).toBe(false);
   });
 });
 
@@ -53,5 +53,50 @@ describe("a day with one already", () => {
     expect(dayTaken(rows, "weight", "2026-10-01")).toBe(true);
     expect(dayTaken(rows, "height", "2026-10-01")).toBe(false);
     expect(dayTaken(rows, "weight", "2026-10-01", "a")).toBe(false);
+  });
+});
+
+describe("a kind's history", () => {
+  const rows: Measurement[] = [
+    { id: "a", kind: "height", on: "2026-09-01", value: 154 },
+    { id: "b", kind: "weight", on: "2026-10-01", value: 41 },
+    { id: "c", kind: "height", on: "2026-03-01", value: 151.5 },
+  ];
+
+  it("is that kind's alone, newest first", () => {
+    expect(history(rows, "height").map((m) => m.id)).toEqual(["a", "c"]);
+  });
+});
+
+describe("the chart of a kind", () => {
+  const frame = { width: 300, height: 100 };
+
+  it("places the days by their distance in time, oldest at the left, and the values between a padded floor and ceiling", () => {
+    const rows: Measurement[] = [
+      { id: "a", kind: "weight", on: "2026-01-01", value: 40 },
+      { id: "b", kind: "weight", on: "2026-01-11", value: 41 },
+      { id: "c", kind: "weight", on: "2026-01-31", value: 44 },
+    ];
+    const chart = plotted(rows, frame);
+
+    expect(chart.points.map((p) => p.measurement.id)).toEqual(["a", "b", "c"]);
+    expect(chart.points.map((p) => p.x)).toEqual([0, 100, 300]);
+    expect(chart.low).toBeLessThan(40);
+    expect(chart.high).toBeGreaterThan(44);
+    expect(chart.points[0].y).toBeLessThan(100);
+    expect(chart.points[0].y).toBeGreaterThan(chart.points[2].y);
+  });
+
+  it("puts a lone value, or values that never changed, in the middle", () => {
+    const one = plotted([{ id: "a", kind: "height", on: "2026-01-01", value: 150 }], frame);
+    expect(one.points[0]).toMatchObject({ x: 150, y: 50 });
+    const flat = plotted(
+      [
+        { id: "a", kind: "height", on: "2026-01-01", value: 150 },
+        { id: "b", kind: "height", on: "2026-02-01", value: 150 },
+      ],
+      frame,
+    );
+    expect(flat.points.map((p) => p.y)).toEqual([50, 50]);
   });
 });

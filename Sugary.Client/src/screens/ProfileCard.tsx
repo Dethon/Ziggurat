@@ -6,7 +6,8 @@ import { Icon } from "../components/Icon";
 import { localDay } from "../cycle";
 import { errorMessage } from "../errors";
 import { formatDays, formatUnits } from "../format";
-import { DIABETES_TYPES, latest, MEASUREMENT_KINDS, SEXES, UNIT } from "../profile";
+import { MeasurementChart } from "../components/MeasurementChart";
+import { DIABETES_TYPES, history, latest, MEASUREMENT_KINDS, SEXES, UNIT } from "../profile";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
 import type { DiabetesType, Measurement, MeasurementKind, Profile } from "../types";
@@ -27,10 +28,6 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
   const [measurements, setMeasurements] = useState<Measurement[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<{ kind: MeasurementKind; measurement?: Measurement } | null>(null);
-  // The day as she types it, saved when she leaves the field: a typed year passes through 0002 and 0020
-  // on its way to 2015, and each save of those would race the next.
-  const [diagnosed, setDiagnosed] = useState(profile.diagnosedOn ?? "");
-  useEffect(() => setDiagnosed(profile.diagnosedOn ?? ""), [profile.diagnosedOn]);
 
   const load = useCallback(async () => {
     try {
@@ -69,8 +66,6 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
 
   const day = (value: string) => formatDays(value, value, language, thisYear);
   const shownValue = (m: Measurement) => `${formatUnits(m.value, language)} ${UNIT[m.kind]}`;
-  // Every one, the newest included, so the latest can be corrected too: the rows above add a new one.
-  const history = measurements ?? [];
   const opened = sheet?.measurement;
 
   return (
@@ -121,29 +116,28 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
         </select>
       </label>
 
-      <label className="field" htmlFor={`${id}-diagnosed`}>
-        <span className="field-label">{t("diagnosedOn")}</span>
-        <input
-          id={`${id}-diagnosed`}
-          type="date"
-          max={today}
-          value={diagnosed}
-          onChange={(event) => setDiagnosed(event.target.value)}
-          onBlur={() => {
-            const value = diagnosed || null;
-            if (value !== profile.diagnosedOn && (value === null || (value >= "1900-01-01" && value <= today))) {
-              void save({ diagnosedOn: value });
-            }
-          }}
-        />
-      </label>
+      <DayField
+        label={t("bornOn")}
+        saved={profile.bornOn}
+        min="1900-01-01"
+        max={today}
+        onSave={(bornOn) => void save({ bornOn })}
+      />
+      <DayField
+        label={t("diagnosedOn")}
+        saved={profile.diagnosedOn}
+        min={profile.bornOn ?? "1900-01-01"}
+        max={today}
+        onSave={(diagnosedOn) => void save({ diagnosedOn })}
+      />
 
       {measurements && (
-        <ul className="rows">
+        <div className="rows">
           {MEASUREMENT_KINDS.map((kind) => {
             const current = latest(measurements, kind);
+            const past = history(measurements, kind);
             return (
-              <li key={kind}>
+              <div key={kind} className="measurement-kind">
                 <button
                   type="button"
                   className="row-link period-row measurement-row"
@@ -160,47 +154,54 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
                   </span>
                   <Icon name="plus" size={20} />
                 </button>
-              </li>
+                {past.length > 0 && (
+                  <MeasurementChart
+                    kind={kind}
+                    measurements={past}
+                    label={t(`measurementChart_${kind}`)}
+                    onOpen={(measurement) => setSheet({ kind, measurement })}
+                  />
+                )}
+                {past.length > 0 && (
+                  <details className="pen-history">
+                    <summary>
+                      {t("measurementHistory", { n: past.length })}
+                      <Icon name="chevron" size={18} />
+                    </summary>
+                    <ul className="rows">
+                      {past.map((m) => (
+                        <li key={m.id}>
+                          <button
+                            type="button"
+                            className="row-link period-row measurement-row"
+                            aria-haspopup="dialog"
+                            aria-label={`${t(`measurementEdit_${m.kind}`)}, ${day(m.on)}`}
+                            onClick={() => setSheet({ kind: m.kind, measurement: m })}
+                          >
+                            <span className="period-row-text">
+                              <span className="item-name">{shownValue(m)}</span>
+                              <span className="item-meta">{day(m.on)}</span>
+                            </span>
+                            <Icon name="pencil" size={18} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
       <p className="muted small">{t("measurementsHint")}</p>
-      {history.length > 0 && (
-        <details className="pen-history">
-          <summary>
-            {t("measurementHistory")}
-            <Icon name="chevron" size={18} />
-          </summary>
-          <ul className="rows">
-            {history.map((m) => (
-              <li key={m.id}>
-                <button
-                  type="button"
-                  className="row-link period-row measurement-row"
-                  aria-haspopup="dialog"
-                  aria-label={`${t(`measurementEdit_${m.kind}`)}, ${day(m.on)}`}
-                  onClick={() => setSheet({ kind: m.kind, measurement: m })}
-                >
-                  <Icon name={ICON[m.kind]} size={18} />
-                  <span className="period-row-text">
-                    <span className="item-name">{shownValue(m)}</span>
-                    <span className="item-meta">{day(m.on)}</span>
-                  </span>
-                  <Icon name="pencil" size={18} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
       {sheet && (
         <MeasurementSheet
           kind={sheet.kind}
           measurement={opened}
           initial={
             opened
-              ? { on: opened.on, value: String(opened.value) }
+              ? { on: opened.on, value: formatUnits(opened.value, language) }
               : { on: today, value: "" }
           }
           others={measurements ?? []}
@@ -216,5 +217,44 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
       )}
       {confirming}
     </section>
+  );
+}
+
+// A day of hers, saved when she leaves the field: a typed year passes through 0002 and 0020 on its way
+// to 2015, and each save of those would race the next. Emptied, it is taken back.
+function DayField({
+  label,
+  saved,
+  min,
+  max,
+  onSave,
+}: {
+  label: string;
+  saved: string | null;
+  min: string;
+  max: string;
+  onSave: (day: string | null) => void;
+}) {
+  const id = useId();
+  const [typed, setTyped] = useState(saved ?? "");
+  useEffect(() => setTyped(saved ?? ""), [saved]);
+  return (
+    <label className="field" htmlFor={id}>
+      <span className="field-label">{label}</span>
+      <input
+        id={id}
+        type="date"
+        min={min}
+        max={max}
+        value={typed}
+        onChange={(event) => setTyped(event.target.value)}
+        onBlur={() => {
+          const day = typed || null;
+          if (day !== saved && (day === null || (day >= min && day <= max))) {
+            onSave(day);
+          }
+        }}
+      />
+    </label>
   );
 }

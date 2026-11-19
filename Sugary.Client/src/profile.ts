@@ -13,7 +13,7 @@ export const BOUNDS: Record<MeasurementKind, { min: number; max: number }> = {
 
 export const UNIT: Record<MeasurementKind, "cm" | "kg"> = { height: "cm", weight: "kg" };
 
-export const UNSAID: Profile = { sex: null, diabetesType: null, diagnosedOn: null };
+export const UNSAID: Profile = { sex: null, diabetesType: null, diagnosedOn: null, bornOn: null };
 
 // Only a man who said so is not shown the Cycle tab: before anyone had said, everybody had it, and a
 // woman already logging her periods must not lose it to a field she never filled in.
@@ -60,6 +60,39 @@ export function dayTaken(measurements: readonly Measurement[], kind: Measurement
 
 export function latest(measurements: readonly Measurement[], kind: MeasurementKind): Measurement | undefined {
   return measurements.filter((m) => m.kind === kind).toSorted((a, b) => b.on.localeCompare(a.on))[0];
+}
+
+// One kind's measurements, newest first: the list under its chart.
+export function history(measurements: readonly Measurement[], kind: MeasurementKind): Measurement[] {
+  return measurements.filter((m) => m.kind === kind).toSorted((a, b) => b.on.localeCompare(a.on));
+}
+
+export interface PlottedPoint {
+  measurement: Measurement;
+  x: number;
+  y: number;
+}
+
+// One kind's history laid out in a frame: days placed by their distance in time (a year's gap reads as
+// one), values between a floor and a ceiling a little beyond them, so no point sits on an edge. A lone
+// value, or a run that never changed, sits in the middle.
+export function plotted(
+  measurements: readonly Measurement[],
+  frame: { width: number; height: number },
+): { points: PlottedPoint[]; low: number; high: number } {
+  const sorted = measurements.toSorted((a, b) => a.on.localeCompare(b.on));
+  const days = sorted.map((m) => Date.parse(`${m.on}T00:00:00Z`) / 86_400_000);
+  const values = sorted.map((m) => m.value);
+  const [first, last] = [Math.min(...days), Math.max(...days)];
+  const [least, most] = [Math.min(...values), Math.max(...values)];
+  const pad = most === least ? Math.max(1, most * 0.05) : (most - least) * 0.15;
+  const [low, high] = [least - pad, most + pad];
+  const points = sorted.map((measurement, index) => ({
+    measurement,
+    x: last === first ? frame.width / 2 : ((days[index] - first) / (last - first)) * frame.width,
+    y: ((high - measurement.value) / (high - low)) * frame.height,
+  }));
+  return { points, low, high };
 }
 
 function dayAfter(day: string): string {

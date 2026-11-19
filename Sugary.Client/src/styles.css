@@ -2856,3 +2856,55 @@ h1.marked .icon {
 .tab {
   white-space: nowrap;
 }
+
+/* Her height or weight over time, under its row in About you. */
+.measurement-chart {
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.measurement-chart-guide {
+  stroke: var(--color-line);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.measurement-point {
+  cursor: pointer;
+}
+
+.measurement-point-target {
+  fill: transparent;
+}
+
+.measurement-point-dot {
+  fill: var(--color-ink);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.measurement-point:hover .measurement-point-dot,
+.measurement-point:focus-visible .measurement-point-dot {
+  fill: var(--color-primary-strong);
+}
+
+.measurement-point:focus-visible {
+  outline: none;
+}
+
+.measurement-point:focus-visible .measurement-point-target {
+  stroke: var(--color-primary-strong);
+  stroke-width: 2;
+}
+
+.measurement-kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.measurement-kind + .measurement-kind {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-2);
+}

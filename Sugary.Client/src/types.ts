@@ -171,6 +171,8 @@ export interface Profile {
   diabetesType: DiabetesType | null;
   // yyyy-MM-dd on her calendar.
   diagnosedOn: string | null;
+  // yyyy-MM-dd: a child's height and weight are read against their age.
+  bornOn: string | null;
 }
 
 export type MeasurementKind = "height" | "weight";

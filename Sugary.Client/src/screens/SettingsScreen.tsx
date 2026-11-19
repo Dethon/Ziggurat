@@ -16,6 +16,10 @@ const EXPORTS = [
   { table: "periods", label: "exportPeriods" },
   { table: "day-notes", label: "exportDayNotes" },
   { table: "foods", label: "exportFoods" },
+  { table: "profile", label: "exportProfile" },
+  { table: "heights", label: "exportHeights" },
+  { table: "weights", label: "exportWeights" },
+  { table: "pens", label: "exportPens" },
 ] as const;
 
 const RATION_SIZES: RationSize[] = [10, 15];
