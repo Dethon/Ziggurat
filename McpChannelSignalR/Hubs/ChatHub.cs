@@ -888,6 +888,9 @@ public sealed class ChatHub(
     // One page, most recently written first, plus where the next one starts. The page size is
     // the server's to decide unless a caller has a reason of its own, so a client that wants
     // the ordinary sidebar asks for nothing and gets what the retention policy says.
+    //
+    // Kept for installed apps from before TopicFilter: a SignalR hub binds every argument, so the
+    // filtered call could not simply take an optional one. New clients call GetTopicPageFiltered.
     public Task<TopicPage> GetTopicPage(
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
@@ -999,7 +1002,8 @@ public sealed class ChatHub(
     }
 
     // On the server, so it covers conversations this client never loaded — which is every
-    // conversation past the first page, and the whole archive.
+    // conversation past the first page, and the whole archive. Kept for installed apps from before
+    // TopicFilter (a hub binds every argument); new clients call SearchTopicsFiltered.
     public Task<TopicPage> SearchTopics(
         string agentId,
         string query,

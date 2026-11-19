@@ -19,7 +19,7 @@ namespace Agent.App;
 // person, for SexyTime's channel, verified here against the service's published keys. The secret
 // says the caller is that server; the assertion says who it is acting for, so a holder of the
 // secret can no longer name anyone it likes. Neither opens the API alone. The plain X-Ziggurat-User
-// beside it, and a userId in the query, are never read (.claude/rules/accounts.md).
+// beside it, and a userId in the query, are never read (.claude/rules/custom-agents.md).
 public static class AgentApi
 {
     public static void MapAgents(this WebApplication app, string sharedSecret)

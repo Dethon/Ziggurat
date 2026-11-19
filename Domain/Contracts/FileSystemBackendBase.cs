@@ -43,9 +43,10 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     // null where the mount has none — which is most of them (ADR 0025).
     //
     // One caller: an attachment lands here (ADR 0021), and a mount that declares nothing lands
-    // nothing. It cannot become a constant in that caller, because the caller finds its mount by
-    // asking which one can execute rather than by name, and so has no way to know one image's
-    // directory layout. A mount saying it for itself is what keeps that independence. Domain
+    // nothing. It cannot become a constant in that caller: landing finds its mount by asking which
+    // one declares IsLandingTarget (not which can execute — an exec-enabled outpost must never
+    // receive attachments), so it has no way to know one image's directory layout. A mount saying
+    // it for itself is what keeps that independence. Domain
     // composes the virtual path from the mount point, so a backend states its own root once.
     public virtual string? Workspace => null;
 

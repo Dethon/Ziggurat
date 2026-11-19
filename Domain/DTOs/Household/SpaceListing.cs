@@ -5,7 +5,7 @@ namespace Domain.DTOs.Household;
 // How a household's spaces are listed, and where the topics of a space it no longer has are found.
 //
 // A removed space's topics are not moved: they stay under their own slug and are listed in the
-// default space, read side (.claude/rules/channels.md, "Spaces"). So a removal is one save of the
+// default space, read side (.claude/rules/chat-hub.md, "Spaces"). So a removal is one save of the
 // spaces section, nothing waits on Redis, and a space added back under the same slug has its topics
 // again.
 public static class SpaceListing

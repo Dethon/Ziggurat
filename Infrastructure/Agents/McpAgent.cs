@@ -381,7 +381,8 @@ public sealed class McpAgent : DisposableAgent
         }
 
         // The turn's own message only, never the history: a format asked for once is that turn's,
-        // and the persisted message that still carries it must not shape the next answer.
+        // and the persisted message that still carries it must not shape the next answer. A worker
+        // never inherits it: the format is the parent turn's contract with its channel, not a worker's.
         var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User);
         var patch = userMessage?.GetConfigPatch();
 

@@ -494,7 +494,7 @@ public class DeploymentConformanceTests
     // A server asks the accounts service with the credential it already holds for its own /mcp, so
     // each caller the service admits is fed exactly the variable that server's own gate reads.
     // A household's voice server is no such caller: it asks on its tunnel's accounts back-call, and
-    // the service reads who it is off the live tunnel credential the relay shows (accounts.md).
+    // the service reads who it is off the live tunnel credential the relay shows (channel-identity.md).
     [Theory]
     [InlineData("mcp-channel-signalr")]
     [InlineData("mcp-channel-telegram")]

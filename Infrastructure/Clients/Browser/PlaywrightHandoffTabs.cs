@@ -350,6 +350,7 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
 
         // Camoufox's screencast draws the page as if it were never scrolled, while clicks land where the
         // scrolled page is: a scrolled page's frames are screenshots instead, which are taken where it is.
+        // Disabling Firefox's APZ (async pan/zoom) does not fix this; screenshots are the only fix found.
         private volatile bool _scrolled;
         private int _shooting;
         private long _lastShot;

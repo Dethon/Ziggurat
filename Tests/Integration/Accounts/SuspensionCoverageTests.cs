@@ -5,7 +5,7 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.Accounts;
 
 // Every way into the accounts service says what it does for a suspended household (.claude/rules/
-// admin.md, "Suspension"), because each one checks for itself — the suspension is one column, and the
+// admin-operator.md, "Suspension"), because each one checks for itself — the suspension is one column, and the
 // ways in read it in queries of their own shapes. So a route added here fails this test until it is
 // placed below, by path, with how it refuses a suspended household or why it need not; the behaviour
 // itself is each entry's own suite's (named beside it). Memory extraction was the way in on the agent's
@@ -18,7 +18,7 @@ public sealed class SuspensionCoverageTests
         ["/accounts/verify"] =
             "refuses: the session check answers a suspended household's session 403 on every channel (SessionCheck.Suspended)",
         ["/accounts/me"] =
-            "exempt: names the person and nothing else, deliberately (admin.md, 'Not stopped by it')",
+            "exempt: names the person and nothing else, deliberately (admin-operator.md, 'Not stopped by it')",
         ["/accounts/account"] = "refuses: PageGuard answers SessionCheck.Suspended before anything else",
         ["/accounts/members"] = "exempt: a redirect to the admin area's members page, whose API the session check refuses while suspended",
         ["/accounts/api/passkeys"] = "refuses: PageGuard answers SessionCheck.Suspended before the ceremony",

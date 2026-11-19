@@ -132,6 +132,8 @@ public sealed class MultiAgentFactory(
             providerRouting: spec.ProviderRouting,
             key: spec.Key,
             keyHousehold: spec.TenantId,
+            // The turn's [Current time: …] stamp is in the household's zone, the prompt's day's: a
+            // stamp in the host's zone beside a prompt in the household's gives the model two clocks.
             turnZone: TimeZones.Named(spec.TimeZone),
             lemonade: spec.Lemonade);
 

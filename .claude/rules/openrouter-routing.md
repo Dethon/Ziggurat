@@ -8,125 +8,79 @@ paths:
 
 # OpenRouter Provider Routing
 
-Each agent definition — a household's seeded one, a template's (`provider-routing:`, the same object on one line), a person's registered agent — may carry a `providerRouting` object (`sort` ∈
-`price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
-`preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
-`openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
-the same path as `session_id`: `ProviderRoutingResolver.Resolve` (called from `AgentSpecProjection`,
-which puts the resolved value on the agent spec) → `OpenRouterChatClient` →
-`WireHandler` → `OpenRouterHttpHelpers.PrepareRequestBodyAsync`, which stamps `provider`.
-`{}` is not the wholesale opt-out it looks like: the JSON config provider records an empty
-object as a null-valued key, `Get<ProviderRouting>()` returns null for it, and `declared ??
-global` inherits the global — opting an agent back to balanced routing under a non-empty global
-default needs a value-bearing field that doesn't change routing: `{"allowFallbacks": true}`
-binds to a real object that shadows the global wholesale while leaving `sort`/`order` unset,
-and `allow_fallbacks: true` is OpenRouter's default anyway (pinned by
-`ProviderRoutingBindingTests`).
+**An agent's `providerRouting` overrides `openRouter.providerRouting` wholesale — never field-by-field**
+(`ProviderRoutingResolver.Resolve`, from `AgentSpecProjection`; stamped as `provider` by
+`OpenRouterHttpHelpers.PrepareRequestBodyAsync`). Any definition may carry it: a seeded one, a
+template's (`provider-routing:`), a person's registered agent.
 
-**A subagent names no model and no routing.** It runs the model its parent runs, served by
-whoever serves its parent: `SpawnContext` carries the parent spec's `Model` and its resolved
-`ProviderRouting` down, and `AgentSpecProjection.ForSubAgent` reads nothing else. A
-`subAgents[]` entry keeps its own `reasoningEffort` — how hard that profile's kind of task is
-thought about, whichever model does it. On a turn the person moved to another model the worker
-moves too: `SubAgentRunTool` writes the turn's `ConfigPatchModel` onto the worker's request and
-the worker resolves it against the parent's whitelist, as the parent did.
+- **`{}` is not the wholesale opt-out it looks like**: the JSON config provider binds an empty object to
+  null, so `declared ?? global` inherits the global. To opt back to balanced routing under a non-empty
+  global, use `{"allowFallbacks": true}` (OpenRouter's default anyway; `ProviderRoutingBindingTests`).
+- **Balanced routing is the absence of the object**: OpenRouter has no `sort` for it, only "no `sort`
+  and no `order`", so the global default ships unset (`AgentAppSettingsTests`). `sort: "price"` is
+  deterministically the cheapest provider, not a weighted spread.
+- **Two criteria = one `sort` plus a threshold** (`preferredMinThroughput`, `preferredMaxLatency`), which
+  deprioritize rather than filter, so they never dead-end a turn; `maxPrice` is the one real ceiling.
+  Cutoffs are guarded non-negative and finite at bind time.
+- **A subagent names no model and no routing**: `SpawnContext` carries the parent's `Model` and resolved
+  `ProviderRouting`, and `AgentSpecProjection.ForSubAgent` reads nothing else; a `subAgents[]` entry keeps
+  only its own `reasoningEffort`. On a turn moved to another model, `SubAgentRunTool` writes the turn's
+  `ConfigPatchModel` onto the worker's request and the worker resolves it against the parent's whitelist
+  (`ForSubAgent`'s `PatchableModels`), so the two cannot disagree.
+- **A strict schema requires providers that honour it**: a body with a strict `json_schema` format
+  (`docs/adr/0044`) gets `require_parameters: true` in its `provider` node — created if routing is unset,
+  still naming no `sort`/`order`. Memory's schemas are not strict and get nothing. `LemonadeChatClient`
+  removes `provider` before the body reaches the box.
 
-**Balanced routing is the absence of the object.** OpenRouter has no `sort` value for its
-default load balancing (uptime filter, then inverse-square price weighting) — it is only
-reachable by sending neither `sort` nor `order`, so the global default ships unset and
-`AgentAppSettingsTests` pins it that way. `sort: "price"` is a different thing: deterministically
-the cheapest provider, not a weighted spread.
+## Cache and sessions
 
-**A strict schema requires providers that honour it.** A request whose body carries a strict
-`json_schema` text format — a channel message's response format (`docs/adr/0044`) — gets
-`require_parameters: true` added to its `provider` node by `PrepareRequestBodyAsync`, beside the
-configured routing, creating the node when routing is unset. That node still routes balanced: it
-names no `sort` and no `order`. Memory's schemas are not strict and get nothing. The Lemonade
-pipeline removes `provider` before it reaches the box.
+- **`order` costs the prompt cache**: sticky routing (why every request carries `session_id`) is off when
+  `provider.order` is set, so the static prefix is re-sent uncached every turn; `sort` does not. Prefer
+  `only` + `sort`. `ProviderRoutingAdvisories` warns for this and for a `:nitro`/`:floor` suffix fighting
+  an explicit `sort` — warnings, never throws, because the same path serves runtime-created agents. They
+  run per agent construction with no dedupe. `MemoryModule` binds `openRouter.providerRouting` for
+  extraction (`PaidChatClients`) and dreaming directly, so those skip the advisories.
+- **A session is the conversation's unless the agent shares one**: `session_id` is
+  `<agent>:<conversation>` (`AgentSpecProjection`). `sharedRoutingSessionMinutes` (template key
+  `shared-routing-session-minutes`; the voice template and the home's Nabu, 30) makes it
+  `<agent>:household:<household>:<window>`, so every voice wake shares one warm provider for the window.
+  The window is ours because OpenRouter releases a session only after 60 idle minutes or a provider
+  error, so a household that kept talking would be held on one provider for good. A conversation keeps
+  the id it was built with; a subagent's is fresh per spawn.
+- **Anthropic's models are asked to cache; nobody else is**: `PrepareRequestBodyAsync` stamps one
+  top-level `cache_control: {"type": "ephemeral"}` only for `anthropic/…` or `~anthropic/…` model ids.
+  Not sent to others: it left GLM's and Mistral's second request uncached more often.
+  The Responses wire has no per-block directive, so keep it one top-level directive and let the provider
+  place the breakpoint (`OpenRouterHttpHelpers.cs:43-47`).
 
-**`order` costs the prompt cache.** Sticky routing — the reason every request carries a
-`session_id` — is disabled when `provider.order` is set, so the ~17k-token static prefix is
-re-sent uncached every turn. `sort` does *not* disable it. Prefer `only` + `sort` to restrict
-the provider set. `ProviderRoutingAdvisories` logs a warning for this and for a `:nitro`/`:floor`
-model suffix fighting an explicit `sort`; both are warnings, never throws, because the same path
-serves runtime-created agents. The advisories run at agent construction
-(`ProviderRoutingResolver.Resolve`) with no dedupe — agents are constructed per conversation
-activation, so a tripped advisory repeats for the lifetime of the config, not once per agent. A
-subagent inherits the value already resolved and trips none of its own. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction (each payer's client, `PaidChatClients`)
-and dreaming chat clients directly, so those two models skip the advisories entirely.
+## Retries
 
-**A session is the conversation's unless the agent shares one.** `session_id` is
-`<agent>:<conversation>` by default (`AgentSpecProjection`), so OpenRouter sticks one conversation
-to one provider and a new conversation is routed afresh. A voice wake is a conversation of its own,
-and each one landed on whichever provider ranked first, cold — three providers in five wakes on
-2026-11-18, while every wake sent the same ~14k-token static prefix that a provider holding it serves
-from cache across conversations. `sharedRoutingSessionMinutes` on a definition (template key
-`shared-routing-session-minutes`; the voice template and the home's Nabu, 30) makes it
-`<agent>:household:<household>:<window>` instead: every conversation of that agent in the household
-shares one sticky provider for the window, then the next window routes afresh. The window is ours
-because OpenRouter's is no bound — it releases a session only after 60 minutes with no request
-(each one resets it) or on a provider error, never for being slow — so a household that kept
-talking would be held on one provider for good. A conversation keeps the id it was built with. A
-subagent's stays fresh per spawn.
+**A 429 is waited out, not treated as a blip**: `OpenRouterRetryPolicy` replaces the SDK's
+`ClientRetryPolicy` on every `OpenRouterChatClient` pipeline (six retries, `Retry-After` verbatim, else
+2 s doubling to 30 s). `maxRetries: 0` disables everything, the 429 included. A mid-stream 429 (SSE error
+on a 200) is not retried by anything.
 
-**Anthropic's models are asked to cache; nobody else is.** Every other model here caches a
-repeated prefix by itself. Anthropic's cache nothing unless the request carries a directive, so
-`PrepareRequestBodyAsync` stamps one top-level `cache_control: {"type": "ephemeral"}` (five
-minutes) on a request whose model id is `anthropic/…` or its `~anthropic/…` alias, and the
-provider places and moves the breakpoint itself — on Anthropic, Vertex and Bedrock alike. Per-block
-directives are not exposed on the Responses wire. A first request pays 1.25× on what it writes and
-later ones read it at a tenth; `"ttl": "1h"` is accepted and costs 2× on the write. The directive
-is deliberately not sent to other models: in probes it left GLM's and Mistral's second request
-uncached more often than not sending it did.
+## Lemonade
 
-**Two criteria = one `sort` plus a threshold.** `sort` ranks by exactly one metric; there is no
-composite sort. `preferredMinThroughput` (tokens/s) and `preferredMaxLatency` (seconds) are the
-second criterion, and they *deprioritize* rather than filter — an endpoint that misses one drops
-to the end of the candidate list, so a threshold nobody meets still routes and can never dead-end
-a turn. Each takes either a bare number (OpenRouter's shorthand for the p50 cutoff, and what
-`ProviderThreshold` emits when only `p50` is set) or `{p50, p75, p90, p99}`. `maxPrice`
-(`{prompt, completion}` in $/M tokens, `{request, image}` per unit) is the exception: a real
-ceiling that excludes. Cutoffs are guarded non-negative and finite at bind time, because a
-negative one is otherwise silent — it deprioritizes nothing and excludes nobody.
-
-**A 429 is waited out, not treated as a blip.** `OpenRouterRetryPolicy` replaces the SDK's stock
-`ClientRetryPolicy` on every `OpenRouterChatClient` pipeline: transient statuses keep the SDK's
-budget and sub-second backoff, but a 429 gets its own — six retries, `Retry-After` verbatim when the
-provider sent one, otherwise 2s doubling with jitter up to 30s. A burst of parallel tests or
-scheduled agents on one key hits per-key and per-provider windows that a 0.8s/1.6s/3.2s ladder cannot
-outlast. `maxRetries: 0` disables everything, the rate-limited case included. A 429 that arrives
-mid-stream (an SSE error event on a 200) is not retried by anything. The eval judge, on its own
-raw `HttpClient`, waits the same way for up to four rate-limited answers.
-
-**A Lemonade box is its household's.** A household may keep a Lemonade chat host of its own (its keys
-section's `lemonade { apiUrl, apiKey }`, set on its Keys page); the home with none of its own runs on the
-deployment's `lemonadeChat` box, and any other household with none runs on none. `ILemonadeHosts`
-(`HouseholdLemonadeHosts` in the agent) answers a household's box: it reads every household's from the
-accounts service's `lemonade-boxes` view on the agent's own token and asks each for its models every
-minute beside the deployment's (`LemonadeModelRefresher`), learning the home's id from the first refresh.
-`MultiAgentFactory` builds a turn with its household's box alone — the whitelist (`PatchableModelWhitelist`
-over that box's models), the host address and the routing client (`AgentSpec.Lemonade`, a worker carrying
-its parent's) — so a patch naming another box's model is refused "No Lemonade box serves this household now … pick another model in the menu" (no box at all)
-or "it does not offer the model" (a box that lacks it), and never run on hardware and a key the household does not
-own. The box is part of what an agent is built from (`AgentAsBuilt.Lemonade`), so a box added, moved or
-removed rebuilds an open conversation. The pickers learn each household's models from the registration
-(`RegisterAgentsParams.HouseholdLemonadeModels`, by household, read once per tick so what is sent is what
-is compared): `AgentCatalogBuilder.ForHousehold` gives a household the configured models plus its own
-box's, never the registered entries' Lemonade models. Another household's box is a public https address
-(`LemonadeAddresses`, checked when it is saved): the agent dials it with the household's key from inside
-the deployment, so an address of the deployment's own network is refused; the home's may be on its LAN.
-A box behind a home router is reached through the tenant kit's tunnel: the section says `throughKit`
-and holds no address and no key, the household's kit runs the Lemonade forwarder (`lemonade`,
-`.claude/rules/tunnel.md`), and `HouseholdLemonadeHosts` gives that household a host at
-`http://lemonade.<household>.tunnel` whose transport is `TunnelRegistry.StreamsTo` onto that household's
-forwarder alone (`LemonadeHost.Transport`) — discovery and turns alike, so a closed tunnel offers no
-models and fails a turn as an unreachable box does (`HouseholdKitLemonadeTests`).
-
-**A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
-(`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the
-same Responses pipeline pointed at the Lemonade chat host with `providerRouting: null`, so no
-`provider` node is stamped and the advisories, which run at agent construction for the agent's own
-model, say nothing about it. `session_id` and `usage.include` still go out; the box tolerates them.
-Every failure to get an answer from the box is one `LemonadeChatHostException`, thrown from the
-wire so the SDK's retry policy never re-sends the turn, and worded so WebChat's transient-error
-filter cannot swallow it.
+- **A Lemonade box is its household's.** A household's own box (its `keys` section's `lemonade`) serves
+  it alone; the home with none runs on the deployment's `lemonadeChat`, any other household with none on
+  none. `ILemonadeHosts` (`HouseholdLemonadeHosts`) reads every household's box from the accounts
+  service's `lemonade-boxes` view and discovers each one's models every minute (`LemonadeModelRefresher`).
+- `MultiAgentFactory` builds a turn with its household's box alone — whitelist
+  (`PatchableModelWhitelist`), host, routing client (`AgentSpec.Lemonade`, a worker carrying its
+  parent's) — so a patch naming another box's model is refused, never run on hardware and a key the
+  household does not own. The box is part of `AgentAsBuilt.Lemonade`, so a change rebuilds an open
+  conversation.
+- Pickers learn each household's models from the registration
+  (`RegisterAgentsParams.HouseholdLemonadeModels`): `AgentCatalogBuilder.ForHousehold` gives a household
+  the configured models plus its own box's, never the registered entries' Lemonade models.
+- A non-home box is a public https address (`LemonadeAddresses`, checked on save): the agent dials it
+  from inside the deployment, so an address on the deployment's network is refused. A `throughKit` box is
+  saved with no address and no key (the kit's `lemonade` forwarder adds its own) and is
+  reached at `http://lemonade.<household>.tunnel` over `TunnelRegistry.StreamsTo` onto that household's
+  forwarder alone (`LemonadeHost.Transport`, `.claude/rules/tenant-kit.md`, `HouseholdKitLemonadeTests`) —
+  discovery and turns alike, so a closed tunnel offers no models and fails a turn as an unreachable box does.
+- **A Lemonade turn is not an OpenRouter turn**: a `lemonade/<id>` model (`LemonadeModelId`) is routed by
+  `HostRoutingChatClient` to `LemonadeChatClient` with `providerRouting: null`, so no `provider` node and
+  no advisories. Every failure is one `LemonadeChatHostException`, thrown from the wire so the retry
+  policy never re-sends the turn, and worded so WebChat's transient-error filter cannot swallow it.

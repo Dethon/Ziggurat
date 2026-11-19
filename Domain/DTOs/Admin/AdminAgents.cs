@@ -2,7 +2,7 @@ using JetBrains.Annotations;
 
 namespace Domain.DTOs.Admin;
 
-// The household's agents as its owners manage them (.claude/rules/admin.md, "Agents"): of each, only
+// The household's agents as its owners manage them (.claude/rules/admin-owner-pages.md, "Agents"): of each, only
 // its name and custom instructions are the owner's; everything else is its template's or its seeded
 // definition's, so it is shown and never sent back. Answered as the household's turns run them — a
 // household that saved none has the two starting templates — beside the shipped templates an agent

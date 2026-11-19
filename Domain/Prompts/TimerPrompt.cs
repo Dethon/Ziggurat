@@ -2,8 +2,9 @@ using Domain.DTOs.Voice;
 
 namespace Domain.Prompts;
 
-// Which mechanism a moment is, and the live satellite roster (Sections/timers_prompt.md), served by
-// mcp-timers.
+// Which mechanism a moment is (Sections/timers_prompt.md), served by mcp-timers without a roster: the
+// prompt is cached once for every household, so a household's satellites are read per call from
+// /timers/satellites.json (TimersSystemPrompt).
 public static class TimerPrompt
 {
     public const string Name = "timers_prompt";
@@ -37,8 +38,8 @@ public static class TimerPrompt
     public static readonly PromptClaim DurationCappedAtFourHours =
         _document.Claim("timers.duration-capped-at-four-hours");
 
-    // The roster comes live from the hub at prompt-fetch time; an empty roster (hub unreachable —
-    // the fail-open path) degrades to the static idiom text, which already tells the agent to ask.
+    // Only tests fill a roster; mcp-timers always serves Build([]), since its prompt is cached for
+    // every household (TimersSystemPrompt).
     public static string Build(IReadOnlyList<SatelliteDescriptor> satellites) =>
         satellites.Count == 0
             ? Prompt

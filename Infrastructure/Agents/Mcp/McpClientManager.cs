@@ -116,7 +116,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     // session. The temptation to unify these will recur; they are one implementation of two
     // different meanings of "not reachable", and the reasoning is recorded in
     // docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md. A household server on its
-    // tunnel is the one exception, recorded in .claude/rules/tunnel.md: it is left out when its tunnel
+    // tunnel is the one exception, recorded in .claude/rules/own-servers.md: it is left out when its tunnel
     // is gone, because a machine at home being off is not the deployment being broken.
     //
     // A dynamic endpoint is dialled once rather than retried because the retry sleeps two, four and

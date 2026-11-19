@@ -66,6 +66,8 @@ public sealed class MetricRollups(IConnectionMultiplexer redis) : IMigrationStep
         switch (await db.KeyTypeAsync(from))
         {
             case RedisType.SortedSet:
+                // Max rather than the default Sum: a member present in both shapes keeps its score
+                // instead of being rescored by the union.
                 _ = merge.SortedSetCombineAndStoreAsync(SetOperation.Union, to, [to, from], aggregate: Aggregate.Max);
                 break;
             case RedisType.Hash:

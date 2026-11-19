@@ -5,7 +5,9 @@ namespace Domain.DTOs;
 // One question put to a person about the tool calls a turn wants to make. The id is the question's
 // own wherever it is shown, so every channel that did not answer it can be told who did. The turn is
 // whose question it is: only the account it acts for may answer, on any channel, and a turn acting
-// for none — the voice guest's, a fire nobody stamped — is answered by each channel's own rule.
+// for none — the voice guest's, a fire nobody stamped — is answered by each channel's own rule. The
+// turn's ConversationContext travels as a field of the ask, never read off the call in flight; the
+// asker is Principal.Of(turn)?.Account.
 public record ApprovalAsk(
     string ApprovalId,
     string ConversationId,

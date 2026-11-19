@@ -13,7 +13,7 @@ namespace HouseholdMigration.Steps;
 
 // Every topic from before topics had owners is marked shared, as the spec says, since nothing chose
 // to keep it private; and given an owner, because only an owner may stop sharing one, so a topic
-// nobody owns could never be made private (.claude/rules/channels.md). The owner is whoever started
+// nobody owns could never be made private (.claude/rules/chat-hub.md). The owner is whoever started
 // it — the first message's principal or sender, the one trace a topic keeps of who began it — and the
 // household's owner where that is nobody the run knows. Only a starter is named as the topic's owner
 // on its row; a topic the owner was given is not said to be theirs.
