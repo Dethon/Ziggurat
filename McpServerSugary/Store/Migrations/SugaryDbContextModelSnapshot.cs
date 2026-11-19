@@ -15,12 +15,47 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261118020726_GlucoseWatches";
+    public override string LastMigrationId => "20261119005227_PersonalProfiles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "11.0.0");
+
+        modelBuilder.Entity("McpServerSugary.Store.BodyMeasurement", b =>
+            {
+                b.Property<Guid>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Kind")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<DateOnly>("On")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TenantId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("UserId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<double>("Value")
+                    .HasColumnType("REAL");
+
+                b.HasKey("Id");
+
+                b.HasIndex("On");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("BodyMeasurements");
+            });
 
         modelBuilder.Entity("McpServerSugary.Store.DayNote", b =>
             {
@@ -508,6 +543,33 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("UserId");
 
                 b.ToTable("Periods");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.Profile", b =>
+            {
+                b.Property<string>("UserId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("DiabetesType")
+                    .HasColumnType("TEXT");
+
+                b.Property<DateOnly?>("DiagnosedOn")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Sex")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TenantId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("UserId");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("Profiles");
             });
 
         modelBuilder.Entity("McpServerSugary.Store.PushSubscription", b =>

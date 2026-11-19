@@ -88,8 +88,9 @@ public class SugaryImportTests : IDisposable
 
         exit.ShouldBe(0);
         (await server.GlobAsync("**/*.parquet")).ShouldBe([
-            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/items/2026-09.parquet", "/items/2026-10.parquet",
-            "/meals/2026-09.parquet", "/meals/2026-10.parquet", "/periods.parquet", "/sensors.parquet"
+            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/heights.parquet", "/items/2026-09.parquet",
+            "/items/2026-10.parquet", "/meals/2026-09.parquet", "/meals/2026-10.parquet", "/pens.parquet", "/periods.parquet",
+            "/profile.parquet", "/sensors.parquet", "/weights.parquet"
         ]);
         (await server.ExportAsync("meals")).ShouldBe(_meals);
         (await server.ExportAsync("items")).ShouldBe(_items);

@@ -62,10 +62,12 @@ public sealed partial class SugaryFileSystem(
         + "exercise/<YYYY-MM>.parquet (one row per session of exercise they recorded), foods.parquet (the "
         + "foods they keep), periods.parquet (their menstrual periods), day-notes.parquet (what they wrote about "
         + "a day), glucose/<YYYY-MM>.parquet (one row per glucose reading their sensor measured, in mg/dL), "
-        + "sensors.parquet (the glucose sensors they wore), and README.md, which explains every column and "
+        + "sensors.parquet (the glucose sensors they wore), profile.parquet (their sex, diabetes type and "
+        + "diagnosis date, as they told the app), heights.parquet and weights.parquet (their height and weight over "
+        + "time), pens.parquet (the insulin pens they opened: which insulin of each kind), and README.md, which explains every column and "
         + "gives the clinic's glucose statistics as SQL — read it before reading a number. Ask with query: "
-        + "tables meals, items, doses, dose_meals, exercise, foods, periods, day_notes, glucose and sensors, "
-        + "every month at once. "
+        + "tables meals, items, doses, dose_meals, exercise, foods, periods, day_notes, glucose, sensors, profile, "
+        + "heights, weights and pens, every month at once. "
         + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
         + "Times are instants, each with a `<column>_local` wall time beside it in local time (README.md names the zone). "
         + "Another person's log is not here, unless an owner of the household let this person read everyone's: "
@@ -87,7 +89,8 @@ public sealed partial class SugaryFileSystem(
 
     public override string DescribeQuery =>
         "Answer one DuckDB SQL statement over one person's whole log, every month at once: tables meals, items, "
-        + "doses, dose_meals, exercise, foods, periods, day_notes, glucose and sensors, with the columns README.md "
+        + "doses, dose_meals, exercise, foods, periods, day_notes, glucose, sensors, profile, heights, weights and pens, "
+        + "with the columns README.md "
         + "explains; its glucose statistics are statements to copy. Every time "
         + "column has a `<column>_local` sibling on the home's clock. Asked anywhere outside people/, it reads the "
         + "turn's person's own log; asked at or under people/<name>, that person's.";
@@ -378,7 +381,7 @@ public sealed partial class SugaryFileSystem(
 
     // Every table but glucose, by name. A statement that names some of these and never says glucose is
     // the one kind that cannot need it.
-    [GeneratedRegex(@"\b(meals|items|doses|dose_meals|exercise|foods|periods|day_notes|sensors)\b", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(meals|items|doses|dose_meals|exercise|foods|periods|day_notes|sensors|profile|heights|weights|pens)\b", RegexOptions.IgnoreCase)]
     private static partial Regex OtherTable();
 
     // Every table of the log, glucose left out only of a statement that names other tables and never
@@ -395,6 +398,7 @@ public sealed partial class SugaryFileSystem(
             : [SugaryTables.Glucose(await log.GlucoseAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), zone)];
         var meals = await log.MealsAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         var doses = await log.DosesAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var measurements = await log.MeasurementsAsync(owner, ct);
         return
         [
             SugaryTables.Meals(meals, zone),
@@ -407,6 +411,10 @@ public sealed partial class SugaryFileSystem(
             SugaryTables.Periods(await log.PeriodsAsync(owner, ct)),
             SugaryTables.DayNotes(await log.DayNotesAsync(owner, ct)),
             SugaryTables.Sensors(await log.GlucoseSensorsAsync(owner, ct), zone),
+            SugaryTables.Profile(await log.ProfileAsync(owner, ct)),
+            SugaryTables.Heights(measurements),
+            SugaryTables.Weights(measurements),
+            SugaryTables.Pens(await log.PensAsync(owner, ct)),
             .. glucose
         ];
     }
@@ -425,7 +433,8 @@ public sealed partial class SugaryFileSystem(
         [
             new(SugaryNodeKind.Root), new(SugaryNodeKind.Readme), new(SugaryNodeKind.Foods),
             new(SugaryNodeKind.Periods), new(SugaryNodeKind.DayNotes), new(SugaryNodeKind.DoseMeals),
-            new(SugaryNodeKind.Sensors), new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir),
+            new(SugaryNodeKind.Sensors), new(SugaryNodeKind.Profile), new(SugaryNodeKind.Heights),
+            new(SugaryNodeKind.Weights), new(SugaryNodeKind.Pens), new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir),
             new(SugaryNodeKind.DosesDir), new(SugaryNodeKind.ExerciseDir), new(SugaryNodeKind.GlucoseDir)
         ];
         return fixedNodes
@@ -479,6 +488,10 @@ public sealed partial class SugaryFileSystem(
         SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(reader, ct)),
         SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(reader, ct)),
         SugaryNodeKind.Sensors => SugaryTables.Sensors(await log.GlucoseSensorsAsync(reader, ct), zone),
+        SugaryNodeKind.Profile => SugaryTables.Profile(await log.ProfileAsync(reader, ct)),
+        SugaryNodeKind.Heights => SugaryTables.Heights(await log.MeasurementsAsync(reader, ct)),
+        SugaryNodeKind.Weights => SugaryTables.Weights(await log.MeasurementsAsync(reader, ct)),
+        SugaryNodeKind.Pens => SugaryTables.Pens(await log.PensAsync(reader, ct)),
         SugaryNodeKind.DoseMeals => SugaryTables.DoseMeals(
             await log.DosesAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct)),
         SugaryNodeKind.MealsMonth => await MealsInAsync(reader, node.Month!, zone, ct) is { Count: > 0 } meals

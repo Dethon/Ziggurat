@@ -286,5 +286,12 @@ public class SugaryFileSystemPeopleTests
 
         public Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct) =>
             For(owner).GlucoseTargetsAsync(owner, ct);
+
+        public Task<LoggedProfile> ProfileAsync(Account owner, CancellationToken ct) => For(owner).ProfileAsync(owner, ct);
+
+        public Task<IReadOnlyList<LoggedMeasurement>> MeasurementsAsync(Account owner, CancellationToken ct) =>
+            For(owner).MeasurementsAsync(owner, ct);
+
+        public Task<IReadOnlyList<LoggedPen>> PensAsync(Account owner, CancellationToken ct) => For(owner).PensAsync(owner, ct);
     }
 }

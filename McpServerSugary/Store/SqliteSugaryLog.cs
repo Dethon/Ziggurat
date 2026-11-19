@@ -89,6 +89,28 @@ public sealed class SqliteSugaryLog(SugaryStore store) : ISugaryLog
         return notes.Select(n => new LoggedDayNote(n.Day, n.Text)).ToList();
     }
 
+    public async Task<LoggedProfile> ProfileAsync(Account owner, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        return await db.Profiles.AsNoTracking()
+            .Select(p => new LoggedProfile(p.Sex, p.DiabetesType, p.DiagnosedOn))
+            .FirstOrDefaultAsync(ct) ?? LoggedProfile.Unsaid;
+    }
+
+    public async Task<IReadOnlyList<LoggedMeasurement>> MeasurementsAsync(Account owner, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        var rows = await db.BodyMeasurements.AsNoTracking().OrderBy(m => m.On).ToListAsync(ct);
+        return rows.Select(m => new LoggedMeasurement(m.Id, m.Kind, m.On, m.Value)).ToList();
+    }
+
+    public async Task<IReadOnlyList<LoggedPen>> PensAsync(Account owner, CancellationToken ct)
+    {
+        await using var db = store.For(owner);
+        var rows = await db.Pens.AsNoTracking().OrderBy(p => p.OpenedOn).ToListAsync(ct);
+        return rows.Select(p => new LoggedPen(p.Id, p.Kind, p.Insulin, p.OpenedOn, p.Days, p.ReplacedOn)).ToList();
+    }
+
     public async Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct)
     {
         await using var db = store.For(owner);

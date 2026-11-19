@@ -166,8 +166,12 @@ public class McpSugaryServerTests
 
         (await server.GlobAsync("**")).ShouldBe([
             "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/exercise/", "/foods.parquet",
-            "/glucose/", "/items/", "/meals/", "/periods.parquet", "/sensors.parquet"
+            "/glucose/", "/heights.parquet", "/items/", "/meals/", "/pens.parquet", "/periods.parquet", "/profile.parquet",
+            "/sensors.parquet", "/weights.parquet"
         ]);
+        (await server.TableRowsAsync("/heights.parquet")).ShouldBeEmpty();
+        (await server.TableRowsAsync("/weights.parquet")).ShouldBeEmpty();
+        (await server.TableRowsAsync("/pens.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/sensors.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/dose-meals.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/foods.parquet")).ShouldBeEmpty();
@@ -441,8 +445,9 @@ public class McpSugaryServerTests
             Meal("2026-05-10T12:00:00Z", null, Item("toast", 30)));
 
         (await server.GlobAsync("**/*.parquet")).ShouldBe([
-            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
-            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet", "/sensors.parquet"
+            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/heights.parquet", "/items/2026-03.parquet",
+            "/items/2026-05.parquet", "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/pens.parquet", "/periods.parquet",
+            "/profile.parquet", "/sensors.parquet", "/weights.parquet"
         ]);
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.parquet" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");

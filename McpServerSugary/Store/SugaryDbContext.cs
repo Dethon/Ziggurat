@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per session of exercise, one row per period, one row per noted day, one row per linked
+// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per person's profile and per height or weight they recorded, one row per session of exercise, one row per period, one row per noted day, one row per linked
 // glucose account and per person it follows, one row per glucose reading and per sensor worn, enums,
 // times and days as readable text.
 //
@@ -39,6 +39,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<Dose> Doses => Set<Dose>();
     public DbSet<Pen> Pens => Set<Pen>();
+    public DbSet<Profile> Profiles => Set<Profile>();
+    public DbSet<BodyMeasurement> BodyMeasurements => Set<BodyMeasurement>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
@@ -111,6 +113,15 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         pen.Property(p => p.Kind).HasConversion<string>();
         pen.HasIndex(p => p.Kind);
         modelBuilder.Entity<PushSubscription>().HasKey(s => s.Endpoint);
+
+        // One profile per person, as one glucose link is. A measurement's day is stored as yyyy-MM-dd text.
+        var profile = modelBuilder.Entity<Profile>();
+        profile.HasKey(p => p.UserId);
+        profile.Property(p => p.Sex).HasConversion<string>();
+        profile.Property(p => p.DiabetesType).HasConversion<string>();
+        var measurement = modelBuilder.Entity<BodyMeasurement>();
+        measurement.Property(m => m.Kind).HasConversion<string>();
+        measurement.HasIndex(m => m.On);
 
         var exercise = modelBuilder.Entity<ExerciseSession>();
         exercise.Property(e => e.StartedAt).HasConversion(
@@ -196,6 +207,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(meal);
         Personal(dose);
         Personal(pen);
+        Personal(profile);
+        Personal(measurement);
         Personal(modelBuilder.Entity<PushSubscription>());
         Personal(exercise);
         Personal(modelBuilder.Entity<Period>());

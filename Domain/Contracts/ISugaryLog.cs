@@ -52,6 +52,15 @@ public interface ISugaryLog
     // link (never linked, or unlinked: the readings stay).
     Task<GlucoseTargets?> GlucoseTargetsAsync(Account owner, CancellationToken ct);
 
+    // Who the person is, as they told the app: each field null where they have not said.
+    Task<LoggedProfile> ProfileAsync(Account owner, CancellationToken ct);
+
+    // Every height and weight the person recorded, a few a year.
+    Task<IReadOnlyList<LoggedMeasurement>> MeasurementsAsync(Account owner, CancellationToken ct);
+
+    // Every insulin pen the person opened, the ones they replaced included, a pen a month at most.
+    Task<IReadOnlyList<LoggedPen>> PensAsync(Account owner, CancellationToken ct);
+
     // The foods the person's household keeps, by name.
     Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct);
 }

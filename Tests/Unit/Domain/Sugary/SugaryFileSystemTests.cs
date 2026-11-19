@@ -71,13 +71,13 @@ public class SugaryFileSystemTests
 
         all.Entries.ShouldBe([
             "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/doses/2026-08.parquet", "/doses/2026-09.parquet", "/exercise/",
-            "/foods.parquet", "/glucose/", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet", "/periods.parquet",
-            "/sensors.parquet"
+            "/foods.parquet", "/glucose/", "/heights.parquet", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet",
+            "/pens.parquet", "/periods.parquet", "/profile.parquet", "/sensors.parquet", "/weights.parquet"
         ]);
         doses.Entries.ShouldBe(["/doses/2026-08.parquet", "/doses/2026-09.parquet"]);
     }
 
-    // Her cycle is two tables at the root, there before she has recorded anything.
+    // Her cycle and who she is are tables at the root, there before she has recorded anything.
     [Fact]
     public async Task HerCycleFiles_AreAtTheRoot()
     {
@@ -90,7 +90,10 @@ public class SugaryFileSystemTests
 
         var glob = (await mount.GlobAsync("/", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
-        glob.Entries.ShouldBe(["/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/periods.parquet", "/sensors.parquet"]);
+        glob.Entries.ShouldBe([
+            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/heights.parquet", "/pens.parquet", "/periods.parquet",
+            "/profile.parquet", "/sensors.parquet", "/weights.parquet"
+        ]);
     }
 
     // A month has an exercise file when a session started in it, whatever else she logged then.
