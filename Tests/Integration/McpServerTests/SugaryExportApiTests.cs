@@ -234,6 +234,10 @@ public class SugaryExportApiTests
     [InlineData("exercise")]
     [InlineData("periods")]
     [InlineData("day-notes")]
+    [InlineData("profile")]
+    [InlineData("heights")]
+    [InlineData("weights")]
+    [InlineData("pens")]
     public async Task ADownload_IsNamedAsTheImportExpectsIt(string table)
     {
         await using var server = await SugaryServer.StartAsync();
@@ -260,6 +264,28 @@ public class SugaryExportApiTests
         periods[1].ShouldBe($"{held[0]},2026-09-09,2026-09-14,6,");
         held[1..].ShouldBe(["2026-09-09", "2026-09-14", "6", null]);
         notes.ShouldBe(["date,note", "2026-09-10,cramps"]);
+    }
+
+    // Who she is and her pens download as the mount renders them: the same tables, the same words.
+    [Fact]
+    public async Task HerProfileMeasurementsAndPens_ExportAsTheMountHoldsThem()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        await client.PutAsJsonAsync("/api/profile",
+            new JsonObject { ["sex"] = "female", ["diabetesType"] = "type1", ["bornOn"] = "2009-06-14" });
+        await client.PostAsJsonAsync("/api/measurements", new JsonObject { ["kind"] = "height", ["on"] = "2026-09-01", ["value"] = 154.5 });
+        await client.PostAsJsonAsync("/api/measurements", new JsonObject { ["kind"] = "weight", ["on"] = "2026-09-01", ["value"] = 41 });
+        await client.PostAsJsonAsync("/api/pens",
+            new JsonObject { ["kind"] = "rapid", ["insulin"] = "Fiasp", ["openedOn"] = "2026-09-01", ["days"] = 28 });
+
+        (await LinesAsync(client, "/api/export/profile.csv")).ShouldBe(
+            ["sex,diabetes_type,diagnosed_on,born_on", "female,type1,,2009-06-14"]);
+        (await LinesAsync(client, "/api/export/heights.csv")).ShouldBe(["date,height_cm", "2026-09-01,154.5"]);
+        (await LinesAsync(client, "/api/export/weights.csv")).ShouldBe(["date,weight_kg", "2026-09-01,41"]);
+        var pens = await LinesAsync(client, "/api/export/pens.csv");
+        pens[0].ShouldBe("pen_id,kind,insulin,opened_on,days,replace_on,replaced_on");
+        pens[1].ShouldEndWith(",rapid,Fiasp,2026-09-01,28,2026-09-29,");
     }
 
     [Fact]

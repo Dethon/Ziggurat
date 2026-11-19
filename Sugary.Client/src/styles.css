@@ -2236,6 +2236,11 @@ h1.marked .icon {
   color: var(--color-period);
 }
 
+/* Her height and weight take the app's own colour, not the period's. */
+.measurement-row > .icon:first-child {
+  color: var(--color-primary-strong);
+}
+
 .period-row-text {
   display: flex;
   flex-direction: column;
@@ -2850,4 +2855,124 @@ h1.marked .icon {
    "Despensa" takes the few pixels it needs from its neighbours rather than running into them. */
 .tab {
   white-space: nowrap;
+}
+
+/* Her height or weight over time, under its row in About you. */
+.measurement-chart {
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.measurement-chart-guide {
+  stroke: var(--color-line);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.measurement-point {
+  cursor: pointer;
+}
+
+.measurement-point-target {
+  fill: transparent;
+}
+
+.measurement-point-dot {
+  fill: var(--color-ink);
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.measurement-point:hover .measurement-point-dot,
+.measurement-point:focus-visible .measurement-point-dot {
+  fill: var(--color-primary-strong);
+}
+
+.measurement-point:focus-visible {
+  outline: none;
+}
+
+.measurement-point:focus-visible .measurement-point-target {
+  stroke: var(--color-primary-strong);
+  stroke-width: 2;
+}
+
+.measurement-history-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.measurement-history-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.measurement-chart-held {
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+}
+
+.measurement-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.measurement-kind {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.measurement-kind + .measurement-history-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.measurement-history-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.measurement-chart-held {
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+}
+
+.measurement-chart-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+.measurement-kind {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-2);
 }

@@ -135,6 +135,8 @@ public class SugaryGlucoseTablesTests
     [Theory]
     [InlineData("select count(*) from meals", false, false)]
     [InlineData("select d.units from doses d join dose_meals using (dose_id) join meals using (meal_id)", false, false)]
+    [InlineData("select insulin from pens where replaced_on is null", false, false)]
+    [InlineData("select p.sex, w.weight_kg from profile p, weights w, heights h", false, false)]
     [InlineData("select count(*) from GLUCOSE", true, false)]
     [InlineData("select count(*) from meals m join glucose g on g.read_at > m.eaten_at", true, false)]
     [InlineData("show tables", true, true)]

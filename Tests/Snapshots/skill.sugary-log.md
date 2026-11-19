@@ -1,10 +1,10 @@
-# sugary-log — description 108 / 110 tokens, body 998 / 1010 tokens, served by mcp-sugary
+# sugary-log — description 146 / 150 tokens, body 1070 / 1100 tokens, served by mcp-sugary
 
 ================================================================================================
 
 ---
 name: sugary-log
-description: Reading the asking person's own log under `/sugary` — the foods they keep, the meals they logged and the foods in each, their insulin doses, glucose readings, exercise and periods ("when did I last have paella", "how did my glucose do after pizza", "my time in range last week", "how much insulin did I take for it", "was I on my period that week"). Which tables there are, where their columns are explained, and how to ask them.
+description: Reading the asking person's own log under `/sugary` — the foods they keep, the meals they logged and the foods in each, their insulin doses and pens, glucose readings, exercise, periods, and who they are (diabetes type, diagnosis, birth date, height and weight over time) ("when did I last have paella", "how did my glucose do after pizza", "my time in range last week", "how much insulin did I take for it", "which insulin am I on", "how much has he grown this year", "was I on my period that week"). Which tables there are, where their columns are explained, and how to ask them.
 ---
 
 ### The asking person's carb log at `/sugary`
@@ -24,6 +24,7 @@ The log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 - `foods` — the foods they keep, one row each: what they call it, its carbs per 100 g or ml, the amount they usually have and, for a food kept only as a portion, the carbs in that portion.
 - `periods` — their menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what they wrote about a day. Both are days on the home's calendar: read `glucose` for those days beside them.
 - `glucose` — one row per reading their sensor measured, in mg/dL with the arrow; `sensors` — the sensors they wore. The README gives time in range, mean, GMI and CV as SQL to copy.
+- `profile` — one row: their `sex`, `diabetes_type`, `diagnosed_on` and `born_on`, an empty cell being unsaid. `heights`, `weights` — over time, the latest row for now. `pens` — which insulin each dose `kind` is, the one with no `replaced_on` in use. Context, never a number to dose from.
 
 Every time is on the home's clock, so a meal, its dose and the readings after them line up. Beside each is `<column>_local`, its wall time, for a day or an hour of their life: `eaten_at_local::date = '2026-10-03'`.
 

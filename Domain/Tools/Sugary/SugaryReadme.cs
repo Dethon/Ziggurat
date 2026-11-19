@@ -21,8 +21,9 @@ public static class SugaryReadme
           # Sugary — the carb log of the person you are talking with
 
           The meals they logged in Sugary, the foods in each meal, the insulin doses they recorded, the exercise
-          they did, the foods they keep, their menstrual periods, the notes they wrote about their days, and
-          their glucose as their sensor measured it, as Parquet tables. They are rendered from Sugary's database each time they are read, so they are
+          they did, the foods they keep, their menstrual periods, the notes they wrote about their days,
+          their glucose as their sensor measured it, who they are (sex, diabetes, height and weight over time)
+          and the insulin pens they use, as Parquet tables. They are rendered from Sugary's database each time they are read, so they are
           always current. Nothing here can be written: the log changes only through Sugary.
 
           - `meals/<YYYY-MM>.parquet` — one row per meal eaten that month, oldest first.
@@ -35,6 +36,9 @@ public static class SugaryReadme
           - `day-notes.parquet` — one row per day they wrote a note about, oldest first.
           - `glucose/<YYYY-MM>.parquet` — one row per glucose reading measured that month, oldest first.
           - `sensors.parquet` — one row per glucose sensor they have worn.
+          - `profile.parquet` — one row: their sex, diabetes type, when it was diagnosed and when they were born.
+          - `heights.parquet`, `weights.parquet` — one row per height and per weight they recorded, oldest first.
+          - `pens.parquet` — one row per insulin pen they opened, oldest first.
 
           A month with no meals has no meals or items file, a month with no doses no doses file, and a month
           with no exercise no exercise file, a month with no readings no glucose file. A meal belongs to the
@@ -45,7 +49,7 @@ public static class SugaryReadme
 
           - **`query`** answers one DuckDB SQL statement over the whole log, every month at once, as the
             tables `meals`, `items`, `doses`, `dose_meals`, `exercise`, `foods`, `periods`, `day_notes`,
-            `glucose` and `sensors`. Join on `meal_id` (meals, items, dose_meals), `dose_id` (doses,
+            `glucose`, `sensors`, `profile`, `heights`, `weights` and `pens`. Join on `meal_id` (meals, items, dose_meals), `dose_id` (doses,
             dose_meals) and `food_id` (items, foods); join `glucose` to the rest on time (below). Only the
             rows that answer come back.
           - **A command in the sandbox** reads the files themselves at these same paths:
@@ -218,6 +222,44 @@ public static class SugaryReadme
             lifetime. A sensor made to last longer ends later than this says.
           - `last_seen_at` — when LibreLinkUp last listed it. The latest started of those last listed is the one
             they wear now.
+
+          ## profile.parquet
+
+          Who they are, as they told the app: always one row, and an empty cell is something they have not
+          said — never assume a value for it. Context for reading the rest of the log, never a number to work
+          a dose from: their sex, weight or diabetes type are no ratio, correction factor or action time.
+
+          - `sex` — `female` or `male`.
+          - `diabetes_type` — `type1`, `type2`, `lada`, `mody`, `gestational` or `other`.
+          - `diagnosed_on` — the day it was diagnosed.
+          - `born_on` — the day they were born: their age now, at a meal or at a measurement, and how long they have
+            lived with diabetes, are worked out from it (`date_diff('year', born_on, current_date)`).
+
+          ## heights.parquet and weights.parquet
+
+          Their height and weight over time, each recorded by them on a day of the home's calendar, one of each
+          a day at most. A child's height changes year to year: read the latest row for now, the history for
+          how they grew, and each row against their age that day (`born_on` in `profile`).
+
+          - `date` — the day it was measured.
+          - `height_cm` — the height in centimetres; `weight_kg` — the weight in kilograms.
+
+          ## pens.parquet
+
+          The insulin pens they opened, so which insulin is behind each `kind` of dose: one pen of each kind
+          in use at a time, a replaced one kept as history. The pen in use now for a kind is the one with no
+          `replaced_on`; a dose of that kind taken on a day was from the pen open that day.
+
+          - `pen_id` — the pen's identifier.
+          - `kind` — `rapid` or `basal`, as on `doses`.
+          - `insulin` — the insulin's name as they wrote it (Fiasp, Tresiba, …).
+          - `opened_on` — the day they first used it.
+          - `days` — how many days they said it lasts once open.
+          - `replace_on` — `opened_on` plus `days`: the day it is due for replacing.
+          - `replaced_on` — the day they started the next pen of that kind; empty for the pen in use.
+
+          The insulin's name says nothing of their doses: never take an action time or a dose from it that
+          they did not give you.
 
           ## Glucose statistics
 

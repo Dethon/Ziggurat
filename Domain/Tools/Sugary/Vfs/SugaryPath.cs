@@ -6,7 +6,7 @@ namespace Domain.Tools.Sugary.Vfs;
 
 public enum SugaryNodeKind
 {
-    Root, People, Readme, Foods, Periods, DayNotes, DoseMeals, Sensors, MealsDir, ItemsDir, DosesDir, ExerciseDir, GlucoseDir, MealsMonth,
+    Root, People, Readme, Foods, Periods, DayNotes, DoseMeals, Sensors, Profile, Heights, Weights, Pens, MealsDir, ItemsDir, DosesDir, ExerciseDir, GlucoseDir, MealsMonth,
     ItemsMonth, DosesMonth, ExerciseMonth, GlucoseMonth, Unknown
 }
 
@@ -28,6 +28,10 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.DayNotes => "/" + SugaryPath.DayNotesFileName,
         SugaryNodeKind.DoseMeals => "/" + SugaryPath.DoseMealsFileName,
         SugaryNodeKind.Sensors => "/" + SugaryPath.SensorsFileName,
+        SugaryNodeKind.Profile => "/" + SugaryPath.ProfileFileName,
+        SugaryNodeKind.Heights => "/" + SugaryPath.HeightsFileName,
+        SugaryNodeKind.Weights => "/" + SugaryPath.WeightsFileName,
+        SugaryNodeKind.Pens => "/" + SugaryPath.PensFileName,
         SugaryNodeKind.MealsDir => "/" + SugaryPath.MealsDirName,
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
@@ -54,6 +58,10 @@ public static class SugaryPath
     public const string DayNotesFileName = "day-notes" + TableExtension;
     public const string DoseMealsFileName = "dose-meals" + TableExtension;
     public const string SensorsFileName = "sensors" + TableExtension;
+    public const string ProfileFileName = "profile" + TableExtension;
+    public const string HeightsFileName = "heights" + TableExtension;
+    public const string WeightsFileName = "weights" + TableExtension;
+    public const string PensFileName = "pens" + TableExtension;
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
@@ -139,6 +147,10 @@ public static class SugaryPath
             [DayNotesFileName] => new SugaryNode(SugaryNodeKind.DayNotes),
             [DoseMealsFileName] => new SugaryNode(SugaryNodeKind.DoseMeals),
             [SensorsFileName] => new SugaryNode(SugaryNodeKind.Sensors),
+            [ProfileFileName] => new SugaryNode(SugaryNodeKind.Profile),
+            [HeightsFileName] => new SugaryNode(SugaryNodeKind.Heights),
+            [WeightsFileName] => new SugaryNode(SugaryNodeKind.Weights),
+            [PensFileName] => new SugaryNode(SugaryNodeKind.Pens),
             [MealsDirName] => new SugaryNode(SugaryNodeKind.MealsDir),
             [ItemsDirName] => new SugaryNode(SugaryNodeKind.ItemsDir),
             [DosesDirName] => new SugaryNode(SugaryNodeKind.DosesDir),

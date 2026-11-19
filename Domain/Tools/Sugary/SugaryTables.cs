@@ -75,6 +75,23 @@ public static class SugaryTables
         new("last_seen_at", ColumnType.Instant)
     ];
 
+    private static readonly TableColumn[] _profileColumns =
+    [
+        new("sex", ColumnType.Text), new("diabetes_type", ColumnType.Text), new("diagnosed_on", ColumnType.Date),
+        new("born_on", ColumnType.Date)
+    ];
+
+    private static readonly TableColumn[] _heightColumns = [new("date", ColumnType.Date), new("height_cm", ColumnType.Decimal)];
+
+    private static readonly TableColumn[] _weightColumns = [new("date", ColumnType.Date), new("weight_kg", ColumnType.Decimal)];
+
+    private static readonly TableColumn[] _penColumns =
+    [
+        new("pen_id", ColumnType.Text), new("kind", ColumnType.Text), new("insulin", ColumnType.Text),
+        new("opened_on", ColumnType.Date), new("days", ColumnType.Integer), new("replace_on", ColumnType.Date),
+        new("replaced_on", ColumnType.Date)
+    ];
+
     // mg/dL per mmol/L, glucose's molar mass over ten.
     public const double MgDlPerMmolL = 18.016;
 
@@ -183,6 +200,31 @@ public static class SugaryTables
         "import-hourly" => GlucoseSource.ImportHourly,
         _ => throw new ArgumentOutOfRangeException(nameof(word), word, null)
     };
+
+    // Always one row, so a reader finds the table and reads an empty cell as unsaid, never a default.
+    public static Table Profile(LoggedProfile profile) =>
+        new("profile", _profileColumns, [Row(
+            profile.Sex is { } sex ? Word(sex) : null,
+            profile.DiabetesType is { } type ? Word(type) : null,
+            profile.DiagnosedOn,
+            profile.BornOn)]);
+
+    // Oldest first, the order a growth curve is read in.
+    public static Table Heights(IEnumerable<LoggedMeasurement> measurements) =>
+        new("heights", _heightColumns, [.. Of(measurements, BodyMeasure.Height)]);
+
+    public static Table Weights(IEnumerable<LoggedMeasurement> measurements) =>
+        new("weights", _weightColumns, [.. Of(measurements, BodyMeasure.Weight)]);
+
+    // In the order she opened them. The day a pen is due for replacing is worked out from its two
+    // figures on every read, as the app shows it, so the three never disagree.
+    public static Table Pens(IEnumerable<LoggedPen> pens) =>
+        new("pens", _penColumns, [.. pens.OrderBy(pen => pen.OpenedOn).ThenBy(pen => pen.Kind).Select(pen => Row(
+            pen.Id.ToString(), Word(pen.Kind), pen.Insulin, pen.OpenedOn, pen.Days, pen.OpenedOn.AddDays(pen.Days),
+            pen.ReplacedOn))]);
+
+    private static IEnumerable<IReadOnlyList<object?>> Of(IEnumerable<LoggedMeasurement> measurements, BodyMeasure kind) =>
+        measurements.Where(m => m.Kind == kind).OrderBy(m => m.On).Select(m => Row(m.On, m.Value));
 
     // By name, the order a list of things she keeps is looked through in.
     public static Table Foods(IEnumerable<SavedFood> foods) =>

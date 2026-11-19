@@ -25,6 +25,9 @@ public sealed class InMemorySugaryLog : ISugaryLog
     public List<LoggedGlucose> Glucose { get; } = [];
     public List<LoggedSensor> Sensors { get; } = [];
     public GlucoseTargets? Targets { get; set; }
+    public LoggedProfile Profile { get; set; } = LoggedProfile.Unsaid;
+    public List<LoggedMeasurement> Measurements { get; } = [];
+    public List<LoggedPen> Pens { get; } = [];
 
     public Task<IReadOnlyList<DateTimeOffset>> MealTimesAsync(Account owner, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<DateTimeOffset>>([.. Meals.Select(meal => meal.EatenAt)]);
@@ -50,6 +53,14 @@ public sealed class InMemorySugaryLog : ISugaryLog
 
     public Task<IReadOnlyList<LoggedDayNote>> DayNotesAsync(Account owner, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<LoggedDayNote>>([.. DayNotes]);
+
+    public Task<LoggedProfile> ProfileAsync(Account owner, CancellationToken ct) => Task.FromResult(Profile);
+
+    public Task<IReadOnlyList<LoggedMeasurement>> MeasurementsAsync(Account owner, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<LoggedMeasurement>>([.. Measurements]);
+
+    public Task<IReadOnlyList<LoggedPen>> PensAsync(Account owner, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<LoggedPen>>([.. Pens]);
 
     public Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<SavedFood>>([.. Foods]);

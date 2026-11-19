@@ -105,3 +105,40 @@ public sealed record SavedFood(
     double? PortionCarbs,
     string? Barcode,
     ItemSource Source);
+// Whether she is a woman or a man, as she said it: the Cycle tab is a woman's.
+public enum Sex
+{
+    Female,
+    Male
+}
+
+// Which diabetes she was diagnosed with, as she said it.
+public enum DiabetesType
+{
+    Type1,
+    Type2,
+    Lada,
+    Mody,
+    Gestational,
+    Other
+}
+
+// What a body measurement measures: a height in centimetres, a weight in kilograms.
+public enum BodyMeasure
+{
+    Height,
+    Weight
+}
+
+// Who she is, each field null where she has not said: never a default standing in for her answer.
+public sealed record LoggedProfile(Sex? Sex, DiabetesType? DiabetesType, DateOnly? DiagnosedOn, DateOnly? BornOn)
+{
+    public static readonly LoggedProfile Unsaid = new(null, null, null, null);
+}
+
+// A height (cm) or a weight (kg) she recorded on a day of her calendar.
+public sealed record LoggedMeasurement(Guid Id, BodyMeasure Kind, DateOnly On, double Value);
+
+// An insulin pen she opened: which insulin, of which kind, the day she first used it, how many days it
+// lasts open, and the day she replaced it with the next one (null for the pen she uses now).
+public sealed record LoggedPen(Guid Id, DoseKind Kind, string Insulin, DateOnly OpenedOn, int Days, DateOnly? ReplacedOn);
