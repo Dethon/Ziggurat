@@ -352,6 +352,38 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         (await MembersAsync(admin)).Members.Single(m => m.Id == laura).ReadsSugaryLogs.ShouldBeFalse();
     }
 
+    // Sugary is on for a member only once an owner says so (user's decision, 2026-11-19): somebody new
+    // starts without it; the change is saved alone, listed, recorded by what changed, and announced as
+    // the people changing so Sugary's reader drops what it kept.
+    [Fact]
+    public async Task UsingSugary_StartsOff_AndIsSavedListedRecordedAndAnnounced()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        var laura = await server.SeedMemberAsync("Laura");
+        var heard = new System.Collections.Concurrent.ConcurrentBag<HouseholdConfigSaved>();
+        await redis.Connection.GetSubscriber().SubscribeAsync(
+            StackExchange.Redis.RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel),
+            (_, message) => heard.Add(System.Text.Json.JsonSerializer.Deserialize<HouseholdConfigSaved>(
+                message.ToString(), System.Text.Json.JsonSerializerOptions.Web)!));
+        (await MembersAsync(admin)).Members.Single(m => m.Id == laura).UsesSugary.ShouldBeFalse();
+
+        var turnedOn = await EditAsync(admin, laura, new MemberEdit(UsesSugary: true));
+
+        turnedOn.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await turnedOn.Content.ReadFromJsonAsync<AdminSaved<AdminMembers>>())!.Value.Members.Single(m => m.Id == laura)
+            .ShouldSatisfyAllConditions(m => m.UsesSugary.ShouldBeTrue(), m => m.ReadsSugaryLogs.ShouldBeFalse());
+        (await MembersAsync(admin)).Members.Single(m => m.Id == fran.UserId).UsesSugary.ShouldBeFalse();
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe([$"Changed member {laura}'s uses Sugary"]);
+        await Eventually.Until(
+            () => heard.Contains(new HouseholdConfigSaved(fran.TenantId, HouseholdConfigProtocol.PeopleChanged)),
+            "turning Sugary on to be announced as the household's people changing");
+
+        (await EditAsync(admin, laura, new MemberEdit(UsesSugary: false))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await MembersAsync(admin)).Members.Single(m => m.Id == laura).UsesSugary.ShouldBeFalse();
+    }
+
     private Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
         {

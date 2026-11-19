@@ -143,6 +143,23 @@ public class AccountsCommandTests
         check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe([roles]);
     }
 
+    // Sugary starts off for somebody new; the test stacks seed the people who use it on.
+    [Theory]
+    [InlineData(new[] { "create-user", "--name", "Laura" }, false)]
+    [InlineData(new[] { "create-user", "--name", "Laura", "--sugary" }, true)]
+    [InlineData(new[] { "create-user", "--name", "Laura", "--role", "owner", "--sugary" }, true)]
+    public async Task CreateUser_UsesSugaryOnlyWhenAsked(string[] args, bool usesSugary)
+    {
+        await using var server = await AccountsServer.StartAsync();
+
+        var (exit, output) = await server.RunAsync(args);
+
+        exit.ShouldBe(0, output);
+        var laura = AccountsServer.ParseWho(output);
+        (await server.Service<global::Accounts.Members.MemberStore>().ListAsync(laura.TenantId, CancellationToken.None))
+            .Single(m => m.Id == laura.UserId).UsesSugary.ShouldBe(usesSugary);
+    }
+
     [Theory]
     [InlineData("create-user")]
     [InlineData("create-user", "--name")]

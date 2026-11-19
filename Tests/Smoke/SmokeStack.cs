@@ -76,7 +76,7 @@ public sealed partial class SmokeStack : IAsyncLifetime
 
         var op = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "mint-link", "--operator", "--name", "Smoke Operator");
         OperatorSession = await SessionOfAsync(UserIn(op));
-        var member = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", MemberName);
+        var member = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", MemberName, "--sugary");
         MemberSession = await SessionOfAsync(UserIn(member));
         Home = HouseholdIn(member);
     }
@@ -249,7 +249,7 @@ public sealed partial class SmokeStack : IAsyncLifetime
     // own rather than touch the stack's.
     public static async Task<(string UserId, string Session)> HomePersonAsync(string name, string role)
     {
-        var userId = UserIn(await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", name, "--role", role));
+        var userId = UserIn(await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", name, "--role", role, "--sugary"));
         return (userId, await SessionOfAsync(userId));
     }
 

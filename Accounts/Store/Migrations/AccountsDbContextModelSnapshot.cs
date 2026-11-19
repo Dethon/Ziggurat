@@ -448,6 +448,8 @@ namespace Accounts.Store.Migrations
                         .IsRequired()
                         .HasMaxLength(64);
 
+                    b.Property<bool>("UsesSugary");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId");

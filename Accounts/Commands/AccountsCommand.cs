@@ -15,7 +15,7 @@ namespace Accounts.Commands;
 //   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"
 //   docker exec accounts dotnet Accounts.dll mint-link --user <id>
 //   docker exec accounts dotnet Accounts.dll mint-session --user <id>
-//   docker exec accounts dotnet Accounts.dll create-user --name "<display name>" [--role owner|member]
+//   docker exec accounts dotnet Accounts.dll create-user --name "<display name>" [--role owner|member] [--sugary]
 //   docker exec accounts dotnet Accounts.dll rotate-signing-key
 //   docker exec accounts dotnet Accounts.dll retire-signing-keys
 //   docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server <name>
@@ -59,7 +59,7 @@ public static class AccountsCommand
 
     private const string Usage =
         $"usage: {MintLink} --operator [--name <display name>] | {MintLink} --user <id> | {MintSession} --user <id>"
-        + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}"
+        + $" | {CreateUser} --name <display name> [--role owner|member] [--sugary] | {RotateSigningKey} | {RetireSigningKeys}"
         + $" | {MintTunnelCredential} --household <id> --server <name> | {ListTunnelCredentials}"
         + $" | {RevokeTunnelCredential} --id <id>"
         + $" | {GetHouseholdConfig} --household <id|home> --section <name> | {SetHouseholdConfig} --household <id|home> --section <name> --file <path|->"
@@ -108,9 +108,13 @@ public static class AccountsCommand
             case [MintSession, "--user", var userId]:
                 return await SessionAsync(services.GetRequiredService<SessionStore>(), userId, output, ct);
             case [CreateUser, "--name", var name]:
-                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, Role.Member, output, ct);
+                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, Role.Member, false, output, ct);
+            case [CreateUser, "--name", var name, "--sugary"]:
+                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, Role.Member, true, output, ct);
             case [CreateUser, "--name", var name, "--role", var role] when RoleNamed(role) is { } named:
-                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, named, output, ct);
+                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, named, false, output, ct);
+            case [CreateUser, "--name", var name, "--role", var role, "--sugary"] when RoleNamed(role) is { } named:
+                return await PersonAsync(services.GetRequiredService<PersonStore>(), name, named, true, output, ct);
             case [MintTunnelCredential, "--household", var tenantId, "--server", var serverName]:
                 return await MintTunnelAsync(services.GetRequiredService<TunnelCredentialStore>(), tenantId, serverName, output, ct);
             case [ListTunnelCredentials]:
@@ -183,7 +187,7 @@ public static class AccountsCommand
     }
 
     private static async Task<int> PersonAsync(
-        PersonStore people, string name, Role role, TextWriter output, CancellationToken ct)
+        PersonStore people, string name, Role role, bool usesSugary, TextWriter output, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -191,7 +195,7 @@ public static class AccountsCommand
             return 2;
         }
 
-        var person = await people.CreateAsync(name, role, ct);
+        var person = await people.CreateAsync(name, role, ct, usesSugary);
         await output.WriteLineAsync(
             $"Created {person.DisplayName} (user {person.Id}, household {person.TenantId}) as "
             + $"{(role == Role.Owner ? "an owner" : "a member")} of the home household. "

@@ -58,7 +58,7 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
             HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
 
-        // Sugary's: the household's people and who an owner let read everyone's log. A person, not a
+        // Sugary's: the household's people, who an owner let read everyone's log and who uses Sugary. A person, not a
         // section, so the members are read rather than the configuration; nobody disabled is in it,
         // neither as a reader nor as a log to read.
         routes.MapPost(Path + HouseholdConfigProtocol.SugaryPeopleView, async (
@@ -75,7 +75,7 @@ public static class HouseholdConfiguration
                 new HouseholdConfigAnswer<HouseholdSugaryPeople>(household.Id, new HouseholdSugaryPeople([
                     .. (await members.ListAsync(household.Id, ct))
                         .Where(m => !m.Disabled)
-                        .Select(m => new SugaryPerson(m.Id, m.DisplayName, m.ReadsSugaryLogs))
+                        .Select(m => new SugaryPerson(m.Id, m.DisplayName, m.ReadsSugaryLogs, m.UsesSugary))
                 ])), ct);
         });
 

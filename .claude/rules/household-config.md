@@ -89,7 +89,7 @@ to its callers (`InternalCallers`' view table); anyone else is 403 before a row 
 | `spaces`, `member-names` (disabled members too: their topics are kept) | `mcp-channel-signalr` | the session refresh's assertion (hub bullet below) | none |
 | `agent-names` (`HouseholdAgents.Names`, never custom instructions) | `mcp-scheduling` | call token | none |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | the person's assertion on the asker's channel | none |
-| `sugary-people` (no disabled member; one answer for the whole household: readers keep it per household) | `mcp-sugary` | call token | none |
+| `sugary-people` (no disabled member; each one's grant and whether Sugary is on for them; one answer for the whole household: readers keep it per household) | `mcp-sugary` | call token (the mount) / assertion (the app) | none |
 | `telegram-bots` (every household's) | `mcp-channel-telegram` | none (exception 2) | the bots' tokens |
 | `sugary-off` | `mcp-sugary` | none (exception 3) | none |
 

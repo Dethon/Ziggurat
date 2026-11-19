@@ -256,7 +256,8 @@ internal sealed partial class WebChatStack
 
                 async Task<Seeded> makeAsync(string name, Role role)
                 {
-                    var person = await people.CreateAsync(name, role, ct);
+                    // Everyone the stack makes uses Sugary, which an owner turns on for somebody new.
+                    var person = await people.CreateAsync(name, role, ct, usesSugary: true);
                     var session = await sessions.IssueAsync(person.Id, credentialId: null, device: "mint-session", ct)
                         ?? throw new InvalidOperationException($"no session for {person.Id}");
                     return new Seeded(session.Token, new Account(person.TenantId, person.Id));
@@ -312,7 +313,8 @@ internal sealed partial class WebChatStack
                     {
                         db.Users.Add(new User
                         {
-                            Id = id, TenantId = elsewhere, DisplayName = name, Role = role, CreatedAt = clock.Time.GetUtcNow()
+                            Id = id, TenantId = elsewhere, DisplayName = name, Role = role, UsesSugary = true,
+                            CreatedAt = clock.Time.GetUtcNow()
                         });
                         await db.SaveChangesAsync(ct);
                     }
@@ -372,7 +374,7 @@ internal sealed partial class WebChatStack
                 "the second household's pool is spent: raise PooledElsewhere, since the commands make people of the home alone");
         }
 
-        var (_, created) = await AccountsAsync("create-user", "--name", name, "--role", role);
+        var (_, created) = await AccountsAsync("create-user", "--name", name, "--role", role, "--sugary");
         var user = WhoWasMade().Match(created).Groups["user"].Value;
         var (_, session) = await AccountsAsync("mint-session", "--user", user);
         return (user, session.Trim());
@@ -496,7 +498,7 @@ internal sealed partial class WebChatStack
 
     private async Task<Seeded> SeedAsync(string name)
     {
-        var (_, created) = await AccountsAsync("create-user", "--name", name);
+        var (_, created) = await AccountsAsync("create-user", "--name", name, "--sugary");
         var made = WhoWasMade().Match(created);
         var account = new Account(made.Groups["household"].Value, made.Groups["user"].Value);
         var (_, session) = await AccountsAsync("mint-session", "--user", account.UserId);

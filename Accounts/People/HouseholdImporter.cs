@@ -9,7 +9,7 @@ namespace Accounts.People;
 // Telegram id the operator looked up for them, what they are in the household, and the picture the
 // retired chat client's list showed beside them.
 public sealed record ImportingPerson(
-    string Key, string DisplayName, long? TelegramId, Role Role, bool Operator, string? AvatarUrl = null);
+    string Key, string DisplayName, long? TelegramId, Role Role, bool Operator, string? AvatarUrl = null, bool UsesSugary = false);
 
 // What became of them. A person this run created gets a passkey link, minted once the import is
 // committed; anybody else already has a way in, or is told the command that mints one. Changes say
@@ -172,6 +172,7 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
             DisplayName = person.DisplayName.Trim(),
             Role = person.Operator ? Role.Owner : person.Role,
             IsOperator = person.Operator,
+            UsesSugary = person.UsesSugary,
             CreatedAt = clock.Time.GetUtcNow()
         };
         db.Users.Add(created);
@@ -203,6 +204,13 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
         {
             user.Role = Role.Owner;
             placed.Changes.Add("made an owner");
+        }
+
+        // The person whose Sugary log it was keeps opening it; nobody's Sugary is turned off here.
+        if (person.UsesSugary && !user.UsesSugary)
+        {
+            user.UsesSugary = true;
+            placed.Changes.Add("Sugary turned on");
         }
 
         return null;

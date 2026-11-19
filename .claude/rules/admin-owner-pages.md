@@ -118,7 +118,7 @@ Every change answers `AdminSaved<AdminAgents>`, the whole list with `voiceAgent`
 `HouseholdMembersAdmin` over the accounts service's own stores (`MemberStore`, `LinkStore`), never a copy
 (`Domain/DTOs/Admin/AdminMembers.cs`). This is the household's one members page; `/accounts/members`
 redirects here. Invites and recovery answer `AdminSaved<MemberLink>`; `MemberEdit` (a field left out left as
-it is; `readsSugaryLogs`: `.claude/rules/sugary.md`), disable and enable (body-less POSTs) answer
+it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable and enable (body-less POSTs) answer
 `AdminSaved<AdminMembers>`; `AdminProtocol.MemberTelegramGroups` answers a `TelegramGroupCode`.
 
 - **A link or group code is shown once, in the answer that minted it**; only its hash is kept. An invite is
@@ -139,8 +139,8 @@ it is; `readsSugaryLogs`: `.claude/rules/sugary.md`), disable and enable (body-l
   turn, as every voice utterance). Two lag: the hub's `TopicViewer` is the connection's, so `PeopleChanged`
   makes each open page renew its connection (`OnAccessChanged`, `ReconnectionEffect` closes a topic no longer
   visible); Telegram keeps an admitting assertion for `LinkCache:Linked`.
-- **The page** is `/admin/members` (`HouseholdMembersPage`): role, sees-all and "Reads everyone's Sugary log"
-  saved together; Recovery link not offered for the operator or the disabled, Disable (behind a confirmation)
+- **The page** is `/admin/members` (`HouseholdMembersPage`): role, sees-all, "Uses Sugary" and "Reads everyone's
+  Sugary log" saved together, each sent only when changed (`MemberDrafts`, `MemberEdit.ChangesNothing`); Recovery link not offered for the operator or the disabled, Disable (behind a confirmation)
   not for the operator. Its E2E test makes its own people in the stack's second household
   (`PersonElsewhereAsync`).
 

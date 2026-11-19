@@ -59,6 +59,17 @@ public class MemberDraftsTests
         drafts.EditOf(Carlos).ShouldBe(new MemberEdit(ReadsSugaryLogs: true));
     }
 
+    // Turning Sugary on for Carlos is its own field too.
+    [Fact]
+    public void UsingSugary_IsSentAlone()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).UsesSugary = true;
+
+        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(UsesSugary: true));
+    }
+
     [Fact]
     public void ASaveOfOneField_SendsThatFieldAlone()
     {

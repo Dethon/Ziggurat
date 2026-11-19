@@ -455,6 +455,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         await using var his = rig.SugaryOf(franAccount);
         (await his.Meals.CountAsync()).ShouldBe(0);
         (await his.Foods.Select(f => f.Name).ToListAsync()).ShouldBe(["Pan de molde"]);
+        // Her log is hers to open: Sugary is on for her, and for nobody else the run made.
+        var members = await rig.Accounts.Service<global::Accounts.Members.MemberStore>()
+            .ListAsync(anaAccount.TenantId, CancellationToken.None);
+        members.Single(m => m.Id == anaAccount.UserId).UsesSugary.ShouldBeTrue();
+        members.Single(m => m.Id == franAccount.UserId).UsesSugary.ShouldBeFalse();
     }
 
     // The collector keys by household from the deploy on, so the day of the deploy is in both shapes

@@ -175,12 +175,14 @@ public sealed record HouseholdAgentName(
     string? ReasoningEffort = null);
 
 // Sugary's view of a household's people: everyone not disabled, in the order they joined, under the
-// name they go by, and whether an owner let their agent read everyone's Sugary log.
+// name they go by, whether an owner let them read everyone's Sugary log, and whether an owner turned
+// Sugary on for them. UsesSugary reads on when an answer leaves it out: the accounts service before it
+// had the field answered for a deployment where everyone used Sugary.
 [PublicAPI]
 public sealed record HouseholdSugaryPeople(IReadOnlyList<SugaryPerson> People);
 
 [PublicAPI]
-public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog);
+public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog, bool UsesSugary = true);
 
 // The chat hub's view of a household's people: everyone, disabled members too — their topics are still
 // kept — in the order they joined, under the name they go by now.

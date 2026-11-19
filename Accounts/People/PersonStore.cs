@@ -6,8 +6,8 @@ namespace Accounts.People;
 public sealed class PersonStore(IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock)
 {
     // A person of the home household with no passkey yet: a link enrolls one, a session can be
-    // minted for them, and nothing else about them is decided here.
-    public async Task<User> CreateAsync(string displayName, Role role, CancellationToken ct)
+    // minted for them, and nothing else about them is decided here but whether Sugary is on for them.
+    public async Task<User> CreateAsync(string displayName, Role role, CancellationToken ct, bool usesSugary = false)
     {
         if (string.IsNullOrWhiteSpace(displayName))
         {
@@ -22,6 +22,7 @@ public sealed class PersonStore(IDbContextFactory<AccountsDbContext> contexts, A
             TenantId = home.Id,
             DisplayName = displayName.Trim(),
             Role = role,
+            UsesSugary = usesSugary,
             CreatedAt = clock.Time.GetUtcNow()
         };
         db.Users.Add(person);

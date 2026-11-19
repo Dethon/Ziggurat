@@ -186,13 +186,18 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         var tradaly = await server.SeedPersonAsync(household, "Tradaly");
         await server.Service<global::Accounts.Members.MemberStore>()
             .SetReadsSugaryLogsAsync(household, dethon, true, CancellationToken.None);
+        await server.Service<global::Accounts.Members.MemberStore>()
+            .SetUsesSugaryAsync(household, tradaly, true, CancellationToken.None);
         await using var client = Client(server, Sugary, listening: false);
         var proof = HouseholdProof.OfCallToken(McpTestSecret.CallTokens.For(
             IdentityClaims.Person(dethon, household, "signalr", ["owner"]), TokenAudiences.CallTo(ServerAddress.Named("mcp-sugary"))));
 
         var people = await client.SugaryPeopleAsync(household, proof, CancellationToken.None);
 
-        people.People.ShouldBe([new SugaryPerson(dethon, "Dethon", true), new SugaryPerson(tradaly, "Tradaly", false)]);
+        people.People.ShouldBe([
+            new SugaryPerson(dethon, "Dethon", ReadsEveryLog: true, UsesSugary: false),
+            new SugaryPerson(tradaly, "Tradaly", ReadsEveryLog: false, UsesSugary: true)
+        ]);
     }
 
     // Sugary's poller wakes for nobody's request: it asks which households turn Sugary off on its own
