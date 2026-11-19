@@ -24,8 +24,29 @@ public readonly record struct CaptureStats(
 // One bounded mic capture over the held-open Wyoming stream. The read loop pushes audio
 // via Feed (single-threaded); the gate decides when speech ends (Ended) or the no-speech
 // window expires (NoSpeech). Completed settles exactly once; Audio replays the buffered chunks.
-public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = null)
+// A pause in an open capture's speech, long enough that the gate may yet end the utterance on it:
+// the audio up to that moment and the gate's statistics as they stood. Compared by identity — a
+// capture ends "on" a pause only if no speech arrived after this very one was taken.
+public sealed class CapturePause(IReadOnlyList<AudioChunk> audio, CaptureStats stats)
 {
+    public IReadOnlyList<AudioChunk> Audio { get; } = audio;
+    public CaptureStats Stats { get; } = stats;
+}
+
+// Told, on the Wyoming read loop, when an open capture's speech has paused for PauseAfter and when
+// it resumes. Both calls must return without waiting on anything.
+public interface ICapturePauseListener
+{
+    TimeSpan PauseAfter { get; }
+    void Paused(CapturePause pause);
+    void Resumed(CapturePause pause);
+}
+
+public sealed class UtteranceCapture(
+    SilenceGate gate, ChunkHistory? history = null, ICapturePauseListener? pauses = null)
+{
+    private CapturePause? _pause;
+
     private readonly Channel<AudioChunk> _chunks = Channel.CreateUnbounded<AudioChunk>();
     private readonly TaskCompletionSource<CaptureOutcome> _done =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -37,6 +58,11 @@ public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = n
     public IAsyncEnumerable<AudioChunk> Audio => _chunks.Reader.ReadAllAsync();
 
     public ChunkHistory? History => history;
+
+    // The pause the capture is in, if it is in one. Once the capture has ended it no longer moves,
+    // so after an end it names the pause the utterance ended on (null when speech never paused for
+    // the listener's mark, or there is no listener).
+    public CapturePause? Pause => Volatile.Read(ref _pause);
 
     // The full continuous capture — every fed chunk, buffered so the speaker verifier embeds
     // enrollment-matching continuous audio (silence-cut speech-only fragments collapse CAM++
@@ -66,6 +92,7 @@ public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = n
             _audio.Add(chunk);
         }
         _chunks.Writer.TryWrite(chunk);
+        TrackPause();
 
         switch (decision)
         {
@@ -77,6 +104,32 @@ public sealed class UtteranceCapture(SilenceGate gate, ChunkHistory? history = n
                 _chunks.Writer.TryComplete();
                 _done.TrySetResult(CaptureOutcome.NoSpeech);
                 break;
+        }
+    }
+
+    // Ahead of the terminal decision on purpose: the chunk that ends the capture must not move the
+    // pause, and nothing after the end may either (frames keep arriving until the satellite is told).
+    private void TrackPause()
+    {
+        if (pauses is null || _done.Task.IsCompleted)
+        {
+            return;
+        }
+
+        if (gate.LastChunkWasSpeech)
+        {
+            if (Interlocked.Exchange(ref _pause, null) is { } resumed)
+            {
+                pauses.Resumed(resumed);
+            }
+            return;
+        }
+
+        if (_pause is null && gate.HasEndableSpeech && gate.TrailingSilence >= pauses.PauseAfter)
+        {
+            var pause = new CapturePause(BufferedAudio, Stats);
+            Volatile.Write(ref _pause, pause);
+            pauses.Paused(pause);
         }
     }
 

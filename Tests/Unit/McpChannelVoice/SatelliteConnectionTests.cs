@@ -11,6 +11,7 @@ using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
+using McpChannelVoice.Services.Tse;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
@@ -67,6 +68,13 @@ public class SatelliteConnectionTests
         public readonly List<VoiceEvent> Published = [];
         public readonly Channel<WyomingEvent> Inbound = Channel.CreateUnbounded<WyomingEvent>();
         public int ChunksTranscribed;
+        // Each decode's chunk count, in the order the decodes finished.
+        public readonly List<int> Decodes = [];
+        // When set, a decode answers with this text for the chunk count it was handed, so a test can
+        // tell which audio a dispatched transcript came from.
+        public Func<int, string>? TranscriptFor;
+        // When set with a Tse mode other than Off, the STT chain is the real TSE stage over the fake.
+        public ITseExtractorClient? TseClient;
         public long SttFinishedAt;
         public TranscriptionOptions? SttOptions;
         public Mock<ISpeechToText> Stt = null!;
@@ -110,14 +118,18 @@ public class SatelliteConnectionTests
                     async (audio, options, token) =>
                     {
                         SttOptions = options;
+                        var count = 0;
                         await foreach (var chunk in audio.WithCancellation(token))
                         {
                             Interlocked.Increment(ref ChunksTranscribed);
+                            count++;
                         }
                         SttFinishedAt = TimeProvider.System.GetTimestamp();
+                        lock (Decodes)
+                        { Decodes.Add(count); }
                         return new TranscriptionResult
                         {
-                            Text = TranscriptText,
+                            Text = TranscriptFor?.Invoke(count) ?? TranscriptText,
                             Language = "es",
                             Confidence = TranscriptText.Length == 0 ? 0.0 : 0.9
                         };
@@ -139,13 +151,27 @@ public class SatelliteConnectionTests
             var host = new WyomingSatelliteHost(
                 Wyoming, Voice,
                 new SatelliteRegistry(new Dictionary<string, SatelliteConfig> { [id] = Config }),
-                Sessions, manager, Stt.Object, dispatcher, Alerts, publisher.Object,
+                Sessions, manager, SttChain(publisher.Object), dispatcher, Alerts, publisher.Object,
                 TimeProvider.System, Arbiter,
                 new SilenceGateFactory(Voice, Wyoming, TimeProvider.System),
                 NullLogger<WyomingSatelliteHost>.Instance,
                 Verifier);
 
             return host.CreateConnection(id, Config, WriteAsync);
+        }
+
+        private ISpeechToText SttChain(IMetricsPublisher publisher) =>
+            TseClient is null
+                ? Stt.Object
+                : TseSpeechToText.Wrap(
+                    Stt.Object, Voice.Tse, TseClient,
+                    new TseAuditTrail(null, 0, TimeProvider.System, NullLogger<TseAuditTrail>.Instance),
+                    publisher, NullLoggerFactory.Instance);
+
+        public int[] DecodedChunkCounts()
+        {
+            lock (Decodes)
+            { return Decodes.ToArray(); }
         }
 
         private async Task WriteAsync(WyomingEvent evt, CancellationToken ct)
@@ -990,5 +1016,146 @@ public class SatelliteConnectionTests
             Data = Pcm(1000),
             Format = new AudioFormat { SampleRateHz = 22_050, SampleWidthBytes = 2, Channels = 1 }
         };
+    }
+
+    // A speech pause past Stt.SpeculateAfterMs starts the decode while the gate is still waiting out
+    // its trailing silence; a capture that ends on that same pause is dispatched from it, so the
+    // decode is paid inside a wait the user sits through anyway instead of after it.
+    private static Harness SpeculatingHarness(TseSettings? tse = null) => new()
+    {
+        Wyoming = new WyomingClientSettings
+        {
+            ReconnectDelaySeconds = 1,
+            SilenceRmsThreshold = 500,
+            TrailingSilenceMs = 600,
+            MaxUtteranceMs = 5000,
+            MinSpeechMs = 100
+        },
+        Voice = new VoiceSettings
+        {
+            AgentId = "mycroft",
+            FollowUp = new FollowUpSettings { Enabled = false },
+            Stt = new SttSettings { SpeculateAfterMs = 200 },
+            Tse = tse ?? new TseSettings()
+        },
+        TranscriptFor = chunks => $"chunks:{chunks}"
+    };
+
+    [Fact]
+    public async Task Speculation_CaptureEndsOnThePause_DispatchesTheDecodeStartedAtThePause()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness();
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 8);
+
+        // The decode took the capture as it stood 200 ms into the pause: 1 + 4 + 2 chunks. The whole
+        // capture (1 + 4 + 6 at the 600 ms end) was never decoded.
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token)).Content.ShouldBe("chunks:7");
+        h.DecodedChunkCounts().ShouldBe([7]);
+        h.PublishedOf(VoiceMetric.SpeculativeSttMs).ShouldHaveSingleItem().Outcome.ShouldBe("used");
+        h.PublishedOf(VoiceMetric.SttLatencyMs).ShouldHaveSingleItem();
+
+        await StopAsync(run, cts);
+    }
+
+    [Fact]
+    public async Task Speculation_SpeechResumesAfterThePause_DiscardsTheEarlierDecode()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness();
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 3);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 8);
+
+        // The second pause's capture: 1 + 4 + 3 + 4 + 2 chunks. The first pause's decode is not the
+        // turn's, whatever it said, and is reported as thrown away.
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token)).Content.ShouldBe("chunks:14");
+        await UntilAsync(() => h.PublishedOf(VoiceMetric.SpeculativeSttMs).Length == 2, TimeSpan.FromSeconds(5));
+        h.PublishedOf(VoiceMetric.SpeculativeSttMs).Select(e => e.Outcome)
+            .ShouldBe(["discarded", "used"], ignoreOrder: true);
+
+        await StopAsync(run, cts);
+    }
+
+    [Fact]
+    public async Task Speculation_TseWouldSkip_ReusesTheDecodeAndReportsTheSkipOnce()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness(new TseSettings { Mode = TseMode.Always });
+        h.TseClient = new Mock<ITseExtractorClient>().Object;
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 8);
+
+        // No verifier, so no target speaker: TSE skips this turn, and the raw speculative decode is
+        // exactly what the chain would have decoded. The skip is the turn's, so it is reported once.
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token)).Content.ShouldBe("chunks:7");
+        h.PublishedOf(VoiceMetric.TseSkipped).ShouldHaveSingleItem().Outcome.ShouldBe("no_speaker");
+
+        await StopAsync(run, cts);
+    }
+
+    [Fact]
+    public async Task Speculation_TseWouldExtract_DecodesTheWholeCaptureThroughTse()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness(new TseSettings { Mode = TseMode.Always });
+        var tse = new Mock<ITseExtractorClient>();
+        tse.Setup(t => t.ExtractAsync(It.IsAny<byte[]>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TseExtractReply(null, false));
+        h.TseClient = tse.Object;
+        h.Verifier = new IdentifyingVerifier("fran");
+        h.Accounts = new FakeAccountResolver().Holding("fran", "t-home", "Fran");
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 8);
+
+        // A recognised speaker gives TSE a target, and the speculative decode ran on raw audio before
+        // anyone knew that: it cannot stand in for the extracted decode, so the turn goes through TSE.
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token)).Content.ShouldBe("chunks:11");
+        tse.Verify(t => t.ExtractAsync(It.IsAny<byte[]>(), "fran", It.IsAny<CancellationToken>()), Times.Once());
+
+        await StopAsync(run, cts);
+    }
+
+    [Fact]
+    public async Task Speculation_Off_DecodesTheWholeCaptureOnce()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var h = SpeculatingHarness();
+        h.Voice = h.Voice with { Stt = new SttSettings { SpeculateAfterMs = 0 } };
+        var connection = h.Build();
+        var run = connection.RunAsync(h.Events, cts.Token);
+
+        h.SendWake();
+        h.SendAudio(0, 1);
+        h.SendAudio(8000, 4);
+        h.SendAudio(0, 8);
+
+        (await h.Emitter.FirstAsync(TimeSpan.FromSeconds(10), cts.Token)).Content.ShouldBe("chunks:11");
+        h.DecodedChunkCounts().ShouldBe([11]);
+        h.PublishedOf(VoiceMetric.SpeculativeSttMs).ShouldBeEmpty();
+
+        await StopAsync(run, cts);
     }
 }

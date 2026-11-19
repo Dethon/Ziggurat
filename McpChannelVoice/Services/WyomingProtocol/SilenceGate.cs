@@ -39,6 +39,10 @@ public sealed class SilenceGate(
 
     public TimeSpan SpeechElapsed => _speechElapsed;
 
+    // Whether a long enough silence from here would end the utterance: speech at or under minSpeech
+    // never ends a turn on its own, so a pause before it is not a pause worth acting on.
+    public bool HasEndableSpeech => _speechElapsed > minSpeech;
+
     public double PeakRms => _peakRms;
 
     public double FloorRms => tracker.FloorRms;

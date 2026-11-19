@@ -6,6 +6,12 @@ public record SttSettings
 {
     public OpenAiSttConfig OpenAi { get; init; } = new();
     public SegmentedSttConfig Streaming { get; init; } = new();
+
+    // How far into a speech pause the decode starts, before the gate has decided the pause ends the
+    // utterance. A capture that does end on that pause is dispatched from it, so the decode runs
+    // inside the trailing-silence wait instead of after it; speech resuming throws it away. Below
+    // WyomingClient.TrailingSilenceMs by a decode's length for the decode to be hidden whole. 0 is off.
+    public int SpeculateAfterMs { get; init; }
 }
 
 public record OpenAiSttConfig

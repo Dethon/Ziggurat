@@ -68,6 +68,10 @@ public class VoiceEnumsTests
         ((int)metric).ShouldBe(expected);
     }
 
+    [Fact]
+    public void VoiceMetric_SpeculativeStt_IsPinned() =>
+        ((int)VoiceMetric.SpeculativeSttMs).ShouldBe(31);
+
     [Theory]
     [InlineData(VoiceDimension.SatelliteId, 0)]
     [InlineData(VoiceDimension.Room, 1)]

@@ -7,6 +7,21 @@ namespace Tests.Unit.McpChannelVoice;
 
 public class VoiceSettingsBindingTests
 {
+    // The decode starts at the mark and has to finish inside the endpoint tail to be hidden, so the
+    // shipped mark sits under the tail by more than a short command's decode (~0.65 s on ai370).
+    [Fact]
+    public void Bind_ShippedAppSettings_SpeculatesEarlyEnoughToHideADecodeInTheTail()
+    {
+        var settings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(
+                Tests.Integration.McpServers.McpServerRegistrations.RepoRoot, "McpChannelVoice/appsettings.json"))
+            .Build()
+            .Get<VoiceSettings>()!;
+
+        settings.Stt.SpeculateAfterMs.ShouldBeGreaterThan(0);
+        (settings.WyomingClient.TrailingSilenceMs - settings.Stt.SpeculateAfterMs).ShouldBeGreaterThanOrEqualTo(650);
+    }
+
     [Fact]
     public void VoiceSettings_BindsFromJson()
     {
