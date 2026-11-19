@@ -141,13 +141,15 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   decimal (`glucose.ts`); its range is saved with `loaded` and `overRecord`, so a range shown rounded in
   mmol/L goes back as recorded when untouched. A refusal's `code` reaches the app on `ApiError.code`.
 
-- **Who she is** (`Profile`, `/api/profile`; `BodyMeasurement`, `/api/measurements`): sex, diabetes type and
-  diagnosis day, each null until she says it — the app saves each field as she changes it, with `loaded`, and a
+- **Who she is** (`Profile`, `/api/profile`; `BodyMeasurement`, `/api/measurements`): sex, diabetes type,
+  diagnosis day and birth day (a diagnosis before the birth is refused), each null until she says it — the app saves each field as she changes it, with `loaded`, and a
   field sent empty is taken back; her height (cm) and weight (kg) as a history, one of each kind a day (a second
   is refused, she corrects the first; the kind never changes). Both are her log's writes, queued like the rest.
   The app's **Cycle tab follows her sex: hidden only from a man who said so**, so somebody who never said — every
   person from before profiles — keeps it; her periods stay logged and on the mount either way. The app asks
-  `/api/profile` beside `/api/session` before its first paint, and offline shows every tab.
+  `/api/profile` beside `/api/session` before its first paint, and offline shows every tab. Settings draws each
+  kind's history as a chart whose points open that entry to correct or delete, with the same entries listed
+  under it; a day field saves when it is left, not per keystroke. All four tables download as CSV beside the rest.
 
 ## Turns, the mount and reminders
 
@@ -156,7 +158,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - An estimate's and a label's turn carry `Principal("sugary", <user id>, Account)`, and their `Sender` is the account's id: the assertion names nothing more, and a resolution call per estimate would put the accounts service on every meal's path. They also carry that very assertion (`Person.Assertion`, the request's `X-Ziggurat-Assertion`) as the notification's `Assertion`, which is what the agent believes about the turn — and its own check is for channel `sugary` too. `OpenEstimates` remembers who opened a meal's conversation, and anyone else's answers on it are the same 410 as a closed one.
 - **Everyone's log, for a reader an owner granted it** (user, 2026-11-12: one member's agent running analytics on another's diabetes): the members page's "Reads everyone's Sugary log" (`User.ReadsSugaryLogs`, owner-granted like sees-all, never a role; each account page names who holds it). The mount asks the call's household for its `sugary-people` view (`ICallHousehold.SugaryPeopleAsync`, on the call token) and, when it lists the reader as granted and the household is the reader's own, shows each other person not disabled under `people/<folder>/` with the same files; a query at or under `people/<folder>` reads that person's whole log, anywhere else the reader's own. A folder is the display name's letters and digits lowercased (`SugaryPath.FolderOf`), twins numbered in the order they joined. The owner's `Account` is built from the reader's tenant and the view's user id, never parsed from a path. Without the grant there is no `people/` in a listing and anything under it is `permission_denied`, never empty. Agent only: the app stays each person's own log. Sugary keeps the view a minute (no Redis), so a withdrawn grant still reads for up to a minute.
 - The `/sugary` mount answers for the account on the principal the call's `_meta` carries (`SugaryFileSystem.For`, `Principal.Of(caller.Conversation)?.Account`), never an ambient. A call naming nobody — a voice guest, a fire with no person behind it, a call with no context — is refused `permission_denied`, never shown an empty log: "she logged nothing" would be a false fact about a health record. The byte read overrides `ReadBlobAsync` for that refusal, because one thrown from the chunk stream reaches the wire as a failure to retry. The eval stamps every turn with `EvalRun.Account` and seeds its log under it.
-- **Who she is on the mount**: `profile.parquet` (always one row, an unsaid field an empty cell, never a default),
+- **Who she is on the mount**: `profile.parquet` (always one row, `born_on` among its columns, an unsaid field an empty cell, never a default),
   `heights.parquet` and `weights.parquet` (oldest first), and `pens.parquet` (every pen, `replace_on` worked out
   from `opened_on` + `days`, the one in use with no `replaced_on`) — so the agent knows which insulin each dose
   kind is. The README and the `sugary-log` skill say none of them is a number to dose from: a weight or an
