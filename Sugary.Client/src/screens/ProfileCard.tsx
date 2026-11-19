@@ -19,7 +19,16 @@ const ICON = { height: "ruler", weight: "scale" } as const;
 // Who she is: her sex (the Cycle tab follows it), her diabetes and when it was diagnosed, each saved as
 // she changes it; and her height and weight as a history of days. The agent reads all of it beside
 // her log; nothing she leaves empty is filled in for her.
-export function ProfileCard({ profile, onChange }: { profile: Profile; onChange: (profile: Profile) => void }) {
+export function ProfileCard({
+  profile,
+  onChange,
+  readOnly = false,
+}: {
+  profile: Profile;
+  onChange: (profile: Profile) => void;
+  // Somebody else's profile: shown, every field and entry closed to change.
+  readOnly?: boolean;
+}) {
   const { t, language } = useSettings();
   const toast = useToast();
   const [confirm, confirming] = useConfirm();
@@ -101,6 +110,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
               type="button"
               className={profile.sex === sex ? "segment segment-on" : "segment"}
               aria-pressed={profile.sex === sex}
+              disabled={readOnly}
               onClick={() => void save({ sex: profile.sex === sex ? null : sex })}
             >
               {t(`sex_${sex}`)}
@@ -115,6 +125,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
         <select
           id={`${id}-type`}
           value={profile.diabetesType ?? ""}
+          disabled={readOnly}
           onChange={(event) => void save({ diabetesType: (event.target.value || null) as DiabetesType | null })}
         >
           <option value="">{t("diabetesTypeUnsaid")}</option>
@@ -131,6 +142,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
         saved={profile.bornOn}
         min="1900-01-01"
         max={today}
+        readOnly={readOnly}
         onSave={(bornOn) => void save({ bornOn })}
       />
       <DayField
@@ -138,6 +150,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
         saved={profile.diagnosedOn}
         min={profile.bornOn ?? "1900-01-01"}
         max={today}
+        readOnly={readOnly}
         onSave={(diagnosedOn) => void save({ diagnosedOn })}
       />
 
@@ -148,22 +161,34 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
             const past = history(measurements, kind);
             return (
               <div key={kind} className="measurement-kind">
-                <button
-                  type="button"
-                  className="row-link period-row measurement-row"
-                  aria-haspopup="dialog"
-                  aria-label={t(`measurementAdd_${kind}`)}
-                  onClick={() => setSheet({ kind })}
-                >
-                  <Icon name={ICON[kind]} size={20} />
-                  <span className="period-row-text">
-                    <span className="item-name">{t(`measure_${kind}`)}</span>
-                    <span className="item-meta">
-                      {current ? `${shownValue(current)} · ${t("measurementSince", { date: day(current.on) })}` : t("measurementNone")}
+                {readOnly ? (
+                  <div className="row-link row-static period-row measurement-row">
+                    <Icon name={ICON[kind]} size={20} />
+                    <span className="period-row-text">
+                      <span className="item-name">{t(`measure_${kind}`)}</span>
+                      <span className="item-meta">
+                        {current ? `${shownValue(current)} · ${t("measurementSince", { date: day(current.on) })}` : t("measurementNone")}
+                      </span>
                     </span>
-                  </span>
-                  <Icon name="plus" size={20} />
-                </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="row-link period-row measurement-row"
+                    aria-haspopup="dialog"
+                    aria-label={t(`measurementAdd_${kind}`)}
+                    onClick={() => setSheet({ kind })}
+                  >
+                    <Icon name={ICON[kind]} size={20} />
+                    <span className="period-row-text">
+                      <span className="item-name">{t(`measure_${kind}`)}</span>
+                      <span className="item-meta">
+                        {current ? `${shownValue(current)} · ${t("measurementSince", { date: day(current.on) })}` : t("measurementNone")}
+                      </span>
+                    </span>
+                    <Icon name="plus" size={20} />
+                  </button>
+                )}
                 {past.length > 0 && (
                   <button
                     type="button"
@@ -184,7 +209,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
           })}
         </div>
       )}
-      <p className="muted small">{t("measurementsHint")}</p>
+      {!readOnly && <p className="muted small">{t("measurementsHint")}</p>}
       {viewing && !sheet && measurements && (
         <MeasurementHistorySheet
           kind={viewing.kind}
@@ -192,12 +217,12 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
           range={viewing.range}
           today={today}
           onRange={(range) => setViewing({ ...viewing, range })}
-          onOpen={(measurement) => setSheet({ kind: viewing.kind, measurement })}
-          onAdd={() => setSheet({ kind: viewing.kind })}
+          onOpen={readOnly ? undefined : (measurement) => setSheet({ kind: viewing.kind, measurement })}
+          onAdd={readOnly ? undefined : () => setSheet({ kind: viewing.kind })}
           onClose={() => setViewing(null)}
         />
       )}
-      {sheet && (
+      {sheet && !readOnly && (
         <MeasurementSheet
           kind={sheet.kind}
           measurement={opened}
@@ -229,12 +254,14 @@ function DayField({
   saved,
   min,
   max,
+  readOnly,
   onSave,
 }: {
   label: string;
   saved: string | null;
   min: string;
   max: string;
+  readOnly: boolean;
   onSave: (day: string | null) => void;
 }) {
   const id = useId();
@@ -248,9 +275,13 @@ function DayField({
         type="date"
         min={min}
         max={max}
+        readOnly={readOnly}
         value={typed}
         onChange={(event) => setTyped(event.target.value)}
         onBlur={() => {
+          if (readOnly) {
+            return;
+          }
           const day = typed || null;
           if (day !== saved && (day === null || (day >= min && day <= max))) {
             onSave(day);

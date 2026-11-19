@@ -9,8 +9,9 @@ import { AmountSheet, FoodList, FoodSheet, HelpingSheet } from "./FoodsSheet";
 import { RecipeSheet } from "./RecipeSheet";
 
 // Her pantry: everything she keeps and cooks, to find, change, or add to the meal in two taps.
-// `labels` says whether a new food can be read off a photo of its nutrition table.
-export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToMeal: (item: DraftItem) => void }) {
+// `labels` says whether a new food can be read off a photo of its nutrition table. Without
+// `onAddToMeal` (somebody else's log is open, and no meal is being built) nothing offers to add one.
+export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToMeal?: (item: DraftItem) => void }) {
   const { t } = useSettings();
   const { foods, recipes, error, reload } = usePantry(t);
   const [editing, setEditing] = useState<{ food: Food | null; already?: boolean } | null>(null);
@@ -19,7 +20,7 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
 
   const addToMeal = (item: DraftItem) => {
     setAdding(null);
-    onAddToMeal(item);
+    onAddToMeal?.(item);
   };
 
   return (
@@ -34,7 +35,7 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
         recipes={recipes}
         error={error}
         onPick={(entry) => (entry.kind === "food" ? setEditing({ food: entry.food }) : setCooking({ recipe: entry.recipe }))}
-        onAdd={setAdding}
+        onAdd={onAddToMeal ? setAdding : undefined}
       />
       <ActionBar active>
         <div className="footer-row">

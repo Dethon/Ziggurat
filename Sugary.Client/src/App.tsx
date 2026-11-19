@@ -262,13 +262,18 @@ function Shell({
         {tab === "foods" && shown.includes("foods") && (
           <FoodsScreen
             labels={session.labels}
-            onAddToMeal={(item) => {
-              adder.current?.(item);
-              toast({ text: t("addedToMeal"), action: { label: t("viewMeal"), run: () => setTab("meal") } });
-            }}
+            onAddToMeal={
+              // No meal is being built while somebody else's log is open.
+              someoneElses
+                ? undefined
+                : (item) => {
+                    adder.current?.(item);
+                    toast({ text: t("addedToMeal"), action: { label: t("viewMeal"), run: () => setTab("meal") } });
+                  }
+            }
           />
         )}
-        {tab === "settings" && shown.includes("settings") && <SettingsScreen profile={profile} onProfile={onProfile} />}
+        {tab === "settings" && shown.includes("settings") && <SettingsScreen profile={profile} onProfile={onProfile} readOnly={someoneElses} />}
       </main>
 
       {/* A bar along the bottom on a phone, a rail down the left on a desktop, which names the app. */}

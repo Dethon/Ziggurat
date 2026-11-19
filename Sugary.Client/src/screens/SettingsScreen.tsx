@@ -28,7 +28,17 @@ const LANGUAGES: { code: Language; name: string }[] = [
   { code: "en", name: "English" },
 ];
 
-export function SettingsScreen({ profile, onProfile }: { profile: Profile; onProfile: (profile: Profile) => void }) {
+// `readOnly` while somebody else's log is open: their profile, measurements and pens are shown and
+// nothing of theirs changes. The ration size, language and theme are this device's, so stay its own.
+export function SettingsScreen({
+  profile,
+  onProfile,
+  readOnly = false,
+}: {
+  profile: Profile;
+  onProfile: (profile: Profile) => void;
+  readOnly?: boolean;
+}) {
   const { t, rationSize, language, theme, update } = useSettings();
 
   return (
@@ -40,9 +50,9 @@ export function SettingsScreen({ profile, onProfile }: { profile: Profile; onPro
 
       {/* Her cards, in two columns on a desktop. */}
       <div className="cards">
-        <ProfileCard profile={profile} onChange={onProfile} />
+        <ProfileCard profile={profile} onChange={onProfile} readOnly={readOnly} />
 
-        <PensCard />
+        <PensCard readOnly={readOnly} />
 
         <section className="card setting" aria-labelledby="ration-title">
           <h2 id="ration-title">{t("rationSize")}</h2>

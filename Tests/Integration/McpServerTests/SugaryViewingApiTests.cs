@@ -153,6 +153,32 @@ public class SugaryViewingApiTests
         hers["email"]!.GetValue<string>().ShouldBe("ana@example.com");
     }
 
+    // The pantry is the household's, whoever's log is open: a reader adds a food while looking at her
+    // log, a reader with no log of their own keeps it too, and it is the same pantry for everyone.
+    // Somebody Sugary is off for, without the grant, has none of it.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ThePantry_IsTheHouseholds_WhoeversLogIsOpen(bool readerUsesSugary)
+    {
+        await using var server = await SugaryServer.StartAsync(sugaryPeople: People(readerUsesSugary));
+        var reader = server.As(Reader);
+        var added = await reader.PostAsJsonAsync($"/api/foods?person={SugaryServer.Her.UserId}", Food("Pan de molde"));
+        var plain = await reader.PostAsJsonAsync("/api/foods", Food("Arroz"));
+
+        added.StatusCode.ShouldBe(HttpStatusCode.Created, await added.Content.ReadAsStringAsync());
+        plain.StatusCode.ShouldBe(HttpStatusCode.Created, await plain.Content.ReadAsStringAsync());
+        (await server.As(SugaryServer.Her).GetFromJsonAsync<JsonArray>("/api/foods"))!
+            .Select(f => f!["name"]!.GetValue<string>()).ShouldBe(["Arroz", "Pan de molde"], ignoreOrder: true);
+        (await CodeOf(await server.As(Off).GetAsync("/api/foods"), HttpStatusCode.Forbidden)).ShouldBe("sugary-not-yours");
+    }
+
+    private static JsonObject Food(string name) => new()
+    {
+        ["name"] = name, ["carbsPer100g"] = 46, ["unit"] = "g", ["portionGrams"] = null, ["portionCarbs"] = null,
+        ["barcode"] = null, ["source"] = "manual"
+    };
+
     // Naming somebody is no way in: not without the grant, not somebody Sugary is off for, not somebody
     // of another household — each refused, never answered with an empty log.
     [Fact]

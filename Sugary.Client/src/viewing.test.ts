@@ -47,14 +47,14 @@ describe("the person picker", () => {
 });
 
 describe("the tabs while looking at somebody else's log", () => {
-  it("are the Log, Glucose and, where hers, Cycle alone", () => {
-    expect(visibleTabs(true, true)).toEqual(["log", "glucose", "cycle"]);
-    expect(visibleTabs(false, true)).toEqual(["log", "glucose"]);
+  it("are all but the Meal, Cycle only where hers: the pantry is the household's, the settings shown read only", () => {
+    expect(visibleTabs(true, true)).toEqual(["log", "glucose", "cycle", "foods", "settings"]);
+    expect(visibleTabs(false, true)).toEqual(["log", "glucose", "foods", "settings"]);
   });
 
   it("open on the Log for a tab not shown", () => {
     expect(tabOf("#meal", visibleTabs(true, true))).toBe("log");
-    expect(tabOf("#settings", visibleTabs(true, true))).toBe("log");
+    expect(tabOf("#settings", visibleTabs(true, true))).toBe("settings");
     expect(tabOf("#glucose", visibleTabs(true, true))).toBe("glucose");
   });
 });
@@ -77,6 +77,17 @@ describe("whose log a request reads", () => {
     expect(withPerson("/api/periods")).toBe("/api/periods?person=bea");
     expect(api.photoUrl("m1")).toBe("/api/meals/m1/photo?person=bea");
     expect(api.exportUrl("meals")).toMatch(/^\/api\/export\/meals\.csv\?tz=[^&]+&person=bea$/);
+  });
+
+  // The pantry is the household's, whoever's log is open: it is asked, and changed, as nobody's.
+  it("names nobody on the pantry's addresses", () => {
+    setViewing("bea");
+
+    expect(withPerson("/api/foods")).toBe("/api/foods");
+    expect(withPerson("/api/foods/f1")).toBe("/api/foods/f1");
+    expect(withPerson("/api/recipes/r1")).toBe("/api/recipes/r1");
+    expect(withPerson("/api/products/8410")).toBe("/api/products/8410");
+    expect(withPerson("/api/labels")).toBe("/api/labels");
   });
 
   it("names the person looked at on a call through the app's own request", async () => {

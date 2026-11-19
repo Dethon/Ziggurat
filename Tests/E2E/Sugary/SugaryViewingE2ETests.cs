@@ -12,7 +12,8 @@ using Tests.E2E.Fixtures;
 namespace Tests.E2E.Sugary;
 
 // An owner lets a member read everyone's Sugary log on the members page, and the member's app offers
-// whose log to show: picking her shows her meal, with nothing to add or change. Its people are the
+// whose log to show: picking her shows her meal and her settings, with nothing of hers to add or
+// change, and the household's pantry as open as ever. Its people are the
 // stack's second household's (PersonElsewhereAsync): a grant has every open page of a household renew
 // its connection. No model is asked.
 [Collection(WebChatE2ECollections.Sugary)]
@@ -91,6 +92,12 @@ public class SugaryViewingE2ETests(WebChatE2EFixture fixture)
             new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         await Assertions.Expect(tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Meal" })).ToHaveCountAsync(0);
         await Assertions.Expect(page.GetByText("Add to your log")).ToHaveCountAsync(0);
+
+        // Her settings are shown and closed to change; the pantry is the household's, so it stays open.
+        await tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Settings" }).ClickAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Woman" })).ToBeDisabledAsync();
+        await tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Pantry" }).ClickAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "New food" })).ToBeEnabledAsync();
     }
 
     private static Dictionary<string, string> Headers(Account person) => new()

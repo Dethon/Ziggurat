@@ -15,8 +15,10 @@ namespace McpServerSugary.App;
 // - A holder of everyone's log names a person with ?person=<user id> and reads that person's log, on
 //   a GET alone (any other method 403 viewing-read-only), and only somebody Sugary is on for in their
 //   own household (else 403 not-granted, never an empty log). Their own log is as it was.
-// - A holder Sugary is off for reads the others and has no log: anything else but the session is
-//   sugary-not-yours.
+// - A holder Sugary is off for reads the others and has no log: anything else but the session and the
+//   pantry is sugary-not-yours.
+// - The pantry (foods, recipes, a product's or a label's reading) is the household's, whoever's log is
+//   open: anyone the app admits reads and changes it, and ?person= says nothing there.
 //
 // Somebody the view does not list is let through to their own log: the accounts service lists every
 // member not disabled, and a disabled one's session is refused before it gets here, so only a stand-in
@@ -28,6 +30,9 @@ internal static class SugaryAccess
     public const string ReadOnly = "viewing-read-only";
     public const string NotGranted = "not-granted";
     public const string Unreadable = "people-unreadable";
+
+    // The household's, not a person's log: the pantry and what fills it.
+    private static readonly string[] _household = ["/api/foods", "/api/recipes", "/api/products", "/api/labels"];
 
     public static async Task<IResult?> AdmitAsync(HttpContext http, Person person, CancellationToken ct)
     {
@@ -52,6 +57,12 @@ internal static class SugaryAccess
         }
 
         var admitted = person with { UsesSugary = usesSugary, Readable = granted ? [.. people.Where(p => p.UsesSugary)] : [] };
+        if (_household.Any(path => http.Request.Path.StartsWithSegments(path, StringComparison.OrdinalIgnoreCase)))
+        {
+            Person.Admitted(http, admitted);
+            return null;
+        }
+
         var named = http.Request.Query[PersonParameter].ToString();
         if (named.Length == 0 || named == person.Account.UserId)
         {

@@ -11,9 +11,9 @@ export function tabOf(hash: string, shown: readonly Tab[] = TABS): Tab {
   return shown.find((tab) => tab === name) ?? shown[0] ?? "meal";
 }
 
-// What somebody else's log shows her: read only, so neither the meal she is building, the pantry nor
-// her own settings, which are hers whoever's log is open.
-const LOOKING: readonly Tab[] = ["log", "glucose", "cycle"];
+// What somebody else's log shows her: all but the meal she is building, read only but for the pantry,
+// which is the household's whoever's log is open; the settings show that person's, read only.
+const LOOKING: readonly Tab[] = ["log", "glucose", "cycle", "foods", "settings"];
 
 // The Cycle tab is a woman's: a man who said so is not shown it, and his periods, if any, stay logged.
 export function visibleTabs(cycle: boolean, someoneElses = false): Tab[] {

@@ -58,8 +58,18 @@ export function setViewing(userId: string | null): void {
   viewing = userId;
 }
 
+// The pantry and what fills it are the household's, whoever's log is open: asked, and changed, as nobody's.
+const HOUSEHOLD = ["/api/foods", "/api/recipes", "/api/products", "/api/labels"];
+
+function household(address: string): boolean {
+  const path = address.split("?")[0];
+  return HOUSEHOLD.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
 export function withPerson(address: string, person: string | null = viewing): string {
-  return person === null ? address : `${address}${address.includes("?") ? "&" : "?"}person=${encodeURIComponent(person)}`;
+  return person === null || household(address)
+    ? address
+    : `${address}${address.includes("?") ? "&" : "?"}person=${encodeURIComponent(person)}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
