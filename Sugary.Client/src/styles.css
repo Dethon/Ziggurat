@@ -3001,6 +3001,12 @@ h1.marked .icon {
     --page-width: var(--page-width-desktop);
   }
 
+  /* A desktop's scrollbar takes room of its own: kept for a short tab too, the centred page never
+     shifts sideways between tabs. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   /* A desktop has no keyboard to step aside for: a field's focus while the window is resized must
      never take the rail away. */
   :root[data-typing] .tabs {
@@ -3106,13 +3112,16 @@ h1.marked .icon {
 
   /* Sheets open in the middle of the window */
 
+  /* Centred in what the keyboard leaves: a tablet held sideways is this wide and its keyboard does
+     not resize the page (--keyboard, typing.ts). */
   .sheet {
-    max-height: none;
+    inset-block-end: var(--keyboard, 0px);
+    max-height: calc(100dvh - var(--keyboard, 0px));
     margin: auto;
   }
 
   .sheet-panel {
-    max-height: min(86dvh, 880px);
+    max-height: min(86dvh - var(--keyboard, 0px), 880px);
     padding-top: var(--space-3);
     border-radius: var(--radius-xl);
     overflow: hidden;
@@ -3145,13 +3154,26 @@ h1.marked .icon {
     min-width: 0;
   }
 
-  /* A pane with nothing in it leaves the other the page's whole width. */
+  /* A pane with nothing in it (Glucose before a sensor is linked) leaves the other alone, as wide as
+     a phone's column: a form's fields stretched across the page read as nothing in particular. */
   .pane:empty {
     display: none;
   }
 
   .panes:has(> .pane:empty) {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 560px);
+  }
+
+  .pane-side {
+    container: side / inline-size;
+  }
+
+  /* A side narrower than the phone's column (a laptop's 1024 px) lays her four record tiles out two
+     by two, so "Insulina" and "Gimnasio" keep their words whole. */
+  @container side (max-width: 23rem) {
+    .tiles-record {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   /* The side that leads (the Log's adding and searching, the Cycle's where-you-are, a meal's total)
@@ -3240,20 +3262,34 @@ h1.marked .icon {
     background: var(--color-primary-strong);
   }
 
-  .button-secondary:hover:not(:disabled),
+  .button-secondary:hover:not(:disabled) {
+    background-color: color-mix(in srgb, var(--color-primary-soft), var(--color-primary) 12%);
+  }
+
   .chip:hover:not(.chip-on),
   .tile:hover,
-  .row-button:hover,
+  .row-button:hover {
+    background-color: var(--color-sponge);
+  }
+
+  /* A row in a card is lit in the page's own colour, softer than a button's. */
   .meal-row:hover,
   .food-row:hover,
   .row-link:hover {
-    background-color: var(--color-sponge);
+    background-color: var(--color-bg);
   }
 
   .button-quiet:hover:not(:disabled),
   .icon-button:hover {
     background-color: var(--color-sponge);
     color: var(--color-ink);
+  }
+
+  /* A row in a card is lit as a rounded patch inside its lines, never a block up to the card's edge. */
+  .meal-row,
+  .food-row,
+  .row-link {
+    border-radius: var(--radius-s);
   }
 }
 

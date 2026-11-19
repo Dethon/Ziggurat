@@ -19,7 +19,7 @@ public class SugaryDesktopE2ETests(WebChatE2EFixture fixture)
     private const int Height = 900;
 
     [SkippableFact]
-    public async Task OnADesktop_TheTabsAreARailBesideThePage_AndTheActionAndSheetsSitBesideIt()
+    public async Task OnADesktop_TheTabsAreARailBesideThePage_TheActionSitsBesideIt_AndSheetsOpenCentred()
     {
         Skip.If(string.IsNullOrEmpty(fixture.SugaryUrl), "Sugary stack not available");
 
@@ -56,8 +56,50 @@ public class SugaryDesktopE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(sheet).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         var panel = await BoxOfAsync(sheet.Locator(".sheet-panel"));
         (Height - (panel.Y + panel.Height)).ShouldBeGreaterThan(24, "a sheet opens in the window, not from its bottom edge");
-        (panel.X + panel.Width / 2).ShouldBe(Width / 2, 2, "a sheet sits in the middle of the window");
+        // The window less its scrollbar, whose room a desktop keeps even on a short page.
+        var shown = await page.EvaluateAsync<float>("() => document.body.getBoundingClientRect().width");
+        (panel.X + panel.Width / 2).ShouldBe(shown / 2, 2, "a sheet sits in the middle of the window");
         panel.Y.ShouldBeGreaterThan(24, "with room above it as below");
+    }
+
+    // A sheet closes on a click on the scrim around it. Selecting a field's words with the mouse and
+    // letting go past the sheet's edge (an everyday overshoot beside a centred sheet) also ends in a
+    // click on the scrim's element, and it closed the sheet with everything typed in it.
+    [SkippableFact]
+    public async Task SelectingAFieldsWordsPastTheSheetsEdge_KeepsTheSheetOpen()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.SugaryUrl), "Sugary stack not available");
+
+        var person = await fixture.AccountForAsync(fixture.NextUserIndex());
+        var browser = (await fixture.CreatePageAsync()).Context.Browser!;
+        await using var desktop = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            ViewportSize = new ViewportSize { Width = Width, Height = Height },
+            ServiceWorkers = ServiceWorkerPolicy.Block,
+            ExtraHTTPHeaders = Headers(person)
+        });
+        var page = await desktop.NewPageAsync();
+        await page.GotoAsync(fixture.SugaryUrl);
+        await page.GetByRole(AriaRole.Navigation, new PageGetByRoleOptions { Name = "Sugary" })
+            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Pantry" })
+            .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "New food" }).ClickAsync();
+        var sheet = page.Locator("dialog[open]");
+        var name = sheet.Locator("input").First;
+        await name.FillAsync("Bizcocho de limón", new LocatorFillOptions { Timeout = 30_000 });
+
+        var field = await BoxOfAsync(name);
+        var y = field.Y + field.Height / 2;
+        await page.Mouse.MoveAsync(field.X + field.Width - 8, y);
+        await page.Mouse.DownAsync();
+        await page.Mouse.MoveAsync(40, y, new MouseMoveOptions { Steps = 5 });
+        await page.Mouse.UpAsync();
+
+        await Assertions.Expect(sheet).ToHaveCountAsync(1);
+        await Assertions.Expect(name).ToHaveValueAsync("Bizcocho de limón");
+
+        await page.Mouse.ClickAsync(40, y);
+        await Assertions.Expect(sheet).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
     }
 
     private static async Task<LocatorBoundingBoxResult> BoxOfAsync(ILocator locator)
