@@ -427,7 +427,8 @@ public class AccountPageTests
         holders.ShouldNotContain("Pablo");
     }
 
-    // A Sugary log is a health record: everyone in the household can see whose agent may read it.
+    // A Sugary log is a health record: everyone in the household can see who may read it, in the app and
+    // through their agent.
     [Fact]
     public async Task ThePage_NamesWhoReadsEveryonesSugaryLog()
     {
@@ -445,6 +446,7 @@ public class AccountPageTests
         start.ShouldBeGreaterThan(0);
         var holders = page[start..page.IndexOf("</section>", start, StringComparison.Ordinal)];
         holders.ShouldContain("Laura");
+        holders.ShouldContain("in the Sugary app");
         holders.ShouldNotContain("Fran");
         holders.ShouldNotContain("Pablo");
     }

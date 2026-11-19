@@ -186,13 +186,18 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         var tradaly = await server.SeedPersonAsync(household, "Tradaly");
         await server.Service<global::Accounts.Members.MemberStore>()
             .SetReadsSugaryLogsAsync(household, dethon, true, CancellationToken.None);
+        await server.Service<global::Accounts.Members.MemberStore>()
+            .SetUsesSugaryAsync(household, tradaly, true, CancellationToken.None);
         await using var client = Client(server, Sugary, listening: false);
         var proof = HouseholdProof.OfCallToken(McpTestSecret.CallTokens.For(
             IdentityClaims.Person(dethon, household, "signalr", ["owner"]), TokenAudiences.CallTo(ServerAddress.Named("mcp-sugary"))));
 
         var people = await client.SugaryPeopleAsync(household, proof, CancellationToken.None);
 
-        people.People.ShouldBe([new SugaryPerson(dethon, "Dethon", true), new SugaryPerson(tradaly, "Tradaly", false)]);
+        people.People.ShouldBe([
+            new SugaryPerson(dethon, "Dethon", ReadsEveryLog: true, UsesSugary: false),
+            new SugaryPerson(tradaly, "Tradaly", ReadsEveryLog: false, UsesSugary: true)
+        ]);
     }
 
     // Sugary's poller wakes for nobody's request: it asks which households turn Sugary off on its own
@@ -210,20 +215,20 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         await using var client = Client(server, Sugary, clock: clock, listening: listening);
 
-        var first = await client.HouseholdsWithSugaryOffAsync(CancellationToken.None);
+        var first = (await client.SugaryOffAsync(CancellationToken.None)).Households;
         await SetAsync(server, other, HouseholdSections.Features, """{ "sugary": false }""");
 
         first.ShouldBe([casa]);
         if (listening)
         {
-            await Eventually.Until(async () => (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).Count == 2,
+            await Eventually.Until(async () => (await client.SugaryOffAsync(CancellationToken.None)).Households.Count == 2,
                 "the other household's features save to drop what was kept");
         }
         else
         {
-            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa]);
+            (await client.SugaryOffAsync(CancellationToken.None)).Households.ShouldBe([casa]);
             clock.Advance(_lifetime + TimeSpan.FromSeconds(1));
-            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa, other], ignoreOrder: true);
+            (await client.SugaryOffAsync(CancellationToken.None)).Households.ShouldBe([casa, other], ignoreOrder: true);
         }
     }
 

@@ -44,14 +44,23 @@ public static class SugaryApp
         // Before any route binds its person, so a request naming nobody is told so plainly — a 401,
         // which is what sends the app to sign in — rather than a route's 400 for a missing parameter.
         // The assertion is verified here, once a request, and every route binds the person it named.
+        // Then who may use Sugary and whose log the request reads (SugaryAccess), once, for every route.
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments("/api")
-                && await Person.SignedInAsync(context, context.RequestAborted) is null)
+            if (context.Request.Path.StartsWithSegments("/api"))
             {
-                await Results.Problem("Not signed in.", statusCode: StatusCodes.Status401Unauthorized)
-                    .ExecuteAsync(context);
-                return;
+                if (await Person.SignedInAsync(context, context.RequestAborted) is not { } person)
+                {
+                    await Results.Problem("Not signed in.", statusCode: StatusCodes.Status401Unauthorized)
+                        .ExecuteAsync(context);
+                    return;
+                }
+
+                if (await SugaryAccess.AdmitAsync(context, person, context.RequestAborted) is { } refused)
+                {
+                    await refused.ExecuteAsync(context);
+                    return;
+                }
             }
 
             await next(context);

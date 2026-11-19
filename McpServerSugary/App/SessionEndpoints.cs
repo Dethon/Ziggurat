@@ -7,12 +7,17 @@ namespace McpServerSugary.App;
 // turns of the sugary agent now; the app still reads the flags, and shows an action that is off as
 // not available rather than letting it fail. Person is who the phone is signed in as now (their
 // account's id): what the app keeps on the phone for one person is shown to nobody else.
-public record SessionState(bool Estimates, bool Labels, string Person);
+// UsesSugary is whether they have a log of their own; People whom they may pick to read, empty without
+// the grant (SugaryAccess).
+public record SessionState(bool Estimates, bool Labels, string Person, bool UsesSugary, IReadOnlyList<SessionPerson> People);
+
+public record SessionPerson(string UserId, string DisplayName);
 
 // The first thing the app asks. Behind the proxy's headers like every route, so a phone whose
 // session is gone learns it here, from the 401, and goes to sign in.
 public static class SessionEndpoints
 {
     public static void MapSessionEndpoints(this IEndpointRouteBuilder api) =>
-        api.MapGet("/session", (Person person) => new SessionState(Estimates: true, Labels: true, person.Account.UserId));
+        api.MapGet("/session", (Person person) => new SessionState(Estimates: true, Labels: true, person.Account.UserId,
+            person.UsesSugary, [.. person.Readable.Select(p => new SessionPerson(p.UserId, p.DisplayName))]));
 }

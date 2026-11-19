@@ -58,7 +58,7 @@ public static class ConfigModule
             .AddSingleton(settings.Delivery)
             .AddSingleton<IGlucoseWatchEffects, GlucoseWatchEffects>()
             // Which households turn Sugary off, for the poller and the engine, which hold no proof of one.
-            .AddSingleton<SugaryOffHouseholds>()
+            .AddSingleton<SugaryOff>()
             .AddSingleton<GlucoseWatchEngine>()
             .AddSingleton<IGlucosePollObserver>(sp => sp.GetRequiredService<GlucoseWatchEngine>())
             .AddSingleton<GlucosePoller>()

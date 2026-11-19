@@ -44,8 +44,9 @@ const UNITS: GlucoseUnit[] = ["mgdl", "mmol"];
 const periodLabel = (days: Period, t: Translate) => (days === 1 ? t("glucosePeriodHours", { n: 24 }) : t("glucosePeriodDays", { n: days }));
 
 // Her glucose: where she is now, how her days went, what a clinic would read off them, and the
-// LibreLinkUp account it all comes from.
-export function GlucoseScreen() {
+// LibreLinkUp account it all comes from. `readOnly` is somebody else's: her readings and figures, but
+// never her account, which is hers to link, change or unlink.
+export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   const { t, language } = useSettings();
   const minute = useMinute();
   const [state, setState] = useState<{ now: GlucoseNow; fetchedAt: number } | null>(null);
@@ -151,7 +152,7 @@ export function GlucoseScreen() {
 
         <div className="pane pane-side">
           {now?.reading && statistics && <Statistics figures={statistics} unit={now.unit} />}
-          {now && <LinkCard now={now} onChanged={() => void load()} />}
+          {now && !readOnly && <LinkCard now={now} onChanged={() => void load()} />}
         </div>
       </div>
     </div>

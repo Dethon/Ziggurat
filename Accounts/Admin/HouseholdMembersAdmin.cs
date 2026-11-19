@@ -12,7 +12,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Accounts.Admin;
 
 // The household's people as its owners manage them, over the stores the members page already uses:
-// an invite (a passkey link, also redeemed in Telegram), a member's role and sees-all, disabling and
+// an invite (a passkey link, also redeemed in Telegram), a member's role, sees-all and Sugary, disabling and
 // re-enabling a member, and a recovery link for one. A link is shown in the answer that minted it and
 // nowhere else — only its hash is kept, and the change log names whom it was for, never any of it.
 //
@@ -75,10 +75,10 @@ public static class HouseholdMembersAdmin
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
             RedisAnnouncer announcer, CancellationToken ct) =>
         {
-            if (edit is null || edit is { Role: null, SeesAll: null, ReadsSugaryLogs: null })
+            if (edit is null || edit.ChangesNothing)
             {
                 return Results.BadRequest(new AdminRefusal(
-                    "Nothing was changed: send a role, sees-all, reads-Sugary-logs, or any of them.", []));
+                    "Nothing was changed: send a role, sees-all, reads-Sugary-logs, uses-Sugary, or any of them.", []));
             }
 
             var role = edit.Role is null ? null : RoleOf(edit.Role);
@@ -107,10 +107,16 @@ public static class HouseholdMembersAdmin
                 await store.SetReadsSugaryLogsAsync(caller.HouseholdId, userId, readsSugaryLogs, ct);
             }
 
+            if (edit.UsesSugary is { } usesSugary)
+            {
+                await store.SetUsesSugaryAsync(caller.HouseholdId, userId, usesSugary, ct);
+            }
+
             var after = (await FindAsync(store, caller, userId, ct))!;
             var changed = AdminLog.Changed(
                 ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations),
-                ("reads everyone's Sugary log", before.ReadsSugaryLogs != after.ReadsSugaryLogs));
+                ("reads everyone's Sugary log", before.ReadsSugaryLogs != after.ReadsSugaryLogs),
+                ("uses Sugary", before.UsesSugary != after.UsesSugary));
             if (changed.Count == 0)
             {
                 await log.RecordAsync(http, caller, $"Saved member {userId} unchanged", ct);
@@ -198,7 +204,7 @@ public static class HouseholdMembersAdmin
         new([
             .. (await store.ListAsync(caller.HouseholdId, ct)).Select(m => new AdminMember(
                 m.Id, m.DisplayName, m.Role == Role.Owner ? AdminMember.Owner : AdminMember.Member, m.IsOperator,
-                m.SeesAllConversations, m.Disabled, m.ReadsSugaryLogs))
+                m.SeesAllConversations, m.Disabled, m.ReadsSugaryLogs, m.UsesSugary))
         ]);
 
     private static Role? RoleOf(string? role) => role switch

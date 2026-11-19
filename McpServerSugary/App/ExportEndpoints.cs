@@ -55,49 +55,49 @@ public static class ExportEndpoints
         string? tz = null) =>
         Clock(tz) is { } zone
             ? File(SugaryTables.Doses(
-                await log.DosesAsync(person.Account, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
+                await log.DosesAsync(person.Log, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
             : UnknownClock(tz);
 
     // Bounded by the doses' times, as doses.csv is, so the two files of one period agree.
     private static async Task<IResult> DoseMealsAsync(
         ISugaryLog log, Person person, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null) =>
         File(SugaryTables.DoseMeals(
-            await log.DosesAsync(person.Account, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct)), "sugary-dose-meals.csv");
+            await log.DosesAsync(person.Log, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct)), "sugary-dose-meals.csv");
 
     private static async Task<IResult> ExerciseAsync(
         ISugaryLog log, Person person, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null,
         string? tz = null) =>
         Clock(tz) is { } zone
             ? File(SugaryTables.Exercise(
-                    await log.ExerciseAsync(person.Account, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone),
+                    await log.ExerciseAsync(person.Log, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone),
                 "sugary-exercise.csv")
             : UnknownClock(tz);
 
     // Days carry no clock, so these take no zone.
     private static async Task<IResult> PeriodsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Periods(await log.PeriodsAsync(person.Account, ct)), "sugary-periods.csv");
+        File(SugaryTables.Periods(await log.PeriodsAsync(person.Log, ct)), "sugary-periods.csv");
 
     private static async Task<IResult> DayNotesAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.DayNotes(await log.DayNotesAsync(person.Account, ct)), "sugary-day-notes.csv");
+        File(SugaryTables.DayNotes(await log.DayNotesAsync(person.Log, ct)), "sugary-day-notes.csv");
 
     private static async Task<IResult> ProfileAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Profile(await log.ProfileAsync(person.Account, ct)), "sugary-profile.csv");
+        File(SugaryTables.Profile(await log.ProfileAsync(person.Log, ct)), "sugary-profile.csv");
 
     private static async Task<IResult> HeightsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Heights(await log.MeasurementsAsync(person.Account, ct)), "sugary-heights.csv");
+        File(SugaryTables.Heights(await log.MeasurementsAsync(person.Log, ct)), "sugary-heights.csv");
 
     private static async Task<IResult> WeightsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Weights(await log.MeasurementsAsync(person.Account, ct)), "sugary-weights.csv");
+        File(SugaryTables.Weights(await log.MeasurementsAsync(person.Log, ct)), "sugary-weights.csv");
 
     private static async Task<IResult> PensAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Pens(await log.PensAsync(person.Account, ct)), "sugary-pens.csv");
+        File(SugaryTables.Pens(await log.PensAsync(person.Log, ct)), "sugary-pens.csv");
 
     private static async Task<IResult> FoodsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
-        File(SugaryTables.Foods(await log.FoodsAsync(person.Account, ct)), SugaryImport.FoodsFile);
+        File(SugaryTables.Foods(await log.FoodsAsync(person.Log, ct)), SugaryImport.FoodsFile);
 
     private static Task<IReadOnlyList<LoggedMeal>> InPeriod(
         ISugaryLog log, Person person, DateTimeOffset? from, DateTimeOffset? to, CancellationToken ct) =>
-        log.MealsAsync(person.Account, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct);
+        log.MealsAsync(person.Log, from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct);
 
     private static TimeZoneInfo? Clock(string? tz) =>
         string.IsNullOrWhiteSpace(tz) ? TimeZoneInfo.Utc

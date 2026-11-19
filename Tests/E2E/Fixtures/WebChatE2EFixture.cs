@@ -109,6 +109,8 @@ public class WebChatE2EFixture : E2EFixtureBase
     public Task<(string UserId, string Session)> PersonElsewhereAsync(string name, string role) =>
         Stack.PersonAsync(name, role, elsewhere: true);
 
+    public string ElsewhereHousehold => Stack.ElsewhereHousehold;
+
     // The accounts service's commands, for a test that needs a link or a command as the operator runs it.
     public Task<(int Exit, string Output)> AccountsAsync(params string[] args) => Stack.AccountsAsync(args);
 

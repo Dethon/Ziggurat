@@ -3,6 +3,7 @@ using Accounts.Configuration;
 using Accounts.Members;
 using Accounts.Tunnels;
 using Domain.Agents;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 
 namespace Accounts.Internal;
@@ -58,7 +59,7 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
             HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
 
-        // Sugary's: the household's people and who an owner let read everyone's log. A person, not a
+        // Sugary's: the household's people, who an owner let read everyone's log and who uses Sugary. A person, not a
         // section, so the members are read rather than the configuration; nobody disabled is in it,
         // neither as a reader nor as a log to read.
         routes.MapPost(Path + HouseholdConfigProtocol.SugaryPeopleView, async (
@@ -75,7 +76,7 @@ public static class HouseholdConfiguration
                 new HouseholdConfigAnswer<HouseholdSugaryPeople>(household.Id, new HouseholdSugaryPeople([
                     .. (await members.ListAsync(household.Id, ct))
                         .Where(m => !m.Disabled)
-                        .Select(m => new SugaryPerson(m.Id, m.DisplayName, m.ReadsSugaryLogs))
+                        .Select(m => new SugaryPerson(m.Id, m.DisplayName, m.ReadsSugaryLogs, m.UsesSugary))
                 ])), ct);
         });
 
@@ -171,11 +172,12 @@ public static class HouseholdConfiguration
             return Results.Ok(new HouseholdLemonadeBoxes(boxes));
         });
 
-        // Which households turn Sugary off, asked with no household and no proof: Sugary's glucose poller and
-        // watch engine wake for nobody's request, so nothing they hold could prove one. The ids alone, of
-        // households that saved their features: one that never did has Sugary on, its default.
+        // Which households turn Sugary off and whom it is off for, asked with no household and no proof:
+        // Sugary's glucose poller, watch engine and pen reminders wake for nobody's request, so nothing they
+        // hold could prove one. The ids alone: of households that saved their features (one that never did
+        // has Sugary on, its default), and of people an owner has not turned Sugary on for.
         routes.MapPost(Path + HouseholdConfigProtocol.SugaryOffView, async (
-            HttpContext http, HouseholdConfigStore store, CancellationToken ct) =>
+            HttpContext http, HouseholdConfigStore store, MemberStore members, CancellationToken ct) =>
         {
             if (InternalCallers.Reading(http, HouseholdConfigProtocol.SugaryOffView).Count == 0)
             {
@@ -191,7 +193,8 @@ public static class HouseholdConfiguration
                 }
             }
 
-            return Results.Ok(new HouseholdsWithSugaryOff(off));
+            return Results.Ok(new HouseholdsWithSugaryOff(off,
+                [.. (await members.WithoutSugaryAsync(ct)).Select(p => new Account(p.TenantId, p.UserId))]));
         });
 
         // Every household's bots, asked with no household: the Telegram server polls them from its

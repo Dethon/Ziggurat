@@ -52,7 +52,24 @@ public sealed class SugaryServer : IAsyncDisposable
     {
         private readonly Lock _gate = new();
         private readonly HashSet<string> _off = new(StringComparer.Ordinal);
+        private readonly HashSet<Account> _people = [];
         private bool _unreadable;
+
+        // An owner turned Sugary off for one person (the members page's "Uses Sugary"), or on again.
+        public void PersonOff(Account person, bool off = true)
+        {
+            lock (_gate)
+            {
+                if (off)
+                {
+                    _people.Add(person);
+                }
+                else
+                {
+                    _people.Remove(person);
+                }
+            }
+        }
 
         public void Off(string household, bool off = true)
         {
@@ -77,13 +94,13 @@ public sealed class SugaryServer : IAsyncDisposable
             }
         }
 
-        public IReadOnlyList<string> Answer()
+        public HouseholdsWithSugaryOff Answer()
         {
             lock (_gate)
             {
                 return _unreadable
                     ? throw new HttpRequestException("The accounts service could not answer the sugary-off view (503)")
-                    : [.. _off];
+                    : new HouseholdsWithSugaryOff([.. _off], [.. _people]);
             }
         }
     }

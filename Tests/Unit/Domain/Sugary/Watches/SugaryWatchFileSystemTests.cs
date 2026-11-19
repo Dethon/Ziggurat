@@ -315,6 +315,18 @@ public class SugaryWatchFileSystemTests
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
     }
 
+    // Somebody Sugary is off for has no sensor here to watch: a reader of everyone's log cannot name them.
+    [Fact]
+    public async Task APersonSugaryIsOffFor_CannotBeWatched()
+    {
+        _people = new HouseholdSugaryPeople([.. _people.People.Select(p => p.UserId == Tradaly ? p with { UsesSugary = false } : p)]);
+
+        var refused = Error(await Union(Dethon).CreateAsync("her-low/watch.json", LowFor("tradaly"), false, true, CancellationToken.None));
+
+        refused.Message.ShouldContain("are: dani.");
+        _store.Stored(Household, "her-low").ShouldBeNull();
+    }
+
     // An id is the household's: one somebody else keeps, out of this caller's view, is taken whatever
     // overwrite says, and is never replaced from behind.
     [Fact]

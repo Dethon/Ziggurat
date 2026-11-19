@@ -49,10 +49,33 @@ export function isSuspension(response: Response): boolean {
   return response.status === 403 && response.headers.get("X-Ziggurat-Refusal") === "suspended";
 }
 
+// Whose log the app is showing, when it is somebody else's (a reader an owner let read everyone's):
+// every address the app asks names that person, so the server reads their log, read only. Null is
+// her own, named by nothing. Set before the screens of that log mount, so none asks for the wrong one.
+let viewing: string | null = null;
+
+export function setViewing(userId: string | null): void {
+  viewing = userId;
+}
+
+// The pantry and what fills it are the household's, whoever's log is open: asked, and changed, as nobody's.
+const HOUSEHOLD = ["/api/foods", "/api/recipes", "/api/products", "/api/labels"];
+
+function household(address: string): boolean {
+  const path = address.split("?")[0];
+  return HOUSEHOLD.some((root) => path === root || path.startsWith(`${root}/`));
+}
+
+export function withPerson(address: string, person: string | null = viewing): string {
+  return person === null || household(address)
+    ? address
+    : `${address}${address.includes("?") ? "&" : "?"}person=${encodeURIComponent(person)}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api${path}`, { credentials: "same-origin", ...init });
+    response = await fetch(withPerson(`/api${path}`), { credentials: "same-origin", ...init });
   } catch {
     throw new ApiError(0, "");
   }
@@ -135,10 +158,10 @@ export const api = {
   updateMeal: (id: string, meal: SaveMeal, loaded: SaveMeal) =>
     request<Meal>(`/meals/${id}`, json("PUT", { ...meal, loaded })),
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
-  photoUrl: (id: string) => `/api/meals/${id}/photo`,
+  photoUrl: (id: string) => withPerson(`/api/meals/${id}/photo`),
   // The photo kept with a meal, to send with a correction of it.
   async mealPhoto(id: string): Promise<Blob> {
-    const response = await fetch(`/api/meals/${id}/photo`, { credentials: "same-origin" });
+    const response = await fetch(api.photoUrl(id), { credentials: "same-origin" });
     if (!response.ok) {
       throw new ApiError(response.status, "");
     }
@@ -237,5 +260,5 @@ export const api = {
   exportUrl: (
     table: "meals" | "items" | "doses" | "exercise" | "periods" | "day-notes" | "foods" | "profile" | "heights" | "weights" | "pens",
   ) =>
-    `/api/export/${table}.csv?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
+    withPerson(`/api/export/${table}.csv?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`),
 };

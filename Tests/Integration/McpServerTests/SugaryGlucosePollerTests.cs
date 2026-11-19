@@ -183,6 +183,25 @@ public class SugaryGlucosePollerTests
         harness.GraphCalls("patient-1").ShouldBe(3);
     }
 
+    // Sugary off for her (an owner never turned it on, or took it back) takes her log from her: her link
+    // is not asked, and is again once it is on.
+    [Fact]
+    public async Task APersonSugaryIsOffFor_IsNotPolled_UntilItIsOnAgain()
+    {
+        await using var harness = await StartAsync();
+        Wear(harness.Fake.AddAccount("ana@example.com", "pw").Follow("patient-1", "Ana", "García"), harness.Clock.GetUtcNow());
+        await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
+        harness.Server.SugaryOff.PersonOff(SugaryServer.Her);
+
+        await harness.NextPeriodAsync(3);
+        harness.GraphCalls("patient-1").ShouldBe(0);
+
+        // Seen again as a link seen for the first time: polled at its own moment of the next period.
+        harness.Server.SugaryOff.PersonOff(SugaryServer.Her, off: false);
+        await harness.NextPeriodAsync(2);
+        harness.GraphCalls("patient-1").ShouldBe(1);
+    }
+
     private static double ValueAt(DateTimeOffset at) => Math.Round(120 + 50 * Math.Sin(at.ToUnixTimeSeconds() / 3600.0));
 
     private static DateTimeOffset ToTheSecond(DateTimeOffset at) => new(at.Ticks - at.Ticks % TimeSpan.TicksPerSecond, TimeSpan.Zero);

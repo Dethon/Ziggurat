@@ -9,7 +9,7 @@ namespace Accounts.Internal;
 public sealed record HouseholdImportRequest(IReadOnlyList<HouseholdImportPerson> People, bool DryRun);
 
 public sealed record HouseholdImportPerson(
-    string Key, string DisplayName, long? TelegramId, string Role, bool Operator, string? AvatarUrl = null);
+    string Key, string DisplayName, long? TelegramId, string Role, bool Operator, string? AvatarUrl = null, bool UsesSugary = false);
 
 public sealed record HouseholdImported(string TenantId, IReadOnlyList<HouseholdImportedPerson> People);
 
@@ -55,7 +55,8 @@ public static class HouseholdImportApi
             }
 
             var people = request.People
-                .Select(p => new ImportingPerson(p.Key, p.DisplayName, p.TelegramId, RoleNamed(p.Role)!.Value, p.Operator, p.AvatarUrl))
+                .Select(p => new ImportingPerson(
+                    p.Key, p.DisplayName, p.TelegramId, RoleNamed(p.Role)!.Value, p.Operator, p.AvatarUrl, p.UsesSugary))
                 .ToList();
             return await importer.ImportAsync(people, request.DryRun, ct) switch
             {

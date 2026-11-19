@@ -238,6 +238,17 @@ export interface SessionState {
   labels: boolean;
   // Who the phone is signed in as (their account's id); none when the app opened offline.
   person?: string | null;
+  // Whether the signer keeps a Sugary log of her own (an owner turns it on per member). An older
+  // server says neither this nor people: read as using it, with nobody else to look at.
+  usesSugary?: boolean;
+  // Whose logs she may look at, read only, when an owner let her read everyone's: each member using
+  // Sugary, herself among them where she uses it, in the order they joined. Empty for anyone else.
+  people?: SugaryPerson[];
+}
+
+export interface SugaryPerson {
+  userId: string;
+  displayName: string;
 }
 
 // Her glucose, always mg/dL on the wire; mmol/L is only how she reads it (glucose.ts).

@@ -29,8 +29,19 @@ const REFUSED: Record<string, StringKey> = {
   disabled: "refusalDisabled",
 };
 
+// Whose log may be read, answered 403 with a code of its own: somebody else's is read only, only a
+// reader an owner let read everyone's opens it, and somebody Sugary is not on for opens nothing.
+const NOT_YOURS: Record<string, StringKey> = {
+  "viewing-read-only": "errorViewingReadOnly",
+  "not-granted": "errorNotGranted",
+  "sugary-not-yours": "errorSugaryNotYours",
+};
+
 export function errorMessage(error: unknown, t: Translate, asking: Asking = "load"): string {
   if (error instanceof ApiError) {
+    if (error.status === 403 && error.code && Object.hasOwn(NOT_YOURS, error.code)) {
+      return t(NOT_YOURS[error.code]);
+    }
     if (error.status === 403 && Object.hasOwn(REFUSED, error.message)) {
       return t(REFUSED[error.message]);
     }

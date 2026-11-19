@@ -23,8 +23,9 @@ export function MeasurementHistorySheet({
   range: HistoryRange;
   today: string;
   onRange: (range: HistoryRange) => void;
-  onOpen: (measurement: Measurement) => void;
-  onAdd: () => void;
+  // Neither, for somebody else's history: read, never corrected or added to.
+  onOpen?: (measurement: Measurement) => void;
+  onAdd?: () => void;
   onClose: () => void;
 }) {
   const { t, language } = useSettings();
@@ -37,9 +38,11 @@ export function MeasurementHistorySheet({
       title={t(`measurementHistoryTitle_${kind}`)}
       onClose={onClose}
       footer={
-        <button type="button" className="button button-primary button-big" onClick={onAdd}>
-          <Icon name="plus" size={20} /> {t(`measurementAdd_${kind}`)}
-        </button>
+        onAdd && (
+          <button type="button" className="button button-primary button-big" onClick={onAdd}>
+            <Icon name="plus" size={20} /> {t(`measurementAdd_${kind}`)}
+          </button>
+        )
       }
     >
       <div className="segmented" role="group" aria-label={t("historyRanges")}>
@@ -64,19 +67,28 @@ export function MeasurementHistorySheet({
         <ul className="rows">
           {shown.map((m) => (
             <li key={m.id}>
-              <button
-                type="button"
-                className="row-link period-row measurement-row"
-                aria-haspopup="dialog"
-                aria-label={`${t(`measurementEdit_${m.kind}`)}, ${day(m.on)}`}
-                onClick={() => onOpen(m)}
-              >
-                <span className="period-row-text">
-                  <span className="item-name">{`${formatUnits(m.value, language)} ${UNIT[m.kind]}`}</span>
-                  <span className="item-meta">{day(m.on)}</span>
-                </span>
-                <Icon name="pencil" size={18} />
-              </button>
+              {onOpen ? (
+                <button
+                  type="button"
+                  className="row-link period-row measurement-row"
+                  aria-haspopup="dialog"
+                  aria-label={`${t(`measurementEdit_${m.kind}`)}, ${day(m.on)}`}
+                  onClick={() => onOpen(m)}
+                >
+                  <span className="period-row-text">
+                    <span className="item-name">{`${formatUnits(m.value, language)} ${UNIT[m.kind]}`}</span>
+                    <span className="item-meta">{day(m.on)}</span>
+                  </span>
+                  <Icon name="pencil" size={18} />
+                </button>
+              ) : (
+                <div className="row-link row-static period-row measurement-row">
+                  <span className="period-row-text">
+                    <span className="item-name">{`${formatUnits(m.value, language)} ${UNIT[m.kind]}`}</span>
+                    <span className="item-meta">{day(m.on)}</span>
+                  </span>
+                </div>
+              )}
             </li>
           ))}
         </ul>

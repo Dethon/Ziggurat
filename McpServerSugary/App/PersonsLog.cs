@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServerSugary.Store;
 
-// An app route's database is the log of the person the request acts for. A route asks for a
+// An app route's database is the log the request reads (Person.Log): the signed-in person's own, or the
+// one a holder of everyone's log named, on a read. A route asks for a
 // SugaryDbContext and is bound this one — opened for the Person the proxy's signed assertion
 // names, its query filters keeping to their rows and their household's kitchen — rather than the
 // container's, which is nobody's. Binding takes precedence over the container for a parameter, so a route cannot be
@@ -19,7 +20,7 @@ public partial class SugaryDbContext
             return ValueTask.FromResult<SugaryDbContext?>(null);
         }
 
-        var db = http.RequestServices.GetRequiredService<SugaryStore>().For(person.Account);
+        var db = http.RequestServices.GetRequiredService<SugaryStore>().For(person.Log);
         http.Response.RegisterForDisposeAsync(db);
         return ValueTask.FromResult<SugaryDbContext?>(db);
     }

@@ -311,8 +311,8 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     }
 
     // Sugary opens another person's log to a reader an owner granted it, so on the agent's call token it
-    // reads the household's people — each one's id, name and whether they read everyone's log, nobody
-    // disabled — and decides itself. The same for everybody in the household, since the reader keeps it
+    // reads the household's people — each one's id, name, whether they read everyone's log and whether
+    // Sugary is on for them, nobody disabled — and decides itself. The same for everybody in the household, since the reader keeps it
     // per household.
     [Fact]
     public async Task Sugary_ReadsTheHouseholdsSugaryPeople_OnTheCallToken()
@@ -324,6 +324,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         var (elsewhere, _) = await server.SeedHouseholdAsync("Lejos", "Stranger");
         var members = server.Service<MemberStore>();
         await members.SetReadsSugaryLogsAsync(household, ana, true, CancellationToken.None);
+        await members.SetUsesSugaryAsync(household, bea, true, CancellationToken.None);
         await members.DisableAsync(household, gone, CancellationToken.None);
 
         var people = await AskAsync<HouseholdConfigAnswer<HouseholdSugaryPeople>>(server, Sugary,
@@ -332,14 +333,37 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
             new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, bea)));
 
         people.HouseholdId.ShouldBe(household);
-        people.Section.People.ShouldBe([new SugaryPerson(ana, "Ana", true), new SugaryPerson(bea, "Bea", false)]);
+        people.Section.People.ShouldBe([
+            new SugaryPerson(ana, "Ana", ReadsEveryLog: true, UsesSugary: false),
+            new SugaryPerson(bea, "Bea", ReadsEveryLog: false, UsesSugary: true)
+        ]);
         (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
         elsewhere.ShouldNotBe(household);
     }
 
-    // Sugary's poller and watch engine wake for nobody's request, so no call or assertion proves a
-    // household to them: they ask on Sugary's credential alone which households turn Sugary off, and are
-    // told those ids and nothing else. A household that never saved its features has Sugary on.
+    // The app asks who uses Sugary on the assertion its request carried, which names no call: the same
+    // people as on a call token, refused on another channel's assertion.
+    [Fact]
+    public async Task Sugary_ReadsTheHouseholdsSugaryPeople_OnTheAppsAssertion()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await server.Service<MemberStore>().SetUsesSugaryAsync(household, ana, true, CancellationToken.None);
+        var assertions = server.Service<Assertions>();
+
+        var people = await AskAsync<HouseholdConfigAnswer<HouseholdSugaryPeople>>(server, Sugary,
+            HouseholdConfigProtocol.SugaryPeopleView, new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "sugary")));
+        var onTheHub = await PostAsync(server, Sugary, HouseholdConfigProtocol.SugaryPeopleView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        people.Section.People.ShouldBe([new SugaryPerson(ana, "Ana", ReadsEveryLog: false, UsesSugary: true)]);
+        (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
+    // Sugary's poller, watch engine and pen reminders wake for nobody's request, so no call or assertion
+    // proves a household to them: they ask on Sugary's credential alone which households turn Sugary off
+    // and whom it is off for, and are told those ids and nothing else. A household that never saved its
+    // features has Sugary on.
     [Fact]
     public async Task Sugary_IsToldWhichHouseholdsTurnItOff_AndNothingElse()
     {
@@ -347,6 +371,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         var off = await server.SeedHouseholdAsync("Off");
         var on = await server.SeedHouseholdAsync("On");
         var never = await server.SeedHouseholdAsync("Never saved");
+        var ana = await server.SeedPersonAsync(on, "Ana");
+        var bea = await server.SeedPersonAsync(on, "Bea");
+        await server.Service<MemberStore>().SetUsesSugaryAsync(on, bea, true, CancellationToken.None);
         await SetAsync(server, off, HouseholdSections.Features, """{ "sugary": false }""");
         await SetAsync(server, on, HouseholdSections.Features, """{ "memory": false }""");
         await SetAsync(server, off, HouseholdSections.Keys, Keys);
@@ -356,7 +383,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
 
         answer.Households.ShouldBe([off]);
         answer.Households.ShouldNotContain(never);
-        foreach (var secret in new[] { OpenRouterKey, IdealistaKey, JackToken, "Off" })
+        answer.People!.ShouldContain(new Account(on, ana));
+        answer.People!.ShouldNotContain(new Account(on, bea));
+        foreach (var secret in new[] { OpenRouterKey, IdealistaKey, JackToken, "Off", "Ana" })
         {
             body.ShouldNotContain(secret);
         }

@@ -583,9 +583,11 @@ public class SugaryGlucoseWatchEngineTests
     }
 
     // A household that turned Sugary off has no glucose watches judged: no fire however low she goes, on a
-    // poll or on the clock.
-    [Fact]
-    public async Task WhileSugaryIsOff_NothingIsJudgedOrFired()
+    // poll or on the clock. Nor does a person an owner never turned Sugary on for, or took it from.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task WhileSugaryIsOff_NothingIsJudgedOrFired(bool forHerAlone)
     {
         await using var harness = await StartAsync();
         await harness.WatchAsync("low", """{"trigger":"glucose","below":70}""");
@@ -601,7 +603,15 @@ public class SugaryGlucoseWatchEngineTests
         }
 
         await harness.PollAsync(100);
-        harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        if (forHerAlone)
+        {
+            harness.Server.SugaryOff.PersonOff(SugaryServer.Her);
+        }
+        else
+        {
+            harness.Server.SugaryOff.Off(SugaryServer.Her.TenantId);
+        }
+
         harness.Clock.Advance(TimeSpan.FromMinutes(1));
         await harness.PollAsync(60);
         harness.Clock.Advance(TimeSpan.FromMinutes(10));

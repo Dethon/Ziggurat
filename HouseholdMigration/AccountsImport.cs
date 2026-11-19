@@ -9,7 +9,7 @@ namespace HouseholdMigration;
 internal sealed record ImportRequest(IReadOnlyList<ImportPerson> People, bool DryRun);
 
 internal sealed record ImportPerson(
-    string Key, string DisplayName, long? TelegramId, string Role, bool Operator, string? AvatarUrl);
+    string Key, string DisplayName, long? TelegramId, string Role, bool Operator, string? AvatarUrl, bool UsesSugary);
 
 internal sealed record Imported(string TenantId, IReadOnlyList<ImportedPerson> People);
 
@@ -47,7 +47,8 @@ public sealed class AccountsImport(HttpClient http, string credential)
                         p.Name, p.ShownAs, p.TelegramId,
                         p.Name == operatorName || p.Name == ownerName ? "owner" : p.Role ?? "member",
                         p.Name == operatorName,
-                        p.AvatarUrl))
+                        p.AvatarUrl,
+                        p.Name == sugaryName))
                 ],
                 dryRun), options: _json)
         };

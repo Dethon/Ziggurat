@@ -5,7 +5,7 @@ namespace Accounts.Members;
 
 public sealed record Member(
     string Id, string DisplayName, Role Role, bool IsOperator, bool SeesAllConversations, bool Disabled = false,
-    bool ReadsSugaryLogs = false);
+    bool ReadsSugaryLogs = false, bool UsesSugary = false);
 
 public enum RoleChange
 {
@@ -36,7 +36,8 @@ public sealed class MemberStore(IDbContextFactory<AccountsDbContext> contexts, A
             .Where(u => u.TenantId == tenantId)
             .OrderBy(u => u.CreatedAt)
             .Select(u => new Member(
-                u.Id, u.DisplayName, u.Role, u.IsOperator, u.SeesAllConversations, u.DisabledAt != null, u.ReadsSugaryLogs))
+                u.Id, u.DisplayName, u.Role, u.IsOperator, u.SeesAllConversations, u.DisabledAt != null, u.ReadsSugaryLogs,
+                u.UsesSugary))
             .ToListAsync(ct);
     }
 
@@ -83,6 +84,24 @@ public sealed class MemberStore(IDbContextFactory<AccountsDbContext> contexts, A
         return await db.Users
             .Where(u => u.Id == userId && u.TenantId == tenantId)
             .ExecuteUpdateAsync(u => u.SetProperty(x => x.ReadsSugaryLogs, granted), ct) > 0;
+    }
+
+    // Everyone of every household an owner has not turned Sugary on for, for Sugary's work that wakes for
+    // nobody's request (its poller, watches and pen reminders).
+    public async Task<IReadOnlyList<(string TenantId, string UserId)>> WithoutSugaryAsync(CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return (await db.Users.Where(u => !u.UsesSugary).Select(u => new { u.TenantId, u.Id }).ToListAsync(ct))
+            .Select(u => (u.TenantId, u.Id))
+            .ToList();
+    }
+
+    public async Task<bool> SetUsesSugaryAsync(string tenantId, string userId, bool on, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.Users
+            .Where(u => u.Id == userId && u.TenantId == tenantId)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.UsesSugary, on), ct) > 0;
     }
 
     // The member and every session they hold, in one transaction: nothing signed in survives the

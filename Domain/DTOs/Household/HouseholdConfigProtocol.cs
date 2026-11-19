@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.Household;
@@ -144,9 +145,10 @@ public sealed record HouseholdConfigAnswer<T>(string HouseholdId, T Section);
 [PublicAPI]
 public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> Bots);
 
-// The households whose features turn Sugary off; every other household, one that never saved its
-// features included, has it on.
-public sealed record HouseholdsWithSugaryOff(IReadOnlyList<string> Households);
+// The households whose features turn Sugary off, and the people an owner has not turned Sugary on for
+// (the members page's "Uses Sugary"); every other household, one that never saved its features
+// included, and everyone else has it on. People is null in an answer from before it was asked.
+public sealed record HouseholdsWithSugaryOff(IReadOnlyList<string> Households, IReadOnlyList<Account>? People);
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);
@@ -175,12 +177,14 @@ public sealed record HouseholdAgentName(
     string? ReasoningEffort = null);
 
 // Sugary's view of a household's people: everyone not disabled, in the order they joined, under the
-// name they go by, and whether an owner let their agent read everyone's Sugary log.
+// name they go by, whether an owner let them read everyone's Sugary log, and whether an owner turned
+// Sugary on for them. UsesSugary reads on when an answer leaves it out: the accounts service before it
+// had the field answered for a deployment where everyone used Sugary.
 [PublicAPI]
 public sealed record HouseholdSugaryPeople(IReadOnlyList<SugaryPerson> People);
 
 [PublicAPI]
-public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog);
+public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog, bool UsesSugary = true);
 
 // The chat hub's view of a household's people: everyone, disabled members too — their topics are still
 // kept — in the order they joined, under the name they go by now.

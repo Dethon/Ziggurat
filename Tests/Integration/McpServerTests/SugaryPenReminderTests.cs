@@ -110,6 +110,25 @@ public class SugaryPenReminderTests
         payload["tag"]!.GetValue<string>().ShouldBe("pen-rapid");
     }
 
+    // Sugary off for her, her pens remind nobody; on again, they do.
+    [Fact]
+    public async Task APersonSugaryIsOffFor_IsRemindedOfNothing()
+    {
+        await using var harness = await StartAsync();
+        await harness.SubscribeAsync();
+        await harness.PenAsync();
+        harness.Server.SugaryOff.PersonOff(SugaryServer.Her);
+
+        harness.At(28, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+        harness.Push.Sent.ShouldBeEmpty();
+
+        harness.Server.SugaryOff.PersonOff(SugaryServer.Her, off: false);
+        harness.At(28, 10);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+        harness.Push.Sent.ShouldHaveSingleItem();
+    }
+
     // A household keeps its own clock, and so do its pens: the neighbour's household is in New York, so
     // the reminder hour is nine there — not nine on the deployment's clock, which is three in the
     // night in New York — and "tomorrow" is New York's tomorrow.

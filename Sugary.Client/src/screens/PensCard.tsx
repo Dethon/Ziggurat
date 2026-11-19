@@ -30,7 +30,9 @@ function statusText(status: PenStatus, replaceOn: string, date: (day: string) =>
 
 // Her open pen of each kind with the day it is replaced, a tap to start the next one, the pens
 // before it, and whether this phone is told when one is due.
-export function PensCard() {
+// `readOnly` for somebody else's pens: shown, none started, changed or deleted, and no reminders, which
+// are this phone's person's.
+export function PensCard({ readOnly = false }: { readOnly?: boolean }) {
   const { t, language } = useSettings();
   const toast = useToast();
   const [confirm, confirming] = useConfirm();
@@ -53,6 +55,9 @@ export function PensCard() {
 
   useEffect(() => {
     void load();
+    if (readOnly) {
+      return;
+    }
     void api.push().then(
       async ({ publicKey }) => {
         setPublicKey(publicKey);
@@ -60,7 +65,7 @@ export function PensCard() {
       },
       () => setReminders("unavailable"),
     );
-  }, [load]);
+  }, [load, readOnly]);
 
   async function startNext(pen: Pen) {
     if (!(await confirm({ title: t("penNewTitle", { insulin: pen.insulin }), body: t("penNewBody"), confirm: t("penNew") }))) {
@@ -127,30 +132,23 @@ export function PensCard() {
             const status = pen && penStatus(pen, today);
             return (
               <li key={kind} className="pen-row">
-                <button
-                  type="button"
-                  className="row-link period-row"
-                  aria-haspopup="dialog"
-                  aria-label={pen ? t("penEdit", { insulin: pen.insulin }) : t("penAdd")}
-                  onClick={() => (pen ? edit(pen) : add(kind))}
-                >
-                  <span className={`dose-mark dose-mark-small dose-mark-${kind}`}>
-                    <Icon name={DOSE_ICON[kind]} size={18} />
-                  </span>
-                  <span className="period-row-text">
-                    <span className="item-name">{pen ? pen.insulin : t(`dose_${kind}`)}</span>
-                    <span className="item-meta">
-                      {pen ? `${t(`dose_${kind}`)} · ${t("penStarted", { date: day(pen.openedOn) })}` : t("penNone")}
-                    </span>
-                    {pen && status && (
-                      <span className={status.kind === "left" ? "item-meta" : "item-meta pen-due"}>
-                        {statusText(status, pen.replaceOn, day, t)}
-                      </span>
-                    )}
-                  </span>
-                  {!pen && <Icon name="plus" size={20} />}
-                </button>
-                {pen && canStartNext(pen, today) && (
+                {readOnly ? (
+                  <div className="row-link row-static period-row">
+                    <PenRowText kind={kind} pen={pen} status={status} day={day} t={t} />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="row-link period-row"
+                    aria-haspopup="dialog"
+                    aria-label={pen ? t("penEdit", { insulin: pen.insulin }) : t("penAdd")}
+                    onClick={() => (pen ? edit(pen) : add(kind))}
+                  >
+                    <PenRowText kind={kind} pen={pen} status={status} day={day} t={t} />
+                    {!pen && <Icon name="plus" size={20} />}
+                  </button>
+                )}
+                {!readOnly && pen && canStartNext(pen, today) && (
                   <button type="button" className="button button-small" onClick={() => void startNext(pen)}>
                     <Icon name="insulin" size={18} />
                     {t("penNew")}
@@ -179,8 +177,8 @@ export function PensCard() {
           </ul>
         </details>
       )}
-      {reminders && <Reminders state={reminders} onSwitch={(on) => void switchReminders(on)} t={t} />}
-      {sheet && (
+      {!readOnly && reminders && <Reminders state={reminders} onSwitch={(on) => void switchReminders(on)} t={t} />}
+      {!readOnly && sheet && (
         <PenSheet
           pen={sheet.pen}
           initial={sheet.initial}
@@ -196,6 +194,39 @@ export function PensCard() {
       )}
       {confirming}
     </section>
+  );
+}
+
+function PenRowText({
+  kind,
+  pen,
+  status,
+  day,
+  t,
+}: {
+  kind: DoseKind;
+  pen: Pen | undefined;
+  status: ReturnType<typeof penStatus> | undefined;
+  day: (value: string) => string;
+  t: Translate;
+}) {
+  return (
+    <>
+      <span className={`dose-mark dose-mark-small dose-mark-${kind}`}>
+        <Icon name={DOSE_ICON[kind]} size={18} />
+      </span>
+      <span className="period-row-text">
+        <span className="item-name">{pen ? pen.insulin : t(`dose_${kind}`)}</span>
+        <span className="item-meta">
+          {pen ? `${t(`dose_${kind}`)} · ${t("penStarted", { date: day(pen.openedOn) })}` : t("penNone")}
+        </span>
+        {pen && status && (
+          <span className={status.kind === "left" ? "item-meta" : "item-meta pen-due"}>
+            {statusText(status, pen.replaceOn, day, t)}
+          </span>
+        )}
+      </span>
+    </>
   );
 }
 

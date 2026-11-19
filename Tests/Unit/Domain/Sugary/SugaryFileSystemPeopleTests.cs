@@ -177,6 +177,51 @@ public class SugaryFileSystemPeopleTests
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
     }
 
+    // Sugary off for a person (an owner never turned it on) takes their log from the agent as from the
+    // app: refused, never shown empty, and not among the people a granted reader sees.
+    [Fact]
+    public async Task APersonSugaryIsOffFor_IsReadByNobody_TheirOwnAgentIncluded()
+    {
+        var people = new HouseholdSugaryPeople([
+            new SugaryPerson(Dethon, "Dethon", ReadsEveryLog: true),
+            new SugaryPerson(Tradaly, "Tradaly", ReadsEveryLog: false),
+            new SugaryPerson(Dani, "Dani", ReadsEveryLog: false, UsesSugary: false)
+        ]);
+
+        Ok(await Mount(reader: Dethon, people).GlobAsync("/people", "*/", CancellationToken.None)).Entries
+            .ShouldBe(["/people/tradaly/"]);
+        Error(await Mount(reader: Dethon, people).QueryAsync("/people/dani", "select 1", 10, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        Error(await Mount(reader: Dani, people).QueryAsync("/", "select count(*) from meals", 10, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await Mount(reader: Dani, people).ReadAsync("/README.md", null, null, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await Mount(reader: Dani, people).GlobAsync("/", "*", CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await Mount(reader: Dani, people).InfoAsync("/", CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+    }
+
+    // The grant alone lets a reader Sugary is off for read the others: they have no log of their own,
+    // so the root lists people/ and nothing else, and their own paths are refused.
+    [Fact]
+    public async Task AGrantedReaderSugaryIsOffFor_ReadsTheOthers_AndHasNoLogOfTheirOwn()
+    {
+        var people = new HouseholdSugaryPeople([
+            new SugaryPerson(Dethon, "Dethon", ReadsEveryLog: true, UsesSugary: false),
+            new SugaryPerson(Tradaly, "Tradaly", ReadsEveryLog: false)
+        ]);
+        var mount = Mount(reader: Dethon, people);
+
+        var hers = await QueryAsync(mount, "/sugary/people/tradaly", "select count(*) from meals");
+        var root = Ok(await mount.GlobAsync("/", "*", CancellationToken.None));
+
+        hers["rows"]!.AsArray().Single()![0]!.GetValue<int>().ShouldBe(2);
+        root.Entries.ShouldBe(["/people/"]);
+        Error(await mount.QueryAsync("/", "select count(*) from meals", 10, CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+    }
+
     private static HouseholdSugaryPeople People(string granted) => new([
         new SugaryPerson(Dethon, "Dethon", Dethon == granted),
         new SugaryPerson(Tradaly, "Tradaly", Tradaly == granted),
