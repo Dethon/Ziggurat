@@ -11,11 +11,12 @@ import { GlucoseScreen } from "./screens/GlucoseScreen";
 import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { showsCycle, UNSAID } from "./profile";
 import { useSettings } from "./settings";
 import { goNotice, goSignIn } from "./signin";
-import { hashOf, type Tab, tabOf } from "./tabs";
+import { hashOf, type Tab, tabOf, visibleTabs } from "./tabs";
 import { ToastProvider, useToast } from "./toast";
-import type { DraftItem, SessionState } from "./types";
+import type { DraftItem, Profile, SessionState } from "./types";
 import { useTypingMark } from "./typing";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
@@ -31,37 +32,54 @@ const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
 // whose session has gone since is answered 401, which sends the person to sign in and back here.
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
+  // Who she is decides which tabs she sees, so it is asked before the first paint. Unknown (offline,
+  // or a failure) shows every tab, as the app did before anyone said.
+  const [profile, setProfile] = useState<Profile | null>(null);
   // Mounted for the whole app.
   useTypingMark();
 
   useEffect(() => {
     window.addEventListener(UNAUTHORIZED_EVENT, goSignIn);
     window.addEventListener(SUSPENDED_EVENT, goNotice);
-    api
-      .session()
-      .then(setSession)
-      // Offline at launch: show the app rather than a dead screen; calls will report it.
-      .catch(() => setSession({ estimates: false, labels: false }));
+    void Promise.all([
+      api
+        .session()
+        // Offline at launch: show the app rather than a dead screen; calls will report it.
+        .catch((): SessionState => ({ estimates: false, labels: false })),
+      api.profile().catch(() => UNSAID),
+    ]).then(([session, profile]) => {
+      setProfile(profile);
+      setSession(session);
+    });
     return () => {
       window.removeEventListener(UNAUTHORIZED_EVENT, goSignIn);
       window.removeEventListener(SUSPENDED_EVENT, goNotice);
     };
   }, []);
 
-  if (session === null) {
+  if (session === null || profile === null) {
     return null;
   }
   return (
     <ToastProvider>
-      <Shell session={session} />
+      <Shell session={session} profile={profile} onProfile={setProfile} />
     </ToastProvider>
   );
 }
 
-function Shell({ session }: { session: SessionState }) {
+function Shell({
+  session,
+  profile,
+  onProfile,
+}: {
+  session: SessionState;
+  profile: Profile;
+  onProfile: (profile: Profile) => void;
+}) {
   const { t, language } = useSettings();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>(() => tabOf(window.location.hash));
+  const shown = visibleTabs(showsCycle(profile));
+  const [tab, setTab] = useState<Tab>(() => tabOf(window.location.hash, shown));
   // Replaced, not pushed: the tabs are not pages, so Back leaves the app as it always has.
   useEffect(() => {
     window.history.replaceState(window.history.state, "", hashOf(tab));
@@ -106,7 +124,7 @@ function Shell({ session }: { session: SessionState }) {
         </div>
         {tab === "log" && <LogScreen estimates={session.estimates} labels={session.labels} onChanged={() => void refreshPending()} />}
         {tab === "glucose" && <GlucoseScreen />}
-        {tab === "cycle" && <CycleScreen />}
+        {tab === "cycle" && shown.includes("cycle") && <CycleScreen />}
         {tab === "foods" && (
           <FoodsScreen
             labels={session.labels}
@@ -116,11 +134,11 @@ function Shell({ session }: { session: SessionState }) {
             }}
           />
         )}
-        {tab === "settings" && <SettingsScreen />}
+        {tab === "settings" && <SettingsScreen profile={profile} onProfile={onProfile} />}
       </main>
 
       <nav className="tabs" aria-label="Sugary">
-        {TABS.map(({ id, label, icon }) => (
+        {TABS.filter(({ id }) => shown.includes(id)).map(({ id, label, icon }) => (
           <button
             key={id}
             type="button"

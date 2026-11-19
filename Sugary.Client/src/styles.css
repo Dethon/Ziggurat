@@ -2236,6 +2236,11 @@ h1.marked .icon {
   color: var(--color-period);
 }
 
+/* Her height and weight take the app's own colour, not the period's. */
+.measurement-row > .icon:first-child {
+  color: var(--color-primary-strong);
+}
+
 .period-row-text {
   display: flex;
   flex-direction: column;

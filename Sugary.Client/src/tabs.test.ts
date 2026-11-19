@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashOf, tabOf } from "./tabs";
+import { hashOf, tabOf, visibleTabs } from "./tabs";
 
 describe("the tab in the address", () => {
   it("reads the tab the page was on", () => {
@@ -18,5 +18,17 @@ describe("the tab in the address", () => {
     for (const tab of ["meal", "log", "glucose", "cycle", "foods", "settings"] as const) {
       expect(tabOf(hashOf(tab))).toBe(tab);
     }
+  });
+});
+
+describe("the tabs a person is shown", () => {
+  it("leaves out the Cycle tab when it is not hers", () => {
+    expect(visibleTabs(true)).toContain("cycle");
+    expect(visibleTabs(false)).not.toContain("cycle");
+  });
+
+  it("opens the meal for a tab she is not shown", () => {
+    expect(tabOf("#cycle", visibleTabs(false))).toBe("meal");
+    expect(tabOf("#cycle", visibleTabs(true))).toBe("cycle");
   });
 });

@@ -162,6 +162,29 @@ export interface Pen {
 
 export type SavePen = Pick<Pen, "kind" | "insulin" | "openedOn" | "days">;
 
+export type Sex = "female" | "male";
+export type DiabetesType = "type1" | "type2" | "lada" | "mody" | "gestational" | "other";
+
+// Who she is, as she told the app: each field null until she says it. The agent reads it beside her log.
+export interface Profile {
+  sex: Sex | null;
+  diabetesType: DiabetesType | null;
+  // yyyy-MM-dd on her calendar.
+  diagnosedOn: string | null;
+}
+
+export type MeasurementKind = "height" | "weight";
+
+// A height in cm or a weight in kg she recorded on a day (yyyy-MM-dd), one of each kind a day.
+export interface Measurement {
+  id: string;
+  kind: MeasurementKind;
+  on: string;
+  value: number;
+}
+
+export type SaveMeasurement = Omit<Measurement, "id">;
+
 // A phone's push subscription as the server keeps it, with the language its reminders are written in.
 export interface SavePushSubscription {
   endpoint: string;

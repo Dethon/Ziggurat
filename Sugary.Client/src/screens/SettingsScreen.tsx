@@ -4,7 +4,9 @@ import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
 import { THEMES } from "../theme";
+import type { Profile } from "../types";
 import { PensCard } from "./PensCard";
+import { ProfileCard } from "./ProfileCard";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -22,7 +24,7 @@ const LANGUAGES: { code: Language; name: string }[] = [
   { code: "en", name: "English" },
 ];
 
-export function SettingsScreen() {
+export function SettingsScreen({ profile, onProfile }: { profile: Profile; onProfile: (profile: Profile) => void }) {
   const { t, rationSize, language, theme, update } = useSettings();
 
   return (
@@ -31,6 +33,8 @@ export function SettingsScreen() {
         <Icon name="slice" size={28} />
         {t("settingsTitle")}
       </h1>
+
+      <ProfileCard profile={profile} onChange={onProfile} />
 
       <PensCard />
 

@@ -3,12 +3,14 @@ import type {
   Dose,
   Exercise,
   Food,
+  Measurement,
   Pen,
   Period,
   Recipe,
   SaveDose,
   SaveExercise,
   SaveFood,
+  SaveMeasurement,
   SavePen,
   SavePeriod,
   SaveRecipe,
@@ -44,6 +46,8 @@ export const openedExercise = ({ kind, name, startedAt, endedAt, note }: Exercis
   endedAt,
   note,
 });
+
+export const openedMeasurement = ({ kind, on, value }: Measurement): SaveMeasurement => ({ kind, on, value });
 
 export const openedPeriod = ({ start, end }: Period): SavePeriod => ({ start, end });
 

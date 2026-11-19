@@ -13,6 +13,9 @@ import type {
   MealEstimate,
   PackagedFood,
   Pen,
+  Profile,
+  Measurement,
+  SaveMeasurement,
   Period,
   Recipe,
   SaveDose,
@@ -191,6 +194,13 @@ export const api = {
     request<void>("/push/subscription", json("PUT", subscription)),
   deletePushSubscription: (endpoint: string) =>
     request<void>(`/push/subscription?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" }),
+  profile: () => request<Profile>("/profile"),
+  saveProfile: (profile: Profile, loaded: Profile) => request<Profile>("/profile", json("PUT", { ...profile, loaded })),
+  measurements: () => request<Measurement[]>("/measurements"),
+  createMeasurement: (measurement: SaveMeasurement) => request<Measurement>("/measurements", json("POST", measurement)),
+  updateMeasurement: (id: string, measurement: SaveMeasurement, loaded: SaveMeasurement) =>
+    request<Measurement>(`/measurements/${id}`, json("PUT", { ...measurement, loaded })),
+  deleteMeasurement: (id: string) => request<void>(`/measurements/${id}`, { method: "DELETE" }),
   periods: () => request<Period[]>("/periods"),
   createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
   updatePeriod: (id: string, period: SavePeriod, loaded: SavePeriod) =>

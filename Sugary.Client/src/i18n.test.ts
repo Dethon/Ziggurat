@@ -6,7 +6,7 @@ const keys = Object.keys(en) as StringKey[];
 const placeholders = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
 
 // Strings that read the same in both languages on purpose.
-const SAME_IN_BOTH = new Set<StringKey>(["grams", "dose_basal", "unitsShort", "unitsCount", "minutesShort", "hoursShort", "exerciseRange", "glucoseReadingSpoken", "glucosePeriodHours", "glucosePeriodDays"]);
+const SAME_IN_BOTH = new Set<StringKey>(["grams", "dose_basal", "unitsShort", "unitsCount", "minutesShort", "hoursShort", "exerciseRange", "glucoseReadingSpoken", "glucosePeriodHours", "glucosePeriodDays", "diabetes_lada", "diabetes_mody"]);
 
 // The type system already makes both dictionaries have the same keys (`const es: Strings`); these
 // catch what it cannot.
