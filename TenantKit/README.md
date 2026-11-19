@@ -14,7 +14,7 @@ the sandbox's bridge to the session's other mounts, the metrics feed — go back
 **back-calls** from a port on the server's own loopback. The kit's networks are its own; the machine
 needs no open port; and the kit holds **no deployment secret** — each server holds the tunnel
 credential the deployment's operator minted for it, and the rest of `.env` is the household's own.
-`.claude/rules/tunnel.md` is the contract; `Tests/Unit/Deployment/TenantKitConformanceTests.cs` holds
+`.claude/rules/tenant-kit.md` is the contract; `Tests/Unit/Deployment/TenantKitConformanceTests.cs` holds
 this file to it.
 
 | Server | Tunnel name | Back-calls | Beside it |

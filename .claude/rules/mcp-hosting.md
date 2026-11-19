@@ -75,7 +75,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
   URL of its own gets another factory there, which every one of those keys then follows: a
   household's server reached through its tunnel is `ServerAddress.Tunnelled(household, name)`
-  (`.claude/rules/tunnel.md`). `FromUrl` takes only http(s) with a host, so a server named by its
+  (`.claude/rules/own-servers.md`). `FromUrl` takes only http(s) with a host, so a server named by its
   name is never read as a URL.
   `ServerAddressConformanceTests` fails on any other `Agent`, `Infrastructure`, `Domain` or
   `Mcp.Hosting` file reading a `.Host`; a web page's site (the browser, logins, search, push) is not
@@ -89,7 +89,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
   inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
   for a credential. The proxy reaches the pages through the relay alone, which opens its streams
-  to the pages listener by the `pages` tag the server registers for it (`.claude/rules/tunnel.md`,
+  to the pages listener by the `pages` tag the server registers for it (`.claude/rules/tunnel-forwarding.md`,
   "Browse pages"); no route names the server (`DeploymentConformanceTests`). `WebIdentityServerHarness`
   opens both listeners, so the handoff tests reach the pages on the listener the tunnel lands on.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the

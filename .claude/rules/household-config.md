@@ -104,7 +104,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
-| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `lemonade` (its own box), `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key, the Lemonade box's key |
+| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `lemonade` (its own box), `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin-operator.md`) | the OpenRouter key, the Lemonade box's key |
 | `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
@@ -116,7 +116,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `member-names` | `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdMemberNames>`: every person of the household, disabled ones too (their topics are kept), in the order they joined, by id and display name, proven by the connection's assertion — the topic list's person filter for whoever sees all (`ChatHub.GetHouseholdPeople`) | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
 | `lemonade-boxes` | `agent` | `HouseholdLemonadeBoxes`: every household's own Lemonade box, on the agent's own token (as `people`), never kept — its discovery asks every minute; a kit box is `throughKit` alone | each box's key |
-| `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin.md`, "Keys and probes"); proven as `agent` is | none |
+| `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin-keys.md`, "Keys and probes"); proven as `agent` is | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
 A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
@@ -180,7 +180,7 @@ household's save, since a save names the home by an id the reader may not have b
 The agent builds a turn's agents from the turn's household's view (`HouseholdAgents.Of`, Domain, over
 `HouseholdAgentSource`, the agent's `IHouseholdAgentSource`):
 
-- **`lemonade` is never a tool server.** It is the household's Lemonade forwarder (`.claude/rules/tunnel.md`),
+- **`lemonade` is never a tool server.** It is the household's Lemonade forwarder (`.claude/rules/tenant-kit.md`),
   which carries chat to its box: the section's rules refuse a definition naming it among its servers
   ("…is the household's Lemonade box, not a tool server"), and a turn never dials it whatever a
   definition, a registered agent or a template names (`OwnServerEndpoints.Resolve` withholds it, so it
@@ -373,7 +373,7 @@ agents by their seeded names, a reply's topic and usage under the home, a schedu
 - **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
   assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
   with, which lives ten minutes while a chat client stays connected for hours. The chat client's host
-  keeps no list and reads no header; see `.claude/rules/channels.md`, "Spaces". The picker
+  keeps no list and reads no header; see `.claude/rules/chat-hub.md`, "Spaces". The picker
   (`ChatHub.GetAgents`, `ValidateAgent`) reads `agent-names` the same way: the household's agents under
   its names and on its models, with the patchable models and what a model accepts taken from the
   catalogue the agent registered (`AgentCatalogBuilder.ForHousehold`).
@@ -398,7 +398,7 @@ agents by their seeded names, a reply's topic and usage under the home, a schedu
 - **13** (done): the Telegram server reads `telegram-bots` at its start and every `Bots:Refresh` (five
   seconds; the reader's cache makes that free, and a `keys` save drops it), starting and stopping each
   household's bots as the answer changes, and `agent-names` for `/agent` on the asking person's
-  assertion (`.claude/rules/channels.md`, Telegram). The household migration's `HomeTelegramBots` seeded
+  assertion (`.claude/rules/telegram.md`). The household migration's `HomeTelegramBots` seeded
   the home's jack and jonas bots into its `keys` through the seed route, from tokens piped into the run
   (`--telegram-bots -`). **15** (done) made that step `HomeKeys`, seeding Idealista's pair from the old
   `.env` beside the bots, and made the seed route give a saved keys section the keys it lacks, so the

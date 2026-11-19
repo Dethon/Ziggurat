@@ -40,7 +40,7 @@ public sealed record OwnServerResolution(
 // A household server that cannot be reached — its tunnel is not open, or the turn names no household
 // — is left out and named, never fatal. That is ADR 0027's rule turned round for these endpoints
 // alone: a machine in somebody's home being off is not the deployment being broken. A shared
-// server's URL endpoint still fails the session (.claude/rules/tunnel.md).
+// server's URL endpoint still fails the session (.claude/rules/own-servers.md).
 internal static class OwnServerEndpoints
 {
     // One the household withholds, by its server name — a server it never set up, or one a worker's

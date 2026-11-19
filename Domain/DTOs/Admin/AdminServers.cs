@@ -3,7 +3,7 @@ using JetBrains.Annotations;
 
 namespace Domain.DTOs.Admin;
 
-// The household's own servers as its owners manage them (.claude/rules/admin.md, "Own servers"): each
+// The household's own servers as its owners manage them (.claude/rules/admin-owner-pages.md, "Own servers"): each
 // server name that holds a live tunnel credential or has a tunnel open, with its live credentials (by
 // id and when minted, never the credential) and what the agent's relay says of it now.
 [PublicAPI]

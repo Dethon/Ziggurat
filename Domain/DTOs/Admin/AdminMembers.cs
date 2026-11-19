@@ -2,7 +2,7 @@ using JetBrains.Annotations;
 
 namespace Domain.DTOs.Admin;
 
-// The household's people as its owners manage them (.claude/rules/admin.md, "Members"): each one's
+// The household's people as its owners manage them (.claude/rules/admin-owner-pages.md, "Members"): each one's
 // role (`owner` or `member`), whether they run the deployment, whether they see every conversation,
 // whether their agent reads everyone's Sugary log, and whether an owner disabled them — a disabled
 // member is kept, with everything of theirs, and is nobody to every channel until re-enabled.

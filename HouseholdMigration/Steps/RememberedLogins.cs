@@ -6,7 +6,7 @@ namespace HouseholdMigration.Steps;
 
 // A person's remembered web logins were sealed under the identity map's Name, with that name as the
 // associated data, so the record opens only under it; the browse server now opens a record only under
-// the account's user id (.claude/rules/web-browsing.md). Each is opened the old way and sealed the new
+// the account's user id (.claude/rules/browsing-as-person.md). Each is opened the old way and sealed the new
 // one with the same key, then the old one goes. An account that already remembers logins of its own
 // keeps them, and the old record is left for the operator: merging two browsers' cookies is a guess.
 public sealed class RememberedLogins(IConnectionMultiplexer redis, IPersonStateStore logins) : IMigrationStep

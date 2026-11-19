@@ -20,7 +20,7 @@ Home Assistant is a household's: it runs in the tenant kit (`TenantKit/`) beside
 3. Set `HOMEASSISTANT__TOKEN=...` in `TenantKit/.env` and restart the kit's `mcp-homeassistant`.
 4. For the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**; the vacuum appears as `vacuum.<name>`.
 
-`McpServerHomeAssistant` reaches HA on the kit's own network at `http://homeassistant:8123`, and the agent reaches the server through its tunnel as `homeassistant` (`.claude/rules/tunnel.md`); the watch callback and announcement targets stay inside the kit, between it and the kit's voice server, under the kit's own `Announce__Token`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
+`McpServerHomeAssistant` reaches HA on the kit's own network at `http://homeassistant:8123`, and the agent reaches the server through its tunnel as `homeassistant` (`.claude/rules/own-servers.md`); the watch callback and announcement targets stay inside the kit, between it and the kit's voice server, under the kit's own `Announce__Token`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
 
 The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`. Each action an entity admits is an
 **action file** named for its service with no extension (`turn_on`, `music_assistant.play_media`),
@@ -157,7 +157,7 @@ for the write that last set it) is JSON in its description (`HaWatchMetadata`). 
 for the person that delegation names: the callback looks the watch up at fire time and sends the
 delegation with what the watch does now (`WatchDelegation.Of`), a write carrying none (a turn acting
 for nobody) leaves the watch nobody's, and a home the callback cannot ask fires for nobody
-(`.claude/rules/service-identity.md`, "Deferred turns"). `WatchDelegationStore` answers the agent's
+(`.claude/rules/delegations.md`, "Deferred turns"). `WatchDelegationStore` answers the agent's
 `delegations_list` / `delegations_replace`, rewriting the config alone so a spent one-shot is not
 re-armed. A one-shot is spent only when it is off with a fire on record **and** the
 agent last wrote it armed: a refused fire stamps `last_triggered` on a watch that stays on, and a
@@ -184,7 +184,7 @@ The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoin
 the announce token, 202/401/400/503 as the automation's trace reads them) posts the rendered prompt
 and, as a literal, which of the watch's prompts it is (`promptIndex`); the fire asks the agent that
 prompt as the watch keeps it and carries what the home posted as its report, never as what is asked
-(`.claude/rules/service-identity.md`, Deferred turns). The bridges document is
+(`.claude/rules/delegations.md`, Deferred turns). The bridges document is
 `docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
 and `HaWatchEffectsTests` over `FakeHaClient`'s automation store; `WatchFiredEndpointTests` at the
 HTTP boundary over a real inbox; `HomeAssistantFixture` seeds the rest_command towards a listener
