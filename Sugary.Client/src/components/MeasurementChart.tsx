@@ -4,7 +4,8 @@ import { useSettings } from "../settings";
 import type { Measurement, MeasurementKind } from "../types";
 
 // Drawn by hand, as every picture in the app is: one kind's history as a line through its days, the
-// lowest and highest value named on the left, the first and last day below. Given onOpen, a tap opens
+// lowest and highest value named on the left, the first day and today below, the last value carried
+// on to today as a dashed line, taken as kept since. Given onOpen, a tap opens
 // an entry to correct or delete: each point is a button while they stand a fingertip apart, and once
 // they crowd (years of weekly weights) the dots go and a tap opens the entry nearest it along the days.
 const WIDTH = 320;
@@ -16,18 +17,20 @@ const PLOT_HEIGHT = HEIGHT - PLOT.top - PLOT.bottom;
 export function MeasurementChart({
   kind,
   measurements,
+  today,
   onOpen,
 }: {
   kind: MeasurementKind;
   measurements: readonly Measurement[];
+  today: string;
   onOpen?: (measurement: Measurement) => void;
 }) {
   const { t, language } = useSettings();
-  const { points } = plotted(measurements, { width: PLOT_WIDTH, height: PLOT_HEIGHT });
+  const { points, held } = plotted(measurements, { width: PLOT_WIDTH, height: PLOT_HEIGHT }, today);
   const values = measurements.map((m) => m.value);
   const [least, most] = [Math.min(...values), Math.max(...values)];
   const spot = (value: number) => points.find((p) => p.measurement.value === value)!.y;
-  const thisYear = new Date().getFullYear().toString();
+  const thisYear = today.slice(0, 4);
   const day = (on: string) => formatDays(on, on, language, thisYear);
   const shown = (m: Measurement) => `${formatUnits(m.value, language)} ${UNIT[kind]}`;
   const [first, last] = [points[0], points[points.length - 1]];
@@ -51,11 +54,12 @@ export function MeasurementChart({
         <text className="glucose-chart-label" x={first.x} y={PLOT_HEIGHT + 16} textAnchor={points.length > 1 ? "start" : "middle"}>
           {day(first.measurement.on)}
         </text>
-        {points.length > 1 && (
-          <text className="glucose-chart-label" x={last.x} y={PLOT_HEIGHT + 16} textAnchor="end">
-            {day(last.measurement.on)}
+        {(held || points.length > 1) && (
+          <text className="glucose-chart-label" x={PLOT_WIDTH} y={PLOT_HEIGHT + 16} textAnchor="end">
+            {held ? t("today") : day(last.measurement.on)}
           </text>
         )}
+        {held && <line className="measurement-chart-held" x1={last.x} x2={held.x} y1={last.y} y2={held.y} />}
         {points.length > 1 && (
           <path className="glucose-chart-line" d={points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ")} />
         )}

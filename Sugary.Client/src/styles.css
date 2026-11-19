@@ -2920,6 +2920,13 @@ h1.marked .icon {
   font-weight: 700;
 }
 
+.measurement-chart-held {
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
+}
+
 .measurement-chart-hit {
   fill: transparent;
   cursor: pointer;
@@ -2951,6 +2958,13 @@ h1.marked .icon {
   justify-content: space-between;
   min-height: 44px;
   font-weight: 700;
+}
+
+.measurement-chart-held {
+  stroke: var(--color-ink);
+  stroke-width: 2;
+  stroke-dasharray: 4 4;
+  stroke-linecap: round;
 }
 
 .measurement-chart-hit {

@@ -151,7 +151,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   kind's latest value and, from two entries on, a small chart of all of it; tapping it opens that kind's history
   screen (a sheet, so years of entries never stretch Settings) with a year / five years / all picker, opening on the
   narrowest that holds two entries, and the range's chart and list, either opening an entry to correct or delete.
-  A chart's points are buttons only while a fingertip apart (`spaced`); crowded, a tap opens the `nearest` day. No
+  A chart ends today, the last value carried on to it dashed (`held`: kept until a new entry says otherwise). A chart's points are buttons only while a fingertip apart (`spaced`); crowded, a tap opens the `nearest` day. No
   paging: `GET /measurements` returns every entry, a few hundred small rows; a day field saves when it is left, not per keystroke. All four tables download as CSV beside the rest.
 
 ## Turns, the mount and reminders

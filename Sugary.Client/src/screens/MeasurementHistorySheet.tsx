@@ -56,7 +56,7 @@ export function MeasurementHistorySheet({
         ))}
       </div>
       {charted(shown) && (
-        <MeasurementChart kind={kind} measurements={shown} onOpen={onOpen} />
+        <MeasurementChart kind={kind} measurements={shown} today={today} onOpen={onOpen} />
       )}
       {shown.length === 0 ? (
         <p className="muted small">{t("measurementNoneInRange")}</p>

@@ -172,7 +172,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
                     aria-label={`${t(`measurementHistoryTitle_${kind}`)} (${past.length})`}
                     onClick={() => setViewing({ kind, range: fittingRange(past, today) })}
                   >
-                    {charted(past) && <MeasurementChart kind={kind} measurements={past} />}
+                    {charted(past) && <MeasurementChart kind={kind} measurements={past} today={today} />}
                     <span className="measurement-history-label">
                       {t("measurementHistory", { n: past.length })}
                       <Icon name="chevronRight" size={18} />

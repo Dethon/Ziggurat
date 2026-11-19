@@ -86,7 +86,7 @@ describe("the chart of a kind", () => {
       { id: "b", kind: "weight", on: "2026-01-11", value: 41 },
       { id: "c", kind: "weight", on: "2026-01-31", value: 44 },
     ];
-    const chart = plotted(rows, frame);
+    const chart = plotted(rows, frame, "2026-01-31");
 
     expect(chart.points.map((p) => p.measurement.id)).toEqual(["a", "b", "c"]);
     expect(chart.points.map((p) => p.x)).toEqual([0, 100, 300]);
@@ -96,8 +96,20 @@ describe("the chart of a kind", () => {
     expect(chart.points[0].y).toBeGreaterThan(chart.points[2].y);
   });
 
+  it("runs on to today, the last value held since it was taken", () => {
+    const rows: Measurement[] = [
+      { id: "a", kind: "height", on: "2026-01-01", value: 140 },
+      { id: "b", kind: "height", on: "2026-01-31", value: 142 },
+    ];
+    const chart = plotted(rows, frame, "2026-03-02");
+
+    expect(chart.points.map((p) => p.x)).toEqual([0, 150]);
+    expect(chart.held).toEqual({ x: 300, y: chart.points[1].y });
+    expect(plotted(rows, frame, "2026-01-31").held).toBeNull();
+  });
+
   it("puts a lone value, or values that never changed, in the middle", () => {
-    const one = plotted([{ id: "a", kind: "height", on: "2026-01-01", value: 150 }], frame);
+    const one = plotted([{ id: "a", kind: "height", on: "2026-01-01", value: 150 }], frame, "2026-01-01");
     expect(one.points[0]).toMatchObject({ x: 150, y: 50 });
     const flat = plotted(
       [
@@ -105,6 +117,7 @@ describe("the chart of a kind", () => {
         { id: "b", kind: "height", on: "2026-02-01", value: 150 },
       ],
       frame,
+      "2026-02-01",
     );
     expect(flat.points.map((p) => p.y)).toEqual([50, 50]);
   });

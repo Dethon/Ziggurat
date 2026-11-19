@@ -98,17 +98,20 @@ export interface PlottedPoint {
   y: number;
 }
 
-// One kind's history laid out in a frame: days placed by their distance in time (a year's gap reads as
-// one), values between a floor and a ceiling a little beyond them, so no point sits on an edge. A lone
-// value, or a run that never changed, sits in the middle.
+// One kind's history laid out in a frame that ends today: days placed by their distance in time (a
+// year's gap reads as one), values between a floor and a ceiling a little beyond them, so no point sits
+// on an edge. The last value is taken as kept since, so `held` is where its line reaches today, or null
+// when it was taken today. A lone value, or a run that never changed, sits in the middle.
 export function plotted(
   measurements: readonly Measurement[],
   frame: { width: number; height: number },
-): { points: PlottedPoint[]; low: number; high: number } {
+  today: string,
+): { points: PlottedPoint[]; held: { x: number; y: number } | null; low: number; high: number } {
   const sorted = measurements.toSorted((a, b) => a.on.localeCompare(b.on));
-  const days = sorted.map((m) => Date.parse(`${m.on}T00:00:00Z`) / 86_400_000);
+  const dayOf = (on: string) => Date.parse(`${on}T00:00:00Z`) / 86_400_000;
+  const days = sorted.map((m) => dayOf(m.on));
   const values = sorted.map((m) => m.value);
-  const [first, last] = [Math.min(...days), Math.max(...days)];
+  const [first, last] = [Math.min(...days), Math.max(dayOf(today), ...days)];
   const [least, most] = [Math.min(...values), Math.max(...values)];
   const pad = most === least ? Math.max(1, most * 0.05) : (most - least) * 0.15;
   const [low, high] = [least - pad, most + pad];
@@ -117,7 +120,8 @@ export function plotted(
     x: last === first ? frame.width / 2 : ((days[index] - first) / (last - first)) * frame.width,
     y: ((high - measurement.value) / (high - low)) * frame.height,
   }));
-  return { points, low, high };
+  const end = points[points.length - 1];
+  return { points, held: end && end.x < frame.width ? { x: frame.width, y: end.y } : null, low, high };
 }
 
 function dayAfter(day: string): string {
