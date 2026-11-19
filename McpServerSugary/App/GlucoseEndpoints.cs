@@ -92,7 +92,7 @@ public static class GlucoseEndpoints
     private static readonly int[] _periods = [1, 7, 14, 90];
 
     private static async Task<GlucoseNowDto> CurrentAsync(
-        SugaryDbContext db, GlucoseCredentials credentials, TimeProvider clock, CancellationToken ct)
+        SugaryDbContext db, Person person, GlucoseCredentials credentials, TimeProvider clock, CancellationToken ct)
     {
         var link = await LinkOf(db, ct);
         var newest = await db.GlucoseReadings.AsNoTracking().OrderByDescending(r => r.At).FirstOrDefaultAsync(ct);
@@ -102,7 +102,7 @@ public static class GlucoseEndpoints
                 (int)Math.Max(0, (clock.GetUtcNow() - newest.At).TotalSeconds));
         return new GlucoseNowDto(
             reading,
-            link is null ? null : ToDto(link),
+            link is null ? null : ToDto(link, person.Viewing),
             credentials.CanSeal,
             link?.Unit ?? GlucoseUnit.Mgdl,
             link?.TargetLow ?? GlucoseRange.DefaultLow,
@@ -159,8 +159,9 @@ public static class GlucoseEndpoints
         return [.. rows.Select(r => new SensorReading(r.At, r.MgPerDl, GlucoseTrend.Unknown))];
     }
 
-    private static async Task<IResult> ReadAsync(SugaryDbContext db, GlucoseCredentials credentials, CancellationToken ct) =>
-        await LinkOf(db, ct) is { } link ? Results.Ok(ToDto(link))
+    private static async Task<IResult> ReadAsync(
+        SugaryDbContext db, Person person, GlucoseCredentials credentials, CancellationToken ct) =>
+        await LinkOf(db, ct) is { } link ? Results.Ok(ToDto(link, person.Viewing))
         : credentials.CanSeal ? NotLinked()
         : LinkingOff();
 
@@ -377,9 +378,11 @@ public static class GlucoseEndpoints
         _ => null
     };
 
-    private static GlucoseLinkDto ToDto(GlucoseLink link) => new(
-        link.Email, link.Region, link.PatientId, link.Name,
-        [.. link.Connections.Select(c => new GlucoseConnectionDto(c.PatientId, c.Name))],
+    // A reader of her log (Person.Viewing) sees the link's state and range, never the LibreLinkUp
+    // account she signs in with nor the people it follows.
+    private static GlucoseLinkDto ToDto(GlucoseLink link, bool viewing = false) => new(
+        viewing ? "" : link.Email, link.Region, link.PatientId, link.Name,
+        viewing ? [] : [.. link.Connections.Select(c => new GlucoseConnectionDto(c.PatientId, c.Name))],
         link.Unit, link.TargetLow, link.TargetHigh, link.LinkedAt, link.LastSuccessAt,
         FailureCode(link.LastFailure), link.FailureDetail, link.FailingSince);
 }

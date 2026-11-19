@@ -300,6 +300,7 @@ internal sealed partial class WebChatStack
                 // where every other collection works, fails for a reason that is no fault of its own.
                 var contexts = services.GetRequiredService<IDbContextFactory<AccountsDbContext>>();
                 var elsewhere = Tokens.NewId();
+                ElsewhereHousehold = elsewhere;
                 await using (var db = await contexts.CreateDbContextAsync(ct))
                 {
                     db.Tenants.Add(new Tenant { Id = elsewhere, Name = "Elsewhere", CreatedAt = clock.Time.GetUtcNow() });
@@ -359,6 +360,9 @@ internal sealed partial class WebChatStack
     // A person of the home household a test makes for itself, by the name and role it gives: one of
     // the pool, renamed through their own account page as they could rename themselves, or — once the
     // pool is spent — made by the service's commands as an operator would.
+    // The second household's id, for a test that signs its people's Sugary requests itself.
+    public string ElsewhereHousehold { get; private set; } = "";
+
     public async Task<(string UserId, string Session)> PersonAsync(string name, string role, bool elsewhere = false)
     {
         var wanted = role == "owner" ? Role.Owner : Role.Member;

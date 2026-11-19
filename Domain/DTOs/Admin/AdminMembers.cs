@@ -4,7 +4,7 @@ namespace Domain.DTOs.Admin;
 
 // The household's people as its owners manage them (.claude/rules/admin-owner-pages.md, "Members"): each one's
 // role (`owner` or `member`), whether they run the deployment, whether they see every conversation,
-// whether their agent reads everyone's Sugary log, whether Sugary is on for them, and whether an owner disabled them — a disabled
+// whether they read everyone's Sugary log (in the app and through their agent), whether Sugary is on for them, and whether an owner disabled them — a disabled
 // member is kept, with everything of theirs, and is nobody to every channel until re-enabled.
 [PublicAPI]
 public sealed record AdminMembers(IReadOnlyList<AdminMember> Members);
@@ -27,7 +27,7 @@ public sealed record MemberInvite(string DisplayName, string Role)
 }
 
 // What an owner changes of a member: their role, whether they see every conversation, whether their
-// agent reads everyone's Sugary log, whether Sugary is on for them, or any of them. A field left out is
+// agent and app read everyone's Sugary log, whether Sugary is on for them, or any of them. A field left out is
 // left as it is.
 [PublicAPI]
 public sealed record MemberEdit(string? Role = null, bool? SeesAll = null, bool? ReadsSugaryLogs = null, bool? UsesSugary = null)

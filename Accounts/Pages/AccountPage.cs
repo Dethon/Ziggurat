@@ -279,7 +279,7 @@ public sealed class AccountPage(
                  <h2 id="reads-sugary-logs">Reads everyone's Sugary log</h2>
                  {(readsSugaryLogs.Count == 0
                      ? "<p>Nobody in the household.</p>"
-                     : $"<p>These people's agents can read everyone's Sugary log in the household, yours included:</p><ul>{string.Concat(readsSugaryLogs.Select(m => $"<li>{AccountsPages.Encode(m.DisplayName)}</li>"))}</ul>")}
+                     : $"<p>These people can read everyone's Sugary log in the household, yours included, in the Sugary app and through their agent:</p><ul>{string.Concat(readsSugaryLogs.Select(m => $"<li>{AccountsPages.Encode(m.DisplayName)}</li>"))}</ul>")}
                </section>
              </main>
              """);

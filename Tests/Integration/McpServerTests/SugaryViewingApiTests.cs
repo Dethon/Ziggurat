@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using McpServerSugary.Store;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -115,6 +117,40 @@ public class SugaryViewingApiTests
 
         (await her.GetFromJsonAsync<JsonArray>("/api/meals"))!.Single()!["notes"]!.GetValue<string>().ShouldBe("her paella");
         (await reader.GetFromJsonAsync<JsonArray>("/api/meals"))!.ShouldBeEmpty();
+    }
+
+    // Her LibreLinkUp account is hers: a reader sees her link's state and range, never the email she
+    // signs in with nor the names of the people her account follows.
+    [Fact]
+    public async Task AReader_SeesHerGlucoseLinksState_NotHerAccount()
+    {
+        await using var server = await SugaryServer.StartAsync(sugaryPeople: People());
+        await using (var db = server.Services.GetRequiredService<SugaryStore>().For(SugaryServer.Her))
+        {
+            var seeded = new GlucoseLink
+            {
+                Email = "ana@example.com", SealedPassword = [1, 2, 3], PatientId = "patient-1", TargetLow = 80,
+                LinkedAt = DateTimeOffset.UtcNow.AddDays(-1), LastSuccessAt = DateTimeOffset.UtcNow
+            };
+            seeded.Connections.Add(new GlucoseConnectionOffered { PatientId = "patient-1", Name = "Ana García" });
+            db.GlucoseLinks.Add(seeded);
+            await db.SaveChangesAsync();
+        }
+
+        var reader = server.As(Reader);
+        var now = (await reader.GetFromJsonAsync<JsonNode>($"/api/glucose/current?person={SugaryServer.Her.UserId}"))!;
+        var link = (await reader.GetFromJsonAsync<JsonNode>($"/api/glucose/link?person={SugaryServer.Her.UserId}"))!;
+        var hers = (await server.As(SugaryServer.Her).GetFromJsonAsync<JsonNode>("/api/glucose/link"))!;
+
+        now["targetLow"]!.GetValue<int>().ShouldBe(80);
+        foreach (var shown in new[] { now["link"]!, link })
+        {
+            shown.ToJsonString().ShouldNotContain("ana@example.com");
+            shown.ToJsonString().ShouldNotContain("Ana García");
+            shown["patientId"]!.GetValue<string>().ShouldBe("patient-1");
+        }
+
+        hers["email"]!.GetValue<string>().ShouldBe("ana@example.com");
     }
 
     // Naming somebody is no way in: not without the grant, not somebody Sugary is off for, not somebody

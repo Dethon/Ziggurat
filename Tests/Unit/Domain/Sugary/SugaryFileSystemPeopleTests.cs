@@ -196,6 +196,10 @@ public class SugaryFileSystemPeopleTests
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
         Error(await Mount(reader: Dani, people).ReadAsync("/README.md", null, null, CancellationToken.None))
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await Mount(reader: Dani, people).GlobAsync("/", "*", CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        Error(await Mount(reader: Dani, people).InfoAsync("/", CancellationToken.None))
+            .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
     }
 
     // The grant alone lets a reader Sugary is off for read the others: they have no log of their own,

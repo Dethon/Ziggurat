@@ -339,7 +339,8 @@ public sealed partial class SugaryFileSystem(
         if (location is { Person: null, IsPeople: false })
         {
             var node = SugaryPath.Parse(location.Rest);
-            return (listing && node.Kind == SugaryNodeKind.Root) || await UsesSugaryAsync(reader, ct)
+            return await UsesSugaryAsync(reader, ct)
+                   || (listing && node.Kind == SugaryNodeKind.Root && await OthersAsync(reader, ct) is not null)
                 ? new FsResult<Target>.Ok(new Target(reader, node))
                 : Fail<Target>(ToolError.Codes.PermissionDenied, OffForReader);
         }

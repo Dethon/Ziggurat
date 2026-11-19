@@ -666,7 +666,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        var forSugary = await AssertionAsync(stack.OperatorSession, SugaryChannel.ChannelId);
+        // The member, whom the stack makes with Sugary on; the operator's link makes them without it.
+        var forSugary = await AssertionAsync(stack.MemberSession, SugaryChannel.ChannelId);
         var forDashboard = await AssertionAsync(stack.OperatorSession, AppChannels.Dashboard);
         var forSexyTime = await AssertionAsync(stack.OperatorSession, AppChannels.SexyTime);
         var agentSecret = await AgentApiSecretAsync();
