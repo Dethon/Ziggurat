@@ -16,6 +16,9 @@ interface Props {
 export function Sheet({ title, onClose, onBack, role, footer, children }: Props) {
   const { t } = useSettings();
   const dialog = useRef<HTMLDialogElement>(null);
+  // Whether the press began on the scrim. A press in a field let go past the sheet's edge (selecting
+  // its words) is clicked on the dialog too, and must not close the sheet with what she typed.
+  const pressedScrim = useRef(false);
 
   useEffect(() => {
     const element = dialog.current;
@@ -33,7 +36,10 @@ export function Sheet({ title, onClose, onBack, role, footer, children }: Props)
         event.preventDefault();
         onClose();
       }}
-      onClick={(event) => event.target === dialog.current && onClose()}
+      onPointerDown={(event) => {
+        pressedScrim.current = event.target === dialog.current;
+      }}
+      onClick={(event) => event.target === dialog.current && pressedScrim.current && onClose()}
     >
       <div className="sheet-panel">
         <header className="sheet-header">

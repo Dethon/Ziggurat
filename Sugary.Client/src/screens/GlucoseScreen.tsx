@@ -104,49 +104,56 @@ export function GlucoseScreen() {
         </p>
       )}
 
-      {now && (now.reading || now.link) && <Current now={now} fetchedAt={state.fetchedAt} />}
+      {/* On a desktop her curve leads, her figures and her link standing beside it. */}
+      <div className="panes panes-glucose">
+        <div className="pane pane-lead">
+          {now && (now.reading || now.link) && <Current now={now} fetchedAt={state.fetchedAt} />}
 
-      {now?.reading && (
-        <>
-          <div className="segmented" role="group" aria-label={t("glucosePeriods")}>
-            {PERIODS.map((days) => (
-              <button
-                key={days}
-                type="button"
-                className={period === days ? "segment segment-on" : "segment"}
-                aria-pressed={period === days}
-                onClick={() => setPeriod(days)}
-              >
-                {periodLabel(days, t)}
-              </button>
-            ))}
-          </div>
-          <section className="card" aria-labelledby="curve-title">
-            <h2 id="curve-title" className="section-title">
-              {t("curveTitle")}
-            </h2>
-            {curve && curve.points.length > 0 ? (
-              <GlucoseChart
-                curve={curve}
-                unit={now.unit}
-                targetLow={now.targetLow}
-                targetHigh={now.targetHigh}
-                label={t("curveSpoken", {
-                  period: periodLabel(period, t),
-                  low: formatGlucose(now.targetLow, now.unit, language),
-                  high: formatGlucose(now.targetHigh, now.unit, language),
-                  unit: UNIT_LABEL[now.unit],
-                })}
-              />
-            ) : (
-              curve && <p className="muted small">{t("curveEmpty")}</p>
-            )}
-          </section>
-          {statistics && <Statistics figures={statistics} unit={now.unit} />}
-        </>
-      )}
+          {now?.reading && (
+            <>
+              <div className="segmented" role="group" aria-label={t("glucosePeriods")}>
+                {PERIODS.map((days) => (
+                  <button
+                    key={days}
+                    type="button"
+                    className={period === days ? "segment segment-on" : "segment"}
+                    aria-pressed={period === days}
+                    onClick={() => setPeriod(days)}
+                  >
+                    {periodLabel(days, t)}
+                  </button>
+                ))}
+              </div>
+              <section className="card" aria-labelledby="curve-title">
+                <h2 id="curve-title" className="section-title">
+                  {t("curveTitle")}
+                </h2>
+                {curve && curve.points.length > 0 ? (
+                  <GlucoseChart
+                    curve={curve}
+                    unit={now.unit}
+                    targetLow={now.targetLow}
+                    targetHigh={now.targetHigh}
+                    label={t("curveSpoken", {
+                      period: periodLabel(period, t),
+                      low: formatGlucose(now.targetLow, now.unit, language),
+                      high: formatGlucose(now.targetHigh, now.unit, language),
+                      unit: UNIT_LABEL[now.unit],
+                    })}
+                  />
+                ) : (
+                  curve && <p className="muted small">{t("curveEmpty")}</p>
+                )}
+              </section>
+            </>
+          )}
+        </div>
 
-      {now && <LinkCard now={now} onChanged={() => void load()} />}
+        <div className="pane pane-side">
+          {now?.reading && statistics && <Statistics figures={statistics} unit={now.unit} />}
+          {now && <LinkCard now={now} onChanged={() => void load()} />}
+        </div>
+      </div>
     </div>
   );
 }

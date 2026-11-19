@@ -287,196 +287,203 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
         </p>
       )}
 
-      {/* The session going now, above all else, until she stops it. */}
-      {meals !== null && current && (
-        <RunningCard
-          session={current}
-          now={now}
-          onStop={() => void stopExercise(current)}
-          onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
-        />
-      )}
-
-      {meals !== null && (
-        <section className="record" aria-labelledby="record-title">
-          <h2 id="record-title">{t("recordTitle")}</h2>
-          {current ? (
-            <button type="button" className="row-button add-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
-              <Icon name="insulin" size={20} />
-              <span>{t("addDose")}</span>
-              <Icon name="plus" size={20} />
-            </button>
-          ) : (
-            <>
-              {/* Insulin opens its sheet; a walk or the gym starts at once, the toast taking it back. */}
-              <div className="tiles tiles-record">
-                <button type="button" className="tile tile-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
-                  <Icon name="insulin" size={26} />
-                  {t("recordDose")}
-                </button>
-                {SHORTCUTS.map((kind) => (
-                  <button key={kind} type="button" className="tile tile-exercise" onClick={() => void startExercise(kind)}>
-                    <Icon name={EXERCISE_ICON[kind]} size={26} />
-                    {t(`exercise_${kind}`)}
-                  </button>
-                ))}
-                <button type="button" className="tile tile-exercise" aria-haspopup="dialog" onClick={() => setExerciseSheet({ mode: "other" })}>
-                  <Icon name={EXERCISE_ICON.other} size={26} />
-                  {t("exercise_other")}
-                </button>
-              </div>
-              <button
-                type="button"
-                className="button button-quiet button-small exercise-past"
-                aria-haspopup="dialog"
-                onClick={() => setExerciseSheet({ mode: "past" })}
-              >
-                <Icon name="plus" size={18} />
-                {t("exerciseAddPast")}
-              </button>
-            </>
+      {/* On a desktop, what she adds and looks for stands beside her days; on a phone, above them. */}
+      <div className="panes panes-log">
+        <div className="pane pane-side">
+          {/* The session going now, above all else, until she stops it. */}
+          {meals !== null && current && (
+            <RunningCard
+              session={current}
+              now={now}
+              onStop={() => void stopExercise(current)}
+              onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
+            />
           )}
-        </section>
-      )}
 
-      {/* Under what she can add, so an empty Log still opens on them. */}
-      {empty && (
-        <div className="empty">
-          <CakeStand />
-          <p className="empty-title">{t("logEmpty")}</p>
-          <p className="small">{t("logEmptyHint")}</p>
-        </div>
-      )}
-
-      {meals !== null && meals.length > 0 && (
-        <label className="search">
-          <Icon name="search" size={20} />
-          <input
-            type="search"
-            value={query}
-            placeholder={t("logSearch")}
-            aria-label={t("logSearch")}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-      )}
-
-      {pending.length > 0 && (
-        <section className="pending" aria-labelledby="pending-title">
-          <div>
-            <h2 id="pending-title" className="section-title">
-              {t("logPendingTitle")}
-            </h2>
-            <p className="muted small">{t("logPendingHint")}</p>
-          </div>
-          {pending.map((meal) => {
-            const carbs = shownTotal(meal.items);
-            return (
-              <article key={meal.id} className="card pending-card" aria-label={mealNames(meal)}>
-                <button type="button" className="meal-row" onClick={() => setOpenId(meal.id)}>
-                  <MealThumb meal={meal} />
-                  <span className="item-text">
-                    <span className="item-name">{mealNames(meal)}</span>
-                    <span className="item-meta">{formatTime(meal.eatenAt, language)}</span>
-                  </span>
-                  <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
+          {meals !== null && (
+            <section className="record" aria-labelledby="record-title">
+              <h2 id="record-title">{t("recordTitle")}</h2>
+              {current ? (
+                <button type="button" className="row-button add-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
+                  <Icon name="insulin" size={20} />
+                  <span>{t("addDose")}</span>
+                  <Icon name="plus" size={20} />
                 </button>
-                <div className="outcome-buttons" role="group" aria-label={t("outcomeTitle")}>
-                  {RECORDED.map((outcome) => (
-                    <button
-                      key={outcome}
-                      type="button"
-                      className={`outcome-button outcome-button-${outcome}`}
-                      onClick={() => void record(meal, outcome)}
-                    >
-                      <Icon name={OUTCOME_ICON[outcome]} size={20} />
-                      {t(`outcome_${outcome}`)}
+              ) : (
+                <>
+                  {/* Insulin opens its sheet; a walk or the gym starts at once, the toast taking it back. */}
+                  <div className="tiles tiles-record">
+                    <button type="button" className="tile tile-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
+                      <Icon name="insulin" size={26} />
+                      {t("recordDose")}
                     </button>
-                  ))}
-                </div>
-              </article>
+                    {SHORTCUTS.map((kind) => (
+                      <button key={kind} type="button" className="tile tile-exercise" onClick={() => void startExercise(kind)}>
+                        <Icon name={EXERCISE_ICON[kind]} size={26} />
+                        {t(`exercise_${kind}`)}
+                      </button>
+                    ))}
+                    <button type="button" className="tile tile-exercise" aria-haspopup="dialog" onClick={() => setExerciseSheet({ mode: "other" })}>
+                      <Icon name={EXERCISE_ICON.other} size={26} />
+                      {t("exercise_other")}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    className="button button-quiet button-small exercise-past"
+                    aria-haspopup="dialog"
+                    onClick={() => setExerciseSheet({ mode: "past" })}
+                  >
+                    <Icon name="plus" size={18} />
+                    {t("exerciseAddPast")}
+                  </button>
+                </>
+              )}
+            </section>
+          )}
+
+          {meals !== null && meals.length > 0 && (
+            <label className="search">
+              <Icon name="search" size={20} />
+              <input
+                type="search"
+                value={query}
+                placeholder={t("logSearch")}
+                aria-label={t("logSearch")}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+          )}
+
+          {pending.length > 0 && (
+            <section className="pending" aria-labelledby="pending-title">
+              <div>
+                <h2 id="pending-title" className="section-title">
+                  {t("logPendingTitle")}
+                </h2>
+                <p className="muted small">{t("logPendingHint")}</p>
+              </div>
+              {pending.map((meal) => {
+                const carbs = shownTotal(meal.items);
+                return (
+                  <article key={meal.id} className="card pending-card" aria-label={mealNames(meal)}>
+                    <button type="button" className="meal-row" onClick={() => setOpenId(meal.id)}>
+                      <MealThumb meal={meal} />
+                      <span className="item-text">
+                        <span className="item-name">{mealNames(meal)}</span>
+                        <span className="item-meta">{formatTime(meal.eatenAt, language)}</span>
+                      </span>
+                      <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
+                    </button>
+                    <div className="outcome-buttons" role="group" aria-label={t("outcomeTitle")}>
+                      {RECORDED.map((outcome) => (
+                        <button
+                          key={outcome}
+                          type="button"
+                          className={`outcome-button outcome-button-${outcome}`}
+                          onClick={() => void record(meal, outcome)}
+                        >
+                          <Icon name={OUTCOME_ICON[outcome]} size={20} />
+                          {t(`outcome_${outcome}`)}
+                        </button>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </section>
+          )}
+        </div>
+
+        <div className="pane">
+          {/* Under what she can add (beside it on a desktop), so an empty Log still opens on them. */}
+          {empty && (
+            <div className="empty">
+              <CakeStand />
+              <p className="empty-title">{t("logEmpty")}</p>
+              <p className="small">{t("logEmptyHint")}</p>
+            </div>
+          )}
+
+          {searching && shown.length === 0 && <p className="muted">{t("logSearchNone")}</p>}
+
+          {days.map((day) => {
+            const attached = attachedDoses(day.entries);
+            const units = dayUnits(day.entries);
+            return (
+            <section key={day.key} className="day" aria-label={dayLabel(day.date)}>
+              <header className="day-header">
+                <h2>{dayLabel(day.date)}</h2>
+                {onPeriod(day.date, periods, localDay(now)) && (
+                  <span className="day-period">
+                    <Icon name="drop" size={14} />
+                    {t("logPeriodDay")}
+                  </span>
+                )}
+                <span className="day-totals">
+                  <span className="day-total">
+                    {t("dayTotal", {
+                      n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),
+                    })}
+                  </span>
+                  {units > 0 && <span className="day-units">{t("dayUnits", { n: formatUnits(units, language) })}</span>}
+                </span>
+              </header>
+              <ul className="card meals">
+                {day.entries.map((entry) => {
+                  if (entry.type === "exercise") {
+                    return (
+                      <li key={entry.id}>
+                        <ExerciseRow
+                          session={entry.session}
+                          now={now}
+                          onOpen={() => setExerciseSheet({ mode: "edit", session: entry.session })}
+                        />
+                      </li>
+                    );
+                  }
+                  if (entry.type === "dose") {
+                    // Under the meal it was taken for, drawn smaller and joined to it, as part of that meal.
+                    return (
+                      <li key={entry.id} className={attached.has(entry.id) ? "dose-attached" : undefined}>
+                        <DoseRow dose={entry.dose} onOpen={() => setDoseSheet(entry.dose)} />
+                      </li>
+                    );
+                  }
+                  const meal = entry.meal;
+                  const carbs = shownTotal(meal.items);
+                  return (
+                    <li key={meal.id}>
+                      <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpenId(meal.id)}>
+                        <MealThumb meal={meal} />
+                        <span className="item-text">
+                          <span className="item-name">{mealNames(meal)}</span>
+                          <span className="item-meta">
+                            {formatTime(meal.eatenAt, language)}
+                            <OutcomeBadge meal={meal} />
+                            {!insulinBelow(meal, attached) && <MealInsulin meal={meal} />}
+                          </span>
+                        </span>
+                        <span className="item-carbs">
+                          <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
+                          <span className="item-best">{rationCount(carbs.best, rationSize, language, t)}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
             );
           })}
-        </section>
-      )}
 
-      {searching && shown.length === 0 && <p className="muted">{t("logSearchNone")}</p>}
-
-      {days.map((day) => {
-        const attached = attachedDoses(day.entries);
-        const units = dayUnits(day.entries);
-        return (
-        <section key={day.key} className="day" aria-label={dayLabel(day.date)}>
-          <header className="day-header">
-            <h2>{dayLabel(day.date)}</h2>
-            {onPeriod(day.date, periods, localDay(now)) && (
-              <span className="day-period">
-                <Icon name="drop" size={14} />
-                {t("logPeriodDay")}
-              </span>
-            )}
-            <span className="day-totals">
-              <span className="day-total">
-                {t("dayTotal", {
-                  n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),
-                })}
-              </span>
-              {units > 0 && <span className="day-units">{t("dayUnits", { n: formatUnits(units, language) })}</span>}
-            </span>
-          </header>
-          <ul className="card meals">
-            {day.entries.map((entry) => {
-              if (entry.type === "exercise") {
-                return (
-                  <li key={entry.id}>
-                    <ExerciseRow
-                      session={entry.session}
-                      now={now}
-                      onOpen={() => setExerciseSheet({ mode: "edit", session: entry.session })}
-                    />
-                  </li>
-                );
-              }
-              if (entry.type === "dose") {
-                // Under the meal it was taken for, drawn smaller and joined to it, as part of that meal.
-                return (
-                  <li key={entry.id} className={attached.has(entry.id) ? "dose-attached" : undefined}>
-                    <DoseRow dose={entry.dose} onOpen={() => setDoseSheet(entry.dose)} />
-                  </li>
-                );
-              }
-              const meal = entry.meal;
-              const carbs = shownTotal(meal.items);
-              return (
-                <li key={meal.id}>
-                  <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpenId(meal.id)}>
-                    <MealThumb meal={meal} />
-                    <span className="item-text">
-                      <span className="item-name">{mealNames(meal)}</span>
-                      <span className="item-meta">
-                        {formatTime(meal.eatenAt, language)}
-                        <OutcomeBadge meal={meal} />
-                        {!insulinBelow(meal, attached) && <MealInsulin meal={meal} />}
-                      </span>
-                    </span>
-                    <span className="item-carbs">
-                      <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
-                      <span className="item-best">{rationCount(carbs.best, rationSize, language, t)}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-        );
-      })}
-
-      {more && (
-        <button type="button" className="button button-secondary" onClick={() => loadPage(meals?.length ?? 0)}>
-          {t(searching ? "logSearchOlder" : "loadMore")}
-        </button>
-      )}
+          {more && (
+            <button type="button" className="button button-secondary" onClick={() => loadPage(meals?.length ?? 0)}>
+              {t(searching ? "logSearchOlder" : "loadMore")}
+            </button>
+          )}
+        </div>
+      </div>
 
       {doseSheet && (
         <DoseSheet

@@ -103,6 +103,15 @@
 
   --tabs-height: 64px;
   --target: 44px;
+
+  /* A desktop's window (styles.css, "A desktop"): the tabs as a rail down the left and the page
+     beside them, as wide as two columns of cards read well and no wider. */
+  --rail-width: 0px;
+  --rail-width-desktop: 232px;
+  --page-width: 560px;
+  --page-width-desktop: 1120px;
+  /* The narrower of a desktop's two panes: 18 rem at a laptop's 1024 px, 380 px from about 1400. */
+  --side-width: clamp(18rem, 32vw - 4rem, 380px);
 }
 
 /* Light, dark or the phone's: her choice is resolved in script (index.html before the first paint,
