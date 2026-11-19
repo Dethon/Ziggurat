@@ -16,8 +16,8 @@ namespace McpServerSugary.Glucose;
 // watch spent are then written together — only while the watch is still the one judged, so a watch
 // rewritten or removed meanwhile is never given back what was judged of the old one.
 //
-// A household whose features turn Sugary off has nothing judged and nothing fired (SugaryOffHouseholds),
-// and what was judged of its watches is forgotten, so once it is back on they are judged as if just
+// A household whose features turn Sugary off, or a person it is off for, has nothing judged and nothing
+// fired (SugaryOff), and what was judged of those watches is forgotten, so once it is back on they are judged as if just
 // written: nothing that happened while off fires late, a low still going when it came back on included.
 //
 // Every watch's subject is somebody's, and the engine wakes for nobody's request, so the factory's
@@ -26,7 +26,7 @@ public sealed class GlucoseWatchEngine(
     IDbContextFactory<SugaryDbContext> contexts,
     IGlucoseWatchEffects effects,
     HomeCalendar calendar,
-    SugaryOffHouseholds sugaryOff,
+    SugaryOff sugaryOff,
     TimeProvider clock,
     ILogger<GlucoseWatchEngine> logger) : IGlucosePollObserver
 {
@@ -74,7 +74,7 @@ public sealed class GlucoseWatchEngine(
         {
             var now = clock.GetUtcNow();
             await using var db = await contexts.CreateDbContextAsync(ct);
-            if (await sugaryOff.IsOffAsync(person.TenantId, ct))
+            if (await sugaryOff.IsOffAsync(person, ct))
             {
                 await ForgetAsync(db, person, ct);
                 return;
@@ -112,7 +112,7 @@ public sealed class GlucoseWatchEngine(
         }
     }
 
-    // What was judged of her watches, gone while her household has Sugary off: a fire's guarded save
+    // What was judged of her watches, gone while Sugary is off for her or her household: a fire's guarded save
     // counts the rows it read, so one racing this writes nothing.
     private static Task ForgetAsync(SugaryDbContext db, Account person, CancellationToken ct) =>
         db.GlucoseWatchStates.IgnoreQueryFilters()

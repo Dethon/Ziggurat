@@ -1,7 +1,9 @@
 using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Push;
+using McpServerSugary.Glucose;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
@@ -11,7 +13,8 @@ namespace McpServerSugary.Reminders;
 
 // Tells each open pen that is due to its owner's subscribed phones, once per reminder. A pen is one
 // person's and so is a phone that subscribed, so a reminder reaches nobody else in the household;
-// a pen nobody owns yet (from before the log was per person) reaches nobody. A reminder no phone
+// a pen nobody owns yet (from before the log was per person) reaches nobody, nor does the pen of a person
+// an owner has not turned Sugary on for (SugaryOff) until it is on. A reminder no phone
 // accepted is not marked sent, so it waits for a phone rather than being spent on none.
 //
 // The one reader of every person's pens at once, so it opens the factory's context, which owns
@@ -21,6 +24,7 @@ public sealed class PenReminders(
     HomeCalendar calendar,
     IPushMessageSender push,
     SugarySettings settings,
+    SugaryOff sugaryOff,
     ILogger<PenReminders> logger,
     ISessionAccounts? sessions = null)
 {
@@ -34,6 +38,7 @@ public sealed class PenReminders(
         await _pass.WaitAsync(ct);
         try
         {
+            var off = await sugaryOff.OffAsync(ct);
             await using var db = await contexts.CreateDbContextAsync(ct);
             var phones = (await db.PushSubscriptions.IgnoreQueryFilters().ToListAsync(ct))
                 .ToLookup(phone => (phone.TenantId, phone.UserId));
@@ -41,6 +46,7 @@ public sealed class PenReminders(
             var due = (await db.Pens.IgnoreQueryFilters()
                     .Where(p => p.ReplacedOn == null && p.UserId != Owners.Unassigned)
                     .ToListAsync(ct))
+                .Where(pen => !off.PersonOff(new Account(pen.TenantId, pen.UserId)))
                 .Select(pen => (Pen: pen, Clock: ClockOf(phones[(pen.TenantId, pen.UserId)])))
                 .Where(p => p.Clock.AtHome(p.Clock.Now).Hour >= settings.PenReminderHour)
                 .Select(p => (p.Pen, p.Clock.Today, Reminder: PenRules.Due(p.Pen, p.Clock.Today)))

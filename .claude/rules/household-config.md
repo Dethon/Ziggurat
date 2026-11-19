@@ -91,7 +91,7 @@ to its callers (`InternalCallers`' view table); anyone else is 403 before a row 
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | the person's assertion on the asker's channel | none |
 | `sugary-people` (no disabled member; each one's grant and whether Sugary is on for them; one answer for the whole household: readers keep it per household) | `mcp-sugary` | call token (the mount) / assertion (the app) | none |
 | `telegram-bots` (every household's) | `mcp-channel-telegram` | none (exception 2) | the bots' tokens |
-| `sugary-off` | `mcp-sugary` | none (exception 3) | none |
+| `sugary-off` (households turning it off, and every person an owner has not turned it on for) | `mcp-sugary` | none (exception 3) | none |
 
 `people` (dreaming walks every household with no call behind it) is never kept, since nothing
 announces a person joining.
@@ -119,7 +119,7 @@ new view is a line in `InternalCallers`' table, a route, and a row here.
   `TokenAudiences.HouseholdConfiguration` (`HouseholdConfigurationClient.AgentToken`), so the shared
   secret alone opens no OpenRouter key.
 - **Exceptions 2 and 3** take no proof: `telegram-bots` (Telegram polls from startup) and `sugary-off`
-  (only the ids of households turning Sugary off; `.claude/rules/sugary.md`).
+  (only ids: of households turning Sugary off and of people it is off for; `.claude/rules/sugary.md`).
 
 Refusals are `HouseholdConfigRefused { reason, detail }`, never carrying a secret: 400 `BadQuery`, 404
 `Unproven` / `UnknownHousehold`, 503 `SecretsUnavailable` — the reader takes 400/404 as a refusal and
@@ -194,7 +194,7 @@ Writer and readers share this contract (`HouseholdConfigProtocol`):
   server passes is the one **it** verified; an answer for another household is refused, not kept.
   Kept per (view, household) for `Accounts:ConfigurationLifetime` (1 minute) or until a heard save; the
   across-household entries (`telegram-bots`, `sugary-off`) drop on any household's `keys`/`features`
-  save. An answer asked while a save was announced is returned but not kept. A refusal is
+  save or people change. An answer asked while a save was announced is returned but not kept. A refusal is
   `HouseholdConfigRefusedException`; an outage or a 503 is `HttpRequestException`.
 - Idealista and Sugary are given no Redis for this, deliberately: a minute is "without a restart", and
   Sugary keeps off Redis (`docs/adr/0043`).

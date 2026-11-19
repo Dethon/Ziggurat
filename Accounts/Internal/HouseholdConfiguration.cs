@@ -3,6 +3,7 @@ using Accounts.Configuration;
 using Accounts.Members;
 using Accounts.Tunnels;
 using Domain.Agents;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 
 namespace Accounts.Internal;
@@ -171,11 +172,12 @@ public static class HouseholdConfiguration
             return Results.Ok(new HouseholdLemonadeBoxes(boxes));
         });
 
-        // Which households turn Sugary off, asked with no household and no proof: Sugary's glucose poller and
-        // watch engine wake for nobody's request, so nothing they hold could prove one. The ids alone, of
-        // households that saved their features: one that never did has Sugary on, its default.
+        // Which households turn Sugary off and whom it is off for, asked with no household and no proof:
+        // Sugary's glucose poller, watch engine and pen reminders wake for nobody's request, so nothing they
+        // hold could prove one. The ids alone: of households that saved their features (one that never did
+        // has Sugary on, its default), and of people an owner has not turned Sugary on for.
         routes.MapPost(Path + HouseholdConfigProtocol.SugaryOffView, async (
-            HttpContext http, HouseholdConfigStore store, CancellationToken ct) =>
+            HttpContext http, HouseholdConfigStore store, MemberStore members, CancellationToken ct) =>
         {
             if (InternalCallers.Reading(http, HouseholdConfigProtocol.SugaryOffView).Count == 0)
             {
@@ -191,7 +193,8 @@ public static class HouseholdConfiguration
                 }
             }
 
-            return Results.Ok(new HouseholdsWithSugaryOff(off));
+            return Results.Ok(new HouseholdsWithSugaryOff(off,
+                [.. (await members.WithoutSugaryAsync(ct)).Select(p => new Account(p.TenantId, p.UserId))]));
         });
 
         // Every household's bots, asked with no household: the Telegram server polls them from its

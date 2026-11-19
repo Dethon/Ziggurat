@@ -215,20 +215,20 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         await using var client = Client(server, Sugary, clock: clock, listening: listening);
 
-        var first = await client.HouseholdsWithSugaryOffAsync(CancellationToken.None);
+        var first = (await client.SugaryOffAsync(CancellationToken.None)).Households;
         await SetAsync(server, other, HouseholdSections.Features, """{ "sugary": false }""");
 
         first.ShouldBe([casa]);
         if (listening)
         {
-            await Eventually.Until(async () => (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).Count == 2,
+            await Eventually.Until(async () => (await client.SugaryOffAsync(CancellationToken.None)).Households.Count == 2,
                 "the other household's features save to drop what was kept");
         }
         else
         {
-            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa]);
+            (await client.SugaryOffAsync(CancellationToken.None)).Households.ShouldBe([casa]);
             clock.Advance(_lifetime + TimeSpan.FromSeconds(1));
-            (await client.HouseholdsWithSugaryOffAsync(CancellationToken.None)).ShouldBe([casa, other], ignoreOrder: true);
+            (await client.SugaryOffAsync(CancellationToken.None)).Households.ShouldBe([casa, other], ignoreOrder: true);
         }
     }
 

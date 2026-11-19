@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.Household;
@@ -144,9 +145,10 @@ public sealed record HouseholdConfigAnswer<T>(string HouseholdId, T Section);
 [PublicAPI]
 public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> Bots);
 
-// The households whose features turn Sugary off; every other household, one that never saved its
-// features included, has it on.
-public sealed record HouseholdsWithSugaryOff(IReadOnlyList<string> Households);
+// The households whose features turn Sugary off, and the people an owner has not turned Sugary on for
+// (the members page's "Uses Sugary"); every other household, one that never saved its features
+// included, and everyone else has it on. People is null in an answer from before it was asked.
+public sealed record HouseholdsWithSugaryOff(IReadOnlyList<string> Households, IReadOnlyList<Account>? People);
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);

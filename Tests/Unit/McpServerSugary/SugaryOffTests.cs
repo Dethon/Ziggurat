@@ -1,4 +1,6 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using McpServerSugary.Glucose;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -7,44 +9,48 @@ using Shouldly;
 
 namespace Tests.Unit.McpServerSugary;
 
-// The poller and the watch engine ask which households turn Sugary off on every sweep. An answer that
+// The poller, the watch engine and the pen reminders ask whom Sugary is off for on every sweep. An answer that
 // cannot be had is every household on, said once per outage, and not asked again for a minute, so a
 // hung accounts service does not hold every sweep for its timeout.
-public class SugaryOffHouseholdsTests
+public class SugaryOffTests
 {
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 11, 18, 8, 0, 0, TimeSpan.Zero));
     private readonly Mock<IHouseholdConfiguration> _configuration = new();
-    private readonly Mock<ILogger<SugaryOffHouseholds>> _logger = new();
+    private readonly Mock<ILogger<SugaryOff>> _logger = new();
     private int _asked;
     private Exception? _failure = new HttpRequestException("accounts is away");
 
-    public SugaryOffHouseholdsTests() =>
-        _configuration.Setup(c => c.HouseholdsWithSugaryOffAsync(It.IsAny<CancellationToken>()))
+    public SugaryOffTests() =>
+        _configuration.Setup(c => c.SugaryOffAsync(It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
                 _asked++;
                 return _failure is { } failure
-                    ? Task.FromException<IReadOnlyList<string>>(failure)
-                    : Task.FromResult<IReadOnlyList<string>>(["household-off"]);
+                    ? Task.FromException<HouseholdsWithSugaryOff>(failure)
+                    : Task.FromResult(new HouseholdsWithSugaryOff(["household-off"], [PersonOff]));
             });
 
-    private SugaryOffHouseholds Households() => new(_configuration.Object, _clock, _logger.Object);
+    private static readonly Account PersonOff = new("household-on", "user-off");
+
+    private SugaryOff Households() => new(_configuration.Object, _clock, _logger.Object);
 
     [Fact]
     public async Task AnAnswerThatCannotBeHad_IsEveryHouseholdOn_AskedAgainOnlyAfterAMinute()
     {
         var households = Households();
 
-        (await households.OffAsync(CancellationToken.None)).ShouldBeEmpty();
-        _clock.Advance(SugaryOffHouseholds.AfterFailure - TimeSpan.FromSeconds(1));
-        (await households.IsOffAsync("household-off", CancellationToken.None)).ShouldBeFalse();
+        (await households.IsOffAsync(PersonOff, CancellationToken.None)).ShouldBeFalse();
+        _clock.Advance(SugaryOff.AfterFailure - TimeSpan.FromSeconds(1));
+        (await households.IsOffAsync(new Account("household-off", "user-any"), CancellationToken.None)).ShouldBeFalse();
         _asked.ShouldBe(1);
 
         _failure = null;
         _clock.Advance(TimeSpan.FromSeconds(1));
 
-        (await households.IsOffAsync("household-off", CancellationToken.None)).ShouldBeTrue();
-        _asked.ShouldBe(2);
+        (await households.IsOffAsync(new Account("household-off", "user-any"), CancellationToken.None)).ShouldBeTrue();
+        (await households.IsOffAsync(PersonOff, CancellationToken.None)).ShouldBeTrue();
+        (await households.IsOffAsync(new Account("household-on", "user-on"), CancellationToken.None)).ShouldBeFalse();
+        _asked.ShouldBe(4, "an answer is asked each time; the reader is what keeps it");
     }
 
     [Fact]
@@ -53,10 +59,10 @@ public class SugaryOffHouseholdsTests
         var households = Households();
 
         await households.OffAsync(CancellationToken.None);
-        _clock.Advance(SugaryOffHouseholds.AfterFailure);
+        _clock.Advance(SugaryOff.AfterFailure);
         await households.OffAsync(CancellationToken.None);
         _failure = null;
-        _clock.Advance(SugaryOffHouseholds.AfterFailure);
+        _clock.Advance(SugaryOff.AfterFailure);
         await households.OffAsync(CancellationToken.None);
         await households.OffAsync(CancellationToken.None);
 

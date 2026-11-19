@@ -39,10 +39,11 @@ public interface IHouseholdConfiguration
     Task<HouseholdMemberNames> MemberNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         Task.FromResult(new HouseholdMemberNames([]));
 
-    // The households whose features turn Sugary off: Sugary's alone, for its glucose poller and watch
-    // engine, which wake for nobody's request and so hold no proof. A reader that is not Sugary's has none.
-    Task<IReadOnlyList<string>> HouseholdsWithSugaryOffAsync(CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<string>>([]);
+    // The households whose features turn Sugary off and the people it is off for: Sugary's alone, for its
+    // glucose poller, watch engine and pen reminders, which wake for nobody's request and so hold no
+    // proof. A reader that is not Sugary's has none.
+    Task<HouseholdsWithSugaryOff> SugaryOffAsync(CancellationToken ct) =>
+        Task.FromResult(new HouseholdsWithSugaryOff([], []));
 
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);

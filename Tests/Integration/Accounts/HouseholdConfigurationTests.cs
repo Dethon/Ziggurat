@@ -360,9 +360,10 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
-    // Sugary's poller and watch engine wake for nobody's request, so no call or assertion proves a
-    // household to them: they ask on Sugary's credential alone which households turn Sugary off, and are
-    // told those ids and nothing else. A household that never saved its features has Sugary on.
+    // Sugary's poller, watch engine and pen reminders wake for nobody's request, so no call or assertion
+    // proves a household to them: they ask on Sugary's credential alone which households turn Sugary off
+    // and whom it is off for, and are told those ids and nothing else. A household that never saved its
+    // features has Sugary on.
     [Fact]
     public async Task Sugary_IsToldWhichHouseholdsTurnItOff_AndNothingElse()
     {
@@ -370,6 +371,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         var off = await server.SeedHouseholdAsync("Off");
         var on = await server.SeedHouseholdAsync("On");
         var never = await server.SeedHouseholdAsync("Never saved");
+        var ana = await server.SeedPersonAsync(on, "Ana");
+        var bea = await server.SeedPersonAsync(on, "Bea");
+        await server.Service<MemberStore>().SetUsesSugaryAsync(on, bea, true, CancellationToken.None);
         await SetAsync(server, off, HouseholdSections.Features, """{ "sugary": false }""");
         await SetAsync(server, on, HouseholdSections.Features, """{ "memory": false }""");
         await SetAsync(server, off, HouseholdSections.Keys, Keys);
@@ -379,7 +383,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
 
         answer.Households.ShouldBe([off]);
         answer.Households.ShouldNotContain(never);
-        foreach (var secret in new[] { OpenRouterKey, IdealistaKey, JackToken, "Off" })
+        answer.People!.ShouldContain(new Account(on, ana));
+        answer.People!.ShouldNotContain(new Account(on, bea));
+        foreach (var secret in new[] { OpenRouterKey, IdealistaKey, JackToken, "Off", "Ana" })
         {
             body.ShouldNotContain(secret);
         }

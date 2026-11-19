@@ -86,6 +86,16 @@ public sealed class MemberStore(IDbContextFactory<AccountsDbContext> contexts, A
             .ExecuteUpdateAsync(u => u.SetProperty(x => x.ReadsSugaryLogs, granted), ct) > 0;
     }
 
+    // Everyone of every household an owner has not turned Sugary on for, for Sugary's work that wakes for
+    // nobody's request (its poller, watches and pen reminders).
+    public async Task<IReadOnlyList<(string TenantId, string UserId)>> WithoutSugaryAsync(CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return (await db.Users.Where(u => !u.UsesSugary).Select(u => new { u.TenantId, u.Id }).ToListAsync(ct))
+            .Select(u => (u.TenantId, u.Id))
+            .ToList();
+    }
+
     public async Task<bool> SetUsesSugaryAsync(string tenantId, string userId, bool on, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);

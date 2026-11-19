@@ -18,7 +18,8 @@ namespace McpServerSugary.Glucose;
 // minute is what gets an account locked), a rate limit waits what the service said, and anything else
 // is asked about less and less often while it lasts. A household whose features turn Sugary off is
 // polled as any: the feature takes Sugary from its agents, not its app, whose Glucose tab reads these
-// readings; its watches are the engine's to keep silent.
+// readings; its watches are the engine's to keep silent. A person an owner has not turned Sugary on for
+// has no log at all, so their link is not asked until it is on (SugaryOff).
 //
 // Every owner's links and readings are read here, so the factory's context is used and every query
 // says IgnoreQueryFilters with the owner spelled out.
@@ -27,6 +28,7 @@ public sealed class GlucosePoller(
     LibreLinkUpClient libreLinkUp,
     GlucoseCredentials credentials,
     IGlucosePollObserver observer,
+    SugaryOff sugaryOff,
     GlucoseSettings settings,
     TimeProvider clock,
     ILogger<GlucosePoller> logger)
@@ -50,7 +52,10 @@ public sealed class GlucosePoller(
     // those polls are done. A link seen for the first time is polled at its next moment.
     public async Task PollDueAsync(CancellationToken ct)
     {
-        var links = await LiveLinksAsync(ct);
+        var off = await sugaryOff.OffAsync(ct);
+        var links = (await LiveLinksAsync(ct))
+            .Where(link => !off.PersonOff(new Account(link.Key.TenantId, link.Key.UserId)))
+            .ToList();
         var now = clock.GetUtcNow();
         var live = links.Select(link => link.Key).ToHashSet();
         foreach (var gone in _paces.Keys.Where(key => !live.Contains(key)))
