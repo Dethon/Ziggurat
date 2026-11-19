@@ -1,509 +1,495 @@
 # Ziggurat
 
-A layered AI agent for the home — Telegram, WebChat, and voice satellites on one stack, built on MCP and OpenRouter
-LLMs.
+A self-hosted AI assistant for households. People reach it from a browser chat, Telegram and voice
+satellites around the house. It works through MCP servers: notes, the web, a Linux sandbox, a media
+library, Home Assistant, a printer, timers, schedules and a carb-counting log. It also keeps a
+memory of each person. Models come from OpenRouter, or from a Lemonade box on the local network.
 
-Every tier is a separate MCP server. Channel servers carry the conversation (Telegram, WebChat, voice, Azure Service
-Bus, scheduling), tool servers mount as virtual filesystems, and one agent works across all of them: the media
-library, the smart home, schedules, timers, and the printer.
+One **deployment** serves any number of **households**. The deployment runs the agent, the channels,
+the accounts service and the servers every household shares. Each household runs its **own servers**
+at its own site, as the tenant kit. They reach the deployment through one outbound tunnel each, so
+no port is opened on the household's network.
 
-## Features
+## Contents
 
-- **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Channel Architecture** - Transports (WebChat, Telegram, Voice, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
-- **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
-- **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
-- **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and a status LED ring (reSpeaker XVF3800) showing distinct listening/thinking/speaking phases; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Kokoro TTS back (via Lemonade). A speaker-verification gate drops non-enrolled voices (TV, guests) before STT and routes recognized speakers' identities into the message, and noisy captures can be cleaned by a target-speech-extraction sidecar before transcription
-- **Conversation Persistence** - Redis-backed chat history survives application restarts
-- **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
-- **Download Completion Alerts** - The library server is dual-role (tool/filesystem server and channel): a background watcher polls qBittorrent and pushes a `channel/message` to the originating conversation when a download finishes — no client-side tracking or resubscription needed, and alerts survive restarts because routing snapshots live in Redis
-- **Downloads Overlay** - In-flight downloads surface inside the media filesystem: a virtual `/media/downloads/<id>/status.json` reports live progress, and deleting `/media/downloads/<id>` cancels the download and cleans up its files
-- **Web Search & Browsing** - Search the web via Brave Search API; browse pages with persistent sessions using accessibility tree snapshots and element-ref interactions via Camoufox (anti-detect browser)
-- **Home Assistant Control** - Drive a Home Assistant instance as a virtual filesystem (`filesystem://ha`, mounted at `/ha`) — entities and areas are directories, `state.json` is the live state, and each available service is a `<service>.sh` action file invoked via `fs_exec`. A directory-listing setup index is injected into the system prompt so the LLM can pick devices without exploring
-- **Sandbox Execution** - Isolated Linux container with bash + Python execution via `fs_exec` (60s default / 30min max timeout, 64 KB output cap), persistent `/home/sandbox_user` for installed packages, ephemeral system dirs, outbound network only
-- **Virtual Filesystem** - Unified filesystem across MCP servers via `filesystem://` resource discovery, with domain tools for read, create, edit, glob, search, move, copy, delete, exec, and file info. Each mount lives in a separate MCP server (its own container, host, or even a different machine reachable over HTTP), and the agent can move or copy files **across mounts** — between containers or hosts — using chunked blob streaming under the hood
-- **Memory System** - Built-in proactive memory with LLM-based extraction from windowed conversation context, vector recall, and periodic consolidation (dreaming)
-- **Scheduled Tasks** - Cron and one-shot agent prompts managed as a virtual filesystem (`filesystem://schedules`); a dedicated scheduling channel server fires due schedules and fans the result out to chosen delivery channels
-- **Printing** - Print to a real IPP/CUPS printer as a virtual filesystem (`filesystem://print-queue`, mounted at `/print-queue`) — copying or creating a file into the mount immediately submits it to the configured printer, removing a still-pending file cancels the job, and finished jobs auto-disappear from the listing. The accepted formats are configurable (`SupportedFormats`, default plain text, JPEG, and the printer-native raster/page formats); anything else is rejected on copy-in. Text is CRLF-normalized and images are scaled to fit the page
-- **Timers & Alarms** - Countdown timers as a virtual filesystem (`filesystem://timers`) that ring on the voice satellites through the voice hub's HTTP endpoints; clock-time alarms and reminders ride a dedicated Home Assistant calendar bridged to the voice announce endpoint, with insistent repeat-until-acknowledged announcements
-- **OpenRouter LLMs** - Supports multiple models (GLM, GPT, Gemini, Claude, etc.) via OpenRouter API
-- **MCP Architecture** - Modular tool servers and channel servers for extensibility
-- **Streaming Pipeline** - Concurrent message processing with GroupByStreaming and Merge operators
-- **Observability Dashboard** - PWA dashboard showing token costs, tool analytics, error rates, per-turn latency, voice-turn breakdowns, schedule history, memory analytics, and live service health
-- **Subagent Delegation** - Parent agents can spawn ephemeral subagents for parallel or heavy tasks
-- **Docker Compose Stack** - Full self-hosted stack: qBittorrent, Jackett, Plex, FileBrowser, Home Assistant, Music Assistant, Lemonade (STT/TTS), Camoufox, Redis, and Caddy
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [Households, people and identity](#households-people-and-identity)
+- [Agents](#agents)
+- [Channels](#channels)
+- [Servers and mounts](#servers-and-mounts)
+- [Voice](#voice)
+- [Sugary](#sugary)
+- [Observability](#observability)
+- [Projects](#projects)
+- [Running it](#running-it)
+- [Testing](#testing)
+- [Further reading](#further-reading)
+
+## What it does
+
+- **Chat anywhere.** WebChat is an installable Blazor WebAssembly app. It offers topics, live
+  streaming that resumes after a dropped connection, and file and image attachments. You can
+  dictate, edit a message and branch into a new version, queue messages behind a running answer or
+  steer the answer mid-turn, and get push notifications. Telegram uses one shared bot plus any bots a
+  household owns. Voice runs through Raspberry Pi satellites with on-device wake words.
+- **Households.** People sign in with passkeys. Each household has its own agents, spaces, keys,
+  member roles and usage records. Owners manage the household from an admin area in WebChat, and
+  the operator manages every household from the dashboard.
+- **One filesystem over every server.** Each MCP server can expose a `filesystem://` mount. The agent
+  works over all of them with a single set of file tools (glob, read, search, create, edit, move,
+  copy, remove, exec, info) and can move or copy files across mounts. A Home Assistant device, a
+  schedule, a timer, a print job and a download are all files or *action files* in that tree.
+- **A real shell.** The sandbox is an isolated Linux container where commands run with bash and
+  Python. A FUSE daemon shows each command the session's other mounts as ordinary directories, so a
+  script can read `/vault` or run an action under `/ha` directly.
+- **Home control.** The agent operates Home Assistant and Music Assistant, sets countdown timers that
+  ring on the satellites, and sets calendar alarms. It can also create *watches*: standing
+  instructions that fire when something in the home, or a person's glucose reading, meets a
+  condition.
+- **Web.** The agent searches through Brave and browses with Camoufox, an anti-detect Firefox, using
+  accessibility snapshots, element refs, tabs and page images. When a site needs a login, the agent
+  hands it to the person: they sign in on a live view of the tab, and the agent continues in that
+  session.
+- **Memory.** After a turn succeeds, the agent extracts memories, recalls them by vector similarity
+  on later turns, and consolidates them nightly ("dreaming"). Jev judgments filter what gets kept.
+- **Schedules, timers and watches** run agent prompts or announcements later, as the person who set
+  them up. The person's authority is carried by a delegation the agent signed.
+- **Skills.** Detailed task guidance ships with the server whose tools it covers. The model loads it
+  on demand, or the host preloads it when a typed judgment is confident the request needs it.
+- **Choice of model per turn.** Each agent lists *patchable models* a person may pick for one turn.
+  This includes chat models discovered on a household's own Lemonade box.
+- **Observability.** Every service publishes metrics into a dashboard: tokens and cost, tools, errors,
+  latency, voice, schedules, memory, skills, web, household health and usage.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    subgraph clients["People"]
+        browser["Browser<br/>WebChat · Sugary · Dashboard"]
+        tg["Telegram"]
+        sat["Voice satellites<br/>nabu-satellite"]
+    end
+
+    subgraph deployment["Deployment (DockerCompose/)"]
+        caddy["Caddy<br/>TLS + session check"]
+        accounts["accounts<br/>households · passkeys · sessions"]
+        webui["webui<br/>WebChat app"]
+        agent["agent<br/>MCP client · relay · memory"]
+        subgraph channels["Channel servers"]
+            signalr["mcp-channel-signalr"]
+            telegram["mcp-channel-telegram"]
+        end
+        subgraph shared["Shared servers"]
+            scheduling["mcp-scheduling"]
+            timers["mcp-timers"]
+            sugary["mcp-sugary"]
+            idealista["mcp-idealista"]
+        end
+        lemonade["lemonade<br/>STT · TTS · embeddings"]
+        obs["observability"]
+        redis[("Redis")]
+    end
+
+    subgraph kit["Household site (TenantKit/)"]
+        voice["mcp-channel-voice"]
+        own["websearch · vault · library<br/>sandbox · printer · homeassistant"]
+        kitredis[("kit Redis")]
+    end
+
+    outpost["Outpost<br/>a person's own machine"]
+
+    browser --> caddy
+    caddy --> webui
+    caddy --> signalr
+    caddy --> accounts
+    caddy --> obs
+    caddy --> sugary
+    tg --> telegram
+    sat <-->|"Wyoming/TCP"| voice
+
+    agent <--> channels
+    agent <--> shared
+    voice ==>|"tunnel /tunnel"| caddy
+    own ==>|"tunnel /tunnel"| caddy
+    outpost ==>|"tunnel /tunnel"| caddy
+    caddy -->|"/tunnel"| agent
+    agent --- redis
+    voice -->|"back-call"| lemonade
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    WebChat      │     │    Telegram     │     │ Schedule timer  │     │ Voice satellite │
-│ (Blazor WASM)   │     │    (Bots)       │     │   (internal)    │     │ (nabu, Rust/Pi) │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │                       │ Wyoming/TCP
-         ▼                       ▼                       ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │     │ McpChannel      │
-│ SignalR         │     │ Telegram        │     │ (channel role — │     │ Voice (Wyoming  │
-│ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │     │ hub + STT/TTS)  │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │    channel/message    │                       │                       │
-         │    send_reply         │                       │                       │
-         │    request_approval   │                       │                       │
-         └────────────┬──────────┘───────────────────────┘───────────────────────┘
-                      │
-                      ▼
-              ┌───────────────┐
-              │  Agent Core   │
-              │ (MCP Client)  │
-              └───────┬───────┘
-                      │
-      ┌───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┬───────────────┐
-      ▼               ▼               ▼               ▼               ▼               ▼               ▼               ▼               ▼
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ MCP Library │ │  MCP Vault  │ │ MCP Sandbox │ │MCP WebSearch│ │MCP Idealista│ │MCP HomeAsst.│ │MCP Schedules│ │ MCP Printer │ │ MCP Timers  │
-│ filesystem: │ │ filesystem: │ │ filesystem: │ │             │ │             │ │ filesystem: │ │ filesystem: │ │ filesystem: │ │ filesystem: │
-│   //media   │ │   //vault   │ │  //sandbox  │ │             │ │             │ │    //ha     │ │ //schedules │ │//print-queue│ │  //timers   │
-└──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └─────────────┘ └──────┬──────┘ └──────┬──────┘
-       │                               │               │               │               │                               │               │
-┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐ ┌──────┴──────┐                 ┌──────┴──────┐ ┌──────┴──────┐
-│ qBittorrent │                 │Linux sandbox│ │  Camoufox   │ │  Idealista  │ │HomeAssistant│                 │  IPP/CUPS   │ │  voice hub  │
-│   Jackett   │                 │bash + python│ │ (anti-det.  │ │     API     │ │ (REST API)  │                 │   printer   │ │ (announce)  │
-│ FileBrowser │                 │   fs_exec   │ │   browser)  │ └─────────────┘ └─────────────┘                 └─────────────┘ └─────────────┘
-└─────────────┘                 └─────────────┘ └─────────────┘
 
-              ┌────────────────────────────────────┐
-              │  Virtual Filesystem (domain)       │
-              │  Discovers filesystem:// resources │
-              │  Mounts → Registry → Domain tools  │
-              └────────────────────────────────────┘
-              ┌────────────────────────────────────┐
-              │       Memory (built-in)            │
-              │  Extract → Store → Recall → Dream  │
-              │         Redis Vector Store         │
-              └────────────────────────────────────┘
-                     ┌─────────────────────────────────┐
-  metrics:events     │       Observability             │
-  (Redis Pub/Sub)───▶│  Collector → Redis Aggregation  │──▶ Dashboard (PWA)
-                     │  REST API + SignalR Hub         │
-                     │  Serves Dashboard.Client        │
-                     └─────────────────────────────────┘
+- **Channels** are MCP servers the agent dials. A channel pushes `channel/message` and
+  `channel/cancel` notifications to the agent. The agent answers through the channel's
+  `send_reply`, `request_approval`, `create_conversation` and `register_agents` tools.
+  `ChannelProtocol` is the wire format. Adding a transport means adding a channel server; the agent
+  does not change.
+- **Some servers are both a channel and a tool server.** Scheduling, timers, the library, Home
+  Assistant, web search and Sugary all have tools, and they also need to start turns of their own: a
+  due schedule, a finished download, a watch firing, a login wake, a meal estimate. For these
+  servers the channel-protocol tools are hidden from the model.
+- **Shared servers** answer every household. Each call carries a call token the agent signed, which
+  names the household and person the call acts for.
+- **Own servers** never get dialled. Each one opens a WebSocket tunnel to the **relay** inside the
+  agent. Everything the agent sends them travels inside that tunnel. A small allowlist of
+  **back-calls** goes the other way: metrics, the sandbox's file bridge, and voice's speakers, topics
+  and speech. If a household's server is not connected, turns go ahead without its tools and the
+  model is told that server is offline.
+
+### A turn
+
+```mermaid
+sequenceDiagram
+    participant P as Person
+    participant C as Channel server
+    participant A as Accounts
+    participant G as Agent
+    participant S as Tool servers
+    participant M as Model (OpenRouter / Lemonade)
+
+    P->>C: message
+    C->>A: who is this? (session, Telegram id, voice profile)
+    A-->>C: signed assertion
+    C->>G: channel/message + assertion
+    G->>G: verify, recall memories, preload skills
+    G->>M: prompt + tools
+    loop tool calls
+        M-->>G: tool call
+        G->>C: request_approval (unless whitelisted)
+        G->>S: call + signed call token
+        S-->>G: result
+        G->>M: result
+    end
+    M-->>G: reply stream
+    G->>C: send_reply chunks
+    C-->>P: streamed answer
+    G->>G: extract memories (when the turn worked)
 ```
 
-### Channel Protocol
+## Households, people and identity
 
-Each channel MCP server exposes a standard protocol. Wire serialization is centralized in `ChannelProtocol` — a shared `JsonSerializerOptions` plus typed notification/param records (`ChannelMessageNotification`, `ChannelCancelNotification`, `RegisterAgentsParams`, `RequestApprovalParams`) so every channel speaks the same contract.
-- **Inbound**: `channel/message` notification — pushes user messages to the agent
-- **Inbound**: `channel/cancel` notification — cancels an in-flight turn
-- **Outbound**: `send_reply` tool — agent streams response chunks back to the user
-- **Outbound**: `request_approval` tool — interactive tool approval or auto-approval notification
-- **Outbound**: `create_conversation` tool — agent-initiated conversations
-- **Outbound**: `register_agents` tool — agent publishes its agent catalog to the channel on connect/reconnect
+The `accounts` service owns households, people, roles, passkeys, invites, recovery links, sessions,
+tunnel credentials and each household's configuration. It is a plain ASP.NET Core host on SQLite.
+Caddy puts its session check (`/accounts/verify`) in front of every app. The service signs an
+**assertion** that names the person and the channel. Apps, channels and the agent trust only that
+signed assertion, never a header or name a client sent.
 
-Channels use the registered catalog as the single source of truth for available agents (SignalR rebroadcasts it as `OnAgentsUpdated`, so the WebChat agent list updates live) instead of maintaining a duplicated `Agents` config. A server can be **dual-role** — both a channel and a tool/filesystem server (`mcp-scheduling` is both, and so is `mcp-library`, whose channel role pushes download-completion alerts); for those, the channel-protocol tools are hidden from the LLM.
+- **People** sign in with passkeys. Owners invite people from the members page. Telegram users link
+  their numeric Telegram id to an account through an invite or a link code. A voice profile is named
+  after its owner's user id, and audio that matches no profile counts as the household's *guest*.
+- **Household configuration** is stored in versioned sections: settings, agents, keys, features and
+  spaces. Secrets in it are sealed under the household's own key. Each server reads only the view it
+  needs. Owners edit everything from the admin area in WebChat. When two owners save stale copies,
+  the saves merge item by item.
+- **Keys** belong to the household: an OpenRouter key and credit, Idealista, its own Telegram bots,
+  and an optional Lemonade box. The home household pays with the deployment's key.
+- **Signing.** The accounts service signs assertions. The agent signs **call tokens** for each tool
+  call, bound to one server, and **delegations** for deferred work such as a schedule's fire, a
+  watch's fire or a login wake. Both publish their keys as JWKS, and both have
+  `rotate-signing-key` / `retire-signing-keys` commands.
+- **Tunnel credentials** are minted per household and per server name by the operator
+  (`mint-tunnel-credential`). A credential is shown once, stored only as a hash, and can be revoked
+  instantly.
 
-New transports can be added by deploying a new channel MCP server — zero agent code changes needed.
+## Agents
 
-### Virtual Filesystem
+An agent definition sets the agent's model, reasoning effort, provider routing, servers, features
+(`filesystem`, `subagents`, `memory`, ...), tool whitelist, prompt sections and custom instructions.
+Each definition belongs to a household. It is either a full definition or a shipped **template**
+(`Domain/Prompts/Agents/`) with the household's own id, name and instructions:
 
-Filesystems are not bound to the agent process. Each MCP tool server can expose its local storage as a `filesystem://<name>` resource — for example `mcp-library` advertises `filesystem://media`, `mcp-vault` advertises `filesystem://vault`, and `mcp-sandbox` advertises `filesystem://sandbox`. Backends need not be disk-backed: `mcp-homeassistant` advertises `filesystem://ha` (entities/areas/actions), `mcp-scheduling` advertises `filesystem://schedules` (scheduled tasks), and `mcp-printer` advertises `filesystem://print-queue` (a print spool that submits to a real printer), all implementing the same `IFileSystemBackend` contract and returning typed `FsResult<T>`. At session start, `McpFileSystemDiscovery` enumerates these resources across every connected MCP server and registers each one in a `VirtualFileSystemRegistry` with longest-prefix path resolution.
+| Template | What it is                                                                                                                                                          |
+|----------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `jonas`  | General personal assistant: every shared server (schedules, timers, Sugary, Idealista) and every kit server (vault, sandbox, web search, Home Assistant, library, printer), with memory, subagents and outposts. Only the servers the household has set up and the features it has switched on are reached |
+| `nabu`   | The same toolset driven by speech: one short spoken sentence per answer, routed for a fast first word. No household gets one by default; adding one sets up voice  |
+| `sugary` | Carb estimation for the Sugary app. Has no tools and never suggests doses                                                                                          |
 
-Because each mount is just an MCP endpoint over HTTP, filesystems can be deployed wherever is convenient:
+A household with no agents saved gets `jonas` (its default agent) and `sugary`. The home household
+runs tuned full definitions instead, plus `jack`, a media-library and downloads agent. Agents can be added or edited on the admin
+area's Agents page. A separate signed agent registration API (`/api/agents`) lets a companion app
+register a person's own agents.
 
-- **Same container**: trivial — the MCP server reads/writes its local disk.
-- **Different containers on the same host**: the default Docker Compose layout. Each MCP server is its own container with its own volume mount, and the agent reaches them over the compose network (e.g. `http://mcp-vault:8080/mcp`).
-- **Different machines**: point `mcpServerEndpoints` at any reachable URL. A NAS, a remote workstation, or a cloud VM that runs the same MCP server image becomes a first-class mount with no agent code changes — it's just another HTTP endpoint speaking the MCP `fs_*` protocol.
+- **Subagents.** An agent with `subagents` can spawn ephemeral workers with `run_subagent`. A worker
+  runs on its parent's model and routing, keeps no history and cannot spawn further workers. It
+  reaches outposts only if both the parent and the worker allow it.
+- **Tool approval.** A tool call not covered by the agent's whitelist asks the person first. They can
+  approve once, always approve for this session, or reject. Whitelist patterns look like
+  `domain__filesystem*` or `mcp__websearch*`.
+- **Prompt.** The system prompt is built from declared sections (`Domain/Prompts/Sections/`), with an
+  order, budgets and conflict rules checked at assembly. Task-specific guidance lives in **skills**
+  (`Domain/Prompts/Skills/`). Each skill is shipped by the server whose tools it explains and loaded
+  only when needed.
+- **Models.** Requests go to OpenRouter with per-agent provider routing (always enforced, including
+  on a patched turn). A turn can instead go to a household's own **Lemonade chat host**, whose models
+  are discovered rather than configured. Small typed decisions use **Jev** (TypeSafe): skill preload,
+  memory judgments, dismissing a page's overlays, and screening a sandbox command before it runs.
+- **Chat commands:** `/cancel` stops the running turn and keeps the history. `/clear` clears the
+  conversation.
 
-The agent exposes 10 unified domain tools — `VfsFileRead`, `VfsTextCreate`, `VfsTextEdit`, `VfsGlobFiles`, `VfsTextSearch`, `VfsMove`, `VfsCopy`, `VfsRemove`, `VfsExec`, `VfsFileInfo` — that dispatch through the registry, so the LLM works with absolute paths like `/media/movies/...` or `/vault/notes/...` and never has to know which backend hosts which mount. `VfsGlobFiles` supports brace-expansion patterns (`**/*.{jpg,png}` expands to the union of `**/*.jpg` and `**/*.png`), and every backend returns glob matches as full virtual paths.
+## Channels
 
-**Cross-filesystem operations.** `VfsMove` and `VfsCopy` detect when source and destination live on different mounts and fall back to a streaming pipeline: the source MCP server's `fs_blob_read` streams chunks, which are written to the destination via `fs_blob_write`, then the source is removed (for move). This works regardless of where the two backends are deployed — moving a file from a sandbox container on one host to a vault directory on another host is the same operation as moving it between two paths in the same container. Best-effort per-entry results are reported for directory recursion so partial failures are visible.
+| Channel     | Server                 | Runs in    | What it carries                                                                                         |
+|-------------|------------------------|------------|---------------------------------------------------------------------------------------------------------|
+| `signalr`   | `mcp-channel-signalr`  | deployment | WebChat: topics, spaces, streams, queue and steering, attachments, dictation, Web Push, approvals; holds review copies of other channels' conversations |
+| `telegram`  | `mcp-channel-telegram` | deployment | The shared bot and each household's own bots, inline-keyboard approvals, `/agent` to switch agents per chat |
+| `voice`     | `mcp-channel-voice`    | tenant kit | Wyoming hub for the satellites (see [Voice](#voice))                                                    |
+| `scheduling`| `mcp-scheduling`       | deployment | Fires due cron and one-shot schedules                                                                    |
+| `timers`    | `mcp-timers`           | deployment | Rings a timer on its owner's channels when no satellite can ring it                                      |
+| `library`   | `mcp-library`          | tenant kit | Download-completion alerts to the conversation that started the download                                |
+| `homeassistant` | `mcp-homeassistant` | tenant kit | Home watch fires                                                                                         |
+| `websearch` | `mcp-websearch`        | tenant kit | Login wakes, after a person finishes a login handoff                                                     |
+| `sugary`    | `mcp-sugary`           | deployment | Meal estimates from the Sugary app, and glucose watch fires                                              |
 
-New filesystems are added by deploying any MCP server that exposes a `filesystem://` resource — no agent code changes needed.
+A turn's replies go to the conversation a person can open. For a scheduled task, that is the
+conversation it delivers into, not the schedule. A schedule or watch that names no channel delivers
+to the deployment-wide default in `Domain/delivery.json` (`signalr`).
 
-### Outposts
+## Servers and mounts
 
-Every mount above is a container in the compose stack, configured into an agent by hand. An **outpost** is the exception: a filesystem on a real machine that opens its own tunnel to the deployment, so the agent can read and edit the files on a laptop for as long as that laptop is switched on, with nothing added to any configuration file and no port opened on the machine.
+Each filesystem server derives its `fs_*` tools and its `filesystem://` resource from its backend
+class. The agent discovers mounts when a session starts and resolves each path by its longest
+matching prefix. A mount declares whether it can be written to and where a person's attachments may
+land.
 
-It is a self-contained single-file `linux-x64` binary. Copy it onto a machine and run it:
+| Server              | Mount                     | Runs in    | What it is                                                                                                   |
+|---------------------|---------------------------|------------|--------------------------------------------------------------------------------------------------------------|
+| `mcp-vault`         | `/vault`                  | tenant kit | Markdown notes (an Obsidian vault)                                                                            |
+| `mcp-sandbox`       | `/sandbox`                | tenant kit | Linux container for `exec` (bash, Python), with a persistent home and FUSE views of the other mounts. A Rust root launcher (`sandbox-runtime/`) runs each command in its own mount namespace, with no capabilities and a syscall filter, on a network of its own |
+| `mcp-websearch`     | —                         | tenant kit | `web_search`, `web_browse`, `web_snapshot`, `web_action`, `view_image`, `web_login(s)` over Camoufox; login handoff and per-person browser contexts |
+| `mcp-library`       | `/media`                  | tenant kit | Torrent search and download through Jackett and qBittorrent. Live downloads appear as status files; removing one cancels it |
+| `mcp-homeassistant` | `/ha`, `/watchers`        | tenant kit | Entities and areas as directories, live `state.json`, entity history, one action file per service, the alarms calendar and Music Assistant; a home watch is a real HA automation at `/watchers/<id>/watch.json` |
+| `mcp-printer`       | `/print-queue`            | tenant kit | IPP/CUPS printer: copying a file in prints it, removing it cancels. Accepted formats come from `SupportedFormats` |
+| `mcp-scheduling`    | `/schedules`              | deployment | Cron and one-shot agent prompts per household, in the household's time zone; `./run_now` fires one immediately |
+| `mcp-timers`        | `/timers`                 | deployment | Countdown timers per household; they ring on the satellites through voice's tunnel; `./dismiss` silences them |
+| `mcp-sugary`        | `/sugary`, `/watchers`    | deployment | A person's Sugary log as Parquet tables queried with DuckDB SQL (`query`); glucose watches share `/watchers` with the home's |
+| `mcp-idealista`     | —                         | deployment | Real-estate search on Idealista using the household's own key                                                |
+| outpost             | `outpost:<name>`          | any machine | A real machine's own files. See below                                                                        |
+
+**Outposts.** `McpServerOutpost` is a self-contained `linux-x64` binary. Run it on any machine and
+that machine's files become available to the agent for as long as it is on. It has no Dockerfile
+and no compose service, and needs no configuration on the deployment. It takes flags and opens its
+own tunnel, using a credential minted for `outpost-<name>` and read from the `CREDENTIAL`
+environment variable:
 
 ```bash
 CREDENTIAL=... ./McpServerOutpost --name laptop --dir ~/project --jailed --hub https://assistants.example.com
+./scripts/run-outpost.sh --name <name> --dir ~/ --exec --install-service   # publish, run, and install a systemd user unit
 ```
 
-`--name` is the machine the agent addresses (`outpost:laptop/...`) — a separate machine, not a branch of the tree its other mounts share. `--dir` is where files land and commands run, and is the mount's declared workspace. `--jailed` confines every operation to it — the mount root is still the machine's root, so a path keeps the same name either way and asking for something outside comes back as a refusal rather than an empty result. `--exec` allows commands and is off unless asked for. `--ext` replaces the shared list of extensions that count as text. `--hub` is the deployment's address; the machine opens its tunnel on that address's `/tunnel` route.
+`--jailed` confines every operation to `--dir`, and `--exec` allows commands. An agent sees its
+household's open outposts only when its definition sets `usesOutposts`.
 
-The machine is an own server of a household like any other ([the tunnel](.claude/rules/tunnel.md)): it opens one outbound WebSocket to the relay, presenting a **tunnel credential** the operator mints for `outpost-<name>` (`mint-tunnel-credential --household <id> --server outpost-<name>`; `--name` is therefore lowercase letters, digits and hyphens), and the agent reaches it only inside that tunnel — it listens on loopback and nothing dials it. It is there while its tunnel is open and gone when it closes: a machine that is switched off disappears at once, and one that loses power goes when the tunnel's keep-alive gives up. Every tool call carries the agent's call token, which the machine checks against the keys its tunnel delivered. Set `CREDENTIAL` in the machine's environment; it is deliberately not a flag, because a command line is visible to every process, and the deployment holds no outpost secret at all.
+## Voice
 
-On a machine that has this checkout, `scripts/run-outpost.sh` publishes the binary and runs it in one step, filling in `--name` (the hostname), `--dir` (the directory you ran it from) and `--hub` for the flags you did not type, and reading `CREDENTIAL` from the environment or from the installed service's file for that name. Adding `--install-service` writes a systemd **user** unit that starts the binary with exactly those resolved flags at every boot:
+```mermaid
+flowchart LR
+    sat["nabu-satellite<br/>wake word · mic · cues · LED ring"]
+    subgraph hub["mcp-channel-voice (tenant kit)"]
+        gate["silence gate"] --> verify["speaker verification"]
+        verify --> tse["target-speech extraction<br/>(optional)"]
+        tse --> stt["Whisper STT"]
+        tts["Kokoro TTS<br/>resampled to 22 050 Hz"]
+    end
+    lem["Lemonade<br/>(deployment, back-call)"]
+    agent["Agent"]
 
-```bash
-./scripts/run-outpost.sh --name <name> --dir /home/<user>/ --exec --install-service
+    sat -->|"Wyoming: mic audio"| gate
+    stt <--> lem
+    tts <--> lem
+    stt -->|"channel/message"| agent
+    agent -->|"send_reply"| tts
+    tts -->|"Wyoming: speech"| sat
 ```
 
-A user unit rather than a system one because an outpost publishes a person's own filesystem and the service has to reach precisely the files its operator reaches; lingering is enabled so it comes up with nobody logged in. The unit is named after the outpost (`ziggurat-outpost-<name>.service`), so a machine can run a jailed outpost and an unjailed one side by side, and it runs a copy of the binary under `~/.local/share/ziggurat-outpost` rather than the publish output — republishing over the file a running service is executing would fail with "text file busy". The credential stays out of the unit for the reason it stays off the command line, in a mode-600 `EnvironmentFile`. `--uninstall-service` takes it all back off again. WSL and an ordinary Linux machine take the same path; a WSL distro with systemd switched off gets `[boot] systemd=true` written into `/etc/wsl.conf` and a note to run `wsl --shutdown`. NAT is no obstacle: the tunnel is outbound.
+- The hub is the Wyoming **client**. It dials every satellite listed in the kit's `satellites.env`
+  and keeps each connection open. Satellites detect the wake word on the device; a button or foot
+  switch also starts a turn.
+- Speaker verification drops voices that are not enrolled, such as the TV or guests, before STT
+  runs. A recognised speaker acts as their own account. Enrol a speaker with
+  `scripts/enroll-voice.sh <user id>`.
+- Replies are spoken as they stream. After a reply, a short follow-up window lets the person
+  continue without the wake word.
+- The hub's announce endpoints ring timers, calendar alarms and watch announcements on any
+  satellite. An alarm can repeat until someone acknowledges it.
+- **`nabu-satellite`** (`satellite/`) is a fully static Rust binary for Raspberry Pi. It runs
+  openWakeWord through tract, keeps a zero-lag pre-roll buffer, plays audio cues, drives the
+  reSpeaker XVF3800 LED ring and ducks music during a turn. To set one up,
+  `scripts/provision-satellite-rs.sh <user@host>` builds the binary, installs it and installs its
+  service. On WSL, `scripts/wsl-satellite.sh` runs a satellite instead. See
+  [`satellite/README.md`](satellite/README.md).
+- **`speech-typist`** (`speech-typist/`) is a Windows tray program. Hold a key, and your words are
+  typed into the window in front. It calls the deployment's Lemonade directly and never talks to an
+  agent. See [`speech-typist/README.md`](speech-typist/README.md).
 
-An agent sees outposts only if `usesOutposts` is set on it; nothing is opted in by default. Its household's open outpost tunnels join its endpoint list when a session is built, so a machine that appeared mid-conversation is there from the next session, and another household's machines never are. A machine that does not answer costs only its own mount — an outpost that will not answer is logged and dropped, while a configured endpoint still fails the session loudly ([ADR 0027](docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md)). A machine named like one of the deployment's mounts sits beside it, since the two are spelled apart; two machines of one household cannot share a name, because the relay holds one tunnel per server name and a second opening replaces the first.
+## Sugary
 
-A subagent sees outposts only when its parent has `usesOutposts` and its own definition sets it too — both default to false, so delegation reaches a machine only when somebody said so twice ([ADR 0028](docs/adr/0028-a-subagent-inherits-outposts-only-if-it-also-asks.md)). What it inherits is the opt-in and the household rather than the parent's machines: its own session build asks for the household's open outposts, so it mounts whatever is live when it is spawned, `fs_exec` included where the machine allows it.
+Sugary is a carb-counting PWA for people with type 1 diabetes (`Sugary.Client`, React + Vite). It is
+served by `mcp-sugary` on its own host behind the session check. A person photographs, films,
+describes or scans a meal, and the `sugary` agent estimates its carbohydrates. The app also logs
+insulin doses (never pre-filled), pens with replacement reminders, exercise, periods with a forecast,
+recipes and a household pantry. It also reads glucose from LibreLinkUp. The log is SQLite in its own
+volume, and every row belongs to one person
+([ADR 0043](docs/adr/0043-sugarys-log-is-sqlite-in-its-own-volume.md)). The agent reads the log
+through `/sugary` and can create glucose watches.
 
-### Scheduled Tasks
+## Observability
 
-Scheduling is a dual-role MCP server (`mcp-scheduling`) rather than an in-process agent feature. The agent connects to it both as a tool/filesystem server and as a channel:
+Every host publishes metric events, which never block and never fail (`AddMetricsPublishing`).
+Shared services publish into Redis, and own servers send theirs back over their tunnels. The
+`observability` service aggregates the events and serves the **dashboard**, a Blazor WebAssembly
+PWA available only to the operator. Its pages:
 
-- **As a filesystem** (`filesystem://schedules`, mounted at `/schedules`) the agent manages schedules with the ordinary `Vfs*` tools. Each agent gets a directory; a schedule lives at `/schedules/<agentId>/<scheduleId>/schedule.json` containing `{prompt, cron|runAt, userId?, deliverTo?}` — exactly one of `cron` (recurring 5-field UTC cron) or `runAt` (one-shot ISO-8601 UTC datetime, auto-deleted after it fires). `agent_info.json` describes each agent and read-only `status.json` reports `createdAt`/`lastRunAt`/`nextRunAt`. Running `VfsExec` with `./run_now` on a schedule directory fires it immediately.
-- **As a channel** a background dispatcher polls Redis for due schedules and emits a `channel/message` to the agent. The agent runs the prompt and fans the result out to the schedule's `deliverTo` channels (e.g. `["signalr", "telegram"]`), minting conversations as needed.
-
-The `scheduling_prompt` MCP prompt teaches the LLM the `/schedules` idiom.
-
-### Home Assistant
-
-Home Assistant is exposed as the `filesystem://ha` mount (path `/ha`) by `mcp-homeassistant`, so the agent drives it with the ordinary `Vfs*` tools rather than a bespoke entity/service API. The `HaFileSystem` backend (`Domain/Tools/HomeAssistant/Vfs/`) implements `IFileSystemBackend` and returns typed `FsResult<T>` — no disk, just live HA REST calls overlaid on a cached catalog of entities/areas/services.
-
-Layout:
-
-- `/ha/entities/<class>/<object-id>_(<friendly-slug>)/` — one directory per entity, grouped by domain (e.g. `/ha/entities/light/kitchen_(kitchen)/`). The directory name carries the friendly name in `_(...)` suffix form so `glob` alone identifies a device.
-- `/ha/areas/<area-slug>/<entity-id>_(<friendly-slug>)/` — the same entities grouped by room. `<area-slug>` is the HA-assigned area `id` (a frozen slug, not the renameable display name).
-- Inside each entity directory: `state.json` (live state + attributes, fetched fresh on read) and one `<service>.sh` per available action.
-
-Workflow: `VfsGlobFiles` to find the entity → optionally `VfsFileRead` `state.json` for an input attribute → `VfsExec` `<service>.sh --help` to learn arguments → `VfsExec` `<service>.sh --arg value` from the entity directory to act. Action results come back via `exitCode` (0 success, 1 HA rejected, 2 bad argument, 124 timeout, 127 unknown action) with `{ok, changed[], response}` in `stdout`.
-
-A directory-listing setup index (`HomeAssistantSetupSummary`) is appended to the `home_assistant_guide` MCP prompt at fetch time so the LLM sees every device path without globbing first. The MCP server only exposes the filesystem (`fs_glob`, `fs_read`, `fs_info`, `fs_search`, `fs_exec`) — there are no entity-specific or service-specific tools.
-
-### Printing
-
-Printing is another non-disk MCP filesystem server (`mcp-printer`) exposing `filesystem://print-queue` (mounted at `/print-queue`). It mirrors the `ScheduleFileSystem`/`HaFileSystem` pattern — a domain `PrinterQueueFileSystem : IFileSystemBackend` engine (`Domain/Tools/Printing/Vfs/`) plus thin `fs_*` MCP wrappers — so the agent prints with the ordinary `Vfs*` tools and **zero agent code changes**.
-
-- **Submit by copy/create.** Copying or creating a file into `/print-queue/<filename>` immediately submits it to the configured printer. Bytes ingest through `fs_blob_write` (chunk streaming), are written to a disk-backed spool (`IPrintSpool`/`PrintSpool` under the spool volume, keyed by filename), and are handed to `IPrinterClient.SubmitAsync` for an assigned job id.
-- **Cancel by remove.** `VfsRemove` on a still-active job calls `IPrinterClient.CancelAsync`; if the job has already finished it is a no-op. `move` and `exec` are intentionally unsupported.
-- **Accepted formats.** Configurable via `SupportedFormats` (default plain text, JPEG, and the printer-native raster/page formats — PWG Raster, Apple URF, PCL); any other format (PNG, PDF, Office docs, etc.) is rejected on copy-in rather than printed as garbage. `SupportedFormats` is the single source of truth — the `printing_prompt` and the print-queue resource description advertise exactly what it lists, so the agent is always told precisely what it can print. Text payloads are CRLF-normalized to stop staircase printing, and images are submitted with `print-scaling=fit` so they fit the page with margins. The `printing_prompt` MCP prompt teaches the LLM to convert anything else to a supported format first.
-- **Status & retention.** `/print-queue/status.json` is a read-only view of every queued job and its state (queued / pending / processing). Finished jobs auto-disappear from the listing during reconciliation; there is no print history.
-
-The IPP transport is `IppPrinterClient` (`Infrastructure/Clients/Printer/`), a `SharpIppNext` + `HttpClient` adapter against the configured `PRINTERURI` (a CUPS server or a direct-IPP printer — same protocol), mapping the `Print-Job`, `Get-Jobs`, and `Cancel-Job` IPP operations.
-
-### Timers & Alarms
-
-Countdown timers are another non-disk MCP filesystem server (`mcp-timers`) exposing `filesystem://timers` (mounted at `/timers`). Creating `/timers/<id>/timer.json` arms a countdown, reading the read-only `status.json` reports the remaining seconds, removing the directory cancels it, and running `./dismiss` silences everything currently ringing. Timers are deliberately in-memory and hub-local — a timer just *rings*, it never messages the agent, which is why this is a pure tool server rather than a channel.
-
-The timers server has no audio path of its own. When a timer fires it calls the voice hub's token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`), so ringing, dismissal (wake word or button on the satellite, or `dismiss.sh` from any channel), and satellite/room resolution all stay in one place — the hub. The `timers_prompt` MCP prompt teaches the `/timers` idiom and embeds the live satellite roster.
-
-Clock-time alarms and reminders ride Home Assistant instead: the agent creates events on a dedicated alarms calendar (served by the `/ha` mount as `./create_event`, `./get_events` and `./delete_event`, over HA's calendars endpoint and WebSocket API, because the service catalog cannot list an event's uid or delete one) and an HA automation bridges each firing to the same voice announce endpoint, with optional insistent repetition until acknowledged.
-
-### Voice Satellites
-
-Voice runs as another MCP channel server (`mcp-channel-voice`) plus dedicated hardware satellites. The hub is the Wyoming-protocol **client**: for every satellite configured with an address (`Satellites__<id>__Address`, e.g. `tcp://192.168.5.55:10800`) it dials out and keeps a persistent reconnecting connection. The satellite detects the wake word locally and streams mic audio to the hub; the hub segments the utterance (silence gating), gates it through speaker verification (an ONNX speaker-embedding model scored against profiles enrolled via `scripts/enroll-voice.sh` — non-enrolled audio like TV or guests is dropped before STT, and a conclusive match acts for that speaker's account, since a profile is named after its user id; anyone else is the voice guest, who still controls the house but reaches no person's memory or logins), optionally cleans noisy captures through the `tse-extractor` target-speech-extraction sidecar, transcribes via Lemonade STT (`lemonade`, OpenAI-compatible `/v1/audio/transcriptions`, Whisper on whisper.cpp), dispatches the transcript to the agent as a `channel/message`, and speaks the reply as it streams — segment-by-segment Lemonade Kokoro TTS audio (24 kHz PCM resampled in-hub to 22 050 Hz). After each reply an optional wake-free follow-up window opens (announced by a listening chime) so the conversation continues without repeating the wake word.
-
-The hub also exposes token-gated HTTP endpoints (`/api/voice/announce`, `/api/voice/dismiss`, `/api/voice/satellites`) that `mcp-timers` and the Home Assistant alarm bridge call to ring announcements — including insistent repeat-until-acknowledged alarms — on any satellite (see [Timers & Alarms](#timers--alarms)).
-
-```
-┌─ Raspberry Pi / WSL dev host ──┐                     ┌─ mcp-channel-voice (hub) ──┐
-│ nabu-satellite (static Rust)   │   Wyoming over TCP  │ silence gate → Whisper STT ┼──▶ channel/message ──▶ Agent
-│ wake "ok nabu" → mic stream    ┼◀───(hub dials in)──▶│ Kokoro TTS ◀── send_reply  ┼◀── agent reply
-│ arecord/aplay · cues · LED     │                     │ follow-up window + chime   │
-└────────────────────────────────┘                     └────────────────────────────┘
-```
-
-#### nabu-satellite (`satellite/`)
-
-The satellite is `nabu-satellite`, a from-scratch Rust replacement for the archived `wyoming-satellite` Python project: one fully static ~18 MB `aarch64-musl` binary with everything embedded (ONNX wake models, cue WAVs). Deployment needs no Python and no system packages beyond `alsa-utils`.
-
-- **Wyoming server** — the satellite listens (default `0.0.0.0:10700`; the hub's configured `Address` must match the satellite's `--listen` port) and the hub dials in. A new hub connection supersedes any previous one, so a dead-peer TCP connection can't hold the exclusive mic device hostage.
-- **On-device wake word** — the openWakeWord pipeline (melspectrogram → embedding → `ok_nabu` classifier) runs in-process via `tract`, validated against the Python implementation. A pre-roll ring buffer gives zero-lag turns: on wake only the detection gap is flushed (the wake word itself is never transcribed); a button press flushes the full ring instead, since speech may precede the press.
-- **Audio** — mic capture via an `arecord` subprocess (16 kHz mono S16LE in 80 ms chunks); playback via `aplay` at a fixed 22 050 Hz (all hub-side audio — TTS, chime — is generated at that rate). Local cues bracket listening: the awake cue plays on turn start, the done cue when the transcript arrives and the mic re-arms.
-- **Buttons & LED** — `--button-gpio`/`--button-evdev` starts a turn without the wake word (`--no-wake` for button-only operation; `--button-evdev` also covers a USB foot-switch). The reSpeaker XVF3800's 12-LED ring is driven automatically when the array is present, showing a distinct look per phase — Idle dark, Listening a blue ring with a green direction-of-arrival pointer, Thinking a breathing blue, Speaking solid blue; `--no-led` opts out. Missing hardware is never fatal.
-- **Defaults** target a reSpeaker XVF3800 USB mic array paired with a HiFiBerry MiniAmp I2S speaker (LED ring on by default, no button); the ReSpeaker 2-Mic HAT path overrides the audio device and adds `--button-gpio 17` — its APA102 LEDs are no longer driven.
-
-Build and deployment:
-
-- `satellite/scripts/build-release.sh` — cross-compiles the fully static `aarch64-unknown-linux-musl` release via `cargo-zigbuild` (a CC shim translates the fp16 target feature for zig cc).
-- `scripts/provision-satellite-rs.sh <user@host> [mic-device]` — builds, installs the binary and the `nabu-satellite.service` systemd unit on a Raspberry Pi, and — when the mic device is left at the default — auto-detects the USB audio card by name, applies a USB autosuspend-off udev rule, and (for the XVF3800 specifically) grants `plugdev` write access to the ring's USB device node.
-- `scripts/wsl-satellite.sh` — runs a satellite on a WSL dev host through WSLg PulseAudio so the dockerized hub can dial `tcp://host.docker.internal:<port>`.
-
-See `satellite/README.md` for build prerequisites, CLI flags, and dev-test commands.
-
-### MCP Tool Servers
-
-| Server            | Tools                                                                                                                   | Resources             | Purpose                                                                                 |
-|-------------------|-------------------------------------------------------------------------------------------------------------------------|-----------------------|-----------------------------------------------------------------------------------------|
-| **mcp-library**   | file_search, download_file, fs_glob, fs_read, fs_info, fs_move, fs_copy, fs_delete, fs_blob_read, fs_blob_write | `filesystem://media` | Search and download content via Jackett/qBittorrent, organize media files; dual-role — also a channel that pushes download-completion alerts to the originating conversation |
-| **mcp-vault**     | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_copy, fs_delete, fs_info, fs_blob_read, fs_blob_write    | `filesystem://vault`  | Manage a knowledge vault of markdown notes and text files                                |
-| **mcp-sandbox**   | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_exec | `filesystem://sandbox` | Linux container for arbitrary bash/Python execution with a scratch + persistent home filesystem |
-| **mcp-websearch** | web_search, web_browse, web_snapshot, web_action                                                                        |                       | Search the web and browse pages via Camoufox with accessibility tree snapshots            |
-| **mcp-idealista** | property_search                                                                                                         |                       | Search real estate properties on Idealista (Spain, Italy, Portugal)                      |
-| **mcp-homeassistant** | fs_glob, fs_read, fs_info, fs_search, fs_exec                                                                          | `filesystem://ha`     | Control a Home Assistant instance as a virtual filesystem (entities, areas, `.sh` action files); injects a slim setup index into the system prompt |
-| **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
-| **mcp-printer**   | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_copy, fs_delete, fs_blob_read, fs_blob_write              | `filesystem://print-queue` | Print plain text/JPEG to a configured IPP/CUPS printer as a virtual filesystem — copy/create to submit, remove to cancel (see [Printing](#printing)) |
-| **mcp-timers**    | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_delete, fs_exec                                                    | `filesystem://timers`      | Hub-local countdown timers as a virtual filesystem — create to arm, read status.json for time left, remove to cancel, exec dismiss.sh to stop ringing; rings on the voice satellites via the voice hub |
-| **mcp-sugary**    | fs_glob, fs_read, fs_info, fs_query, fs_blob_read                                                                       | `filesystem://sugary`      | Her carb-counting log from Sugary, rendered read-only from the server's own SQLite database on every read as Parquet tables — `meals/<YYYY-MM>.parquet`, `items/`, `doses/`, `exercise/`, `foods.parquet`, `periods.parquet`, `day-notes.parquet` — asked with `query` (DuckDB SQL over the whole log) and read whole by a sandbox command, plus a README explaining every column (see `docs/adr/0043`); `import <dir>` carries the standalone app's downloads over once |
-| **outpost**       | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_move_out_check, (fs_exec with `--exec`) | `filesystem://<name>` | A real machine's own filesystem, served by a single-file binary somebody copies onto it and runs. **Not a container**: no Dockerfile, no compose service, no appsettings — it takes flags, opens its own tunnel to the hub and is gone when the tunnel closes (see [Outposts](#outposts)) |
-
-### MCP Channel Servers
-
-| Server                    | Purpose                                                                                    |
-|---------------------------|--------------------------------------------------------------------------------------------|
-| **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
-| **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
-| **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, gates speakers (verification + optional TSE cleanup), Lemonade STT/TTS (OpenAI-compatible, `lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
-| **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
-
-### Agents
-
-| Agent     | MCP Servers                                         | Features                                    | Purpose                                                                   |
-|-----------|-----------------------------------------------------|---------------------------------------------|---------------------------------------------------------------------------|
-| **Jack**  | mcp-library, mcp-websearch                          | filesystem (glob, move)                     | Media acquisition and library management ("Captain Jack" pirate persona)  |
-| **Jonas** | mcp-vault, mcp-sandbox, mcp-websearch, mcp-idealista, mcp-homeassistant, mcp-scheduling, mcp-printer, mcp-timers | filesystem, subagents, memory   | Knowledge base management ("Scribe" persona) with subagent delegation, sandbox execution, scheduled tasks, Home Assistant control, printing, and countdown timers |
-| **Nabu**  | same as Jonas                                       | filesystem, subagents, memory               | Voice-optimized assistant — brief, formatting-free spoken replies delivered through the voice satellites (also serves as the `voice` channel) |
-
-### Multi-Agent Configuration
-
-Agents are defined as configuration data, each with:
-- Custom LLM model selection
-- Specific MCP server endpoints
-- Tool whitelist patterns (e.g., `mcp:mcp-library:*`, `domain:subagents:*`)
-- Custom system instructions
-- Enabled features (e.g., `filesystem`, `subagents`, `memory`)
-
-#### Subagents
-
-Agents with the `subagents` feature enabled can delegate work to ephemeral subagents via the `run_subagent` tool. Subagents are configured per-agent in `appsettings.json` under the `subAgents` array, each with its own MCP server endpoints and execution timeout. A subagent has no model of its own: it runs the model of the agent that spawned it, with that agent's provider routing. Subagents use ephemeral state (no Redis persistence) and cannot spawn further subagents.
-
-Agent routing:
-- **Telegram**: Each bot token maps to one agent (configured per channel)
-- **WebChat**: User selects agent from available list in the UI
+- Overview
+- Tokens and cost, by person, model and household
+- Tools
+- Errors
+- Latency
+- Voice
+- Schedules
+- Memory
+- Skills
+- Web
+- Households: the household list, usage and suspension, plus each own server's health tile
 
 ## Projects
 
-| Project                  | Description                                                     |
-|--------------------------|-----------------------------------------------------------------|
-| `Agent`                  | Composition root, connects to channel and tool MCP servers      |
-| `Domain`                 | Core domain logic, agent contracts, channel protocol DTOs       |
-| `Infrastructure`         | External service clients (MCP, OpenRouter, push notifications)  |
-| `McpServerLibrary`       | MCP server for torrent search, downloads, and file organization |
-| `McpServerVault`          | MCP server for text/markdown file inspection and editing        |
-| `McpServerSandbox`       | MCP server exposing a Linux sandbox container with `fs_exec`    |
-| `McpServerWebSearch`     | MCP server for web search and browsing via Camoufox             |
-| `McpServerIdealista`     | MCP server for Idealista real estate property search            |
-| `McpServerHomeAssistant` | MCP server exposing Home Assistant as `filesystem://ha`         |
-| `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
-| `McpServerPrinter`       | MCP server exposing a print queue as `filesystem://print-queue` (IPP/CUPS) |
-| `McpServerTimers`        | MCP server exposing countdown timers as `filesystem://timers`; rings via the voice hub's HTTP endpoints |
-| `McpServerSugary`        | MCP server exposing her carb log as `filesystem://sugary`, stored in SQLite in its own volume |
-| `McpServerOutpost`       | MCP server for a real machine's own filesystem — self-contained single-file `linux-x64` binary that opens its own tunnel, the one server with no Dockerfile and no compose service |
-| `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
-| `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
-| `McpChannelVoice`        | MCP channel server for voice satellites (Wyoming hub, Lemonade STT/TTS) |
-| `satellite`              | `nabu-satellite` — standalone Rust crate: static Wyoming satellite binary for Raspberry Pi (wake word, audio I/O, button, LED) |
-| `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
-| `WebChat.Client`         | Blazor WebAssembly client with chat UI and SignalR integration  |
-| `Observability`          | Metrics collector, REST API, SignalR hub — serves the Dashboard |
-| `Dashboard.Client`       | Blazor WebAssembly observability dashboard (PWA)                |
-| `DockerCompose`          | Docker Compose configuration for the full stack                 |
-| `Tests`                  | Unit, integration, and E2E tests                                |
+| Project                  | What it is                                                                                     |
+|--------------------------|------------------------------------------------------------------------------------------------|
+| `Agent`                  | Composition root: agents, conversation groups, the tunnel relay, memory, the VFS bridge, topic minting, signing commands |
+| `Domain`                 | Business logic, contracts, prompts, skills and templates, the channel protocol, signing         |
+| `Infrastructure`         | Adapters: MCP clients, OpenRouter, Lemonade, Redis, tunnels, metrics sinks, IPP, Playwright      |
+| `Mcp.Hosting`            | What being an MCP server means: settings binding, channel servers, the tunnel, call-token checks |
+| `Accounts`               | Households, people, passkeys, sessions, assertions, household configuration, tunnel credentials, the admin API |
+| `McpChannelSignalR` / `McpChannelTelegram` / `McpChannelVoice` | Channel servers                                                  |
+| `McpServerVault` / `McpServerSandbox` / `McpServerWebSearch` / `McpServerLibrary` / `McpServerHomeAssistant` / `McpServerPrinter` | A household's own servers |
+| `McpServerScheduling` / `McpServerTimers` / `McpServerSugary` / `McpServerIdealista` | Shared servers                                 |
+| `McpServerOutpost`       | The outpost binary                                                                             |
+| `LemonadeForwarder`      | A household's tunnel to its own Lemonade box, so the box's key never leaves the house           |
+| `HouseholdMigration`     | One-shot migration that moved the single-user deployment into the home household                |
+| `WebChat` / `WebChat.Client` | The chat app and its host                                                                  |
+| `Observability` / `Dashboard.Client` | Metrics collector, API and hub, and the operator's dashboard                       |
+| `Sugary.Client`          | The Sugary PWA (TypeScript, built into the `mcp-sugary` image)                                  |
+| `satellite/`             | `nabu-satellite`, the Rust voice satellite                                                     |
+| `sandbox-runtime/`       | The sandbox's Rust root launcher and FUSE daemon                                               |
+| `speech-typist/`         | The Windows speech typist (Rust)                                                               |
+| `DockerCompose/`         | The deployment's compose files, Caddy, Lemonade, AppArmor and seccomp profiles                 |
+| `TenantKit/`             | A household's own servers as a compose file                                                    |
+| `Tests/`                 | Unit, integration, E2E, canary, smoke and eval tiers                                           |
 
-## Prerequisites
+The three Rust crates are standalone. Each has its own `CLAUDE.md` and shares no build with the
+others or with the .NET solution.
 
-- [.NET 11 SDK](https://dotnet.microsoft.com/download)
-- [Docker](https://www.docker.com/) and Docker Compose
-- [OpenRouter API Key](https://openrouter.ai/)
-- [Telegram Bot Token](https://core.telegram.org/bots#creating-a-new-bot) (one per agent)
+## Running it
 
-## Getting Started
+### Prerequisites
 
-### 1. Clone and Configure
+- Docker with Compose, and the [.NET 11 SDK](https://dotnet.microsoft.com/download) for development
+- An [OpenRouter](https://openrouter.ai/) API key
+- A domain whose DNS is on Cloudflare: Caddy gets Let's Encrypt certificates through the DNS challenge
+  (`CF_API_TOKEN`). `DockerCompose/caddy/Caddyfile` names the operator's own hosts; replace the main,
+  dashboard and Sugary hosts with your own, and remove any site block whose upstream is not a service
+  in the compose file
+- Optionally: a Telegram bot token for the shared bot, and a GPU or NPU for Lemonade
 
-```bash
-git clone https://github.com/Dethon/Ziggurat.git
-cd Ziggurat
-```
+### The deployment
 
-### 2. Set Environment Variables
+1. Fill in `DockerCompose/.env`. The comment above each value says what it is and, for generated
+   keys, how to make one: the MCP secrets, `REDIS_PASSWORD`, `HOUSEHOLD_CONFIG_MASTER_KEY` (keep a
+   copy: losing it loses every household's sealed keys), `OPENROUTER__APIKEY`, the Web Push keys,
+   `SUGARY_SEALING_KEY`, `CF_API_TOKEN` and `TELEGRAM_SHARED_BOT_TOKEN`. Services also read .NET user
+   secrets, which the OS override mounts and which win over `.env`.
+2. Build the base image first. Every image builds from it, and `up --build` reuses a stale copy:
 
-Edit the environment file:
+   ```bash
+   docker compose -f DockerCompose/docker-compose.yml -p jackbot build base-sdk
+   docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build
+   ```
 
-```bash
-cd DockerCompose
-# Edit .env with your configuration
-```
+   Use `docker-compose.override.windows.yml` on Windows. On a host with no `/dev/dri`, add
+   `docker-compose.override.no-dri.yml` last. `docker-compose.override.npu.yml` and
+   `docker-compose.override.nvidia.yml` select other Lemonade tiers.
+3. Create the operator's sign-in link, open it, and enrol a passkey:
 
-Required variables:
+   ```bash
+   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<your name>"
+   ```
 
-```env
-REPOSITORY_PATH=..
-DATA_PATH=./volumes/data
-VAULT_PATH=./volumes/vault
-PUID=1000
-PGID=1000
-OPENROUTER__APIKEY=your_openrouter_api_key
-OPENROUTER__APIURL=https://openrouter.ai/api/v1/
-BRAVE__APIKEY=your_brave_search_api_key
-HOMEASSISTANT__TOKEN=your_home_assistant_long_lived_access_token
-JACKETT__APIKEY=your_jackett_api_key
-QBITTORRENT__USERNAME=admin
-QBITTORRENT__PASSWORD=your_password
+   The operator is an owner of the home household. Invite the rest of the household from WebChat's
+   members page; an invite opened in Telegram links that person's Telegram account too
+   ([Telegram's ways in](.claude/rules/telegram.md): `/start`, `/web`, `/bind`, `/agent`).
 
-# Agent definitions (array)
-AGENTS__0__ID=jack
-AGENTS__0__NAME=Jack
-AGENTS__0__MODEL=openai/gpt-6-luna
-AGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-library:8080/mcp
-AGENTS__0__MCPSERVERENDPOINTS__1=http://mcp-websearch:8080/mcp
-AGENTS__0__ENABLEDFEATURES__0=filesystem.glob
-AGENTS__0__ENABLEDFEATURES__1=filesystem.move
-AGENTS__0__WHITELISTPATTERNS__0=domain:filesystem:*
-AGENTS__0__WHITELISTPATTERNS__1=mcp:mcp-library:*
-AGENTS__0__WHITELISTPATTERNS__2=mcp:mcp-websearch:*
-AGENTS__0__CUSTOMINSTRUCTIONS=You are Jack, a media library assistant...
+The base compose file publishes only Caddy (443), Redis on loopback, and Lemonade on
+`LAN_BIND_ADDRESS` for the speech typist. `docker-compose.override.ports.yml` also publishes the
+agent (5000), WebChat (5001), the dashboard (5003), accounts (5004) and the shared servers (6005–6017)
+on `127.0.0.1`, so projects can run on the host against the stack (`scripts/run-local.sh`, or the
+`.vscode` / `.zed` launch profiles). The [`launch-stack` skill](.claude/skills/launch-stack/SKILL.md)
+covers the details: secrets, signing keys, reaching an app directly, and Playwright.
 
-# Subagent definitions (per-agent, optional)
-SUBAGENTS__0__ID=jonas-worker
-SUBAGENTS__0__NAME=Jonas Worker
-SUBAGENTS__0__DESCRIPTION=A worker subagent with the same toolset as Jonas
-SUBAGENTS__0__MCPSERVERENDPOINTS__0=http://mcp-vault:8080/mcp
-SUBAGENTS__0__MAXEXECUTIONSECONDS=600
+### A household's own servers
 
-# Channel endpoints (agent connects to these)
-CHANNELENDPOINTS__0__CHANNELID=signalr
-CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/mcp
-CHANNELENDPOINTS__1__CHANNELID=telegram
-CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/mcp
-CHANNELENDPOINTS__2__CHANNELID=scheduling
-CHANNELENDPOINTS__2__ENDPOINT=http://mcp-scheduling:8080/mcp
-CHANNELENDPOINTS__3__CHANNELID=voice
-CHANNELENDPOINTS__3__ENDPOINT=http://mcp-channel-voice:8080/mcp
-CHANNELENDPOINTS__3__ATTACHONLY=true
-CHANNELENDPOINTS__4__CHANNELID=library
-CHANNELENDPOINTS__4__ENDPOINT=http://mcp-library:8080/mcp
-
-# Telegram channel: the shared bot every household talks to (a household's own bots are its keys)
-BOTS__SHAREDTOKEN=your_shared_telegram_bot_token
-
-# SignalR channel
-AGENTS__0__ID=jack
-AGENTS__0__NAME=Jack
-AGENTS__0__DESCRIPTION=General assistant
-```
-
-### 3. Run with Docker Compose
+Without its own servers, a household still chats. Its turns are told that the vault, the web, the
+sandbox and the rest are offline. To add them, mint one tunnel credential per server, then start the
+tenant kit at the household's site:
 
 ```bash
-cd DockerCompose
-
-# Linux / WSL
-docker compose -f docker-compose.yml -f docker-compose.override.linux.yml -p jackbot up -d --build
-
-# Windows
-docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p jackbot up -d --build
+for s in websearch vault library sandbox printer homeassistant voice; do
+  docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server $s
+done
+# put each in TenantKit/.env as TUNNEL_CREDENTIAL_<SERVER>, satellites in TenantKit/satellites.env
+docker compose -f TenantKit/docker-compose.yml build base-sdk
+docker compose -f TenantKit/docker-compose.yml up -d --build
+docker exec agent dotnet Agent.dll list-household-servers --household <id>
 ```
 
-## Services & Ports
+The sandbox needs the `ziggurat-sandbox` AppArmor profile from `DockerCompose/apparmor/` installed on
+the host. [`TenantKit/README.md`](TenantKit/README.md) lists every server, its tunnel name and its
+back-calls, and covers `.env`, the optional Lemonade forwarder, and how the home household moved
+into the kit. Home Assistant's first run is described in
+[`.claude/rules/home-assistant.md`](.claude/rules/home-assistant.md).
 
-| Service                  | Port | Description                    |
-|--------------------------|------|--------------------------------|
-| WebChat                  | 5001 | Browser-based chat interface   |
-| Dashboard                | 5003 | Observability dashboard (PWA)  |
-| Redis                    | 6379 | Conversation state persistence |
-| qBittorrent              | 8001 | Torrent client WebUI           |
-| FileBrowser              | 8002 | File management WebUI          |
-| Jackett                  | 8003 | Torrent indexer proxy          |
-| MCP Library              | 6001 | Library MCP server             |
-| MCP Vault                | 6002 | Document vault MCP server      |
-| MCP WebSearch            | 6003 | Web search MCP server          |
-| MCP Sandbox              | 6004 | Linux sandbox MCP server       |
-| MCP Idealista            | 6005 | Idealista property MCP server  |
-| MCP HomeAssistant        | 6006 | Home Assistant MCP server      |
-| Home Assistant           | 8123 | Home Assistant web UI/API      |
-| MCP Channel SignalR      | 6010 | WebChat channel server         |
-| MCP Channel Telegram     | 6011 | Telegram channel server        |
-| MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
-| MCP Printer              | 6014 | Print queue MCP server         |
-| MCP Channel Voice        | 6015 | Voice channel server (Wyoming satellite hub) |
-| MCP Timers               | 6016 | Countdown timers MCP server    |
-| MCP Sugary               | 6017 | Carb log MCP server (SQLite)   |
-| Lemonade                 | 13305| STT/TTS server (OpenAI-compatible) |
-| TSE Extractor            | 9098 | Target-speech-extraction service |
-| Camoufox                 | 9377 | Anti-detect browser (WebSocket)|
-| Caddy                    | 443  | TLS entry point (WebChat, SignalR hubs, dashboard) |
+### Persistence
 
-## Usage
+| Where                                   | What                                                                                       |
+|-----------------------------------------|--------------------------------------------------------------------------------------------|
+| Deployment Redis                        | Conversation history, topics, memories (vector search), schedules, push subscriptions, metrics, service health |
+| Kit Redis                               | Web search's remembered logins and links, the library's download routing                    |
+| `volumes/accounts` (SQLite)             | Households, people, passkeys, sessions, configuration, tunnel credentials                  |
+| `mcp-sugary`'s volume (SQLite)          | The Sugary log                                                                              |
+| `volumes/agent-keys`                    | The agent's signing key; losing it means schedules and watches need `Agent.dll redelegate`  |
+| Kit volumes                             | Vault, media, sandbox home, Home Assistant, voice profiles, the browser's identity, the print spool |
 
-### WebChat Interface
+Topics are archived and then purged on the horizons set in `Domain/retention.json`.
 
-Access the browser-based chat at `http://localhost:5001` after starting the Docker Compose stack. In production, connect through Caddy (port 443) which routes `/hubs/*` to the SignalR channel server.
+## Testing
 
-Features:
-- **Real-time streaming** - Messages stream as they're generated with automatic reconnection
-- **Topic management** - Organize conversations into topics with server-side persistence
-- **Multi-agent selection** - Switch between available agents from the UI
-- **Signed in** - Each person signs in once with a passkey; their name and avatar come from their account
-- **Stream resumption** - Reconnects automatically and resumes from where you left off
-- **Push notifications** - Browser push notifications when responses complete (VAPID-based)
-
-#### Signing in
-
-WebChat has no user list of its own. Caddy asks the accounts service's session check before the chat client, its hub and its upload and dictation endpoints, so a signed-out browser goes to sign in with a passkey and comes back; the hub takes the person from the headers the check answers, and the client takes their name and avatar from `GET /accounts/me`. People are added with the accounts service's commands (see `.claude/skills/launch-stack/SKILL.md`).
-
-### Observability Dashboard
-
-Access at `http://localhost:5003/dashboard/` (direct) or `https://yourdomain/dashboard/` (via Caddy). Installable as a PWA.
-
-The dashboard provides operational visibility into agent behavior:
-
-- **Overview** — KPI cards (tokens, cost, tool calls, errors), service health grid, recent activity feed
-- **Tokens** — Token usage time-series, cost breakdown, per-user and per-model tables
-- **Tools** — Tool call frequency, success/failure rates, average duration
-- **Errors** — Error list with type, service, and message details
-- **Latency** — Per-turn latency trends with percentile breakdowns and a recent-turns table
-- **Voice** — Voice pipeline analytics (turn-span decomposition, STT/TTS latency percentiles) and recent voice events
-- **Schedules** — Schedule execution history with duration and success/failure status
-- **Memory** — Memory extraction, recall, and dreaming analytics
-
-Data flows via Redis Pub/Sub: all services emit metric events through `IMetricsPublisher`, the Observability collector aggregates them into Redis, and the dashboard reads via REST API with live updates via SignalR.
-
-### Telegram Interface
-
-One shared bot serves every household. Its token is the deployment's (`TELEGRAM_SHARED_BOT_TOKEN` in `.env`, `BOTS__SHAREDTOKEN` in the Telegram channel's environment). A linked person's message there goes to their household's default agent; `/agent` lists the household's agents and `/agent <id>` switches the chat to one, kept per chat. A household may also have bots of its own, each bound to one of its agents — the home household's jack and jonas — as tokens in its configuration's `keys` section (`telegramBots: { <agent id>: { token } }`, set with the accounts service's `set-household-config`); the channel starts and stops them as that section is saved, with no restart, and each answers its own household's people alone.
-
-The bots answer only people whose numeric Telegram id is linked to an account. An owner's invite opened in Telegram (`t.me/<bot>?start=<invite>`) creates the account and links it; somebody who already has one links it with the code on their account page. In a private chat, `/web` answers a linked person a one-time link that adds a passkey. A group is answered only once an owner binds it with `/bind <code>`, the code from the members page. Set the accounts service's `TELEGRAM__BOTUSERNAME` to show codes as the bot's deep link.
-
-### Tool Approval
-
-When the agent wants to execute a tool:
-- **Approve** - Allow the tool to run once
-- **Always** - Auto-approve this tool for the session
-- **Reject** - Block the tool execution
-
-Configure permanent auto-approvals using glob patterns:
-
-```json
-{
-  "whitelistPatterns": [
-    "mcp:mcp-library:*",
-    "domain:filesystem:*",
-    "domain:memory:*"
-  ]
-}
+```bash
+dotnet test
 ```
 
-Pattern format: `mcp:<server>:<tool>` or `domain:<feature>:<tool>` with `*` wildcard support.
+- `Tests/Unit` runs on its own. Integration and E2E tests need Docker; their fixtures start
+  testcontainers or the compose stack themselves. Set `PLAYWRIGHT_HEADLESS=false` to watch the
+  browser.
+- Every test talks to a fake OpenRouter except the two **canaries** (`Tests/Canary/`), which cost
+  real model calls. A test outside `Tests/Canary`, `Tests/Eval` and `Tests/Smoke` that reads user
+  secrets fails `PaidCallsConformanceTests`.
+- The **smoke tier** (`scripts/smoke-stack.sh up|test|down`) runs the shipped compose file and
+  Caddyfile from empty state on this machine, with the tenant kit beside them. The **behavioural
+  eval** runs scenarios against a real model with the deployment's own agent definitions and writes
+  scorecards to `.eval-output/`. Both cost money or need a running stack, so they run only when asked
+  ([`test-tiers` skill](.claude/skills/test-tiers/SKILL.md)).
+- The Rust crates run `cargo test` in their own directories, with no .NET build and no Docker.
+- The pre-commit hook (`.githooks/pre-commit`) runs `dotnet format` over staged `.cs` files.
 
-### Chat Commands
+## Further reading
 
-| Command   | Description                                           |
-|-----------|-------------------------------------------------------|
-| `/cancel` | Cancel current operation (keeps conversation history) |
-| `/clear`  | Clear conversation and wipe thread history from Redis |
-
-## Persistence
-
-The agent uses Redis to persist conversation history and memory across restarts:
-
-- **Chat History** - All messages are stored with a 30-day expiry
-- **Thread State** - Each chat thread is identified by `agent-key:{agentId}:{conversationId}`
-- **Download Tracking** - Completion alerts arrive automatically in the originating conversation (routing snapshots stored in Redis survive restarts); live status is readable anytime via `/media/downloads/<id>/status.json`
-- **Memory Storage** - Proactively extracted memories from windowed conversation context, stored in Redis with vector search for semantic recall; periodic dreaming consolidates and prunes
-- **Schedules** - Cron and one-shot schedule definitions stored in Redis, polled by the scheduling server's dispatcher; one-shot schedules are auto-deleted after firing
-- **Push Subscriptions** - Browser push notification subscriptions stored in Redis per space
-- **Metrics** - Token usage, tool calls, errors, and schedule executions stored as Redis sorted sets and hashes with 30-day TTL
-- **Service Health** - Heartbeat-based health tracking with 60-second TTL keys in Redis
+- [`CONTEXT.md`](CONTEXT.md) is the glossary: what each term means here and which words to avoid.
+- [`docs/adr/`](docs/adr/) holds the architecture decisions.
+- [`.claude/rules/`](.claude/rules/) holds per-subsystem contracts (channels, VFS, tunnel, accounts,
+  voice, sandbox, scheduling, ...).
+- [`TenantKit/README.md`](TenantKit/README.md), [`satellite/README.md`](satellite/README.md) and
+  [`speech-typist/README.md`](speech-typist/README.md).
+- [`docs/home-assistant-bridges.md`](docs/home-assistant-bridges.md) explains the Home Assistant
+  automations that bridge alarms and watches.
 
 ## License
 
