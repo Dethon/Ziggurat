@@ -77,7 +77,8 @@ public static class SugaryTables
 
     private static readonly TableColumn[] _profileColumns =
     [
-        new("sex", ColumnType.Text), new("diabetes_type", ColumnType.Text), new("diagnosed_on", ColumnType.Date)
+        new("sex", ColumnType.Text), new("diabetes_type", ColumnType.Text), new("diagnosed_on", ColumnType.Date),
+        new("born_on", ColumnType.Date)
     ];
 
     private static readonly TableColumn[] _heightColumns = [new("date", ColumnType.Date), new("height_cm", ColumnType.Decimal)];
@@ -205,7 +206,8 @@ public static class SugaryTables
         new("profile", _profileColumns, [Row(
             profile.Sex is { } sex ? Word(sex) : null,
             profile.DiabetesType is { } type ? Word(type) : null,
-            profile.DiagnosedOn)]);
+            profile.DiagnosedOn,
+            profile.BornOn)]);
 
     // Oldest first, the order a growth curve is read in.
     public static Table Heights(IEnumerable<LoggedMeasurement> measurements) =>

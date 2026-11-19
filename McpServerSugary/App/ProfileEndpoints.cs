@@ -8,13 +8,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace McpServerSugary.App;
 
-public record ProfileDto(Sex? Sex, DiabetesType? DiabetesType, DateOnly? DiagnosedOn);
+public record ProfileDto(Sex? Sex, DiabetesType? DiabetesType, DateOnly? DiagnosedOn, DateOnly? BornOn);
 
 // Words are text so a missing or unknown one is refused with a sentence rather than a bare 400 from a
 // failed bind. A field sent empty is one she has not said, or has taken back. Loaded is what the sheet
 // opened with (StaleEdits).
 public record SaveProfileRequest(
-    string? Sex, string? DiabetesType, DateOnly? DiagnosedOn, SaveProfileRequest? Loaded = null);
+    string? Sex, string? DiabetesType, DateOnly? DiagnosedOn, DateOnly? BornOn, SaveProfileRequest? Loaded = null);
 
 public record MeasurementDto(Guid Id, BodyMeasure Kind, DateOnly On, double Value);
 
@@ -55,7 +55,8 @@ public static class ProfileEndpoints
             request = value;
         }
 
-        if (ProfileRules.ProfileProblem(request.Sex, request.DiabetesType, request.DiagnosedOn, calendar.Today) is { } problem)
+        if (ProfileRules.ProfileProblem(
+                request.Sex, request.DiabetesType, request.DiagnosedOn, request.BornOn, calendar.Today) is { } problem)
         {
             return Refuse(problem);
         }
@@ -69,6 +70,7 @@ public static class ProfileEndpoints
         profile.Sex = ProfileRules.Word<Sex>(request.Sex);
         profile.DiabetesType = ProfileRules.Word<DiabetesType>(request.DiabetesType);
         profile.DiagnosedOn = request.DiagnosedOn;
+        profile.BornOn = request.BornOn;
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToDto(profile));
     }
@@ -157,13 +159,14 @@ public static class ProfileEndpoints
     private static SaveProfileRequest AsRequest(ProfileDto profile) => new(
         profile.Sex is { } sex ? SugaryTables.Word(sex) : null,
         profile.DiabetesType is { } type ? SugaryTables.Word(type) : null,
-        profile.DiagnosedOn);
+        profile.DiagnosedOn,
+        profile.BornOn);
 
     private static IResult Refuse(string problem) =>
         Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
 
     private static ProfileDto ToDto(Profile? profile) =>
-        new(profile?.Sex, profile?.DiabetesType, profile?.DiagnosedOn);
+        new(profile?.Sex, profile?.DiabetesType, profile?.DiagnosedOn, profile?.BornOn);
 
     private static MeasurementDto ToDto(BodyMeasurement m) => new(m.Id, m.Kind, m.On, m.Value);
 }

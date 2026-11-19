@@ -15,17 +15,17 @@ public class SugaryProfileTablesTests
     [Fact]
     public void AProfileNeverSaid_IsOneRowOfEmptyCells() =>
         SugaryCsv.Write(SugaryTables.Profile(LoggedProfile.Unsaid)).ShouldBe("""
-            sex,diabetes_type,diagnosed_on
-            ,,
+            sex,diabetes_type,diagnosed_on,born_on
+            ,,,
 
             """);
 
     [Fact]
     public void AProfile_IsOneRowInTheApisWords() =>
-        SugaryCsv.Write(SugaryTables.Profile(new LoggedProfile(Sex.Male, DiabetesType.Lada, new DateOnly(2019, 4, 2))))
+        SugaryCsv.Write(SugaryTables.Profile(new LoggedProfile(Sex.Male, DiabetesType.Lada, new DateOnly(2019, 4, 2), new DateOnly(1980, 1, 31))))
             .ShouldBe("""
-                sex,diabetes_type,diagnosed_on
-                male,lada,2019-04-02
+                sex,diabetes_type,diagnosed_on,born_on
+                male,lada,2019-04-02,1980-01-31
 
                 """);
 
@@ -78,7 +78,7 @@ public class SugaryProfileTablesTests
 
         string[] columns =
         [
-            "sex", "diabetes_type", "diagnosed_on", "height_cm", "weight_kg", "pen_id", "insulin", "opened_on",
+            "sex", "diabetes_type", "diagnosed_on", "born_on", "height_cm", "weight_kg", "pen_id", "insulin", "opened_on",
             "replace_on", "replaced_on", "type1", "lada", "gestational"
         ];
         columns.Where(column => !readme.Contains($"`{column}`")).ShouldBeEmpty();

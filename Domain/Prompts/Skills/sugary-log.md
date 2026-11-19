@@ -1,9 +1,11 @@
 ---
 name: sugary-log
-description: Reading the asking person's own log under `/sugary` — the foods they keep, the meals they logged and the foods in each, their insulin doses, glucose readings, exercise and periods ("when did I last have paella", "how did my glucose do after pizza", "my time in range last week", "how much insulin did I take for it", "was I on my period that week"). Which tables there are, where their columns are explained, and how to ask them.
+description: Reading the asking person's own log under `/sugary` — the foods they keep, the meals they logged and the foods in each, their insulin doses and pens, glucose readings, exercise, periods, and who they are (diabetes type, diagnosis, birth date, height and weight over time) ("when did I last have paella", "how did my glucose do after pizza", "my time in range last week", "how much insulin did I take for it", "which insulin am I on", "how much has he grown this year", "was I on my period that week"). Which tables there are, where their columns are explained, and how to ask them.
+# Raised to 150 when the log came to hold who they are and their pens (2026-11-19, the user's go-ahead):
+# "which insulin am I on" and "how much has he grown" must load this skill, not reach the tables by luck.
 # Raised from 100 when the log came to hold her glucose (2026-11-18): a question about her readings or
 # her time in range is this skill's now, and the advertisement has to say so to both of its readers.
-description-budget: 110
+description-budget: 150
 # Raised from 500 for insulin doses: where they are and how a meal's are found. Raised again to 700
 # for periods and day notes, the tables a cycle question reads beside /ha, and to 750 for exercise.
 # Raised to 850 when a dose stopped being refused and started being worked out (2026-10-19): only
@@ -51,7 +53,7 @@ The log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 - `foods` — the foods they keep, one row each: what they call it, its carbs per 100 g or ml, the amount they usually have and, for a food kept only as a portion, the carbs in that portion.
 - `periods` — their menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what they wrote about a day. Both are days on the home's calendar: read `glucose` for those days beside them.
 - `glucose` — one row per reading their sensor measured, in mg/dL with the arrow; `sensors` — the sensors they wore. The README gives time in range, mean, GMI and CV as SQL to copy.
-- `profile` — one row: their `sex`, `diabetes_type` and `diagnosed_on`, an empty cell being unsaid. `heights`, `weights` — over time, the latest row for now. `pens` — which insulin each dose `kind` is, the one with no `replaced_on` in use. Context, never a number to dose from.
+- `profile` — one row: their `sex`, `diabetes_type`, `diagnosed_on` and `born_on`, an empty cell being unsaid. `heights`, `weights` — over time, the latest row for now. `pens` — which insulin each dose `kind` is, the one with no `replaced_on` in use. Context, never a number to dose from.
 
 Every time is on the home's clock, so a meal, its dose and the readings after them line up. Beside each is `<column>_local`, its wall time, for a day or an hour of their life: `eaten_at_local::date = '2026-10-03'`.
 

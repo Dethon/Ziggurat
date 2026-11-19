@@ -35,7 +35,8 @@ public partial class PersonalProfiles : Migration
                 TenantId = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false),
                 Sex = table.Column<string>(type: "TEXT", nullable: true),
                 DiabetesType = table.Column<string>(type: "TEXT", nullable: true),
-                DiagnosedOn = table.Column<DateOnly>(type: "TEXT", nullable: true)
+                DiagnosedOn = table.Column<DateOnly>(type: "TEXT", nullable: true),
+                BornOn = table.Column<DateOnly>(type: "TEXT", nullable: true)
             },
             constraints: table =>
             {

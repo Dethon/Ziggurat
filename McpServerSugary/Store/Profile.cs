@@ -13,6 +13,9 @@ public class Profile : IPersonal
     public Sex? Sex { get; set; }
     public DiabetesType? DiabetesType { get; set; }
     public DateOnly? DiagnosedOn { get; set; }
+
+    // A child's height and weight are read against their age, and so is how long they have lived with it.
+    public DateOnly? BornOn { get; set; }
 }
 
 // A height or a weight she recorded on a day, kept as a history: a child with diabetes grows, and a

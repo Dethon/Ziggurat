@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace McpServerSugary.Store.Migrations;
 
 [DbContext(typeof(SugaryDbContext))]
-[Migration("20261119005227_PersonalProfiles")]
+[Migration("20261119083802_PersonalProfiles")]
 partial class PersonalProfiles
 {
     /// <inheritdoc />
@@ -547,6 +547,9 @@ partial class PersonalProfiles
             {
                 b.Property<string>("UserId")
                     .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateOnly?>("BornOn")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("DiabetesType")

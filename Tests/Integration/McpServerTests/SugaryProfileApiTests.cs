@@ -21,11 +21,12 @@ public class SugaryProfileApiTests
             .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static JsonObject Profile(string? sex = "female", string? diabetesType = "type1",
-        string? diagnosedOn = "2015-03-02") => new()
+        string? diagnosedOn = "2015-03-02", string? bornOn = "2009-06-14") => new()
         {
             ["sex"] = sex,
             ["diabetesType"] = diabetesType,
-            ["diagnosedOn"] = diagnosedOn
+            ["diagnosedOn"] = diagnosedOn,
+            ["bornOn"] = bornOn
         };
 
     private static JsonObject Measurement(string? kind = "weight", string? on = "2026-10-01", double? value = 58.4) => new()
@@ -60,6 +61,7 @@ public class SugaryProfileApiTests
         profile["sex"].ShouldBeNull();
         profile["diabetesType"].ShouldBeNull();
         profile["diagnosedOn"].ShouldBeNull();
+        profile["bornOn"].ShouldBeNull();
     }
 
     [Fact]
@@ -75,6 +77,7 @@ public class SugaryProfileApiTests
         Text(profile, "sex").ShouldBe("female");
         Text(profile, "diabetesType").ShouldBe("type1");
         Text(profile, "diagnosedOn").ShouldBe("2015-03-02");
+        Text(profile, "bornOn").ShouldBe("2009-06-14");
         (await ProfileOfAsync(server.As(SugaryServer.Him)))["sex"].ShouldBeNull();
     }
 
@@ -112,6 +115,20 @@ public class SugaryProfileApiTests
     }
 
     [Fact]
+    public async Task ABirthAfterToday_OrADiagnosisBeforeIt_IsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+
+        var unborn = await client.PutAsJsonAsync("/api/profile", Profile(bornOn: FromToday(2)));
+        var early = await client.PutAsJsonAsync("/api/profile", Profile(diagnosedOn: "2008-01-01", bornOn: "2009-06-14"));
+
+        (await ProblemAsync(unborn)).ShouldBe("A birth date can't be after today.");
+        (await ProblemAsync(early)).ShouldBe("A diagnosis can't be before the birth date.");
+        (await ProfileOfAsync(client))["bornOn"].ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ADiagnosisAfterToday_IsRefused()
     {
         await using var server = await SugaryServer.StartAsync();
@@ -132,7 +149,7 @@ public class SugaryProfileApiTests
         var phone = await server.SignedInAsync();
         var other = await server.SignedInAsync();
         await phone.PutAsJsonAsync("/api/profile", Profile());
-        var opened = StaleSheet.Opened(await ProfileOfAsync(phone), "sex", "diabetesType", "diagnosedOn");
+        var opened = StaleSheet.Opened(await ProfileOfAsync(phone), "sex", "diabetesType", "diagnosedOn", "bornOn");
 
         (await phone.PutAsJsonAsync("/api/profile", StaleSheet.Changed(opened, "diagnosedOn", "2016-01-10")))
             .StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -267,7 +284,7 @@ public class SugaryProfileApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         var client = await server.SignedInAsync();
-        (await server.TableRowsAsync("/profile.parquet")).ShouldBe([[null, null, null]]);
+        (await server.TableRowsAsync("/profile.parquet")).ShouldBe([[null, null, null, null]]);
         await client.PutAsJsonAsync("/api/profile", Profile(diagnosedOn: null));
         await client.PostAsJsonAsync("/api/measurements", Measurement("height", "2026-09-01", 154));
         await client.PostAsJsonAsync("/api/measurements", Measurement("height", "2026-03-01", 151.5));
@@ -276,7 +293,7 @@ public class SugaryProfileApiTests
         await client.PostAsJsonAsync("/api/pens", new { kind = "rapid", insulin = "Fiasp", openedOn = "2026-09-01", days = 28 });
         await client.PostAsJsonAsync("/api/pens", new { kind = "rapid", insulin = "Lyumjev", openedOn = "2026-09-20", days = 28 });
 
-        (await server.TableRowsAsync("/profile.parquet")).ShouldBe([["female", "type1", null]]);
+        (await server.TableRowsAsync("/profile.parquet")).ShouldBe([["female", "type1", null, "2009-06-14"]]);
         (await server.TableRowsAsync("/heights.parquet")).ShouldBe([["2026-03-01", "151.5"], ["2026-09-01", "154.0"]]);
         (await server.TableRowsAsync("/weights.parquet")).ShouldBe([["2026-09-01", "41.2"]]);
         var pens = await server.QueryAsync(

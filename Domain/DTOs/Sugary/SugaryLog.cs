@@ -131,9 +131,9 @@ public enum BodyMeasure
 }
 
 // Who she is, each field null where she has not said: never a default standing in for her answer.
-public sealed record LoggedProfile(Sex? Sex, DiabetesType? DiabetesType, DateOnly? DiagnosedOn)
+public sealed record LoggedProfile(Sex? Sex, DiabetesType? DiabetesType, DateOnly? DiagnosedOn, DateOnly? BornOn)
 {
-    public static readonly LoggedProfile Unsaid = new(null, null, null);
+    public static readonly LoggedProfile Unsaid = new(null, null, null, null);
 }
 
 // A height (cm) or a weight (kg) she recorded on a day of her calendar.

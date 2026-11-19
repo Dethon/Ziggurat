@@ -36,7 +36,7 @@ public static class SugaryReadme
           - `day-notes.parquet` — one row per day they wrote a note about, oldest first.
           - `glucose/<YYYY-MM>.parquet` — one row per glucose reading measured that month, oldest first.
           - `sensors.parquet` — one row per glucose sensor they have worn.
-          - `profile.parquet` — one row: their sex, diabetes type and when it was diagnosed.
+          - `profile.parquet` — one row: their sex, diabetes type, when it was diagnosed and when they were born.
           - `heights.parquet`, `weights.parquet` — one row per height and per weight they recorded, oldest first.
           - `pens.parquet` — one row per insulin pen they opened, oldest first.
 
@@ -232,12 +232,14 @@ public static class SugaryReadme
           - `sex` — `female` or `male`.
           - `diabetes_type` — `type1`, `type2`, `lada`, `mody`, `gestational` or `other`.
           - `diagnosed_on` — the day it was diagnosed.
+          - `born_on` — the day they were born: their age now, at a meal or at a measurement, and how long they have
+            lived with diabetes, are worked out from it (`date_diff('year', born_on, current_date)`).
 
           ## heights.parquet and weights.parquet
 
           Their height and weight over time, each recorded by them on a day of the home's calendar, one of each
           a day at most. A child's height changes year to year: read the latest row for now, the history for
-          how they grew.
+          how they grew, and each row against their age that day (`born_on` in `profile`).
 
           - `date` — the day it was measured.
           - `height_cm` — the height in centimetres; `weight_kg` — the weight in kilograms.

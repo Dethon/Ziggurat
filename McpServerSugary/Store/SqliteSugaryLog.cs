@@ -93,7 +93,7 @@ public sealed class SqliteSugaryLog(SugaryStore store) : ISugaryLog
     {
         await using var db = store.For(owner);
         return await db.Profiles.AsNoTracking()
-            .Select(p => new LoggedProfile(p.Sex, p.DiabetesType, p.DiagnosedOn))
+            .Select(p => new LoggedProfile(p.Sex, p.DiabetesType, p.DiagnosedOn, p.BornOn))
             .FirstOrDefaultAsync(ct) ?? LoggedProfile.Unsaid;
     }
 
