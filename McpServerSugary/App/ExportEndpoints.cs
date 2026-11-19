@@ -27,6 +27,10 @@ public static class ExportEndpoints
         export.MapGet("/exercise.csv", ExerciseAsync);
         export.MapGet("/periods.csv", PeriodsAsync);
         export.MapGet("/day-notes.csv", DayNotesAsync);
+        export.MapGet("/profile.csv", ProfileAsync);
+        export.MapGet("/heights.csv", HeightsAsync);
+        export.MapGet("/weights.csv", WeightsAsync);
+        export.MapGet("/pens.csv", PensAsync);
     }
 
     // Named by the same pattern as the three the import reads, though the import does not read it.
@@ -75,6 +79,18 @@ public static class ExportEndpoints
 
     private static async Task<IResult> DayNotesAsync(ISugaryLog log, Person person, CancellationToken ct) =>
         File(SugaryTables.DayNotes(await log.DayNotesAsync(person.Account, ct)), "sugary-day-notes.csv");
+
+    private static async Task<IResult> ProfileAsync(ISugaryLog log, Person person, CancellationToken ct) =>
+        File(SugaryTables.Profile(await log.ProfileAsync(person.Account, ct)), "sugary-profile.csv");
+
+    private static async Task<IResult> HeightsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
+        File(SugaryTables.Heights(await log.MeasurementsAsync(person.Account, ct)), "sugary-heights.csv");
+
+    private static async Task<IResult> WeightsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
+        File(SugaryTables.Weights(await log.MeasurementsAsync(person.Account, ct)), "sugary-weights.csv");
+
+    private static async Task<IResult> PensAsync(ISugaryLog log, Person person, CancellationToken ct) =>
+        File(SugaryTables.Pens(await log.PensAsync(person.Account, ct)), "sugary-pens.csv");
 
     private static async Task<IResult> FoodsAsync(ISugaryLog log, Person person, CancellationToken ct) =>
         File(SugaryTables.Foods(await log.FoodsAsync(person.Account, ct)), SugaryImport.FoodsFile);
