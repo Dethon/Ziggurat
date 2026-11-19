@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayTaken, history, latest, measurementProblem, plotted, showsCycle } from "./profile";
+import { charted, dayTaken, history, latest, measurementProblem, plotted, showsCycle } from "./profile";
 import type { Measurement } from "./types";
 
 describe("the Cycle tab", () => {
@@ -69,6 +69,15 @@ describe("a kind's history", () => {
 });
 
 describe("the chart of a kind", () => {
+  it("is drawn from two entries on, since one point is a line of nothing and its row already says it", () => {
+    const one: Measurement = { id: "a", kind: "height", on: "2026-01-01", value: 120 };
+    const two: Measurement = { id: "b", kind: "height", on: "2026-06-01", value: 123 };
+
+    expect(charted([])).toBe(false);
+    expect(charted([one])).toBe(false);
+    expect(charted([two, one])).toBe(true);
+  });
+
   const frame = { width: 300, height: 100 };
 
   it("places the days by their distance in time, oldest at the left, and the values between a padded floor and ceiling", () => {

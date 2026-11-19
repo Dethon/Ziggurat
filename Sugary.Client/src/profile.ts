@@ -67,6 +67,11 @@ export function history(measurements: readonly Measurement[], kind: MeasurementK
   return measurements.filter((m) => m.kind === kind).toSorted((a, b) => b.on.localeCompare(a.on));
 }
 
+// A chart needs two entries to say anything: one is already the row's latest value.
+export function charted(history: readonly Measurement[]): boolean {
+  return history.length > 1;
+}
+
 export interface PlottedPoint {
   measurement: Measurement;
   x: number;

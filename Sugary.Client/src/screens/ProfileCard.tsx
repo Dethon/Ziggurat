@@ -7,7 +7,7 @@ import { localDay } from "../cycle";
 import { errorMessage } from "../errors";
 import { formatDays, formatUnits } from "../format";
 import { MeasurementChart } from "../components/MeasurementChart";
-import { DIABETES_TYPES, history, latest, MEASUREMENT_KINDS, SEXES, UNIT } from "../profile";
+import { charted, DIABETES_TYPES, history, latest, MEASUREMENT_KINDS, SEXES, UNIT } from "../profile";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
 import type { DiabetesType, Measurement, MeasurementKind, Profile } from "../types";
@@ -154,7 +154,7 @@ export function ProfileCard({ profile, onChange }: { profile: Profile; onChange:
                   </span>
                   <Icon name="plus" size={20} />
                 </button>
-                {past.length > 0 && (
+                {charted(past) && (
                   <MeasurementChart
                     kind={kind}
                     measurements={past}

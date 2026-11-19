@@ -148,7 +148,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   The app's **Cycle tab follows her sex: hidden only from a man who said so**, so somebody who never said — every
   person from before profiles — keeps it; her periods stay logged and on the mount either way. The app asks
   `/api/profile` beside `/api/session` before its first paint, and offline shows every tab. Settings draws each
-  kind's history as a chart whose points open that entry to correct or delete, with the same entries listed
+  kind's history, from two entries on, as a chart whose points open that entry to correct or delete, with the same entries listed
   under it; a day field saves when it is left, not per keystroke. All four tables download as CSV beside the rest.
 
 ## Turns, the mount and reminders
