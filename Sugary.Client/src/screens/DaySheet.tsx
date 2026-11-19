@@ -11,10 +11,12 @@ import type { Period, SavePeriod } from "../types";
 
 export const MAX_DAY_NOTE = 500;
 
-// Everything about one day: its note, and the period action that applies to it.
+// Everything about one day: its note, and the period action that applies to it. `readOnly` is a day
+// of somebody else's cycle: its note is read, and nothing is offered to change.
 export function DaySheet({
   day,
   note,
+  readOnly = false,
   periods,
   today,
   onClose,
@@ -24,6 +26,7 @@ export function DaySheet({
 }: {
   day: string;
   note: string;
+  readOnly?: boolean;
   periods: readonly Period[];
   today: string;
   onClose: () => void;
@@ -50,6 +53,17 @@ export function DaySheet({
       setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
+  }
+
+  if (readOnly) {
+    return (
+      <Sheet title={sentence(formatDay(dayDate(day), language))} onClose={onClose}>
+        <div className="sheet-form">
+          <p className="field-label">{t("dayNote")}</p>
+          <p className="day-note-read">{note.trim() || t("dayNoNote")}</p>
+        </div>
+      </Sheet>
+    );
   }
 
   return (

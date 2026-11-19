@@ -520,6 +520,17 @@ const en = {
   refusalOutOfCredit: "Your household's OpenRouter account is out of credit. An owner can add credit at openrouter.ai.",
   refusalWithoutKey: "Your household has no OpenRouter key yet. Ask an owner to add one.",
   refusalDisabled: "Your account in this household is disabled. Ask the household's owner.",
+  errorViewingReadOnly: "You're looking at somebody else's log, so nothing can be changed here.",
+  errorNotGranted: "You can't look at that person's log. An owner can let you on the Members page.",
+  errorSugaryNotYours: "Sugary isn't on for you. An owner of your household can turn it on on the Members page.",
+  // A reader an owner let read everyone's log picks whose she is looking at.
+  whoseLog: "Whose log",
+  personYou: "{name} (you)",
+  viewingReadOnly: "You're looking at {name}'s log. Nothing here can be changed.",
+  dayNoNote: "Nothing noted for this day.",
+  // Somebody Sugary is not on for, and who may look at nobody's log.
+  notOnTitle: "Sugary isn't on for you",
+  notOnBody: "An owner of your household can turn it on for you on the Members page. If you meant to sign in as somebody else, sign out from your account.",
   tryAgain: "Try again",
   close: "Close",
 
@@ -1158,6 +1169,15 @@ const es: Strings = {
   refusalOutOfCredit: "La cuenta de OpenRouter de tu hogar se ha quedado sin crédito. Quien lo administra puede añadirlo en openrouter.ai.",
   refusalWithoutKey: "Tu hogar todavía no tiene clave de OpenRouter. Pide a quien lo administra que añada una.",
   refusalDisabled: "Tu cuenta en este hogar está desactivada. Pregunta a quien administra el hogar.",
+  errorViewingReadOnly: "Estás viendo el registro de otra persona, así que aquí no se puede cambiar nada.",
+  errorNotGranted: "No puedes ver el registro de esa persona. Quien administra el hogar puede permitírtelo en la página de miembros.",
+  errorSugaryNotYours: "Sugary no está activado para ti. Quien administra tu hogar puede activártelo en la página de miembros.",
+  whoseLog: "Registro de",
+  personYou: "{name} (tú)",
+  viewingReadOnly: "Estás viendo el registro de {name}. Aquí no se puede cambiar nada.",
+  dayNoNote: "No hay nada anotado este día.",
+  notOnTitle: "Sugary no está activado para ti",
+  notOnBody: "Quien administra tu hogar puede activártelo en la página de miembros. Si querías entrar como otra persona, cierra la sesión desde tu cuenta.",
   tryAgain: "Reintentar",
   close: "Cerrar",
 

@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.DTOs.Tables;
 using Domain.Tools;
@@ -112,6 +113,11 @@ public sealed partial class SugaryFileSystem(
     private const string NotGranted =
         "This turn's person may read only their own Sugary log: other people's logs are under people/ only for "
         + "someone an owner of the household lets read everyone's Sugary log, on the household's members page.";
+
+    // What a reader Sugary is off for is answered for their own log: an owner never turned it on for them.
+    private const string OffForReader =
+        "Sugary is not on for this turn's person, so they have no Sugary log: an owner of the household turns it on "
+        + "for them on the household's members page.";
 
     // Another person's log as this reader may open it: their folder under people/, and their account,
     // always of the reader's own household.
@@ -230,7 +236,7 @@ public sealed partial class SugaryFileSystem(
             return Nobody<FsInfoResult>();
         }
 
-        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        if (!(await ResolveAsync(reader, path, ct, listing: true)).TryGetValue(out var target, out var refused))
         {
             return refused.ErrorCode == ToolError.Codes.NotFound
                 ? new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = false, Path = path })
@@ -261,14 +267,16 @@ public sealed partial class SugaryFileSystem(
             return new FsResult<FsGlobResult>.Err(invalidPattern);
         }
 
-        if (!(await ResolveAsync(reader, basePath, ct)).TryGetValue(out _, out var refused))
+        if (!(await ResolveAsync(reader, basePath, ct, listing: true)).TryGetValue(out _, out var refused))
         {
             return new FsResult<FsGlobResult>.Err(refused);
         }
 
         var (dirsOnly, matches) = scope;
         var zone = await ZoneAsync(ct);
-        var entries = (await NodesAsync(reader, zone, ct)).Select(node => (node.Path, node.IsDirectory)).ToList();
+        var entries = await UsesSugaryAsync(reader, ct)
+            ? (await NodesAsync(reader, zone, ct)).Select(node => (node.Path, node.IsDirectory)).ToList()
+            : [];
         if (await OthersAsync(reader, ct) is { } others)
         {
             entries.Add(("/" + SugaryPath.PeopleDirName, true));
@@ -323,12 +331,17 @@ public sealed partial class SugaryFileSystem(
     // Whose log a path is in, as this reader may open it: the reader's own outside people/; under it,
     // only for a reader granted everyone's, the person whose folder it names, or not found naming who
     // is there.
-    private async Task<FsResult<Target>> ResolveAsync(Account reader, string? path, CancellationToken ct)
+    // A reader with no log of their own (Sugary off, holding the grant) still lists the root, which holds
+    // people/ alone for them; nothing else of theirs answers.
+    private async Task<FsResult<Target>> ResolveAsync(Account reader, string? path, CancellationToken ct, bool listing = false)
     {
         var location = SugaryPath.Locate(path);
         if (location is { Person: null, IsPeople: false })
         {
-            return new FsResult<Target>.Ok(new Target(reader, SugaryPath.Parse(location.Rest)));
+            var node = SugaryPath.Parse(location.Rest);
+            return (listing && node.Kind == SugaryNodeKind.Root) || await UsesSugaryAsync(reader, ct)
+                ? new FsResult<Target>.Ok(new Target(reader, node))
+                : Fail<Target>(ToolError.Codes.PermissionDenied, OffForReader);
         }
 
         if (await OthersAsync(reader, ct) is not { } others)
@@ -353,21 +366,28 @@ public sealed partial class SugaryFileSystem(
     // everyone's log; null otherwise.
     private async Task<IReadOnlyList<OtherLog>?> OthersAsync(Account reader, CancellationToken ct)
     {
-        if (_household is not { } household || household.Id != reader.TenantId)
+        if (await PeopleAsync(reader, ct) is not { } people
+            || !people.Any(person => person.UserId == reader.UserId && person.ReadsEveryLog))
         {
             return null;
         }
 
-        var people = (await household.SugaryPeopleAsync(ct)).People;
-        if (!people.Any(person => person.UserId == reader.UserId && person.ReadsEveryLog))
-        {
-            return null;
-        }
-
-        return SugaryPath.FoldersOf(people, reader.UserId)
+        return SugaryPath.FoldersOf([.. people.Where(person => person.UsesSugary)], reader.UserId)
             .Select(other => new OtherLog(other.Folder, new Account(reader.TenantId, other.Person.UserId)))
             .ToList();
     }
+
+    // The people view of the reader's own household, as the call proved it; null for a call that proved
+    // none or another (a grant is never read across households).
+    private async Task<IReadOnlyList<SugaryPerson>?> PeopleAsync(Account reader, CancellationToken ct) =>
+        _household is { } household && household.Id == reader.TenantId
+            ? (await household.SugaryPeopleAsync(ct)).People
+            : null;
+
+    // Whether the reader has a log of their own: Sugary on for them, or a view that does not say
+    // otherwise (none proved, or not listing them, as for a stand-in with no people).
+    private async Task<bool> UsesSugaryAsync(Account reader, CancellationToken ct) =>
+        (await PeopleAsync(reader, ct))?.FirstOrDefault(person => person.UserId == reader.UserId)?.UsesSugary ?? true;
 
     private static string PrefixOf(OtherLog other) => $"/{SugaryPath.PeopleDirName}/{other.Folder}";
 

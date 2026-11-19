@@ -595,12 +595,12 @@ public sealed class SugaryWatchFileSystem(
                 $"{path} cannot be {verb}: the one writable file of a watch is /watchers/<id>/watch.json.",
                 "Create the watch's watch.json; to remove a watch, delete its directory.");
 
-    // The household's people as one reader names them: everyone else under the folder /sugary/people
-    // shows them by (SugaryPath.FoldersOf), the reader under none.
+    // The household's people as one reader names them: everyone else Sugary is on for, under the folder
+    // /sugary/people shows them by (SugaryPath.FoldersOf), the reader under none.
     private sealed class People(Account reader, IReadOnlyList<SugaryPerson> everyone)
     {
         private readonly IReadOnlyList<(string Folder, SugaryPerson Person)> _others =
-            SugaryPath.FoldersOf(everyone, reader.UserId);
+            SugaryPath.FoldersOf([.. everyone.Where(p => p.UsesSugary)], reader.UserId);
 
         public bool Granted { get; } = everyone.Any(p => p.UserId == reader.UserId && p.ReadsEveryLog);
 

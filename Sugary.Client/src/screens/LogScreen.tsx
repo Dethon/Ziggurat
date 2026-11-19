@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../api";
 import { formatGrams, fromLogged, isRange, shownTotal, toMealItem } from "../carbs";
 import { useConfirm } from "../components/Confirm";
@@ -70,8 +70,18 @@ export function OutcomeBadge({ meal }: { meal: Meal }) {
 }
 
 // `estimates` and `labels` say whether the server estimates a meal and reads a label yet, as on the
-// meal screen.
-export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean; labels: boolean; onChanged: () => void }) {
+// meal screen. `readOnly` is somebody else's log: read, with nothing to record, change or open to change.
+export function LogScreen({
+  estimates,
+  labels,
+  readOnly = false,
+  onChanged,
+}: {
+  estimates: boolean;
+  labels: boolean;
+  readOnly?: boolean;
+  onChanged: () => void;
+}) {
   const { t, language, rationSize } = useSettings();
   const toast = useToast();
   const [meals, setMeals] = useState<Meal[] | null>(null);
@@ -291,7 +301,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
       <div className="panes panes-log">
         <div className="pane pane-side">
           {/* The session going now, above all else, until she stops it. */}
-          {meals !== null && current && (
+          {meals !== null && current && !readOnly && (
             <RunningCard
               session={current}
               now={now}
@@ -300,7 +310,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
             />
           )}
 
-          {meals !== null && (
+          {meals !== null && !readOnly && (
             <section className="record" aria-labelledby="record-title">
               <h2 id="record-title">{t("recordTitle")}</h2>
               {current ? (
@@ -355,7 +365,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
             </label>
           )}
 
-          {pending.length > 0 && (
+          {pending.length > 0 && !readOnly && (
             <section className="pending" aria-labelledby="pending-title">
               <div>
                 <h2 id="pending-title" className="section-title">
@@ -437,7 +447,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
                         <ExerciseRow
                           session={entry.session}
                           now={now}
-                          onOpen={() => setExerciseSheet({ mode: "edit", session: entry.session })}
+                          onOpen={readOnly ? undefined : () => setExerciseSheet({ mode: "edit", session: entry.session })}
                         />
                       </li>
                     );
@@ -446,7 +456,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
                     // Under the meal it was taken for, drawn smaller and joined to it, as part of that meal.
                     return (
                       <li key={entry.id} className={attached.has(entry.id) ? "dose-attached" : undefined}>
-                        <DoseRow dose={entry.dose} onOpen={() => setDoseSheet(entry.dose)} />
+                        <DoseRow dose={entry.dose} onOpen={readOnly ? undefined : () => setDoseSheet(entry.dose)} />
                       </li>
                     );
                   }
@@ -454,7 +464,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
                   const carbs = shownTotal(meal.items);
                   return (
                     <li key={meal.id}>
-                      <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpenId(meal.id)}>
+                      <Row className="meal-row" onOpen={readOnly ? undefined : () => setOpenId(meal.id)}>
                         <MealThumb meal={meal} />
                         <span className="item-text">
                           <span className="item-name">{mealNames(meal)}</span>
@@ -468,7 +478,7 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
                           <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
                           <span className="item-best">{rationCount(carbs.best, rationSize, language, t)}</span>
                         </span>
-                      </button>
+                      </Row>
                     </li>
                   );
                 })}
@@ -549,11 +559,23 @@ function MealInsulin({ meal }: { meal: Meal }) {
   );
 }
 
+// A row of the day opens its sheet, or, in somebody else's log, is only read: drawn the same, but
+// nothing to press.
+function Row({ className, onOpen, children }: { className: string; onOpen?: () => void; children: ReactNode }) {
+  return onOpen ? (
+    <button type="button" className={className} aria-haspopup="dialog" onClick={onOpen}>
+      {children}
+    </button>
+  ) : (
+    <div className={`${className} row-static`}>{children}</div>
+  );
+}
+
 // Rapid and basal are told apart three ways: the word, a bolt or a clock, and the mark's tint.
-function DoseRow({ dose, onOpen }: { dose: Dose; onOpen: () => void }) {
+function DoseRow({ dose, onOpen }: { dose: Dose; onOpen?: () => void }) {
   const { t, language } = useSettings();
   return (
-    <button type="button" className={`meal-row dose-row dose-${dose.kind}`} aria-haspopup="dialog" onClick={onOpen}>
+    <Row className={`meal-row dose-row dose-${dose.kind}`} onOpen={onOpen}>
       <span className={`meal-thumb dose-mark dose-mark-${dose.kind}`}>
         <Icon name={DOSE_ICON[dose.kind]} />
       </span>
@@ -565,7 +587,7 @@ function DoseRow({ dose, onOpen }: { dose: Dose; onOpen: () => void }) {
           {dose.note && <span className="dose-note">{dose.note}</span>}
         </span>
       </span>
-    </button>
+    </Row>
   );
 }
 
@@ -608,11 +630,11 @@ function RunningCard({ session, now, onStop, onOpen }: { session: Exercise; now:
 
 // A session in the day: its kind or name, when it started and ended, and how long, or that it is
 // still going.
-function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; onOpen: () => void }) {
+function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; onOpen?: () => void }) {
   const { t, language } = useSettings();
   const minutes = sessionMinutes(session);
   return (
-    <button type="button" className="meal-row exercise-row" aria-haspopup="dialog" onClick={onOpen}>
+    <Row className="meal-row exercise-row" onOpen={onOpen}>
       <span className="meal-thumb exercise-mark">
         <Icon name={EXERCISE_ICON[session.kind]} />
       </span>
@@ -632,7 +654,7 @@ function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; o
         <span className="item-grams">{duration(minutes ?? elapsedMinutes(session, now), t)}</span>
         {minutes === null && <span className="item-best">{t("exerciseRunning")}</span>}
       </span>
-    </button>
+    </Row>
   );
 }
 

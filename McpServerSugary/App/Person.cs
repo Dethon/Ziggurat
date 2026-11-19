@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.Security;
 using McpServerSugary.Channel;
 using Microsoft.AspNetCore.Http;
@@ -17,6 +18,19 @@ namespace McpServerSugary.App;
 // to the agent, which believes it and not this server (the agent checks it again as the turn arrives).
 public sealed record Person(Account Account, string Assertion)
 {
+    // Whose log the request reads: their own, or — for a holder of everyone's log naming somebody
+    // Sugary is on for, on a read — that person's (SugaryAccess). Built from the signed-in person's
+    // household and the people view's id, never from the request's words.
+    public Account Log { get; init; } = Account;
+
+    public bool Viewing => Log != Account;
+
+    // Whether an owner turned Sugary on for them, and the people they may read besides themselves
+    // (everyone Sugary is on for, themselves among them when it is on for them; none without the grant).
+    public bool UsesSugary { get; init; } = true;
+
+    public IReadOnlyList<SugaryPerson> Readable { get; init; } = [];
+
     // The signed-in session the assertion was signed for, where it names one: a phone it subscribes hears
     // nothing once that session ends.
     public string? SessionId { get; init; }
@@ -28,6 +42,9 @@ public sealed record Person(Account Account, string Assertion)
     // The person the gate in front of /api verified for this request.
     public static Person? Of(HttpContext http) =>
         http.Items.TryGetValue(_item, out var person) ? person as Person : null;
+
+    // Kept for the rest of the request once SugaryAccess decided whose log it reads.
+    internal static void Admitted(HttpContext http, Person person) => http.Items[_item] = person;
 
     // The assertion is kept as well as believed: the channel hands it on with every turn it starts.
     internal static async Task<Person?> SignedInAsync(HttpContext http, CancellationToken ct)

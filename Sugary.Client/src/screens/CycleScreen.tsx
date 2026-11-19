@@ -19,7 +19,8 @@ const LONG_PERIOD_DAY = 10;
 
 type Opened = { period?: Period; initial: SavePeriod };
 
-export function CycleScreen() {
+// `readOnly` is somebody else's cycle: her days, forecast and notes are read, never recorded or changed.
+export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const { t, language } = useSettings();
   const toast = useToast();
   const [periods, setPeriods] = useState<Period[] | null>(null);
@@ -135,7 +136,7 @@ export function CycleScreen() {
                   </div>
                 </div>
               )}
-              {status.kind === "period" && status.period.end === null ? (
+              {readOnly ? null : status.kind === "period" && status.period.end === null ? (
                 <div className="cycle-actions">
                   <button
                     type="button"
@@ -217,14 +218,9 @@ export function CycleScreen() {
                 {t("pastPeriods")}
               </h2>
               <ul className="rows">
-                {history(all).map(({ period, days, cycleDays }) => (
-                  <li key={period.id}>
-                    <button
-                      type="button"
-                      className="row-link period-row"
-                      aria-haspopup="dialog"
-                      onClick={() => setSheet({ period, initial: { start: period.start, end: period.end } })}
-                    >
+                {history(all).map(({ period, days, cycleDays }) => {
+                  const said = (
+                    <>
                       <Icon name="drop" />
                       <span className="period-row-text">
                         <span className="item-name">
@@ -237,10 +233,26 @@ export function CycleScreen() {
                           {cycleDays !== null && ` · ${t("cycleDays", { n: cycleDays })}`}
                         </span>
                       </span>
-                      <Icon name="chevronRight" size={20} />
-                    </button>
-                  </li>
-                ))}
+                    </>
+                  );
+                  return (
+                    <li key={period.id}>
+                      {readOnly ? (
+                        <div className="row-link period-row row-static">{said}</div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="row-link period-row"
+                          aria-haspopup="dialog"
+                          onClick={() => setSheet({ period, initial: { start: period.start, end: period.end } })}
+                        >
+                          {said}
+                          <Icon name="chevronRight" size={20} />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </section>
           )}
@@ -250,6 +262,7 @@ export function CycleScreen() {
       {openDay && (
         <DaySheet
           day={openDay}
+          readOnly={readOnly}
           note={notes.find((note) => note.day === openDay)?.text ?? ""}
           periods={all}
           today={today}
