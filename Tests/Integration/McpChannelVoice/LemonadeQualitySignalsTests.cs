@@ -1,6 +1,7 @@
 using Domain.DTOs.Voice;
 using Infrastructure.Clients.Transcription;
 using McpChannelVoice.Services.Stt;
+using McpChannelVoice.Services.Tse;
 using McpChannelVoice.Services.Tts;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -76,5 +77,43 @@ public class LemonadeQualitySignalsTests(LemonadeFixture fixture, ITestOutputHel
         var defaults = new OpenAiSttConfig();
         result.AvgLogProb!.Value.ShouldBeGreaterThan(defaults.AvgLogProbThreshold);
         result.NoSpeechProb!.Value.ShouldBeLessThan(defaults.NoSpeechProbThreshold);
+    }
+
+    // The entrypoint starts whisper-server with --no-language-probabilities; this is the proof that
+    // lemond accepts the flag and the server boots with it, which the config test cannot give. A
+    // rejected custom argument would take STT down for voice, dictation and the typist at once.
+    [SkippableFact]
+    public async Task Transcriptions_RealLemonade_SkipTheLanguageProbabilitiesPass()
+    {
+        Skip.If(fixture.SkipReason is not null, fixture.SkipReason);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        var factory = new PassthroughFactory();
+        var tts = new OpenAiTextToSpeech(
+            factory,
+            new OpenAiTtsConfig { BaseUrl = fixture.BaseUrl },
+            NullLogger<OpenAiTextToSpeech>.Instance);
+        var chunks = new List<AudioChunk>();
+        await foreach (var chunk in tts.SynthesizeAsync("hola, ¿qué hora es?", new SynthesisOptions(), cts.Token))
+        {
+            chunks.Add(chunk);
+        }
+
+        using var http = factory.CreateClient("lemonade");
+        using var content = new MultipartFormDataContent
+        {
+            { new ByteArrayContent(WavCodec.Encode(chunks)), "file", "clip.wav" },
+            { new StringContent(LemonadeFixture.SttModel), "model" },
+            { new StringContent("es"), "language" },
+            { new StringContent("verbose_json"), "response_format" }
+        };
+        using var response = await http.PostAsync(
+            $"{fixture.BaseUrl.TrimEnd('/')}/audio/transcriptions", content, cts.Token);
+        response.EnsureSuccessStatusCode();
+        var body = System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync(cts.Token))!;
+        output.WriteLine(body.ToJsonString()[..Math.Min(400, body.ToJsonString().Length)]);
+
+        body["language_probabilities"].ShouldBeNull();
+        body["segments"]![0]!["avg_logprob"].ShouldNotBeNull();
+        body["segments"]![0]!["no_speech_prob"].ShouldNotBeNull();
     }
 }
