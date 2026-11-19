@@ -15,9 +15,10 @@ public sealed class Microphone(string satelliteId, SilenceGateFactory gates)
 {
     private UtteranceCapture? _capture;
 
-    public UtteranceCapture Open(SilenceGate gate, ChunkHistory? history = null)
+    public UtteranceCapture Open(
+        SilenceGate gate, ChunkHistory? history = null, ICapturePauseListener? pauses = null)
     {
-        var capture = new UtteranceCapture(gate, history);
+        var capture = new UtteranceCapture(gate, history, pauses);
         Volatile.Write(ref _capture, capture);
         return capture;
     }

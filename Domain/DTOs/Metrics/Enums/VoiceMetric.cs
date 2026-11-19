@@ -48,5 +48,10 @@ public enum VoiceMetric
     // Multi-satellite wake arbitration: a co-heard wake that lost (Outcome carries why), and a
     // mid-conversation handoff where the conversation binding moved to the winning satellite.
     WakeSuppressed = 29,
-    WakeHandoff = 30
+    WakeHandoff = 30,
+    // A decode started during a speech pause, before the gate ended the capture (Stt.SpeculateAfterMs).
+    // DurationMs is the decode's own time; Outcome says whether the turn used it or speech resumed
+    // and it was thrown away. Not part of the tiling above: a used one overlaps the endpoint tail,
+    // and SttLatencyMs is then only what was still left to wait for once the capture closed.
+    SpeculativeSttMs = 31
 }

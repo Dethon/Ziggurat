@@ -26,8 +26,9 @@ internal class ReplyDispatcher(ILogger logger)
         IReadOnlyList<string> together = [];
         foreach (var mapped in MapResponseUpdate(update))
         {
-            var receipts = await Task.WhenAll(turn.Targets.Select(target =>
-                DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
+            var receipts = await Task.WhenAll(turn.Targets
+                .Where(target => mapped.ContentType != ReplyContentType.Reasoning || target.Channel.ShowsReasoning)
+                .Select(target => DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
             deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && receipts.Any(r => r is not null);
             returned.AddRange(receipts.SelectMany(r => r?.ReturnedTurnKeys ?? []));
             together = receipts.Select(r => r?.SteeredTogether).FirstOrDefault(keys => keys is { Count: > 0 }) ?? together;

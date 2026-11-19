@@ -205,6 +205,7 @@ public static class InjectorModule
             TypeSafeOptions typeSafe, SkillPreloadSettings skillPreload, ExecScreenSettings execScreen) =>
             services
                 .AddTypeSafeJudge(typeSafe, keepConnectionAlive: false)
+                .AddSingleton<ISkillsOffered, Infrastructure.Agents.Skills.SkillsOfferedMemory>()
                 .AddSingleton<ISkillPreloader>(sp => new SkillPreloader(
                     sp.GetRequiredService<IJudge>(),
                     skillPreload,
@@ -332,6 +333,7 @@ public static class InjectorModule
                 callTokens: sp.GetRequiredService<CallTokens>())
             {
                 HostsReviewCopies = endpoint.HostsReviewCopies,
+                ShowsReasoning = endpoint.ShowsReasoning,
                 Household = household,
                 HouseholdLemonadeModels = household.IsEvery ? () => HouseholdLemonadeModels(sp) : null
             };

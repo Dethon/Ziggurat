@@ -80,6 +80,7 @@ internal sealed class TunnelledAgent : IAsyncDisposable
                     callTokens: McpTestSecret.CallTokens)
                 {
                     HostsReviewCopies = endpoint.HostsReviewCopies,
+                    ShowsReasoning = endpoint.ShowsReasoning,
                     Household = household
                 };
                 connections.Add(connection);

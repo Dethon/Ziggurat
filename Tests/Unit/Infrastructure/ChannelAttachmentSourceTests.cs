@@ -97,6 +97,7 @@ public class ChannelAttachmentSourceTests
         public bool AttachOnly => false;
 
         public bool HostsReviewCopies => false;
+        public bool ShowsReasoning => true;
 
         public bool IsConnected => true;
 

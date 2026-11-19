@@ -213,6 +213,31 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         whisperArgs.ShouldContain("--prompt \"Asistente de voz");
     }
 
+    // Every caller asks for verbose_json for its avg_logprob, and whisper-server answers it with a
+    // second encoder pass for language_probabilities that nothing reads — 0.55 s of a 1.2 s decode
+    // on prod's iGPU. Lemonade forwards no per-request field to turn it off, so it is off for the
+    // server whatever else a boot sets, VAD or none.
+    [SkippableFact]
+    public void Entrypoint_AnyKnobs_TurnsOffTheLanguageProbabilitiesPass()
+    {
+        SeedVadModel();
+        var defaults = WhisperArgs(RunEntrypoint(("STT_BACKEND", "cpu")));
+        var everyKnobEmpty = WhisperArgs(RunEntrypoint(
+            ("STT_BACKEND", "cpu"),
+            ("STT_BEAM_SIZE", ""),
+            ("STT_BEST_OF", ""),
+            ("STT_SUPPRESS_NST", ""),
+            ("STT_VAD_THRESHOLD", ""),
+            ("STT_INITIAL_PROMPT", "")));
+
+        defaults.ShouldContain("--no-language-probabilities");
+        everyKnobEmpty.ShouldContain("--no-language-probabilities");
+    }
+
+    [SkippableFact]
+    public void Entrypoint_VadModelUnavailable_StillTurnsOffTheLanguageProbabilitiesPass() =>
+        WhisperArgs(RunEntrypoint(("STT_BACKEND", "cpu"))).ShouldContain("--no-language-probabilities");
+
     // The embeddings are llama.cpp's, which Lemonade runs on whichever backend it picks unless told.
     // A host with an NVIDIA GPU and no Vulkan device (WSL) picks the CPU, where memory's embeddings
     // timed out under a few turns at once; LLAMACPP_BACKEND puts them on CUDA, and unset leaves

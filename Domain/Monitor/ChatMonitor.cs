@@ -43,7 +43,10 @@ public class ChatMonitor(
     // Whether the household still lets the agent act for the person a turn's assertion or a fire's
     // delegation names: an owner may have disabled them since either was signed. Optional as the
     // verifier is, for a harness with no households; the agent's own host registers it.
-    IAccountStanding? standing = null)
+    IAccountStanding? standing = null,
+    // What each agent's sessions last offered, so a group's first turn judges its preload while its
+    // warmup dials rather than after. Optional: with none, every first turn waits for its warmup.
+    ISkillsOffered? skillsOffered = null)
 {
     // A person's turn whose assertion was not believed, on the errors feed beside the servers'
     // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
@@ -184,7 +187,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, assertions, delegations, standing, agentDefinitions, logger);
+            skillPreloader, assertions, delegations, standing, agentDefinitions, logger, skillsOffered);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

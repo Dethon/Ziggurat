@@ -18,7 +18,10 @@ public sealed class CaptureSession(
     // Called as a wake turn opens, with what the satellite reported about the wake. There is no
     // follow-up counterpart on purpose: a follow-up has no wake of its own, and this hook is where
     // the wake metric is published.
-    Action<WakeAnnouncement?> onWakeTurn)
+    Action<WakeAnnouncement?> onWakeTurn,
+    // Hears every turn capture's pauses, wake and follow-up alike, so a decode can start before the
+    // gate ends the capture. The approval microphone does not come through here and has none.
+    ICapturePauseListener? pauses = null)
 {
     // The playback anchors, which the queue carries but does not expose: holding ITurnAnchor is
     // what says this type's captures are turns, and the microphone the approval prompt holds has
@@ -57,7 +60,8 @@ public sealed class CaptureSession(
             gates.Create(session.SatelliteId, session.Config),
             // Rule B asks an already-open capture, retrospectively, what it heard during another
             // satellite's wake-word span — so every capture has to remember.
-            new ChunkHistory(time, historySpan));
+            new ChunkHistory(time, historySpan),
+            pauses);
 
     // Returns the gate statistics frozen at this instant. The endpointing tail is what anchors
     // speech end and it must not be re-read later: Feed keeps accepting frames until the satellite
@@ -67,6 +71,12 @@ public sealed class CaptureSession(
         // Closing and paying back into the room-noise memory are one act on the microphone, so a
         // turn cannot close without paying.
         var stats = session.Mic.Close(capture);
+        // Only an utterance that ended goes on to be transcribed and claim its pause's decode.
+        if (capture.Pause is { } pause
+            && capture.Completed is not { IsCompletedSuccessfully: true, Result: CaptureOutcome.Ended })
+        {
+            pauses?.Dropped(pause);
+        }
         // Stamped with the host's TimeProvider — the same instance the playback loop reads,
         // which reads it back. The frozen endpointing tail rewinds the close to the instant the user
         // actually stopped talking; read here, at the close, because it is the last point where the

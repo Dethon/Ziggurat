@@ -139,4 +139,7 @@ public record ChannelEndpoint
     // The review host: a channel that shows another channel's conversation when the message asks
     // for a review copy (ADR 0046). One per deployment; with none, a review copy is simply not made.
     public bool HostsReviewCopies { get; init; }
+
+    // False for a channel that never shows the model's reasoning (voice), so none is sent to it.
+    public bool ShowsReasoning { get; init; } = true;
 }

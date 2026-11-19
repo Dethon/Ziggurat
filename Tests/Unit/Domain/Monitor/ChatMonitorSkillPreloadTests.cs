@@ -80,6 +80,61 @@ public class ChatMonitorSkillPreloadTests
         preload.Skills.Select(s => s.Name).ShouldBe([_home.Name]);
     }
 
+    // Most voice turns open a conversation of their own, so the wait above was on nearly every one.
+    // The skills a group's warmup will find are the ones the same agent's last session found, so a
+    // later group judges over those while its own warmup is still dialling.
+    [Fact]
+    public async Task ALaterGroupOfTheSameAgent_AsksTheJudgeWhileItsWarmupIsStillDialling()
+    {
+        var secondWarmup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var warmups = 0;
+        var agent = new FakeAiAgent
+        {
+            WarmupGate = () => Interlocked.Increment(ref warmups) == 1 ? Task.CompletedTask : secondWarmup.Task
+        };
+        agent.Skills = [_home];
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "enciende la luz"));
+        var monitor = Monitor(agent, channel, recall: null, new SkillPreloader(judge, _settings, TimeProvider.System));
+
+        var run = monitor.Monitor(CancellationToken.None);
+        await Eventually.Until(() => agent.ReceivedMessages.Count == 1, "the first group's turn ran");
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", content: "apaga la luz"));
+        await Eventually.Until(() => judge.Asked.Count == 2, "the second group asks before its warmup ends");
+        secondWarmup.SetResult();
+        channel.Complete();
+        await run;
+
+        var preload = await SkillPreloadPending.TryTake(agent.ReceivedMessages.ToArray()[^1].Single()).ShouldNotBeNull();
+        preload.Outcome.ShouldBe(SkillPreloadOutcome.Preloaded);
+        preload.Skills.Select(s => s.Name).ShouldBe([_home.Name]);
+    }
+
+    // The servers a household reaches can change between two groups. A skill judged over the last
+    // session's list that this session does not offer is not preloaded into it.
+    [Fact]
+    public async Task ASkillTheNewSessionDoesNotOffer_IsNotPreloaded()
+    {
+        var agent = new FakeAiAgent();
+        agent.Skills = [_home];
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var channel = new FakeChannelConnection();
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(conversationId: "conv-1", content: "enciende la luz"));
+        var monitor = Monitor(agent, channel, recall: null, new SkillPreloader(judge, _settings, TimeProvider.System));
+
+        var run = monitor.Monitor(CancellationToken.None);
+        await Eventually.Until(() => agent.ReceivedMessages.Count == 1, "the first group's turn ran");
+        agent.Skills = [];
+        channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(conversationId: "conv-2", content: "apaga la luz"));
+        channel.Complete();
+        await run;
+
+        var preload = await SkillPreloadPending.TryTake(agent.ReceivedMessages.ToArray()[^1].Single()).ShouldNotBeNull();
+        preload.Skills.ShouldBeEmpty();
+        preload.Reads.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task AJudgmentStillPendingWhenItsDeadlinePasses_RidesAsNoPreload()
     {
@@ -314,7 +369,8 @@ public class ChatMonitorSkillPreloadTests
             recall,
             Mock.Of<ILogger<ChatMonitor>>(),
             TestAssertions.Verifier(),
-            skillPreloader: preloader);
+            skillPreloader: preloader,
+            skillsOffered: new global::Infrastructure.Agents.Skills.SkillsOfferedMemory());
 
     private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
 

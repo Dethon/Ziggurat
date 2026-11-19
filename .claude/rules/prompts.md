@@ -119,6 +119,11 @@ the parent's, written onto its request by the run tool from the `ConversationCon
   turn it never took, and every provider made something different of one; why in `SkillPreloadNote`). Not a `developer`/`system` item (OpenRouter
   hoists it, moving the cached prefix). Earlier builds' stored pairs are sent as the same note, never
   migrated. The wording was measured as written: changing it is a new measurement on every model.
+- **A group's first turn judges over the skills its agent last offered** (`ISkillsOffered`, Infrastructure's `SkillsOfferedMemory`, per agent
+  and household, shared by the monitor's groups), so the judgment overlaps the warmup that dials the
+  skills' servers instead of following it; the result keeps only the skills — and this session's copy of
+  each — that the warmed session offers (`ConversationGroup.PreloadAsync`). With nothing remembered
+  (the agent's first group since start) it waits for the warmup, as a later turn never needs to.
 - **A preload makes the reads the body's first line orders** (`SkillDeclaration.PreloadReads`; the home
   skill's setup index), through the session's own `file_read`, recorded beside the load and sent in the
   same note, so the model's first call is the action. A failed read is left out (the body says to read).

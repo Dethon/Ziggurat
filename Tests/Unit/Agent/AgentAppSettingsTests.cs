@@ -203,6 +203,22 @@ public class AgentAppSettingsTests
         settings.LemonadeChat.ApiKey.ShouldBe("secret");
     }
 
+    // A channel is sent the model's reasoning unless its endpoint says it shows none: a channel
+    // nobody declared keeps what every channel had before the key existed.
+    [Fact]
+    public void Bind_ShowsReasoning_IsOnUnlessAnEndpointSaysOtherwise()
+    {
+        var settings = BindSettings(
+            ("channelEndpoints:0:channelId", "voice"),
+            ("channelEndpoints:0:endpoint", "voice"),
+            ("channelEndpoints:0:showsReasoning", "false"),
+            ("channelEndpoints:1:channelId", "signalr"),
+            ("channelEndpoints:1:endpoint", "http://mcp-channel-signalr:8080/mcp"));
+
+        settings.ChannelEndpoints.Select(e => (e.ChannelId, e.ShowsReasoning))
+            .ShouldBe([("voice", false), ("signalr", true)]);
+    }
+
     [Fact]
     public void Bind_LemonadeChatOmitted_MeansTheFeatureIsOff()
     {

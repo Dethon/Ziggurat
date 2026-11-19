@@ -71,9 +71,13 @@ esac
 CONFIG_DIR="${LEMONADE_CONFIG_DIR:-$HOME/.cache/lemonade}"
 mkdir -p "$CONFIG_DIR"
 
-WHISPER_ARGS=""
+# Unconditional: every caller asks for verbose_json for its avg_logprob, and whisper-server answers
+# that with a second encoder pass for language_probabilities, which nothing reads — 0.55 s of a
+# 1.2 s decode on ai370's iGPU, whatever language the request names (the decode itself still
+# auto-detects when told "auto"). Lemonade forwards no per-request field to turn it off.
+WHISPER_ARGS="--no-language-probabilities"
 if [ -n "$BEAM_SIZE" ]; then
-  WHISPER_ARGS="--beam-size $BEAM_SIZE"
+  WHISPER_ARGS="$WHISPER_ARGS --beam-size $BEAM_SIZE"
 fi
 if [ -n "$BEST_OF" ]; then
   WHISPER_ARGS="$WHISPER_ARGS --best-of $BEST_OF"

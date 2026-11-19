@@ -208,4 +208,50 @@ public class UtteranceCaptureTests
             Timestamp = TimeSpan.Zero
         };
     }
+
+    private sealed class PauseLog(TimeSpan after) : ICapturePauseListener
+    {
+        public readonly List<string> Calls = [];
+        public TimeSpan PauseAfter => after;
+        public void Paused(CapturePause pause) => Calls.Add($"paused:{pause.Audio.Count}");
+        public void Resumed(CapturePause pause) => Calls.Add("resumed");
+        public void Dropped(CapturePause pause) => Calls.Add("dropped");
+    }
+
+    [Fact]
+    public void Feed_BlipShorterThanMinSpeech_IsNoPauseToDecode()
+    {
+        // 100 ms of speech is not more than the gate's 100 ms minimum, so no silence after it can end
+        // the turn — a decode started there could never be the turn's.
+        var log = new PauseLog(TimeSpan.FromMilliseconds(100));
+        var capture = new UtteranceCapture(Gate(), pauses: log);
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Silent());
+        capture.Feed(Silent());
+
+        log.Calls.ShouldBeEmpty();
+        capture.Pause.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Feed_EndsOnThePauseItReported_AndLaterFramesDoNotMoveIt()
+    {
+        var log = new PauseLog(TimeSpan.FromMilliseconds(100));
+        var capture = new UtteranceCapture(Gate(), pauses: log);
+
+        capture.Feed(Silent());
+        capture.Feed(Loud());
+        capture.Feed(Loud());
+        capture.Feed(Silent()); // 100 ms into the pause: reported with the 4 chunks so far
+        capture.Feed(Silent()); // 200 ms: the gate ends the utterance on the same pause
+        var endedOn = capture.Pause;
+        capture.Feed(Loud());   // the satellite streams on until told; the end does not move
+
+        (await capture.Completed).ShouldBe(CaptureOutcome.Ended);
+        log.Calls.ShouldBe(["paused:4"]);
+        endedOn.ShouldNotBeNull();
+        capture.Pause.ShouldBeSameAs(endedOn);
+    }
 }

@@ -5,6 +5,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using McpChannelVoice.Services.Stt;
+using McpChannelVoice.Services.Tse;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
@@ -181,6 +182,7 @@ public sealed class WyomingSatelliteHost(
     private FollowUpConversation BuildCoordinator(
         SatelliteSession session, Func<WyomingEvent, CancellationToken, Task> writer, FollowUpSettings followUp)
     {
+        var speculation = Speculation(session);
         var capture = new CaptureSession(
             session, gates, time, voiceSettings.Arbitration.HistorySpan,
             // Reached only by a wake turn, carrying what the satellite reported about the wake that
@@ -188,14 +190,15 @@ public sealed class WyomingSatelliteHost(
             // measured.
             onWakeTurn: announcement => PublishVoiceMetric(
                 VoiceMetric.WakeTriggered, session,
-                wakeRms: announcement?.Rms, wakeScore: announcement?.Score));
+                wakeRms: announcement?.Rms, wakeScore: announcement?.Score),
+            pauses: speculation);
 
         return new FollowUpConversation(followUp, time)
         {
             Capture = capture,
             Turn = session.Turn,
             TranscribeAndDispatch = (utterance, isFollowUp, token) =>
-                TranscribeAndDispatchAsync(session, utterance, isFollowUp, token),
+                TranscribeAndDispatchAsync(session, utterance, isFollowUp, speculation, token),
             EnqueueChime = token => EnqueueChimeAsync(session, token),
             EndConversation = token => writer(
                 WyomingEvent.Header("transcript", new JsonObject { ["text"] = string.Empty }), token),
@@ -220,6 +223,23 @@ public sealed class WyomingSatelliteHost(
             EarlyReject = (utterance, token) => EarlyRejectAsync(session, utterance, token)
         };
     }
+
+    // The decode runs before the speaker check, so it never goes through TSE: it is the raw chain
+    // under that stage, and a turn TSE would extract from does not take it (TranscribeAsync).
+    private SpeculativeTranscription? Speculation(SatelliteSession session) =>
+        voiceSettings.Stt.SpeculateAfterMs <= 0
+            ? null
+            : new SpeculativeTranscription(
+                speechToText is TseSpeechToText tse ? tse.Inner : speechToText,
+                TimeSpan.FromMilliseconds(voiceSettings.Stt.SpeculateAfterMs),
+                stats => TranscriptionOptionsFactory.Create(session.SatelliteId, session.Config, null, stats),
+                (outcome, durationMs) => metrics.Publish(new VoiceEvent
+                {
+                    Metric = VoiceMetric.SpeculativeSttMs,
+                    Outcome = outcome,
+                    DurationMs = durationMs,
+                    ConversationId = conversationManager.GetActiveConversationId(session.SatelliteId)
+                }.About(session)));
 
     // Early-close speaker check: verify the audio captured so far and, if it is an unknown voice
     // (e.g. background TV that latched as speech), reject it now so the loop closes the capture
@@ -296,8 +316,12 @@ public sealed class WyomingSatelliteHost(
     // transcripts and STT errors return false so the conversation ends and wake re-arms, rather
     // than the loop blocking forever on a reply handshake the agent will never complete.
     private async Task<bool> TranscribeAndDispatchAsync(
-        SatelliteSession session, UtteranceCapture capture, bool isFollowUp, CancellationToken ct)
+        SatelliteSession session, UtteranceCapture capture, bool isFollowUp,
+        SpeculativeTranscription? speculation, CancellationToken ct)
     {
+        // Claimed before anything can return early, so a capture that is rejected or fails never
+        // leaves its decode running into the next turn; Discard is a no-op once the turn used it.
+        var speculative = speculation?.Claim(capture.Pause);
         try
         {
             // The endpointing tail is audio-domain time (derived from PCM frame durations), so it is
@@ -359,7 +383,7 @@ public sealed class WyomingSatelliteHost(
             // the TSE hints (target speaker, noise floor) from the speaker gate's verdict.
             var options = TranscriptionOptionsFactory.Create(
                 session.SatelliteId, session.Config, verification, capture.Stats);
-            var result = await speechToText.TranscribeAsync(capture.Audio, options, ct);
+            var result = await TranscribeAsync(capture, options, speculative, ct);
             sw.Stop();
 
             metrics.Publish(new VoiceEvent
@@ -408,6 +432,31 @@ public sealed class WyomingSatelliteHost(
             }.About(session));
             return false;
         }
+        finally
+        {
+            speculative?.Discard();
+        }
+    }
+
+    // The decode started at the pause the capture ended on, when it can stand in for the chain's:
+    // TSE would have passed this turn through untouched (it has no target, or the room is quiet).
+    // Otherwise, or if it failed, the capture is decoded the ordinary way. SttLatencyMs, timed by
+    // the caller, is then what the turn still had to wait — the part of the decode not hidden in
+    // the endpoint tail — which keeps the turn's spans tiling.
+    private async Task<TranscriptionResult> TranscribeAsync(
+        UtteranceCapture capture, TranscriptionOptions options,
+        SpeculativeTranscription.Attempt? speculative, CancellationToken ct)
+    {
+        var tse = speechToText as TseSpeechToText;
+        if (speculative is not null && (tse is null || tse.Skips(options))
+            && await speculative.UseAsync(ct) is { } decoded)
+        {
+            tse?.ReportSkipped(options);
+            return decoded;
+        }
+
+        speculative?.Discard();
+        return await speechToText.TranscribeAsync(capture.Audio, options, ct);
     }
 
     private async Task EnqueueChimeAsync(SatelliteSession session, CancellationToken ct)

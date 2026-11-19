@@ -26,6 +26,17 @@ public sealed class TseSpeechToText(
             ? inner
             : new TseSpeechToText(inner, settings, client, audit, metrics, loggers.CreateLogger<TseSpeechToText>());
 
+    // What this stage wraps. A decode started before the speaker check (SpeculativeTranscription)
+    // runs on it, since nobody yet knows whether there is a target to extract.
+    public ISpeechToText Inner => inner;
+
+    // Whether this stage would pass the turn straight to Inner. Only then can a decode of the raw
+    // audio stand in for this stage's, and the turn reports the skip as this stage would have.
+    public bool Skips(TranscriptionOptions options) => SkipReason(options) is not null;
+
+    public void ReportSkipped(TranscriptionOptions options) =>
+        Publish(VoiceMetric.TseSkipped, options, outcome: SkipReason(options));
+
     public async Task<TranscriptionResult> TranscribeAsync(
         IAsyncEnumerable<AudioChunk> audio, TranscriptionOptions options, CancellationToken ct)
     {
