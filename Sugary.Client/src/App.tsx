@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, setViewing, SUSPENDED_EVENT, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
+import { Wordmark } from "./components/Wordmark";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
 import { pendingOutcomes } from "./log";
@@ -301,10 +302,7 @@ function Shell({
 
       {/* A bar along the bottom on a phone, a rail down the left on a desktop, which names the app. */}
       <nav className="tabs" aria-label="Sugary">
-        <p className="rail-brand" aria-hidden="true">
-          <Icon name="slice" size={24} />
-          Sugary
-        </p>
+        <Wordmark rail />
         {TABS.filter(({ id }) => railTabs(shown, fused).includes(id)).map(({ id, label, icon }) => (
           <button
             key={id}
