@@ -7,6 +7,7 @@ import { ClipThumb, type Clip } from "../components/ClipThumb";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { Drip, Slice } from "../components/Illustrations";
+import { Wordmark } from "../components/Wordmark";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
 import { axisEnd, TotalCard } from "../components/TotalCard";
@@ -427,10 +428,7 @@ export function MealScreen({
       <header className="screen-header">
         <div>
           {!started && (
-            <p className="wordmark">
-              <Icon name="slice" size={22} />
-              Sugary
-            </p>
+            <Wordmark />
           )}
           {started ? (
             // Once a photo, a clip or a food is in, this is her meal: the wordmark steps aside and the

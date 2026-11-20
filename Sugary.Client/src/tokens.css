@@ -65,6 +65,12 @@
   --art-raspberry-dark: #8e1a3f;
   --art-cream: #fffdf9;
   --art-stem: #8a6a55;
+  /* The wordmark's slice: the drawings' raspberry by day, lightened on the dark counter, where the
+     dark raspberry of its cherry and jam would sink into the chocolate. */
+  --logo-frosting: #c42d5c;
+  --logo-jam: #8e1a3f;
+  --logo-cherry: #8e1a3f;
+  --logo-stem: #8a6a55;
 
   --font-ui: "Sugary Digits", "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
@@ -154,6 +160,10 @@
   --color-info: #cdb3a0;
   --color-focus: #9dbcf2;
   --color-scrim: rgb(0 0 0 / 62%);
+  --logo-frosting: #e0507e;
+  --logo-jam: #c42d5c;
+  --logo-cherry: #f48fb1;
+  --logo-stem: #cdb3a0;
 
   /* "none" cannot sit in a shadow list beside the edge, so no shadow is a transparent one. */
   --shadow-1: 0 0 0 0 transparent;
