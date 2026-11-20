@@ -93,6 +93,13 @@ public class SugaryViewingE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Meal" })).ToHaveCountAsync(0);
         await Assertions.Expect(page.GetByText("Add to your log")).ToHaveCountAsync(0);
 
+        // A reload (a pull-down on the phone) keeps the log she picked, read only, on the tab she was on.
+        await page.ReloadAsync();
+        await Assertions.Expect(page.GetByText($"You're looking at Her-{tag}'s log.")).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Assertions.Expect(page.GetByText($"lentejas {tag}").First).ToBeVisibleAsync(
+            new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+
         // Her settings are shown and closed to change; the pantry is the household's, so it stays open.
         await tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Settings" }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Woman" })).ToBeDisabledAsync();

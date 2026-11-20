@@ -17,9 +17,39 @@ export function showsPicker(session: SessionState): boolean {
   return offered(session).some((person) => person.userId !== session.person);
 }
 
-// Whose log the app opens on: her own (null), or, for a reader keeping none, the first person offered.
-export function firstViewed(session: SessionState): string | null {
-  return sessionOf(session).usesSugary ? null : (offered(session)[0]?.userId ?? null);
+// Whose log the app opens on: the one she last picked in this tab (a reload keeps it) while it is still
+// offered; else her own (null), or, for a reader keeping none, the first person offered.
+export function firstViewed(session: SessionState, picked: string | null = null): string | null {
+  const people = offered(session);
+  if (picked !== null && people.some((person) => person.userId === picked)) {
+    return picked === session.person ? null : picked;
+  }
+  return sessionOf(session).usesSugary ? null : (people[0]?.userId ?? null);
+}
+
+// Her pick, kept for this tab alone (sessionStorage: a reload, a pull-down to refresh, never the next
+// time she opens the app) and under her own id, so somebody else signing in on the phone starts fresh.
+const PICKED = "sugary.viewing";
+
+export function rememberViewed(signer: string | null, viewed: string | null): void {
+  try {
+    if (signer === null || viewed === null) {
+      sessionStorage.removeItem(PICKED);
+    } else {
+      sessionStorage.setItem(PICKED, JSON.stringify({ signer, viewed }));
+    }
+  } catch {
+    // Storage refused (a private window): a reload opens the usual log.
+  }
+}
+
+export function rememberedViewed(signer: string | null): string | null {
+  try {
+    const kept = JSON.parse(sessionStorage.getItem(PICKED) ?? "null") as { signer?: string; viewed?: string } | null;
+    return kept && kept.signer === signer && typeof kept.viewed === "string" ? kept.viewed : null;
+  } catch {
+    return null;
+  }
 }
 
 // Neither a log of her own nor anybody's to look at: Sugary is not on for her.

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, ApiError, setViewing, withPerson } from "./api";
 import { errorMessage } from "./errors";
 import { translator } from "./i18n";
-import { firstViewed, hasNoLog, offered, sessionOf, showsPicker } from "./viewing";
+import { firstViewed, hasNoLog, offered, rememberedViewed, rememberViewed, sessionOf, showsPicker } from "./viewing";
 import { tabOf, visibleTabs } from "./tabs";
 import type { SessionState } from "./types";
 
@@ -112,5 +112,36 @@ describe("a refusal of looking", () => {
     expect(errorMessage(new ApiError(403, "", "viewing-read-only"), en)).toBe(en("errorViewingReadOnly"));
     expect(errorMessage(new ApiError(403, "", "not-granted"), en)).toBe(en("errorNotGranted"));
     expect(errorMessage(new ApiError(403, "", "sugary-not-yours"), en)).toBe(en("errorSugaryNotYours"));
+  });
+});
+
+describe("whose log a reload opens", () => {
+  it("is the one she picked, when it is still offered", () => {
+    expect(firstViewed(reader(true), "bea")).toBe("bea");
+    expect(firstViewed(reader(false), "bea")).toBe("bea");
+  });
+
+  it("is her own when that is what she picked", () => {
+    expect(firstViewed(reader(true), "ana")).toBeNull();
+  });
+
+  it("is the usual one when the pick is no longer offered", () => {
+    expect(firstViewed(reader(true), "cris")).toBeNull();
+    expect(firstViewed(reader(false), "ana")).toBe("bea");
+  });
+
+  // Kept for the tab: a reload on this phone, never somebody else signing in on it.
+  it("is kept per signer", () => {
+    const kept = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => kept.set(key, value),
+      removeItem: (key: string) => kept.delete(key),
+    });
+    rememberViewed("ana", "bea");
+    expect(rememberedViewed("ana")).toBe("bea");
+    expect(rememberedViewed("cris")).toBeNull();
+    rememberViewed("ana", null);
+    expect(rememberedViewed("ana")).toBeNull();
   });
 });
