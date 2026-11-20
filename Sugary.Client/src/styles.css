@@ -364,9 +364,8 @@ textarea:focus-visible {
 
 /* The meal: capture */
 
-/* The name and its slice (Wordmark.tsx): the slice stands on the name's baseline at 1.2 em, so the
-   two keep their proportion at any text size; the name is a touch heavier than a title, to hold its
-   own beside a filled drawing. */
+/* The name and its slice (Wordmark.tsx): the name is a touch heavier than a title, to hold its own
+   beside a filled drawing. */
 .wordmark {
   display: flex;
   align-items: baseline;
@@ -380,8 +379,10 @@ textarea:focus-visible {
   color: var(--color-primary-strong);
 }
 
-/* Its cherry rises into the line's leading, so the name's line is no taller for it. */
-.wordmark-mark {
+/* The app's slice (SliceMark) stands on the baseline of the line it is in at 1.2 em, so it keeps its
+   proportion to the words at any text size; its cherry rises into the line's leading, so the line
+   is no taller for it. */
+.slice-mark {
   flex: none;
   width: calc(1.2em * 32 / 29);
   height: 1.2em;
@@ -1637,6 +1638,12 @@ h1.title-small {
   color: var(--color-muted);
 }
 
+.empty .slice-mark {
+  width: 44px;
+  height: 40px;
+  margin-top: 0;
+}
+
 /* The drawings, in the palette's colours, so they turn with the dark mode. */
 .art {
   display: block;
@@ -1959,7 +1966,7 @@ h1.marked .icon {
 
 .colophon {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: center;
   gap: 6px;
   padding: var(--space-4) 0 var(--space-2);
@@ -1968,9 +1975,6 @@ h1.marked .icon {
   color: var(--color-muted);
 }
 
-.colophon .icon {
-  color: var(--color-primary);
-}
 
 /* Chrome: the tab bar */
 

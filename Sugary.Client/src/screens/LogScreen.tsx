@@ -288,7 +288,7 @@ export function LogScreen({
   return (
     <div className="screen">
       <h1 className="marked">
-        <Icon name="slice" size={28} />
+        <Icon name="book" size={28} />
         {t("tabLog")}
       </h1>
       {error && (
