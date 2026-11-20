@@ -15,7 +15,7 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119083802_PersonalProfiles";
+    public override string LastMigrationId => "20261120105403_DayFlowAndSymptoms";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -64,6 +64,13 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<DateOnly>("Day")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Flow")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Symptoms")
+                    .IsRequired()
                     .HasColumnType("TEXT");
 
                 b.Property<string>("TenantId")

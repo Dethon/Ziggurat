@@ -46,6 +46,8 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 
 `Profile` (`/api/profile`) and `BodyMeasurement` (`/api/measurements`): each profile field null until she says it, a field sent empty taken back, a diagnosis before birth refused; height (cm) and weight (kg) one of each kind a day (a second refused), the kind never changes. Both are queued log writes. The app's **Cycle tab is hidden only from a man who said so**; somebody who never said keeps it, and her periods stay logged and mounted either way. No paging: `GET /measurements` returns every entry.
 
+**A day of her calendar** (`/api/day-notes/{day}`, `DayNote`) is her words, a flow and symptoms, codes from `DayEntries` (the app's `days.ts`, same order; the mount's `day_notes` `flow`/`symptoms` columns), kept while any is said, deleted when nothing is. The app always sends `symptoms` and `loaded` (merged per field, as above); **a save without `symptoms` is an app from before them** and changes the words alone.
+
 ## Turns, the mount and reminders
 
 - **Sugary turned off refuses the app.** The agent refuses a Sugary turn of a Sugary-off household (`RefusalAnswers.SugaryOff`), and the server answers the app's estimate or label **403** with the refusal's code (`RefusalAnswers.CodeOf`) whenever the agent refused for the household; the app words each code in her language (`errors.ts`), never the agent's English. Any other failure stays 502.

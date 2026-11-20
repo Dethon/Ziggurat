@@ -269,9 +269,27 @@ public class McpSugaryServerTests
             new DayNote { Day = new DateOnly(2026, 10, 2), Text = "=cramps" });
 
         (await server.TableRowsAsync("/day-notes.parquet")).ShouldBe([
-            ["2026-10-02", "=cramps"],
-            ["2026-10-06", "craving chocolate, all afternoon"]
+            ["2026-10-02", "=cramps", null, null],
+            ["2026-10-06", "craving chocolate, all afternoon", null, null]
         ]);
+    }
+
+    // Her flow and her symptoms are columns of the day, unsaid an empty cell: "which days did she have
+    // cramps" is one query.
+    [Fact]
+    public async Task ADaysFlowAndSymptoms_AreItsColumns()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+            new DayNote { Day = new DateOnly(2026, 10, 6), Flow = "heavy", Symptoms = "cramps,headache" },
+            new DayNote { Day = new DateOnly(2026, 10, 2), Text = "fine" });
+
+        (await server.TableRowsAsync("/day-notes.parquet")).ShouldBe([
+            ["2026-10-02", "fine", null, null],
+            ["2026-10-06", null, "heavy", "cramps, headache"]
+        ]);
+        (await server.QueryAsync("select date from day_notes where symptoms like '%cramps%'"))
+            .Select(row => row![0]!.GetValue<string>()).ShouldBe(["2026-10-06"]);
     }
 
     // "What did she write the week of her period" is one query over the notes' days.

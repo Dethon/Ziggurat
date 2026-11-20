@@ -86,7 +86,7 @@ public sealed class SqliteSugaryLog(SugaryStore store) : ISugaryLog
     {
         await using var db = store.For(owner);
         var notes = await db.DayNotes.AsNoTracking().OrderBy(n => n.Day).ToListAsync(ct);
-        return notes.Select(n => new LoggedDayNote(n.Day, n.Text)).ToList();
+        return notes.Select(n => new LoggedDayNote(n.Day, n.Text, n.Flow, DayEntries.Split(n.Symptoms))).ToList();
     }
 
     public async Task<LoggedProfile> ProfileAsync(Account owner, CancellationToken ct)

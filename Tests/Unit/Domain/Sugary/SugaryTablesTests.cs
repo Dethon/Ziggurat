@@ -116,16 +116,18 @@ public class SugaryTablesTests
             """");
 
     [Fact]
-    public void DayNotes_AreTheCsvTheyHaveAlwaysBeen() =>
+    public void DayNotes_AreTheCsvTheyHaveAlwaysBeen_WithTheDaysFlowAndSymptoms() =>
         SugaryCsv.Write(SugaryTables.DayNotes(
         [
             new LoggedDayNote(new DateOnly(2026, 8, 9), "-tired\nslept badly"),
-            new LoggedDayNote(new DateOnly(2026, 8, 1), "fine")
+            new LoggedDayNote(new DateOnly(2026, 8, 1), "fine"),
+            new LoggedDayNote(new DateOnly(2026, 8, 3), "", "heavy", ["cramps", "nausea"])
         ])).ShouldBe(""""
-            date,note
-            2026-08-01,fine
+            date,note,flow,symptoms
+            2026-08-01,fine,,
+            2026-08-03,,heavy,"cramps, nausea"
             2026-08-09,"'-tired
-            slept badly"
+            slept badly",,
 
             """");
 

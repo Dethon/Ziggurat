@@ -220,10 +220,30 @@ export interface Period {
 
 export type SavePeriod = Omit<Period, "id">;
 
-// What she wrote about a day of her calendar, period or not.
-export interface DayNote {
-  day: string;
+export type Flow = "spotting" | "light" | "medium" | "heavy";
+
+export type Symptom =
+  | "cramps"
+  | "headache"
+  | "back_pain"
+  | "tender_breasts"
+  | "bloating"
+  | "nausea"
+  | "tiredness"
+  | "mood_swings"
+  | "cravings"
+  | "acne";
+
+// What she said of a day: her words ("" for none), her flow, her symptoms.
+export interface DayEntry {
   text: string;
+  flow: Flow | null;
+  symptoms: Symptom[];
+}
+
+// A day of her calendar, period or not, with something said of it.
+export interface DayNote extends DayEntry {
+  day: string;
 }
 
 export interface DraftItem extends MealItem {

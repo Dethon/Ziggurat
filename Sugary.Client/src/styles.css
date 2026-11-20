@@ -3026,14 +3026,37 @@ h1.marked .icon {
   white-space: pre-wrap;
 }
 
+/* A day's flow, drawn in drops: one small for spotting, up to three for heavy. */
+.day-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.day-flow-drops {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: var(--color-period);
+}
+
+.chip-on .day-flow-drops {
+  color: inherit;
+}
+
 /* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
    her average a dashed line across. */
 .trends {
   gap: var(--space-4);
 }
 
+/* Three across where they fit, two and one under where the card is narrow. */
 .trends-figures {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+}
+
+.trends-figures dd {
+  white-space: nowrap;
 }
 
 .trend-bars {

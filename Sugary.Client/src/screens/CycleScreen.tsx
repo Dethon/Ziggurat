@@ -11,7 +11,7 @@ import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
 import type { DayNote, Period, SavePeriod } from "../types";
-import { DaySheet } from "./DaySheet";
+import { DaySheet, NOTHING } from "./DaySheet";
 import { PeriodSheet, problemText } from "./PeriodSheet";
 
 // Past this day of a period, the status asks whether it is still going: an end she forgot to note
@@ -274,14 +274,14 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
         <DaySheet
           day={openDay}
           readOnly={readOnly}
-          note={notes.find((note) => note.day === openDay)?.text ?? ""}
+          note={notes.find((note) => note.day === openDay) ?? NOTHING}
           periods={all}
           today={today}
           onClose={() => setOpenDay(null)}
-          onNoteSaved={(text) => {
-            setNotes((current) => [...current.filter((note) => note.day !== openDay), ...(text ? [{ day: openDay, text }] : [])]);
+          onNoteSaved={(entry) => {
+            setNotes((current) => [...current.filter((note) => note.day !== openDay), ...(entry ? [{ ...entry, day: openDay }] : [])]);
             setOpenDay(null);
-            toast({ text: t(text ? "noteSaved" : "noteCleared") });
+            toast({ text: t(entry ? "daySaved" : "dayCleared") });
           }}
           onPeriod={(values, period) => void quick(values, period)}
           onOpenPeriod={(period, initial) => {

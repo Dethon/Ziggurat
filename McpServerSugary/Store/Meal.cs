@@ -142,8 +142,8 @@ public class Period : IPersonal
     public DateOnly Start { get; set; }
     public DateOnly? End { get; set; }
 }
-// What she wrote about a day of her calendar, period or not: how she felt, what she craved. One per
-// day of each person's log, keyed by both.
+// What she said of a day of her calendar, period or not: her words, how heavy her flow was, what she
+// felt. One per day of each person's log, keyed by both, kept while any of the three is said.
 public class DayNote : IPersonal
 {
     public string UserId { get; set; } = "";
@@ -151,4 +151,10 @@ public class DayNote : IPersonal
 
     public DateOnly Day { get; set; }
     public string Text { get; set; } = "";
+
+    // One of DayEntries.Flows, or null unsaid.
+    public string? Flow { get; set; }
+
+    // DayEntries.Symptoms codes, comma-joined in that list's order; "" for none.
+    public string Symptoms { get; set; } = "";
 }
