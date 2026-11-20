@@ -24,38 +24,27 @@ public sealed record PhaseFigures(int Days, double Coverage, double? Mean, doubl
 public sealed record CyclePhaseFigures(int Cycles, PhaseFigures Menstrual, PhaseFigures Follicular, PhaseFigures Luteal);
 
 // Her glucose in each part of the cycles she has finished: her period, the days after it (follicular)
-// and the fourteen before the next start (luteal) — the app's forecast takes ovulation the same
-// fourteen days before a start (cycle.ts, LUTEAL_DAYS). Read off the period starts she logged, never a
-// forecast. A description of her data, never a dosing rule: what the app says over it is the app's.
+// and the fourteen before the next start (luteal) — within the 11 to 16 days the app's fertile window
+// allows (cycle.ts, LUTEAL_SHORTEST and LUTEAL_LONGEST). Read off her cycles as CycleCounting counts
+// them, never a forecast. A description of her data, never a dosing rule: what the app says over it is the app's.
 public static class CyclePhases
 {
     public const int LutealDays = 14;
     public const int MostCycles = 6;
     public const double MinimumCoverage = 0.5;
 
-    // The forecast's rule (cycle.ts, OUTLIER): a cycle half again longer than the median is a period
-    // she did not note.
-    private const double Outlier = 1.5;
-
+    // The forecast's count of her cycles (CycleCounting): a period she did not note leaves its cycle out,
+    // a start read as spotting is no start.
     public static IReadOnlyList<CycleParts> Cycles(IReadOnlyList<CyclePeriod> periods, DateOnly today)
     {
-        var sorted = periods.Where(p => p.Start <= today).OrderBy(p => p.Start).ToList();
-        var finished = sorted.Zip(sorted.Skip(1), (period, next) => (Period: period, Next: next.Start)).ToList();
-        if (finished.Count == 0)
-        {
-            return [];
-        }
-
-        var lengths = finished.Select(c => c.Next.DayNumber - c.Period.Start.DayNumber).Order().ToList();
-        var median = lengths.Count % 2 == 1
-            ? lengths[lengths.Count / 2]
-            : (lengths[(lengths.Count / 2) - 1] + lengths[lengths.Count / 2]) / 2.0;
+        var started = periods.Where(p => p.Start <= today).ToList();
+        var (cycles, _) = CycleCounting.Of(started.Select(p => p.Start));
         return
         [
-            .. finished
-                .Where(c => c.Next.DayNumber - c.Period.Start.DayNumber <= median * Outlier)
+            .. cycles
+                .Where(c => !c.Skipped)
                 .TakeLast(MostCycles)
-                .Select(c => Parts(c.Period, c.Next))
+                .Select(c => Parts(started.First(p => p.Start == c.Start), c.Start.AddDays(c.Days)))
         ];
     }
 

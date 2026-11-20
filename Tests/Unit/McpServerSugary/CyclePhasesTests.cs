@@ -80,6 +80,20 @@ public class CyclePhasesTests
         CyclePhases.Cycles(periods, _today).Select(c => c.Start).ShouldBe([D("2026-05-19"), D("2026-08-11")]);
     }
 
+    // The forecast's rule: spotting noted as a period is no start, so the cycle around it is read whole.
+    [Fact]
+    public void ASpottingStart_IsNoCycle_TheCycleAroundItIsReadWhole()
+    {
+        var periods = new[] { "2026-05-01", "2026-05-29", "2026-06-26", "2026-07-10", "2026-07-24", "2026-08-21" }
+            .Select(start => P(start, D(start).AddDays(4).ToString("yyyy-MM-dd")))
+            .ToList();
+
+        var cycles = CyclePhases.Cycles(periods, _today);
+
+        cycles.Select(c => c.Start).ShouldBe([D("2026-05-01"), D("2026-05-29"), D("2026-06-26"), D("2026-07-24")]);
+        cycles[2].Luteal.ShouldBe(new DayRange(D("2026-07-10"), D("2026-07-23")));
+    }
+
     [Fact]
     public void OnlyHerLastSixCycles_AreRead()
     {

@@ -1,0 +1,108 @@
+{
+  "why": "Which of her logged starts make her cycles, and which cycles count: one rule read by the app's forecast and trends (cycle.ts, countCycles) and the server's reminder and glucose by phase (CycleCounting). Both suites read these cases; a case one answers differently is a forecast, a reminder and a chart that disagree.",
+  "cases": [
+    { "name": "nothing to count before two starts", "starts": ["2026-10-08"], "expected": { "anchor": "2026-10-08", "cycles": [] } },
+    {
+      "name": "two cycles are taken as they are",
+      "starts": ["2026-08-11", "2026-09-08", "2026-10-06"],
+      "expected": {
+        "anchor": "2026-10-06",
+        "cycles": [
+          { "start": "2026-08-11", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-09-08", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "under three cycles, one over 45 days is a period she did not note",
+      "starts": ["2026-07-01", "2026-08-20"],
+      "expected": { "anchor": "2026-08-20", "cycles": [{ "start": "2026-07-01", "days": 50, "skipped": true, "joined": false }] }
+    },
+    {
+      "name": "from three cycles, one half again longer than the median is a period she did not note",
+      "starts": ["2026-05-19", "2026-06-16", "2026-08-11", "2026-09-09"],
+      "expected": {
+        "anchor": "2026-09-09",
+        "cycles": [
+          { "start": "2026-05-19", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-16", "days": 56, "skipped": true, "joined": false },
+          { "start": "2026-08-11", "days": 29, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "spotting mid-cycle is not a start: the cycle around it is whole again",
+      "starts": ["2026-05-01", "2026-05-29", "2026-06-26", "2026-07-10", "2026-07-24", "2026-08-21"],
+      "expected": {
+        "anchor": "2026-08-21",
+        "cycles": [
+          { "start": "2026-05-01", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-05-29", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-26", "days": 28, "skipped": false, "joined": true },
+          { "start": "2026-07-24", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "spotting days before her period is not a start: the period is",
+      "starts": ["2026-05-01", "2026-05-29", "2026-06-26", "2026-07-21", "2026-07-24", "2026-08-21"],
+      "expected": {
+        "anchor": "2026-08-21",
+        "cycles": [
+          { "start": "2026-05-01", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-05-29", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-26", "days": 28, "skipped": false, "joined": true },
+          { "start": "2026-07-24", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "a latest start too soon after the one before is spotting: she is counted from the one before",
+      "starts": ["2026-05-01", "2026-05-29", "2026-06-26", "2026-07-24", "2026-08-02"],
+      "expected": {
+        "anchor": "2026-07-24",
+        "cycles": [
+          { "start": "2026-05-01", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-05-29", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-26", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "a first cycle too short joins the next",
+      "starts": ["2026-05-01", "2026-05-10", "2026-05-29", "2026-06-26", "2026-07-24"],
+      "expected": {
+        "anchor": "2026-07-24",
+        "cycles": [
+          { "start": "2026-05-01", "days": 28, "skipped": false, "joined": true },
+          { "start": "2026-05-29", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-26", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    },
+    {
+      "name": "only her last twelve cycles are read",
+      "starts": [
+        "2025-08-01", "2025-08-29", "2025-09-26", "2025-10-24", "2025-11-21", "2025-12-19", "2026-01-16", "2026-02-13",
+        "2026-03-13", "2026-04-10", "2026-05-08", "2026-06-05", "2026-07-03", "2026-07-31", "2026-08-28"
+      ],
+      "expected": {
+        "anchor": "2026-08-28",
+        "cycles": [
+          { "start": "2025-09-26", "days": 28, "skipped": false, "joined": false },
+          { "start": "2025-10-24", "days": 28, "skipped": false, "joined": false },
+          { "start": "2025-11-21", "days": 28, "skipped": false, "joined": false },
+          { "start": "2025-12-19", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-01-16", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-02-13", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-03-13", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-04-10", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-05-08", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-06-05", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-07-03", "days": 28, "skipped": false, "joined": false },
+          { "start": "2026-07-31", "days": 28, "skipped": false, "joined": false }
+        ]
+      }
+    }
+  ]
+}

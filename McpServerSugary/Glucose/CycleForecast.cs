@@ -7,27 +7,24 @@ public sealed record Forecast(DateOnly Earliest, DateOnly Latest, DateOnly Likel
 // (Sugary.Client/src/cases/forecast.json); a change to one is made to the other.
 public static class CycleForecast
 {
-    // cycle.ts: RECENT_CYCLES and OUTLIER.
+    // cycle.ts: RECENT_CYCLES and LEAST_SPREAD.
     private const int RecentCycles = 6;
-    private const double Outlier = 1.5;
+    private const int LeastSpread = 2;
 
     public static Forecast? Of(IReadOnlyList<CyclePeriod> periods, DateOnly today)
     {
-        var starts = periods.Where(p => p.Start <= today).Select(p => p.Start).Order().ToList();
-        if (starts.Count < 2)
+        var (cycles, anchor) = CycleCounting.Of(periods.Where(p => p.Start <= today).Select(p => p.Start));
+        var kept = cycles.Where(c => !c.Skipped).TakeLast(RecentCycles).Select(c => c.Days).ToList();
+        if (anchor is not { } last || kept.Count == 0)
         {
             return null;
         }
 
-        var recent = starts.Zip(starts.Skip(1), (a, b) => b.DayNumber - a.DayNumber).TakeLast(RecentCycles).ToList();
-        var sorted = recent.Order().ToList();
-        var median = sorted.Count % 2 == 1
-            ? sorted[sorted.Count / 2]
-            : (sorted[(sorted.Count / 2) - 1] + sorted[sorted.Count / 2]) / 2.0;
-        var kept = recent.Where(days => days <= median * Outlier).ToList();
-        var last = starts[^1];
         // Math.round's rounding: half a day up.
-        var mean = (int)Math.Round(kept.Average(), MidpointRounding.AwayFromZero);
-        return new Forecast(last.AddDays(kept.Min()), last.AddDays(kept.Max()), last.AddDays(mean));
+        var likeliest = (int)Math.Round(CycleCounting.Median(kept), MidpointRounding.AwayFromZero);
+        return new Forecast(
+            last.AddDays(Math.Min(kept.Min(), likeliest - LeastSpread)),
+            last.AddDays(Math.Max(kept.Max(), likeliest + LeastSpread)),
+            last.AddDays(likeliest));
     }
 }

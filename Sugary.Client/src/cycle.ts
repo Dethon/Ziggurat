@@ -190,13 +190,20 @@ export function dayAction(day: string, periods: readonly Period[], today: string
   return { kind: "start", ongoing: !periods.some((period) => period.start > day) };
 }
 
-// The cycles a forecast reads: the most recent, since a cycle drifts over the years.
-const RECENT_CYCLES = 6;
-// A cycle longer than this many times the median is a period she did not note, not a cycle.
+// Which of her starts make her cycles, and which cycles count: one rule for the forecast, the trends
+// and (the server's CycleCounting, pinned to the same cases/cycles.json) the reminder and her glucose by
+// phase, so no two of them read her cycles differently.
+//
+// Her last COUNTED_CYCLES cycles are read, judged against their median from three cycles on: one half
+// again longer is a period she did not note, drawn and never counted; one shorter than the median by as
+// much is spotting noted as a period, and the start that made it is no start — of its two ends, the one
+// whose cycle joined to its neighbour comes nearest her median; the latest start, having no next, is the
+// one dropped, so she is counted from the start before it. Under three cycles there is no median to
+// judge by, and a cycle over LONGEST_ALONE days is taken for a period she did not note.
+const COUNTED_CYCLES = 12;
 const OUTLIER = 1.5;
-// Ovulation is taken as this many days before the next start; she is fertile the five days before
-// it and the day after.
-const LUTEAL_DAYS = 14;
+const JUDGED_FROM = 3;
+const LONGEST_ALONE = 45;
 
 const median = (values: readonly number[]) => {
   const sorted = values.toSorted((a, b) => a - b);
@@ -204,13 +211,70 @@ const median = (values: readonly number[]) => {
   return sorted.length % 2 ? sorted[Math.floor(middle)] : (sorted[middle - 1] + sorted[middle]) / 2;
 };
 
-// A cycle so much longer than her usual is a period she did not note, not a cycle: drawn, never counted.
-const outlier = (days: number, cycles: readonly number[]) => days > median(cycles) * OUTLIER;
-
 const mean = (values: readonly number[]) => Math.round(values.reduce((sum, n) => sum + n, 0) / values.length);
 
+export interface CountedCycle {
+  start: string;
+  days: number;
+  // A period she likely did not note: counted in nothing.
+  skipped: boolean;
+  // Runs across a start read as spotting.
+  joined: boolean;
+}
+
+export interface CountedCycles {
+  cycles: CountedCycle[];
+  // The start her current cycle runs from; null before any.
+  anchor: string | null;
+}
+
+// Her starts, each a day; any order.
+export function countCycles(days: readonly string[]): CountedCycles {
+  const starts = [...new Set(days)].toSorted().slice(-(COUNTED_CYCLES + 1));
+  const lengths = () => starts.slice(1).map((start, index) => daysBetween(starts[index], start));
+  const judged = starts.length - 1 >= JUDGED_FROM;
+  const usual = judged ? median(lengths()) : 0;
+  const joined = new Set<string>();
+  while (judged && starts.length >= 2) {
+    const cycles = lengths();
+    const short = cycles.findIndex((days) => days < usual / OUTLIER);
+    if (short < 0) {
+      break;
+    }
+    if (short === cycles.length - 1) {
+      starts.splice(short + 1, 1);
+    } else if (short === 0 || Math.abs(cycles[short] + cycles[short + 1] - usual) < Math.abs(cycles[short - 1] + cycles[short] - usual)) {
+      joined.add(starts[short]);
+      starts.splice(short + 1, 1);
+    } else {
+      joined.add(starts[short - 1]);
+      starts.splice(short, 1);
+    }
+  }
+  return {
+    anchor: starts.at(-1) ?? null,
+    cycles: lengths().map((days, index) => ({
+      start: starts[index],
+      days,
+      skipped: judged ? days > usual * OUTLIER : days > LONGEST_ALONE,
+      joined: joined.has(starts[index]),
+    })),
+  };
+}
+
+// The cycles a forecast reads: the most recent, since a cycle drifts over the years.
+const RECENT_CYCLES = 6;
+// The range is never narrower than this either side of the likeliest day: cycles agreeing to the day
+// still vary by a few, and a one-day range would call her late on the next.
+const LEAST_SPREAD = 2;
+// Ovulation is taken as between these many days before the next start (the luteal phase runs 11 to 16
+// days in most cycles); she is fertile the five days before it and the day after.
+const LUTEAL_SHORTEST = 11;
+const LUTEAL_LONGEST = 16;
+
 export interface Forecast {
-  // The next start, between the shortest and the longest recent cycle.
+  // The next start: between the shortest and the longest recent cycle, at least LEAST_SPREAD days
+  // either side of the likeliest.
   earliest: string;
   latest: string;
   likeliest: string;
@@ -223,25 +287,23 @@ export interface Forecast {
 // When her next period is expected and her likely fertile window, from her own recent cycles. An
 // estimate, and said to be one wherever it is shown; nothing here is stored or sent.
 export function forecast(periods: readonly Period[], today: string): Forecast | null {
-  const starts = byStart(periods)
-    .filter((period) => period.start <= today)
-    .map((period) => period.start);
-  if (starts.length < 2) {
+  const { cycles, anchor } = countCycles(periods.filter((period) => period.start <= today).map((period) => period.start));
+  const kept = cycles
+    .filter((cycle) => !cycle.skipped)
+    .slice(-RECENT_CYCLES)
+    .map((cycle) => cycle.days);
+  if (anchor === null || kept.length === 0) {
     return null;
   }
-  const recent = starts
-    .slice(1)
-    .map((start, index) => daysBetween(starts[index], start))
-    .slice(-RECENT_CYCLES);
-  const kept = recent.filter((days) => !outlier(days, recent));
-  const last = starts.at(-1)!;
-  const earliest = addDays(last, Math.min(...kept));
-  const latest = addDays(last, Math.max(...kept));
-  const fertile = { start: addDays(earliest, -LUTEAL_DAYS - 5), end: addDays(latest, -LUTEAL_DAYS + 1) };
+  const likeliest = Math.round(median(kept));
+  const earliest = addDays(anchor, Math.min(...kept, likeliest - LEAST_SPREAD));
+  const latest = addDays(anchor, Math.max(...kept, likeliest + LEAST_SPREAD));
+  const fertileStart = addDays(earliest, -LUTEAL_LONGEST - 5);
+  const fertile = { start: fertileStart < anchor ? anchor : fertileStart, end: addDays(latest, -LUTEAL_SHORTEST + 1) };
   return {
     earliest,
     latest,
-    likeliest: addDays(last, Math.round(kept.reduce((sum, days) => sum + days, 0) / kept.length)),
+    likeliest: addDays(anchor, likeliest),
     fertile: fertile.end >= today ? fertile : null,
     cycles: kept.length,
   };
@@ -255,55 +317,46 @@ export function daysLate(expected: Forecast | null, today: string): number {
 // Her last year of cycles: how long each one ran and her period in it, and her own averages and range.
 // Her numbers only: what is usual for anybody is her doctor's to say, so nothing here calls a cycle
 // regular or not.
-const TREND_CYCLES = 12;
-
-export interface TrendCycle {
-  start: string;
-  days: number;
+export interface TrendCycle extends CountedCycle {
   // Both ends counted; null while she has not noted its end.
   periodDays: number | null;
-  // Counted in none of the figures: a period she likely did not note (the forecast's rule).
-  skipped: boolean;
 }
 
 export interface Trends {
   cycles: TrendCycle[];
   averageCycle: number;
-  // Of the periods in those cycles and the latest, whose end she noted; null when none was.
+  // Of the periods in those cycles and the one she is counted from, whose end she noted; null when none was.
   averagePeriod: number | null;
   shortest: number;
   longest: number;
 }
 
 export function trends(periods: readonly Period[]): Trends | null {
-  const sorted = byStart(periods);
-  const whole = sorted.slice(0, -1).map((period, index) => ({ period, days: daysBetween(period.start, sorted[index + 1].start) }));
-  const shown = whole.slice(-TREND_CYCLES);
-  if (shown.length === 0) {
+  const { cycles: counted, anchor } = countCycles(periods.map((period) => period.start));
+  const periodOf = (start: string) => periods.find((period) => period.start === start)!;
+  const days = (period: Period) => (period.end === null ? null : daysBetween(period.start, period.end) + 1);
+  const cycles = counted.map((cycle) => ({ ...cycle, periodDays: days(periodOf(cycle.start)) }));
+  const lengths = cycles.filter((cycle) => !cycle.skipped).map((cycle) => cycle.days);
+  if (lengths.length === 0) {
     return null;
   }
-  const lengths = shown.map(({ days }) => days);
-  const cycles = shown.map(({ period, days }) => ({
-    start: period.start,
-    days,
-    periodDays: period.end === null ? null : daysBetween(period.start, period.end) + 1,
-    skipped: outlier(days, lengths),
-  }));
-  const counted = cycles.filter((cycle) => !cycle.skipped).map((cycle) => cycle.days);
-  const ended = [...shown.map(({ period }) => period), sorted.at(-1)!]
-    .filter((period) => period.end !== null)
-    .map((period) => daysBetween(period.start, period.end!) + 1);
+  const ended = [...cycles.map((cycle) => cycle.start), anchor!]
+    .map((start) => days(periodOf(start)))
+    .filter((n): n is number => n !== null);
   return {
     cycles,
-    averageCycle: mean(counted),
+    averageCycle: mean(lengths),
     averagePeriod: ended.length > 0 ? mean(ended) : null,
-    shortest: Math.min(...counted),
-    longest: Math.max(...counted),
+    shortest: Math.min(...lengths),
+    longest: Math.max(...lengths),
   };
 }
 
 // Half a mmol/L, in mg/dL: closer than this, her two halves read as the same.
 const PHASE_SHIFT = 9;
+// The fewest days read after her periods for a verdict: a short cycle with a long period leaves a day or
+// two, and a day or two against fourteen is noise, not her pattern.
+const LEAST_FOLLICULAR_DAYS = 5;
 
 export interface PhaseShift {
   kind: "higher" | "lower" | "same";
@@ -312,9 +365,16 @@ export interface PhaseShift {
   inRange: number;
 }
 
-// How her glucose before her period compares with the days after it, where both were read.
+// How her glucose before her period compares with the days after it, where both were read and enough
+// days after it were.
 export function phaseShift(follicular: PhaseFigures, luteal: PhaseFigures): PhaseShift | null {
-  if (follicular.mean === null || luteal.mean === null || follicular.inRange === null || luteal.inRange === null) {
+  if (
+    follicular.mean === null ||
+    luteal.mean === null ||
+    follicular.inRange === null ||
+    luteal.inRange === null ||
+    follicular.days < LEAST_FOLLICULAR_DAYS
+  ) {
     return null;
   }
   const mean = luteal.mean - follicular.mean;
