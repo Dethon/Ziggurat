@@ -1,6 +1,7 @@
 const en = {
   tabMeal: "Meal",
   tabLog: "Log",
+  tabMealLog: "Meal & log",
   tabFoods: "Pantry",
   tabSettings: "Settings",
 
@@ -649,6 +650,7 @@ export type StringKey = keyof Strings;
 const es: Strings = {
   tabMeal: "Comida",
   tabLog: "Diario",
+  tabMealLog: "Comida y diario",
   tabFoods: "Despensa",
   tabSettings: "Ajustes",
 

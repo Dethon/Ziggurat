@@ -12,14 +12,15 @@ const MOST_SCALE = 1.15;
 const MOST_TALLER = 1.5;
 
 // The box a chart draws in, its viewBox, for a card `measured` pixels wide (0 before it is measured).
-// Up to a phone's width it is its own box, scaled; past it, it is drawn wider rather than larger.
-export function chartBox(measured: number, drawn: Box): Box {
+// Up to a phone's width it is its own box, scaled; past it, it is drawn wider rather than larger, and
+// taller up to `tallest` times its height (more where its screen has the room for it).
+export function chartBox(measured: number, drawn: Box, tallest = MOST_TALLER): Box {
   const scale = Math.min(measured / drawn.width, MOST_SCALE);
   if (measured <= 0 || scale < MOST_SCALE) {
     return drawn;
   }
   const width = Math.round(measured / scale);
-  const height = Math.round(Math.min(drawn.height * MOST_TALLER, (width * drawn.height) / drawn.width));
+  const height = Math.round(Math.min(drawn.height * tallest, (width * drawn.height) / drawn.width));
   return { width, height };
 }
 

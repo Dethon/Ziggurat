@@ -23,3 +23,19 @@ export function visibleTabs(cycle: boolean, someoneElses = false): Tab[] {
 export function hashOf(tab: Tab): string {
   return `#${tab}`;
 }
+
+// A window wide enough (styles.css, "A wide window") sets the meal she is building beside her log, so
+// what she eats and what she has eaten are one place: her own log only, as somebody else's has no meal.
+export function fuses(shown: readonly Tab[], wide: boolean): boolean {
+  return wide && shown.includes("meal") && shown.includes("log");
+}
+
+// The two fused are one entry in the rail, the log's, which keeps the badge of meals awaiting her.
+export function railTabs(shown: readonly Tab[], fused: boolean): Tab[] {
+  return shown.filter((tab) => !fused || tab !== "meal");
+}
+
+// The rail entry lit for the tab she is on: the log's for the meal too, once the two are one.
+export function railTab(tab: Tab, fused: boolean): Tab {
+  return fused && tab === "meal" ? "log" : tab;
+}

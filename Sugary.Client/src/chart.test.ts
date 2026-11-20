@@ -23,4 +23,9 @@ describe("a chart's drawing box", () => {
     expect(chartBox(460, glucose).height).toBe(225);
     expect(chartBox(1200, glucose).height).toBe(270);
   });
+
+  it("grows taller still where its screen has the room, still keeping its shape until then", () => {
+    expect(chartBox(1200, glucose, 2.2).height).toBe(396);
+    expect(chartBox(460, glucose, 2.2).height).toBe(225);
+  });
 });
