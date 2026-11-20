@@ -113,7 +113,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   return (
     <div className="screen">
       <h1 className="marked">
-        <Icon name="slice" size={28} />
+        <Icon name="drop" size={28} />
         {t("tabCycle")}
       </h1>
       {error && (
