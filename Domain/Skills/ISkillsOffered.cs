@@ -9,7 +9,7 @@ namespace Domain.Skills;
 // and keeps only what its session turns out to offer (ConversationGroup.PreloadAsync).
 public interface ISkillsOffered
 {
-    IReadOnlyList<PromptSkill>? Last(string agentId, string? household);
+    IReadOnlyList<PromptSkill>? Last(string? agentId, string? household);
 
-    void Remember(string agentId, string? household, IReadOnlyList<PromptSkill> skills);
+    void Remember(string? agentId, string? household, IReadOnlyList<PromptSkill> skills);
 }
