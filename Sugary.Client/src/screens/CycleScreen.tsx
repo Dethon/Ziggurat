@@ -6,6 +6,7 @@ import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refu
 import { CycleTrends } from "../components/CycleTrends";
 import { CycleGlucose } from "../components/CycleGlucose";
 import { PeriodReminder } from "../components/PeriodReminder";
+import { Fold } from "../components/Fold";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
@@ -20,6 +21,9 @@ import { PeriodSheet, problemText } from "./PeriodSheet";
 // is the one thing an open period cannot say for itself.
 const LONG_PERIOD_DAY = 10;
 
+// Her last half year at a glance; the rest a tap away.
+const PERIODS_SHOWN = 6;
+
 type Opened = { period?: Period; initial: SavePeriod };
 
 // `readOnly` is somebody else's cycle: her days, forecast and notes are read, never recorded or changed.
@@ -32,6 +36,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState<DayNote[]>([]);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [allPeriods, setAllPeriods] = useState(false);
   // Her glucose by phase: nothing at all without a sensor, or when it cannot be read.
   const [phases, setPhases] = useState<CyclePhases | null>(null);
   const today = localDay(new Date(useMinute()));
@@ -231,12 +236,14 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
           {cycles && <CycleTrends trends={cycles} thisYear={thisYear} />}
 
           {all.length > 0 && (
-            <section className="card" aria-labelledby="periods-title">
-              <h2 id="periods-title" className="section-title">
-                {t("pastPeriods")}
-              </h2>
+            <Fold
+              id="cycle-periods"
+              className="periods"
+              title={t("pastPeriods")}
+              gist={all.length === 1 ? t("periodsGistOne") : t("periodsGist", { n: all.length })}
+            >
               <ul className="rows">
-                {history(all).map(({ period, days, cycleDays }) => {
+                {history(all).slice(0, allPeriods ? undefined : PERIODS_SHOWN).map(({ period, days, cycleDays }) => {
                   const said = (
                     <>
                       <Icon name="drop" />
@@ -272,7 +279,12 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                   );
                 })}
               </ul>
-            </section>
+              {!allPeriods && all.length > PERIODS_SHOWN && (
+                <button type="button" className="button button-quiet button-small periods-more" onClick={() => setAllPeriods(true)}>
+                  {t("periodsShowAll", { n: all.length })}
+                </button>
+              )}
+            </Fold>
           )}
         </div>
       </div>

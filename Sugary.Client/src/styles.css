@@ -3141,6 +3141,89 @@ h1.marked .icon {
   white-space: nowrap;
 }
 
+/* A card she can fold to its title (components/Fold.tsx): the chevron turns, and while folded its
+   gist stays under the title. */
+.fold {
+  display: block;
+  padding-block: var(--space-3);
+}
+
+.fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--target);
+  list-style: none;
+  cursor: pointer;
+}
+
+.fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.fold > summary > .icon {
+  flex: none;
+  color: var(--color-muted);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.fold[open] > summary > .icon {
+  transform: rotate(180deg);
+}
+
+.fold-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fold-gist {
+  font-size: var(--text-meta);
+  color: var(--color-muted);
+}
+
+.fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.periods-more {
+  align-self: center;
+}
+
+/* Her cycle on a phone, where the panes are no boxes: where she is, then the month to tap a day of, the
+   forecast, her cycles, and last what folds. Order alone moves them, as the desktop's panes need the
+   DOM as it is. */
+@media (max-width: 63.99rem) {
+  .panes-cycle .cycle-status {
+    order: 1;
+  }
+
+  .panes-cycle .calendar {
+    order: 2;
+  }
+
+  .panes-cycle .forecast {
+    order: 3;
+  }
+
+  .panes-cycle .trends {
+    order: 4;
+  }
+
+  .panes-cycle .cycle-glucose {
+    order: 5;
+  }
+
+  .panes-cycle .periods {
+    order: 6;
+  }
+}
+
 /* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
    her average a dashed line across. */
 .trends {
@@ -3650,18 +3733,43 @@ h1.marked .icon {
     margin-inline: auto;
   }
 
-  /* Glucose: the reading now beside the periods to look back over, the curve under both, as wide and
-     tall as the screen's room (GlucoseChart, WIDE_TALLEST). */
+  /* Glucose: the reading across the top, its trend beside the number rather than a window away; the
+     periods to look back over sit in the curve's own header, at its right, over the curve they choose
+     (GlucoseChart draws it as wide and tall as the room, WIDE_TALLEST). Her figures and her sensor
+     stand beside, their top on the reading's. */
   .panes-glucose > .pane-lead:not(:empty) {
     display: grid;
-    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-    align-items: end;
-    gap: var(--space-5) var(--space-6);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
   }
 
-  .panes-glucose > .pane-lead > :not(.glucose-now, .segmented),
-  .panes-glucose > .pane-lead > .glucose-now:only-child {
-    grid-column: 1 / -1;
+  .panes-glucose > .pane-lead > .glucose-now {
+    grid-area: 1 / 1;
+  }
+
+  .panes-glucose .glucose-now .glucose-trend {
+    margin-left: var(--space-3);
+  }
+
+  .panes-glucose > .pane-lead > .segmented {
+    grid-area: 2 / 1;
+    z-index: 1;
+    justify-self: end;
+    align-self: start;
+    width: min(24rem, 55%);
+    margin: var(--space-3) var(--space-4) 0 0;
+  }
+
+  .panes-glucose > .pane-lead > .segmented + .card {
+    grid-area: 2 / 1;
+  }
+
+  /* The curve's title shares its line with the periods: room for them, and the plot starts under both. */
+  .panes-glucose > .pane-lead > .segmented + .card .section-title {
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    margin-top: calc(-1 * var(--space-1));
   }
 
   /* The cycle: where she is, the month, and her periods, three across. */

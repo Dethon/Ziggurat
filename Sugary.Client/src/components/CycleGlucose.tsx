@@ -3,6 +3,7 @@ import { formatGlucose, formatShare, UNIT_LABEL } from "../glucose";
 import type { StringKey } from "../i18n";
 import { useSettings } from "../settings";
 import type { CyclePhases, PhaseFigures } from "../types";
+import { Fold } from "./Fold";
 import { Icon } from "./Icon";
 
 const PHASES: { key: "menstrual" | "follicular" | "luteal"; label: StringKey }[] = [
@@ -20,19 +21,17 @@ export function CycleGlucose({ phases }: { phases: CyclePhases }) {
   const shift = phaseShift(phases.follicular, phases.luteal);
   const glucose = (mgPerDl: number) => formatGlucose(mgPerDl, phases.unit, language);
 
+  const said = shift
+    ? shift.kind === "same"
+      ? t("shiftSame")
+      : t(shift.kind === "higher" ? "shiftHigher" : "shiftLower", { mean: glucose(Math.abs(shift.mean)), unit })
+    : null;
+
+  // Folded, her pattern's one sentence stays in sight under the title.
   return (
-    <section className="card cycle-glucose" aria-labelledby="cycle-glucose-title">
-      <h2 id="cycle-glucose-title" className="section-title">
-        {t("cycleGlucoseTitle")}
-      </h2>
+    <Fold id="cycle-glucose" className="cycle-glucose" title={t("cycleGlucoseTitle")} gist={said ?? undefined}>
       {phases.cycles === 0 && <p className="muted small">{t("cycleGlucoseWaiting")}</p>}
-      {shift && (
-        <p className="cycle-glucose-shift">
-          {shift.kind === "same"
-            ? t("shiftSame")
-            : t(shift.kind === "higher" ? "shiftHigher" : "shiftLower", { mean: glucose(Math.abs(shift.mean)), unit })}
-        </p>
-      )}
+      {said && <p className="cycle-glucose-shift">{said}</p>}
       {phases.cycles > 0 && (
         <>
           <ul className="phases">
@@ -48,7 +47,7 @@ export function CycleGlucose({ phases }: { phases: CyclePhases }) {
           </p>
         </>
       )}
-    </section>
+    </Fold>
   );
 }
 
