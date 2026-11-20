@@ -354,6 +354,9 @@ export function trends(periods: readonly Period[]): Trends | null {
 
 // Half a mmol/L, in mg/dL: closer than this, her two halves read as the same.
 const PHASE_SHIFT = 9;
+// The fewest days read after her periods for a verdict: a short cycle with a long period leaves a day or
+// two, and a day or two against fourteen is noise, not her pattern.
+const LEAST_FOLLICULAR_DAYS = 5;
 
 export interface PhaseShift {
   kind: "higher" | "lower" | "same";
@@ -362,9 +365,16 @@ export interface PhaseShift {
   inRange: number;
 }
 
-// How her glucose before her period compares with the days after it, where both were read.
+// How her glucose before her period compares with the days after it, where both were read and enough
+// days after it were.
 export function phaseShift(follicular: PhaseFigures, luteal: PhaseFigures): PhaseShift | null {
-  if (follicular.mean === null || luteal.mean === null || follicular.inRange === null || luteal.inRange === null) {
+  if (
+    follicular.mean === null ||
+    luteal.mean === null ||
+    follicular.inRange === null ||
+    luteal.inRange === null ||
+    follicular.days < LEAST_FOLLICULAR_DAYS
+  ) {
     return null;
   }
   const mean = luteal.mean - follicular.mean;

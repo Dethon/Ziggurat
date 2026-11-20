@@ -375,6 +375,14 @@ describe("phaseShift", () => {
   it("says nothing without both", () => {
     expect(phaseShift(phase(null, null), phase(130, 0.7))).toBeNull();
   });
+
+  // A short cycle with a long period leaves a day or two between them: too few to say her glucose
+  // runs higher or lower before her period than after it.
+  it("says nothing on fewer than five days read after her periods", () => {
+    const few = (days: number) => ({ ...phase(110, 0.85), days });
+    expect(phaseShift(few(2), phase(130, 0.7))).toBeNull();
+    expect(phaseShift(few(5), phase(130, 0.7))?.kind).toBe("higher");
+  });
 });
 
 // The server reminds her by the same forecast (CycleForecast); both read these cases.
