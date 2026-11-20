@@ -44,6 +44,7 @@ const ACTIONS: Record<FooterAction, { primary: StringKey; secondary?: StringKey;
 // the photo and description are replaced by a notice and only the other ways in remain.
 export function MealScreen({
   active,
+  docked = false,
   adder,
   estimates,
   labels,
@@ -52,6 +53,9 @@ export function MealScreen({
 }: {
   // Whether the Meal tab is the one on screen; the screen stays mounted behind the others.
   active: boolean;
+  // Beside the log on a wide window (styles.css, main.fused): its action sits at the column's foot, so
+  // the page and the toast make no room for it.
+  docked?: boolean;
   // Filled in by the screen: how the Foods tab adds one of her foods to this meal.
   adder: RefObject<((item: DraftItem) => void) | null>;
   estimates: boolean;
@@ -249,6 +253,8 @@ export function MealScreen({
         dose: insulin === null ? null : { units: insulin, note: null },
       });
       startOver();
+      // Her usuals follow what she uses: beside the log the meal never leaves the screen to read them again.
+      api.foods().then(setFoods, () => {});
       onSaved();
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
@@ -684,7 +690,7 @@ export function MealScreen({
       </div>
 
       {action && (
-        <ActionBar active={active}>
+        <ActionBar active={active && !docked}>
           {shown.pending && (
             <p className="action-pending" role="status">
               <Icon name="alert" size={18} />

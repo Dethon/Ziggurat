@@ -3319,29 +3319,21 @@ h1.marked .icon {
   /* The meal beside the log */
 
   main.fused {
-    display: grid;
-    grid-template-columns: var(--meal-column) minmax(0, 1fr);
-    align-items: start;
+    padding-left: var(--meal-column);
     padding-bottom: 0;
-    /* The meal's action is docked in its column: nothing on the page makes room for it. */
-    --footer-space: 0px;
   }
 
   main.fused > * {
     max-width: none;
-    margin-inline: 0;
-  }
-
-  main.fused > .looking {
-    grid-column: 1 / -1;
   }
 
   /* The meal stands down the rail's side the window's whole height, scrolling on its own so it stays
-     whole beside a long log; a shade apart from the page, as a desk's tray beside its book. */
+     whole beside a long log (and beside whose log is open, over the log alone); a shade apart from the
+     page, as a desk's tray beside its book. */
   main.fused > .meal-column {
-    position: sticky;
-    top: 0;
-    height: 100dvh;
+    position: fixed;
+    inset: 0 auto 0 var(--rail-width);
+    width: var(--meal-column);
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-width: thin;
@@ -3351,7 +3343,12 @@ h1.marked .icon {
 
   main.fused > .meal-column > .screen {
     min-height: 100%;
-    padding: var(--space-8) var(--space-6) 0;
+    padding: var(--space-8) var(--space-6);
+  }
+
+  /* With a meal to save, its action is the column's foot and nothing goes under it. */
+  main.fused > .meal-column > .screen:has(.action-bar) {
+    padding-bottom: 0;
   }
 
   /* One column: the total, then the plate, then the ways to add to it. */
@@ -3392,8 +3389,9 @@ h1.marked .icon {
 
   /* The log beside it, centred in the room left and never wider than its two panes read. */
   main.fused > .screen,
+  main.fused > .looking,
   main > .screen:has(> .panes-log),
-  main:not(.fused):has(> .screen > .panes-log) > .looking {
+  main:has(> .screen > .panes-log) > .looking {
     width: 100%;
     max-width: calc(var(--side-width) + var(--days-width) + var(--space-6) + 2 * var(--space-8));
     margin-inline: auto;
@@ -3408,7 +3406,8 @@ h1.marked .icon {
     gap: var(--space-5) var(--space-6);
   }
 
-  .panes-glucose > .pane-lead > :not(.glucose-now, .segmented) {
+  .panes-glucose > .pane-lead > :not(.glucose-now, .segmented),
+  .panes-glucose > .pane-lead > .glucose-now:only-child {
     grid-column: 1 / -1;
   }
 
@@ -3444,7 +3443,7 @@ h1.marked .icon {
 }
 
 /* Beside the meal, the log is one column until the window has room for its two panes too. */
-@media (90rem <= width < 110rem) {
+@media (90rem <= width < 104rem) {
   main.fused .panes-log {
     display: flex;
     flex-direction: column;

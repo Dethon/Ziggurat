@@ -244,6 +244,7 @@ function Shell({
           <div className="meal-column" hidden={!workspace && tab !== "meal"}>
             <MealScreen
               active={workspace || tab === "meal"}
+              docked={workspace}
               adder={adder}
               estimates={session.estimates}
               labels={session.labels}
