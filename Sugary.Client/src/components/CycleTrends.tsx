@@ -1,7 +1,9 @@
 import { dayDate, type Trends } from "../cycle";
 import { formatDays, locale } from "../format";
 import { useSettings } from "../settings";
+import { Fold } from "./Fold";
 
+// Folded (a phone's default), her average and range stay under the title.
 // Her last year of cycles: her averages and range over a bar for each cycle, its length written on it.
 // The bars stand on zero, so a two-day difference looks like one; the numbers carry it. A cycle too
 // long to be one (a period she likely did not note) is drawn faint and counted in nothing.
@@ -15,10 +17,12 @@ export function CycleTrends({ trends, thisYear }: { trends: Trends; thisYear: st
   const days = (n: number) => (n === 1 ? t("periodDaysOne") : t("periodDays", { n }));
 
   return (
-    <section className="card trends" aria-labelledby="trends-title">
-      <h2 id="trends-title" className="section-title">
-        {t("trendsTitle")}
-      </h2>
+    <Fold
+      id="cycle-trends"
+      className="trends"
+      title={t("trendsTitle")}
+      gist={t("trendsGist", { average: trends.averageCycle, low: trends.shortest, high: trends.longest })}
+    >
       <dl className="glucose-figures trends-figures">
         <div>
           <dt>{t("trendsAverageCycle")}</dt>
@@ -65,6 +69,6 @@ export function CycleTrends({ trends, thisYear }: { trends: Trends; thisYear: st
         {t("trendsKeyAverage")}
       </p>
       {trends.cycles.some((cycle) => cycle.skipped) && <p className="muted small">{t("trendsSkippedHint")}</p>}
-    </section>
+    </Fold>
   );
 }

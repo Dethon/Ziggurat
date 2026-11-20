@@ -3196,7 +3196,7 @@ h1.marked .icon {
 }
 
 /* Her cycle on a phone, where the panes are no boxes: where she is, then the month to tap a day of, the
-   forecast, her cycles, and last what folds. Order alone moves them, as the desktop's panes need the
+   forecast, and last what folds (her cycles, her glucose through them, her periods). Order alone moves them, as the desktop's panes need the
    DOM as it is. */
 @media (max-width: 63.99rem) {
   .panes-cycle .cycle-status {
@@ -3226,10 +3226,6 @@ h1.marked .icon {
 
 /* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
    her average a dashed line across. */
-.trends {
-  gap: var(--space-4);
-}
-
 /* Three across where they fit, two and one under where the card is narrow. */
 .trends-figures {
   grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
