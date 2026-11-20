@@ -1,6 +1,7 @@
 import { api } from "../api";
 import { accountUrl } from "../signin";
 import { Icon } from "../components/Icon";
+import { SliceMark } from "../components/Wordmark";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
 import { THEMES } from "../theme";
@@ -144,7 +145,7 @@ export function SettingsScreen({
       </a>
 
       <p className="colophon">
-        <Icon name="slice" size={18} />
+        <SliceMark />
         Sugary · {t("tagline")}
       </p>
     </div>

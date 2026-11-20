@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, setViewing, SUSPENDED_EVENT, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
-import { Wordmark } from "./components/Wordmark";
+import { SliceMark, Wordmark } from "./components/Wordmark";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
 import { pendingOutcomes } from "./log";
@@ -129,7 +129,7 @@ function NotOn() {
     <main>
       <div className="screen">
         <div className="empty">
-          <Icon name="slice" size={40} />
+          <SliceMark />
           <p className="empty-title">{t("notOnTitle")}</p>
           <p className="small">{t("notOnBody")}</p>
         </div>

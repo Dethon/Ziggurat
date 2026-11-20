@@ -427,14 +427,12 @@ export function MealScreen({
     <div className="screen meal">
       <header className="screen-header">
         <div>
-          {!started && (
-            <Wordmark />
-          )}
+          {!started && <Wordmark />}
           {started ? (
             // Once a photo, a clip or a food is in, this is her meal: the wordmark steps aside and the
-            // slice stays with the title, short enough to share its line with Start over.
+            // title carries the tab's plate, short enough to share its line with Start over.
             <h1 className="title-small marked">
-              <Icon name="slice" size={24} />
+              <Icon name="plate" size={24} />
               {t("mealDraftTitle")}
             </h1>
           ) : (
