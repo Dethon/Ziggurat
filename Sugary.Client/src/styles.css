@@ -3306,6 +3306,160 @@ h1.marked .icon {
   }
 }
 
+/* A wide window: a large monitor, or a laptop from 1440 px. The page grows to as many columns as read
+   well rather than stretching two: her own meal is a column of its own beside the log (main.fused, set
+   by App from WIDE in wide.ts, this same literal, so the rail's entries and the columns change
+   together), the cycle sets its calendar beside her periods, and the pantry and her settings run three
+   across. Rows never grow past what reads at a glance: wider, the page gains room around them. */
+@media (min-width: 90rem) {
+  :root {
+    --page-width: var(--page-width-wide);
+  }
+
+  /* The meal beside the log */
+
+  main.fused {
+    display: grid;
+    grid-template-columns: var(--meal-column) minmax(0, 1fr);
+    align-items: start;
+    padding-bottom: 0;
+    /* The meal's action is docked in its column: nothing on the page makes room for it. */
+    --footer-space: 0px;
+  }
+
+  main.fused > * {
+    max-width: none;
+    margin-inline: 0;
+  }
+
+  main.fused > .looking {
+    grid-column: 1 / -1;
+  }
+
+  /* The meal stands down the rail's side the window's whole height, scrolling on its own so it stays
+     whole beside a long log; a shade apart from the page, as a desk's tray beside its book. */
+  main.fused > .meal-column {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    background: color-mix(in srgb, var(--color-sponge) 38%, var(--color-bg));
+    border-right: 1px solid var(--color-line);
+  }
+
+  main.fused > .meal-column > .screen {
+    min-height: 100%;
+    padding: var(--space-8) var(--space-6) 0;
+  }
+
+  /* One column: the total, then the plate, then the ways to add to it. */
+  main.fused .meal-column .panes {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-5);
+  }
+
+  main.fused .meal-column .pane-lead {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Its action sits at the column's foot, across the column, and follows her down a long meal. */
+  main.fused .meal-column .action-bar {
+    position: sticky;
+    bottom: 0;
+    left: auto;
+    right: auto;
+    margin: auto calc(-1 * var(--space-6)) 0;
+    background: color-mix(in srgb, var(--color-sponge) 38%, var(--color-bg));
+    box-shadow: none;
+  }
+
+  main.fused .meal-column .action-bar-inner {
+    max-width: none;
+    padding: var(--space-4) var(--space-6);
+  }
+
+  main.fused .meal-column .action-bar .button-grow {
+    flex: 1 1 auto;
+  }
+
+  /* The log beside it, centred in the room left and never wider than its two panes read. */
+  main.fused > .screen,
+  main > .screen:has(> .panes-log),
+  main:not(.fused):has(> .screen > .panes-log) > .looking {
+    width: 100%;
+    max-width: calc(var(--side-width) + var(--days-width) + var(--space-6) + 2 * var(--space-8));
+    margin-inline: auto;
+  }
+
+  /* Glucose: the reading now beside the periods to look back over, the curve under both, as wide and
+     tall as the screen's room (GlucoseChart, WIDE_TALLEST). */
+  .panes-glucose > .pane-lead:not(:empty) {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: end;
+    gap: var(--space-5) var(--space-6);
+  }
+
+  .panes-glucose > .pane-lead > :not(.glucose-now, .segmented) {
+    grid-column: 1 / -1;
+  }
+
+  /* The cycle: where she is, the month, and her periods, three across. */
+  .panes-cycle > .pane:not(.pane-side) {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  /* Settings: three columns of cards. */
+  .cards {
+    columns: 3;
+  }
+
+  .account {
+    max-width: calc((100% - 2 * var(--space-5)) / 3);
+  }
+
+  /* The pantry: three columns of rows. */
+  .foods-card {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .foods-card li:nth-child(n + 3) {
+    border-top: 0;
+  }
+
+  .foods-card li:nth-child(n + 4) {
+    border-top: 1px solid var(--color-line);
+  }
+}
+
+/* Beside the meal, the log is one column until the window has room for its two panes too. */
+@media (90rem <= width < 110rem) {
+  main.fused .panes-log {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  main.fused .panes-log > .pane-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+  }
+}
+
 /* A mouse shows what it is over; a finger has no hover, and a phone's sticks after a tap. */
 @media (hover: hover) and (pointer: fine) {
   .tab:hover:not(.tab-on) {

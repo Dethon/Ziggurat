@@ -112,6 +112,11 @@
   --page-width-desktop: 1120px;
   /* The narrower of a desktop's two panes: 18 rem at a laptop's 1024 px, 380 px from about 1400. */
   --side-width: clamp(18rem, 32vw - 4rem, 380px);
+  /* A wide window's (styles.css, "A wide window"): the page grows to three columns of cards, the meal
+     a column of its own beside the log, and the log's days no wider than a row reads at a glance. */
+  --page-width-wide: 1680px;
+  --meal-column: clamp(26rem, 24vw + 4rem, 34rem);
+  --days-width: 760px;
 }
 
 /* Light, dark or the phone's: her choice is resolved in script (index.html before the first paint,

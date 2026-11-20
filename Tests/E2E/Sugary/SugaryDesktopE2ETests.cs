@@ -62,6 +62,49 @@ public class SugaryDesktopE2ETests(WebChatE2EFixture fixture)
         panel.Y.ShouldBeGreaterThan(24, "with room above it as below");
     }
 
+    // A wide window (a large monitor, a laptop from 1440 px) left most of itself empty around a page
+    // drawn for 1024. There the meal she is building stands in a column beside her log, the two one
+    // entry in the rail, and a meal she saves joins the log already on screen beside it, unreloaded.
+    [SkippableFact]
+    public async Task OnAWideWindow_TheMealStandsBesideTheLog_InOneRailEntry_AndASavedMealJoinsIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.SugaryUrl), "Sugary stack not available");
+
+        var person = await fixture.AccountForAsync(fixture.NextUserIndex());
+        var browser = (await fixture.CreatePageAsync()).Context.Browser!;
+        await using var wide = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            ServiceWorkers = ServiceWorkerPolicy.Block,
+            ExtraHTTPHeaders = Headers(person)
+        });
+        var page = await wide.NewPageAsync();
+        await page.GotoAsync(fixture.SugaryUrl);
+        var tabs = page.GetByRole(AriaRole.Navigation, new PageGetByRoleOptions { Name = "Sugary" });
+        await Assertions.Expect(tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Meal & log" }))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        await Assertions.Expect(tabs.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Meal", Exact = true }))
+            .ToHaveCountAsync(0);
+
+        var meal = await BoxOfAsync(page.Locator(".meal-column"));
+        var log = await BoxOfAsync(page.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Name = "Log", Exact = true }));
+        (meal.X + meal.Width).ShouldBeLessThanOrEqualTo(log.X, "the log stands beside the meal, not under it");
+        meal.Height.ShouldBe(1080, 1, "the meal is a column the window's whole height");
+
+        var name = $"Torrija {Guid.NewGuid():N}"[..16];
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "By hand" }).ClickAsync();
+        var sheet = page.Locator("dialog[open]");
+        await sheet.Locator("input").Nth(0).FillAsync(name, new LocatorFillOptions { Timeout = 30_000 });
+        await sheet.Locator("input").Nth(1).FillAsync("30");
+        await sheet.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Add to meal" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Save to log" }).ClickAsync();
+
+        await Assertions.Expect(page.Locator(".panes-log").GetByText(name))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Assertions.Expect(page.Locator(".meal-column").GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Take a photo" }))
+            .ToBeVisibleAsync();
+    }
+
     // A sheet closes on a click on the scrim around it. Selecting a field's words with the mouse and
     // letting go past the sheet's edge (an everyday overshoot beside a centred sheet) also ends in a
     // click on the scrim's element, and it closed the sheet with everything typed in it.

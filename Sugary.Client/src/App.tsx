@@ -14,11 +14,12 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { showsCycle, UNSAID } from "./profile";
 import { useSettings } from "./settings";
 import { accountUrl, goNotice, goSignIn } from "./signin";
-import { hashOf, type Tab, tabOf, visibleTabs } from "./tabs";
+import { fuses, hashOf, railTab, railTabs, type Tab, tabOf, visibleTabs } from "./tabs";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, Profile, SessionState, SugaryPerson } from "./types";
 import { useTypingMark } from "./typing";
 import { firstViewed, hasNoLog, offered, sessionOf, showsPicker } from "./viewing";
+import { useWide } from "./wide";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
   { id: "meal", label: "tabMeal", icon: "plate" },
@@ -200,6 +201,11 @@ function Shell({
   const someoneElses = viewed !== null;
   const shown = visibleTabs(showsCycle(profile), someoneElses);
   const [tab, setTab] = useState<Tab>(() => tabOf(window.location.hash, shown));
+  // A wide window sets the meal beside the log: one rail entry, both on screen together.
+  const fused = fuses(shown, useWide());
+  const workspace = fused && (tab === "meal" || tab === "log");
+  // Each meal saved is a new log: a log already on screen beside the meal reads its days again.
+  const [saves, setSaves] = useState(0);
   // Replaced, not pushed: the tabs are not pages, so Back leaves the app as it always has.
   useEffect(() => {
     window.history.replaceState(window.history.state, "", hashOf(tab));
@@ -229,14 +235,15 @@ function Shell({
 
   return (
     <>
-      <main>
+      <main className={workspace ? "fused" : undefined}>
         {people.length > 0 && <PersonPicker people={people} signer={session.person ?? null} viewed={viewed} onLook={onLook} />}
         {/* The meal screen stays mounted so an estimate in progress survives a look at the log. It is
-            hers alone: somebody else's log has none. */}
+            hers alone: somebody else's log has none. Beside the log, it is a column of its own; the same
+            element either way, so a window crossing the width keeps the meal in progress. */}
         {!someoneElses && (
-          <div hidden={tab !== "meal"}>
+          <div className="meal-column" hidden={!workspace && tab !== "meal"}>
             <MealScreen
-              active={tab === "meal"}
+              active={workspace || tab === "meal"}
               adder={adder}
               estimates={session.estimates}
               labels={session.labels}
@@ -244,13 +251,15 @@ function Shell({
               onSaved={() => {
                 toast({ text: t("saved") });
                 setTab("log");
+                setSaves((n) => n + 1);
                 void refreshPending();
               }}
             />
           </div>
         )}
-        {tab === "log" && (
+        {(tab === "log" || workspace) && (
           <LogScreen
+            key={saves}
             estimates={session.estimates}
             labels={session.labels}
             readOnly={someoneElses}
@@ -282,12 +291,12 @@ function Shell({
           <Icon name="slice" size={24} />
           Sugary
         </p>
-        {TABS.filter(({ id }) => shown.includes(id)).map(({ id, label, icon }) => (
+        {TABS.filter(({ id }) => railTabs(shown, fused).includes(id)).map(({ id, label, icon }) => (
           <button
             key={id}
             type="button"
-            className={tab === id ? "tab tab-on" : "tab"}
-            aria-current={tab === id ? "page" : undefined}
+            className={railTab(tab, fused) === id ? "tab tab-on" : "tab"}
+            aria-current={railTab(tab, fused) === id ? "page" : undefined}
             onClick={() => {
               setTab(id);
               window.scrollTo(0, 0);
@@ -301,7 +310,7 @@ function Shell({
                 </span>
               )}
             </span>
-            {t(label)}
+            {t(fused && id === "log" ? "tabMealLog" : label)}
             {id === "log" && pending > 0 && (
               <span className="visually-hidden">
                 , {pending === 1 ? t("logBadgeSpokenOne") : t("logBadgeSpoken", { n: pending })}

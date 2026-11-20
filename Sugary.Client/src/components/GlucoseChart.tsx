@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent } from "react";
 import { chartBox, useWidth } from "../chart";
+import { useWide } from "../wide";
 import { chartTop, curveSegments, formatGlucose, LOWEST, UNIT_LABEL } from "../glucose";
 import { formatShortDay, formatTime, locale } from "../format";
 import { useSettings } from "../settings";
@@ -9,6 +10,7 @@ import type { GlucoseCurve, GlucoseUnit } from "../types";
 // and the ends of the time named. A touch or a pointer along it reads the nearest point. Drawn for a
 // phone's card, and drawn wider rather than larger on a desktop's (chartBox).
 const DRAWN = { width: 320, height: 180 };
+const WIDE_TALLEST = 2.2;
 const PLOT = { left: 34, right: 8, top: 8, bottom: 22 };
 
 export function GlucoseChart({
@@ -27,7 +29,8 @@ export function GlucoseChart({
   const { language } = useSettings();
   const [hovered, setHovered] = useState<number | null>(null);
   const card = useRef<HTMLDivElement>(null);
-  const { width, height } = chartBox(useWidth(card), DRAWN);
+  // A wide window gives the curve the room the glucose screen has under it, so its swings read.
+  const { width, height } = chartBox(useWidth(card), DRAWN, useWide() ? WIDE_TALLEST : undefined);
   const plotWidth = width - PLOT.left - PLOT.right;
   const plotHeight = height - PLOT.top - PLOT.bottom;
   const from = Date.parse(curve.from);

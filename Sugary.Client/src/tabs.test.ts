@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashOf, tabOf, visibleTabs } from "./tabs";
+import { fuses, hashOf, railTab, railTabs, tabOf, visibleTabs } from "./tabs";
 
 describe("the tab in the address", () => {
   it("reads the tab the page was on", () => {
@@ -30,5 +30,28 @@ describe("the tabs a person is shown", () => {
   it("opens the meal for a tab she is not shown", () => {
     expect(tabOf("#cycle", visibleTabs(false))).toBe("meal");
     expect(tabOf("#cycle", visibleTabs(true))).toBe("cycle");
+  });
+});
+
+describe("a window wide enough for the meal beside the log", () => {
+  it("sets the meal she is building beside her log", () => {
+    expect(fuses(visibleTabs(true), true)).toBe(true);
+    expect(fuses(visibleTabs(true), false)).toBe(false);
+  });
+
+  it("fuses nothing in somebody else's log, which has no meal", () => {
+    expect(fuses(visibleTabs(true, true), true)).toBe(false);
+  });
+
+  it("names the two in one rail entry, the log's, which keeps its badge", () => {
+    expect(railTabs(visibleTabs(true), true)).toEqual(["log", "glucose", "cycle", "foods", "settings"]);
+    expect(railTabs(visibleTabs(true), false)).toEqual(visibleTabs(true));
+  });
+
+  it("lights that entry for the meal as for the log", () => {
+    expect(railTab("meal", true)).toBe("log");
+    expect(railTab("log", true)).toBe("log");
+    expect(railTab("foods", true)).toBe("foods");
+    expect(railTab("meal", false)).toBe("meal");
   });
 });
