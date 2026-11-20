@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, phaseShift, refusedBecause, shiftMonth, trends } from "./cycle";
+import forecastCases from "./cases/forecast.json";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -346,4 +347,14 @@ describe("phaseShift", () => {
   it("says nothing without both", () => {
     expect(phaseShift(phase(null, null), phase(130, 0.7))).toBeNull();
   });
+});
+
+// The server reminds her by the same forecast (CycleForecast); both read these cases.
+describe("forecast, as the server reads it", () => {
+  for (const { name, today, starts, expected } of forecastCases.cases) {
+    it(name, () => {
+      const read = forecast(starts.map((start) => period(start, addDays(start, 4))), today);
+      expect(read && { earliest: read.earliest, latest: read.latest, likeliest: read.likeliest }).toEqual(expected);
+    });
+  }
 });

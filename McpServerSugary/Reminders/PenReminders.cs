@@ -1,13 +1,9 @@
-using System.Net;
-using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
-using Infrastructure.Clients.Push;
 using McpServerSugary.Glucose;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.Reminders;
 
@@ -22,14 +18,10 @@ namespace McpServerSugary.Reminders;
 public sealed class PenReminders(
     IDbContextFactory<SugaryDbContext> contexts,
     HomeCalendar calendar,
-    IPushMessageSender push,
+    ReminderPhones tell,
     SugarySettings settings,
-    SugaryOff sugaryOff,
-    ILogger<PenReminders> logger,
-    ISessionAccounts? sessions = null)
+    SugaryOff sugaryOff)
 {
-    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
-
     // The loop and a test may ask at once; one pass at a time keeps each reminder single.
     private readonly SemaphoreSlim _pass = new(1, 1);
 
@@ -40,14 +32,13 @@ public sealed class PenReminders(
         {
             var off = await sugaryOff.OffAsync(ct);
             await using var db = await contexts.CreateDbContextAsync(ct);
-            var phones = (await db.PushSubscriptions.IgnoreQueryFilters().ToListAsync(ct))
-                .ToLookup(phone => (phone.TenantId, phone.UserId));
+            var phones = await ReminderPhones.OfEveryoneAsync(db, ct);
             // Each owner's day and hour on their household's clock, as their phone last told it.
             var due = (await db.Pens.IgnoreQueryFilters()
                     .Where(p => p.ReplacedOn == null && p.UserId != Owners.Unassigned)
                     .ToListAsync(ct))
                 .Where(pen => !off.PersonOff(new Account(pen.TenantId, pen.UserId)))
-                .Select(pen => (Pen: pen, Clock: ClockOf(phones[(pen.TenantId, pen.UserId)])))
+                .Select(pen => (Pen: pen, Clock: ReminderPhones.ClockOf(calendar, phones[(pen.TenantId, pen.UserId)])))
                 .Where(p => p.Clock.AtHome(p.Clock.Now).Hour >= settings.PenReminderHour)
                 .Select(p => (p.Pen, p.Clock.Today, Reminder: PenRules.Due(p.Pen, p.Clock.Today)))
                 .Where(d => d.Reminder is not null)
@@ -55,10 +46,11 @@ public sealed class PenReminders(
 
             foreach (var (pen, today, reminder) in due)
             {
-                var heard = await SendAsync(db, [.. phones[(pen.TenantId, pen.UserId)]], pen, reminder!.Value, today, ct);
+                var heard = await tell.TellAsync(db, phones[(pen.TenantId, pen.UserId)],
+                    phone => PenReminderText.For(pen, reminder!.Value, today, phone.Language), ct);
                 if (heard)
                 {
-                    pen.Sent(reminder.Value);
+                    pen.Sent(reminder!.Value);
                 }
             }
 
@@ -68,64 +60,5 @@ public sealed class PenReminders(
         {
             _pass.Release();
         }
-    }
-
-    // A phone hears only while the session that subscribed it lives: one that ended is removed; one
-    // that could not be asked about just now is told nothing this time and kept.
-    private async Task<bool> SessionLivesAsync(SugaryDbContext db, PushSubscription phone, CancellationToken ct)
-    {
-        if (sessions is null || phone.SessionId is not { } session)
-        {
-            return true;
-        }
-
-        try
-        {
-            if (await sessions.SessionAsync(phone.UserId, session, ct) is not null)
-            {
-                return true;
-            }
-
-            db.PushSubscriptions.Remove(phone);
-            return false;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Could not ask whether the session behind a phone of {UserId} lives; not told", phone.UserId);
-            return false;
-        }
-    }
-
-    private HomeCalendar ClockOf(IEnumerable<PushSubscription> phones) => calendar.OnSaved(phones.Select(p => p.TimeZone));
-
-    private async Task<bool> SendAsync(
-        SugaryDbContext db, IReadOnlyList<PushSubscription> phones, Pen pen, PenReminder reminder, DateOnly today,
-        CancellationToken ct)
-    {
-        var heard = false;
-        foreach (var phone in phones.Where(p => db.Entry(p).State != EntityState.Deleted))
-        {
-            if (!await SessionLivesAsync(db, phone, ct))
-            {
-                continue;
-            }
-
-            var payload = JsonSerializer.Serialize(PenReminderText.For(pen, reminder, today, phone.Language), _json);
-            try
-            {
-                await push.SendAsync(phone.Endpoint, phone.P256dh, phone.Auth, payload, ct);
-                heard = true;
-            }
-            catch (WebPushSendException ex) when (ex.StatusCode is HttpStatusCode.Gone or HttpStatusCode.NotFound)
-            {
-                db.PushSubscriptions.Remove(phone);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogWarning(ex, "Pushing a pen reminder to {Endpoint} failed", phone.Endpoint);
-            }
-        }
-
-        return heard;
     }
 }

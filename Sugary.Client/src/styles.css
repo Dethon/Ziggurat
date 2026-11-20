@@ -3112,6 +3112,26 @@ h1.marked .icon {
   background: var(--color-good);
 }
 
+.period-reminder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.period-reminder-on {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink);
+}
+
+.period-reminder-on .button {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 /* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
    her average a dashed line across. */
 .trends {

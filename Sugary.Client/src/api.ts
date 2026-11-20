@@ -238,6 +238,8 @@ export const api = {
     request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   glucoseStatistics: (days: number) => request<GlucoseStatistics>(`/glucose/statistics?days=${days}`),
   cyclePhases: () => request<CyclePhases>("/glucose/cycle"),
+  cycleReminder: () => request<{ on: boolean }>("/cycle/reminder"),
+  setCycleReminder: (on: boolean) => request<{ on: boolean }>("/cycle/reminder", json("PUT", { on })),
   // Logs in at LibreLinkUp before anything is kept, so it may take a while and is refused by code.
   linkGlucose: (account: LinkGlucose) => request<GlucoseLink>("/glucose/link", json("PUT", account)),
   chooseGlucoseConnection: (patientId: string) =>

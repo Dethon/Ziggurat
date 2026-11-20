@@ -1,0 +1,12 @@
+{
+  "why": "One forecast in two languages: the app's (cycle.ts, forecast) draws it, the server's (CycleForecast) reminds her by it. Both suites read these cases; a case that one answers differently is a reminder on another day than the app shows.",
+  "cases": [
+    { "name": "nothing before two periods", "today": "2026-10-16", "starts": ["2026-10-08"], "expected": null },
+    { "name": "three cycles of 28, 29 and 29 days", "today": "2026-10-16", "starts": ["2026-07-14", "2026-08-11", "2026-09-09", "2026-10-08"], "expected": { "earliest": "2026-11-05", "latest": "2026-11-06", "likeliest": "2026-11-06" } },
+    { "name": "one cycle", "today": "2026-10-10", "starts": ["2026-09-10", "2026-10-08"], "expected": { "earliest": "2026-11-05", "latest": "2026-11-05", "likeliest": "2026-11-05" } },
+    { "name": "a cycle half again longer than the median is left out", "today": "2026-10-16", "starts": ["2026-05-19", "2026-06-16", "2026-08-11", "2026-09-09"], "expected": { "earliest": "2026-10-07", "latest": "2026-10-08", "likeliest": "2026-10-08" } },
+    { "name": "only the six most recent cycles", "today": "2026-08-20", "starts": ["2026-01-19", "2026-03-01", "2026-03-29", "2026-04-26", "2026-05-24", "2026-06-21", "2026-07-19", "2026-08-16"], "expected": { "earliest": "2026-09-13", "latest": "2026-09-13", "likeliest": "2026-09-13" } },
+    { "name": "a mean of half a day rounds up", "today": "2026-10-16", "starts": ["2026-08-12", "2026-09-09", "2026-10-08"], "expected": { "earliest": "2026-11-05", "latest": "2026-11-06", "likeliest": "2026-11-06" } },
+    { "name": "a start after today is not read", "today": "2026-10-16", "starts": ["2026-08-11", "2026-09-08", "2026-10-06", "2026-10-20"], "expected": { "earliest": "2026-11-03", "latest": "2026-11-03", "likeliest": "2026-11-03" } }
+  ]
+}

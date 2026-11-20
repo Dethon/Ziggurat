@@ -23,7 +23,7 @@ namespace McpServerSugary.App;
 public sealed class OneLogWriteAtATime
 {
     private static readonly string[] _log =
-        ["/meals", "/doses", "/pens", "/exercise", "/periods", "/day-notes", "/glucose", "/profile", "/measurements"];
+        ["/meals", "/doses", "/pens", "/exercise", "/periods", "/day-notes", "/cycle", "/glucose", "/profile", "/measurements"];
     private static readonly string[] _pantry = ["/foods", "/recipes"];
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _people = new(StringComparer.Ordinal);

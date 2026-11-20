@@ -15,7 +15,7 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120105403_DayFlowAndSymptoms";
+    public override string LastMigrationId => "20261120110705_CycleReminders";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -55,6 +55,29 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("UserId");
 
                 b.ToTable("BodyMeasurements");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.CycleReminder", b =>
+            {
+                b.Property<string>("UserId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TenantId")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<bool>("Enabled")
+                    .HasColumnType("INTEGER");
+
+                b.Property<DateOnly?>("SentFor")
+                    .HasColumnType("TEXT");
+
+                b.HasKey("UserId", "TenantId");
+
+                b.HasIndex("UserId");
+
+                b.ToTable("CycleReminders");
             });
 
         modelBuilder.Entity("McpServerSugary.Store.DayNote", b =>

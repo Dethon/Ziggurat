@@ -40,6 +40,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<Dose> Doses => Set<Dose>();
     public DbSet<Pen> Pens => Set<Pen>();
     public DbSet<Profile> Profiles => Set<Profile>();
+    public DbSet<CycleReminder> CycleReminders => Set<CycleReminder>();
     public DbSet<BodyMeasurement> BodyMeasurements => Set<BodyMeasurement>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
@@ -137,6 +138,8 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         // so a day is a note's key within its person's log.
         modelBuilder.Entity<Period>().HasIndex(p => p.Start);
         modelBuilder.Entity<DayNote>().HasKey(n => new { n.UserId, n.Day });
+        var cycleReminder = modelBuilder.Entity<CycleReminder>();
+        cycleReminder.HasKey(r => new { r.UserId, r.TenantId });
 
         // One link per person. The people the account follows are rows of their own, as a meal's items are.
         var link = modelBuilder.Entity<GlucoseLink>();
@@ -213,6 +216,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(exercise);
         Personal(modelBuilder.Entity<Period>());
         Personal(modelBuilder.Entity<DayNote>());
+        Personal(cycleReminder);
         Personal(link);
         Personal(reading);
         Personal(sensor);

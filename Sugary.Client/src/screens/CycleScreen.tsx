@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon";
 import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refusedBecause, trends } from "../cycle";
 import { CycleTrends } from "../components/CycleTrends";
 import { CycleGlucose } from "../components/CycleGlucose";
+import { PeriodReminder } from "../components/PeriodReminder";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
@@ -198,6 +199,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                       {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
                     </p>
                   )}
+                  {!readOnly && <PeriodReminder />}
                   <p className="notice forecast-disclaimer">
                     <Icon name="info" size={18} />
                     <span>
