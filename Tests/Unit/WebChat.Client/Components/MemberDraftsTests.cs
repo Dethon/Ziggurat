@@ -11,23 +11,23 @@ namespace Tests.Unit.WebChat.Client.Components;
 // heading Owner, since nothing she was answered replaced her edit.
 public class MemberDraftsTests
 {
-    private static readonly AdminMember Ines = new("ines", "Inés Rivas", AdminMember.Owner, false, false, false);
+    private static readonly AdminMember _ines = new("ines", "Inés Rivas", AdminMember.Owner, false, false, false);
 
-    private static AdminMembers Members => new([Ines]);
+    private static AdminMembers Members => new([_ines]);
 
     [Fact]
     public void ARefusedChange_PutsTheFieldsBackToWhatIsSaved()
     {
         var drafts = new MemberDrafts();
         drafts.Reset(Members);
-        drafts.For(Ines).Role = AdminMember.Member;
+        drafts.For(_ines).Role = AdminMember.Member;
 
         drafts.Answered(new HouseholdMembersState
         {
             Members = Members, Notice = new AdminNotice(AdminNoticeKind.Refused, "The household's last owner stays an enabled owner.")
         });
 
-        drafts.For(Ines).Role.ShouldBe(AdminMember.Owner);
+        drafts.For(_ines).Role.ShouldBe(AdminMember.Owner);
     }
 
     [Fact]
@@ -35,28 +35,28 @@ public class MemberDraftsTests
     {
         var drafts = new MemberDrafts();
         drafts.Reset(Members);
-        drafts.For(Ines).SeesAll = true;
+        drafts.For(_ines).SeesAll = true;
 
         drafts.Answered(new HouseholdMembersState { Members = Members });
 
-        drafts.For(Ines).SeesAll.ShouldBeTrue();
+        drafts.For(_ines).SeesAll.ShouldBeTrue();
     }
 
     // Two owners on the members page: Ana made Carlos an owner, then Bea — whose page still said
     // Member — ticked "Sees all conversations" for him and saved. The page sent the role it had
     // loaded beside the tick, and Carlos was a member again with nobody told. A save says only what
     // this page changed, so another owner's change to the other field stands.
-    private static readonly AdminMember Carlos = new("carlos", "Carlos", AdminMember.Member, false, false, false);
+    private static readonly AdminMember _carlos = new("carlos", "Carlos", AdminMember.Member, false, false, false);
 
     // Letting Carlos's agent read everyone's Sugary log is its own field, sent alone like the others.
     [Fact]
     public void ASugaryLogGrant_IsSentAlone()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).ReadsSugaryLogs = true;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).ReadsSugaryLogs = true;
 
-        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(ReadsSugaryLogs: true));
+        drafts.EditOf(_carlos).ShouldBe(new MemberEdit(ReadsSugaryLogs: true));
     }
 
     // Turning Sugary on for Carlos is its own field too.
@@ -64,52 +64,52 @@ public class MemberDraftsTests
     public void UsingSugary_IsSentAlone()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).UsesSugary = true;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).UsesSugary = true;
 
-        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(UsesSugary: true));
+        drafts.EditOf(_carlos).ShouldBe(new MemberEdit(UsesSugary: true));
     }
 
     [Fact]
     public void ASaveOfOneField_SendsThatFieldAlone()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).SeesAll = true;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).SeesAll = true;
 
-        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(null, true));
+        drafts.EditOf(_carlos).ShouldBe(new MemberEdit(null, true));
     }
 
     [Fact]
     public void ASaveOfTheRole_SendsTheRoleAlone()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).Role = AdminMember.Owner;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).Role = AdminMember.Owner;
 
-        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(AdminMember.Owner, null));
+        drafts.EditOf(_carlos).ShouldBe(new MemberEdit(AdminMember.Owner, null));
     }
 
     [Fact]
     public void AFieldChangedAndChangedBack_IsNotSent()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).Role = AdminMember.Owner;
-        drafts.For(Carlos).Role = AdminMember.Member;
-        drafts.For(Carlos).SeesAll = true;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).Role = AdminMember.Owner;
+        drafts.For(_carlos).Role = AdminMember.Member;
+        drafts.For(_carlos).SeesAll = true;
 
-        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(null, true));
+        drafts.EditOf(_carlos).ShouldBe(new MemberEdit(null, true));
     }
 
     [Fact]
     public void NothingChanged_IsNothingToSave()
     {
         var drafts = new MemberDrafts();
-        drafts.Reset(new AdminMembers([Carlos]));
-        drafts.For(Carlos).SeesAll = true;
-        drafts.For(Carlos).SeesAll = false;
+        drafts.Reset(new AdminMembers([_carlos]));
+        drafts.For(_carlos).SeesAll = true;
+        drafts.For(_carlos).SeesAll = false;
 
-        drafts.EditOf(Carlos).ShouldBeNull();
+        drafts.EditOf(_carlos).ShouldBeNull();
     }
 }

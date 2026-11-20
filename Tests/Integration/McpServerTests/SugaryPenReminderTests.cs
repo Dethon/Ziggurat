@@ -19,7 +19,7 @@ namespace Tests.Integration.McpServerTests;
 // lasting 28 days is replaced on the 29th.
 public class SugaryPenReminderTests
 {
-    private static readonly TimeZoneInfo Madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+    private static readonly TimeZoneInfo _madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
 
     private sealed class Harness(SugaryServer server, RecordingPushSender push, FakeTimeProvider clock, HashSet<string> live)
         : IAsyncDisposable
@@ -34,7 +34,7 @@ public class SugaryPenReminderTests
 
         // A wall time at home, on the day given.
         public void At(int day, int hour) =>
-            clock.SetUtcNow(TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 10, day, hour, 0, 0), Madrid));
+            clock.SetUtcNow(TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 10, day, hour, 0, 0), _madrid));
 
         public async Task SubscribeAsync(
             string endpoint = "https://push.example.com/a", string language = "es", Account? person = null,
@@ -82,7 +82,7 @@ public class SugaryPenReminderTests
             services: services => services
                 .AddSingleton<IPushMessageSender>(push)
                 .AddSingleton(sessions.Object)
-                .AddSingleton(sp => ActivatorUtilities.CreateInstance<PenReminders>(sp, new HomeCalendar(clock, Madrid))));
+                .AddSingleton(sp => ActivatorUtilities.CreateInstance<PenReminders>(sp, new HomeCalendar(clock, _madrid))));
         return new Harness(server, push, clock, live);
     }
 

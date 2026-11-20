@@ -1113,11 +1113,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         var request = stack.Request(method, host, path, session);
         request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
         request.Headers.Add("Accept", "application/json");
-        request.Content = JsonContent.Create(body, body.GetType(), options: AdminJson);
+        request.Content = JsonContent.Create(body, body.GetType(), options: _adminJson);
         using var response = await stack.Http.SendAsync(request);
         var answer = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.ShouldBeTrue($"{method} {path} answered {(int)response.StatusCode}: {answer}");
-        return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
+        return JsonSerializer.Deserialize<T>(answer, _adminJson)!;
     }
 
     private async Task<(HttpStatusCode Status, string Answer)> AdminRawAsync(
@@ -1126,7 +1126,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         var request = stack.Request(method, host, path, session);
         request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
         request.Headers.Add("Accept", "application/json");
-        request.Content = JsonContent.Create(body, body.GetType(), options: AdminJson);
+        request.Content = JsonContent.Create(body, body.GetType(), options: _adminJson);
         using var response = await stack.Http.SendAsync(request);
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
@@ -1139,10 +1139,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         using var response = await stack.Http.SendAsync(request);
         var answer = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.ShouldBeTrue($"GET {path} answered {(int)response.StatusCode}: {answer}");
-        return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
+        return JsonSerializer.Deserialize<T>(answer, _adminJson)!;
     }
 
-    private static readonly JsonSerializerOptions AdminJson = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions _adminJson = new(JsonSerializerDefaults.Web);
 
     private Task<HttpResponseMessage> SendAsync(
         HttpMethod method, string host, string path, string? session = null, string? accept = null)

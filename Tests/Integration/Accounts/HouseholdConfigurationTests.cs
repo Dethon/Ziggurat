@@ -44,7 +44,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     private const string IdealistaSecret = "idealista-secret-of-the-household";
     private const string JackToken = "111111:jack-bot-token-of-the-household";
 
-    private static readonly string Keys = $$"""
+    private static readonly string _keys = $$"""
         {
           "schemaVersion": 1,
           "openRouter": { "apiKey": "{{OpenRouterKey}}" },
@@ -137,7 +137,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         await using var server = await StartAsync();
         var household = await server.SeedHouseholdAsync("Casa");
 
-        var (exit, output) = await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        var (exit, output) = await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         exit.ShouldBe(0, output);
         output.ShouldNotContain(OpenRouterKey);
@@ -163,7 +163,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         var agent = await RawAsync(server, Agent, HouseholdConfigProtocol.AgentView, new HouseholdConfigQuery(household, AgentToken()));
         var idealista = await RawAsync(server, Idealista, HouseholdConfigProtocol.IdealistaView,
@@ -376,7 +376,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         await server.Service<MemberStore>().SetUsesSugaryAsync(on, bea, true, CancellationToken.None);
         await SetAsync(server, off, HouseholdSections.Features, """{ "sugary": false }""");
         await SetAsync(server, on, HouseholdSections.Features, """{ "memory": false }""");
-        await SetAsync(server, off, HouseholdSections.Keys, Keys);
+        await SetAsync(server, off, HouseholdSections.Keys, _keys);
 
         var body = await RawAsync(server, Sugary, HouseholdConfigProtocol.SugaryOffView, new HouseholdConfigQuery());
         var answer = JsonSerializer.Deserialize<HouseholdsWithSugaryOff>(body, JsonSerializerOptions.Web)!;
@@ -417,7 +417,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         var response = await PostAsync(server, credential, view,
             new HouseholdConfigQuery(CallToken: CallToken("mcp-idealista", household, person)));
@@ -479,7 +479,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
         var token = kind switch
         {
             "another server's" => CallToken("mcp-scheduling", household, person),
@@ -506,7 +506,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         await using var server = await StartAsync();
         var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
         await SetAsync(server, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "Asia/Tokyo" }""");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
         var account = new Account(household, person);
         var schedule = TestDelegations.For(account, "signalr", new DelegatedObject(DelegatedObject.Schedule, "nightly", "{}"));
         var watch = TestDelegations.For(account, "signalr", new DelegatedObject(DelegatedObject.Watch, "nightly", "{}"));
@@ -642,7 +642,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var household = await server.SeedHouseholdAsync("Casa");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         var signed = await AskAsync<AgentHouseholdConfig>(server, Agent, HouseholdConfigProtocol.AgentView,
             new HouseholdConfigQuery(household, AgentToken()));
@@ -819,7 +819,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var household = await server.SeedHouseholdAsync("Casa");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         var (exit, output) = await server.RunAsync(
             AccountsCommand.GetHouseholdConfig, "--household", household, "--section", HouseholdSections.Keys);
@@ -841,7 +841,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
         var printed = JsonNode.Parse((await server.RunAsync(
             AccountsCommand.GetHouseholdConfig, "--household", household, "--section", HouseholdSections.Keys)).Output)!;
         printed["idealista"]!["secret"] = "a-new-idealista-secret";
@@ -894,7 +894,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         await using var server = await AccountsServer.StartAsync(s => s with { HouseholdConfig = new() });
         var household = await server.SeedHouseholdAsync("Casa");
 
-        var (exit, output) = await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        var (exit, output) = await SetAsync(server, household, HouseholdSections.Keys, _keys);
 
         exit.ShouldBe(1, output);
         output.ShouldContain("no master key");
@@ -941,7 +941,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         var current = Convert.ToBase64String(SealingKey.Generate().Export());
         await using var before = await StartAsync(previous);
         var household = await before.SeedHouseholdAsync("Casa");
-        await SetAsync(before, household, HouseholdSections.Keys, Keys);
+        await SetAsync(before, household, HouseholdSections.Keys, _keys);
         var sealedBefore = await StoredAsync(before, household, HouseholdSections.Keys);
         var rotated = before.Settings with { HouseholdConfig = new() { MasterKey = current } };
 
@@ -969,7 +969,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     {
         await using var server = await StartAsync();
         var household = await server.SeedHouseholdAsync("Casa");
-        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
         var stranger = Convert.ToBase64String(SealingKey.Generate().Export());
         var rotated = server.Settings with { HouseholdConfig = new() { MasterKey = Convert.ToBase64String(SealingKey.Generate().Export()) } };
 

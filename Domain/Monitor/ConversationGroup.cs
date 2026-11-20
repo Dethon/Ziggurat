@@ -389,7 +389,7 @@ internal sealed class ConversationGroup(
         {
             try
             {
-                await TearDownAsync();
+                await tearDownAsync();
             }
             finally
             {
@@ -400,7 +400,7 @@ internal sealed class ConversationGroup(
             }
         }
 
-        async Task TearDownAsync()
+        async Task tearDownAsync()
         {
             _running = null;
             await queue.DisposeAsync();

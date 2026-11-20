@@ -786,9 +786,9 @@ public class SugaryGlucoseWatchEngineTests
         {
             db.GlucoseSensors.AddRange(
                 // Started after the one on her, but not listed by the last poll.
-                Sensor("gone", activated + TimeSpan.FromDays(1), lastSeen - TimeSpan.FromDays(1)),
-                Sensor("listed-too", activated - TimeSpan.FromDays(1), lastSeen),
-                Sensor("worn", activated, lastSeen));
+                sensor("gone", activated + TimeSpan.FromDays(1), lastSeen - TimeSpan.FromDays(1)),
+                sensor("listed-too", activated - TimeSpan.FromDays(1), lastSeen),
+                sensor("worn", activated, lastSeen));
             await db.SaveChangesAsync();
         }
 
@@ -798,7 +798,7 @@ public class SugaryGlucoseWatchEngineTests
 
         harness.Effects.Fires.ShouldHaveSingleItem().Report.SensorEndsAt.ShouldBe(activated + TimeSpan.FromDays(14));
 
-        static GlucoseSensor Sensor(string serial, DateTimeOffset activatedAt, DateTimeOffset seen) => new()
+        static GlucoseSensor sensor(string serial, DateTimeOffset activatedAt, DateTimeOffset seen) => new()
         {
             UserId = SugaryServer.Her.UserId, TenantId = SugaryServer.Her.TenantId, Serial = serial, ActivatedAt = activatedAt, LastSeenAt = seen
         };
@@ -842,9 +842,9 @@ public class SugaryGlucoseWatchEngineTests
         connection.Latest = (new FakeLibreLinkUp.Point(harness.Now, 100), 3);
         await harness.LinkAsync(SugaryServer.Her, "ana@example.com", "pw", "patient-1");
 
-        await NextMinuteAsync();
+        await nextMinuteAsync();
         connection.Latest = (new FakeLibreLinkUp.Point(harness.Now, 65), 2);
-        await NextMinuteAsync();
+        await nextMinuteAsync();
 
         var (_, report) = harness.Effects.Fires.ShouldHaveSingleItem();
         report.Newest.ShouldBe(new SensorReading(harness.Now - TimeSpan.FromMinutes(1), 65, GlucoseTrend.Falling));
@@ -852,13 +852,13 @@ public class SugaryGlucoseWatchEngineTests
         connection.Down = true;
         foreach (var _ in Enumerable.Range(0, 20))
         {
-            await NextMinuteAsync();
+            await nextMinuteAsync();
         }
 
         harness.Effects.FiredIds.ShouldBe(["low", "failing"]);
         harness.Fake.Unhandled.ShouldBeEmpty();
 
-        async Task NextMinuteAsync()
+        async Task nextMinuteAsync()
         {
             harness.Clock.Advance(TimeSpan.FromMinutes(1));
             await harness.SweepAsync();
