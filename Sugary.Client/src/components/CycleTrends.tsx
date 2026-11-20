@@ -6,7 +6,8 @@ import { Fold } from "./Fold";
 // Folded (a phone's default), her average and range stay under the title.
 // Her last year of cycles: her averages and range over a bar for each cycle, its length written on it.
 // The bars stand on zero, so a two-day difference looks like one; the numbers carry it. A cycle too
-// long to be one (a period she likely did not note) is drawn faint and counted in nothing.
+// long to be one (a period she likely did not note) is drawn faint and counted in nothing; one running
+// across a start read as spotting is drawn whole, and said so (countCycles).
 export function CycleTrends({ trends, thisYear }: { trends: Trends; thisYear: string }) {
   const { t, language } = useSettings();
   // Scaled to the cycles counted, with room above the longest for its number: a skipped cycle twice as
@@ -45,7 +46,8 @@ export function CycleTrends({ trends, thisYear }: { trends: Trends; thisYear: st
             className={cycle.skipped ? "trend-bar trend-bar-skipped" : "trend-bar"}
             aria-label={
               t("trendsCycleSpoken", { date: formatDays(cycle.start, cycle.start, language, thisYear), n: cycle.days }) +
-              (cycle.skipped ? ` ${t("trendsSkipped")}` : "")
+              (cycle.skipped ? ` ${t("trendsSkipped")}` : "") +
+              (cycle.joined ? ` ${t("trendsJoined")}` : "")
             }
           >
             <span className="trend-bar-column" aria-hidden="true">
@@ -69,6 +71,7 @@ export function CycleTrends({ trends, thisYear }: { trends: Trends; thisYear: st
         {t("trendsKeyAverage")}
       </p>
       {trends.cycles.some((cycle) => cycle.skipped) && <p className="muted small">{t("trendsSkippedHint")}</p>}
+      {trends.cycles.some((cycle) => cycle.joined) && <p className="muted small">{t("trendsJoinedHint")}</p>}
     </Fold>
   );
 }

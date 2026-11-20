@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, phaseShift, refusedBecause, shiftMonth, trends } from "./cycle";
+import { addDays, countCycles, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, phaseShift, refusedBecause, shiftMonth, trends } from "./cycle";
+import cycleCases from "./cases/cycles.json";
 import forecastCases from "./cases/forecast.json";
 import type { Period } from "./types";
 
@@ -190,23 +191,40 @@ describe("forecast", () => {
   });
 
   // Cycles of 28, 29 and 29 days after a start on 8 October.
-  it("expects the next start between the shortest and the longest recent cycle, most likely at their mean", () => {
-    expect(forecast(four, today)).toMatchObject({ earliest: "2026-11-05", latest: "2026-11-06", likeliest: "2026-11-06", cycles: 3 });
+  it("expects the next start between the shortest and the longest recent cycle, most likely at their median", () => {
+    expect(forecast(four, today)).toMatchObject({ likeliest: "2026-11-06", cycles: 3 });
   });
 
-  // Ovulation about 14 days before the next start; fertile the five days before it to the day after.
-  it("puts the fertile window from 19 days before the earliest start to 13 before the latest", () => {
-    expect(forecast(four, today)?.fertile).toEqual({ start: "2026-10-17", end: "2026-10-24" });
+  // A cycle runs a few days either side of her usual even when her last ones agreed to the day: a
+  // range of one day would call her late on the next.
+  it("never expects the next start within fewer than two days either side of the likeliest", () => {
+    expect(forecast(four, today)).toMatchObject({ earliest: "2026-11-04", latest: "2026-11-08" });
+  });
+
+  // Ovulation 11 to 16 days before the next start; fertile the five days before it to the day after.
+  it("puts the fertile window from 21 days before the earliest start to 10 before the latest", () => {
+    expect(forecast(four, today)?.fertile).toEqual({ start: "2026-10-14", end: "2026-10-29" });
+  });
+
+  it("never puts the fertile window before her last start", () => {
+    const short = ["2026-08-01", "2026-08-22", "2026-09-12", "2026-10-03"].map((start) => period(start, addDays(start, 4)));
+    expect(forecast(short, "2026-10-04")?.fertile?.start).toBe("2026-10-03");
   });
 
   it("leaves the fertile window out once it is past", () => {
-    expect(forecast(four, "2026-10-25")?.fertile).toBeNull();
-    expect(forecast(four, "2026-10-24")?.fertile).not.toBeNull();
+    expect(forecast(four, "2026-10-30")?.fertile).toBeNull();
+    expect(forecast(four, "2026-10-29")?.fertile).not.toBeNull();
   });
 
   it("forecasts from an ongoing period's start", () => {
     const ongoing = [period("2026-09-10", "2026-09-14"), period("2026-10-08", null)];
-    expect(forecast(ongoing, "2026-10-10")).toMatchObject({ earliest: "2026-11-05", latest: "2026-11-05", likeliest: "2026-11-05", cycles: 1 });
+    expect(forecast(ongoing, "2026-10-10")).toMatchObject({ earliest: "2026-11-03", latest: "2026-11-07", likeliest: "2026-11-05", cycles: 1 });
+  });
+
+  // Spotting noted as a period, ten days after the last: her cycle still runs from the last one.
+  it("forecasts from the start before a latest start too soon after it", () => {
+    const starts = ["2026-05-01", "2026-05-29", "2026-06-26", "2026-07-24", "2026-08-02"];
+    expect(forecast(starts.map((start) => period(start, addDays(start, 2))), "2026-08-05")).toMatchObject({ likeliest: "2026-08-21", cycles: 3 });
   });
 
   // A period she did not note makes one cycle about twice as long; it would drag every forecast out.
@@ -214,14 +232,14 @@ describe("forecast", () => {
     const gap = [period("2026-05-19", null), period("2026-06-16", null), period("2026-08-11", null), period("2026-09-09", null)].map(
       (p) => ({ ...p, end: addDays(p.start, 4) }),
     );
-    expect(forecast(gap, today)).toMatchObject({ earliest: "2026-10-07", latest: "2026-10-08", cycles: 2 });
+    expect(forecast(gap, today)).toMatchObject({ earliest: "2026-10-06", latest: "2026-10-10", cycles: 2 });
   });
 
   it("reads only the six most recent cycles", () => {
     // A 41-day cycle, short of the outlier rule, before six of 28 days.
     const starts = ["2026-01-19", "2026-03-01", "2026-03-29", "2026-04-26", "2026-05-24", "2026-06-21", "2026-07-19", "2026-08-16"];
     const periods = starts.map((start) => period(start, addDays(start, 4)));
-    expect(forecast(periods, "2026-08-20")).toMatchObject({ earliest: "2026-09-13", latest: "2026-09-13", cycles: 6 });
+    expect(forecast(periods, "2026-08-20")).toMatchObject({ likeliest: "2026-09-13", cycles: 6 });
   });
 });
 
@@ -231,18 +249,11 @@ describe("monthGrid with a forecast", () => {
   it("draws the expected and fertile days apart from the recorded ones", () => {
     const today = "2026-10-16";
     const cells = monthGrid("2026-11", four, new Set(), today, forecast(four, today)).flat();
-    expect(cells.filter((cell) => cell?.expected).map((cell) => cell!.day)).toEqual(["2026-11-05", "2026-11-06"]);
+    expect(cells.filter((cell) => cell?.expected).map((cell) => cell!.day)).toEqual(["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"]);
     const october = monthGrid("2026-10", four, new Set(), today, forecast(four, today)).flat();
-    expect(october.filter((cell) => cell?.fertile).map((cell) => cell!.day)).toEqual([
-      "2026-10-17",
-      "2026-10-18",
-      "2026-10-19",
-      "2026-10-20",
-      "2026-10-21",
-      "2026-10-22",
-      "2026-10-23",
-      "2026-10-24",
-    ]);
+    expect(october.filter((cell) => cell?.fertile).map((cell) => cell!.day)).toEqual(
+      Array.from({ length: 16 }, (_, n) => addDays("2026-10-14", n)),
+    );
     expect(october.some((cell) => cell?.period && (cell.expected || cell.fertile))).toBe(false);
   });
 });
@@ -282,9 +293,9 @@ describe("trends", () => {
   it("lays out each whole cycle, oldest first, with its period's days", () => {
     const four = [period("2026-07-14", "2026-07-18"), period("2026-08-11", "2026-08-16"), period("2026-09-09", null), period("2026-10-08", null)];
     expect(trends(four)?.cycles).toEqual([
-      { start: "2026-07-14", days: 28, periodDays: 5, skipped: false },
-      { start: "2026-08-11", days: 29, periodDays: 6, skipped: false },
-      { start: "2026-09-09", days: 29, periodDays: null, skipped: false },
+      { start: "2026-07-14", days: 28, periodDays: 5, skipped: false, joined: false },
+      { start: "2026-08-11", days: 29, periodDays: 6, skipped: false, joined: false },
+      { start: "2026-09-09", days: 29, periodDays: null, skipped: false, joined: false },
     ]);
   });
 
@@ -306,6 +317,23 @@ describe("trends", () => {
     expect(read).toMatchObject({ averageCycle: 29, shortest: 28, longest: 29 });
   });
 
+  // The forecast's rule: spotting noted as a period is no start, so the cycle around it is drawn whole.
+  it("draws the cycle around a start read as spotting whole, and says so", () => {
+    const spotted = starts(["2026-05-01", "2026-05-29", "2026-06-26", "2026-07-10", "2026-07-24", "2026-08-21"]);
+    const read = trends(spotted)!;
+    expect(read.cycles.map((cycle) => [cycle.start, cycle.days, cycle.joined])).toEqual([
+      ["2026-05-01", 28, false],
+      ["2026-05-29", 28, false],
+      ["2026-06-26", 28, true],
+      ["2026-07-24", 28, false],
+    ]);
+    expect(read).toMatchObject({ averageCycle: 28, shortest: 28, longest: 28 });
+  });
+
+  it("says nothing when no cycle counts", () => {
+    expect(trends(starts(["2026-07-01", "2026-08-20"]))).toBeNull();
+  });
+
   it("reads her last year: twelve cycles at most", () => {
     const year = Array.from({ length: 15 }, (_, n) => addDays("2025-08-01", n * 28));
     expect(trends(starts(year))?.cycles).toHaveLength(12);
@@ -317,11 +345,11 @@ describe("daysLate", () => {
   const two = [period("2026-09-09", "2026-09-13"), period("2026-10-08", "2026-10-12")];
 
   it("counts the days past the latest expected start", () => {
-    expect(daysLate(forecast(two, "2026-11-09"), "2026-11-09")).toBe(3);
+    expect(daysLate(forecast(two, "2026-11-11"), "2026-11-11")).toBe(3);
   });
 
   it("is nothing on or before the latest expected start, or without a forecast", () => {
-    expect(daysLate(forecast(two, "2026-11-06"), "2026-11-06")).toBe(0);
+    expect(daysLate(forecast(two, "2026-11-08"), "2026-11-08")).toBe(0);
     expect(daysLate(forecast(two, "2026-10-20"), "2026-10-20")).toBe(0);
     expect(daysLate(null, "2026-10-20")).toBe(0);
   });
@@ -355,6 +383,15 @@ describe("forecast, as the server reads it", () => {
     it(name, () => {
       const read = forecast(starts.map((start) => period(start, addDays(start, 4))), today);
       expect(read && { earliest: read.earliest, latest: read.latest, likeliest: read.likeliest }).toEqual(expected);
+    });
+  }
+});
+
+// The server counts her cycles by the same rule (CycleCounting); both read these cases.
+describe("countCycles, as the server reads it", () => {
+  for (const { name, starts, expected } of cycleCases.cases) {
+    it(name, () => {
+      expect(countCycles(starts)).toEqual(expected);
     });
   }
 });
