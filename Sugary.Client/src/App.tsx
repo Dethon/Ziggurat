@@ -14,7 +14,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { showsCycle, UNSAID } from "./profile";
 import { useSettings } from "./settings";
 import { accountUrl, goNotice, goSignIn } from "./signin";
-import { fuses, hashOf, railTab, railTabs, type Tab, tabOf, visibleTabs } from "./tabs";
+import { fuses, hashOf, openedTab, railTab, railTabs, type Tab, tabOf, visibleTabs } from "./tabs";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, Profile, SessionState, SugaryPerson } from "./types";
 import { useTypingMark } from "./typing";
@@ -209,8 +209,9 @@ function Shell({
   // A reminder tapped while the app is open (push-handler.js) names the tab it is about.
   useEffect(() => {
     const opened = (event: MessageEvent) => {
-      if (event.data?.type === "open" && typeof event.data.url === "string") {
-        setTab(tabOf(new URL(event.data.url, window.location.href).hash, shown));
+      const named = event.data?.type === "open" && typeof event.data.url === "string" ? openedTab(event.data.url, shown) : null;
+      if (named) {
+        setTab(named);
       }
     };
     navigator.serviceWorker?.addEventListener("message", opened);

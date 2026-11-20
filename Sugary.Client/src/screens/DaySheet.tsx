@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { dayAction, dayDate } from "../cycle";
@@ -28,6 +28,7 @@ export function DaySheet({
   today,
   onClose,
   onNoteSaved,
+  onStale,
   onPeriod,
   onOpenPeriod,
 }: {
@@ -40,6 +41,9 @@ export function DaySheet({
   onClose: () => void;
   // What the day now says, or null once nothing is said of it (the server deleted it).
   onNoteSaved: (entry: DayEntry | null) => void;
+  // Somebody changed this day since the sheet opened (409): read it again, so the next save merges
+  // against what is there now rather than refusing again.
+  onStale: () => void;
   // Save these days at once (start on this day, or end the ongoing period on it).
   onPeriod: (values: SavePeriod, period?: Period) => void;
   // Open the period sheet: the one this day belongs to, or a new one starting on it.
@@ -59,6 +63,9 @@ export function DaySheet({
       await api.setDayNote(day, entry, note);
       onNoteSaved(nothingSaid(entry) ? null : { ...entry, text: entry.text.trim() });
     } catch (failure) {
+      if (failure instanceof ApiError && failure.status === 409) {
+        onStale();
+      }
       setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
@@ -87,10 +94,11 @@ export function DaySheet({
                 </p>
               )}
               {note.text.trim() && (
-                <>
-                  <p className="field-label">{t("dayNote")}</p>
-                  <p className="day-note-read">{note.text.trim()}</p>
-                </>
+                <p>
+                  <span className="field-label">{t("dayNote")}</span>
+                  <br />
+                  <span className="day-note-read">{note.text.trim()}</span>
+                </p>
               )}
             </>
           )}

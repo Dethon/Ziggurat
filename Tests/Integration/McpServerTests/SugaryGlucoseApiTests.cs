@@ -272,6 +272,7 @@ public class SugaryGlucoseApiTests
         phases["cycles"]!.GetValue<int>().ShouldBe(1);
         phases["targetLow"]!.GetValue<int>().ShouldBe(70);
         phases["unit"]!.GetValue<string>().ShouldBe("mgdl");
+        phases["hasReadings"]!.GetValue<bool>().ShouldBeTrue();
         Number(phases["follicular"]!, "mean").ShouldBe(110, 10);
         Number(phases["luteal"]!, "mean").ShouldBe(200, 10);
         Number(phases["luteal"]!, "inRange").ShouldBe(0, 0.15);

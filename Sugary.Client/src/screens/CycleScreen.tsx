@@ -212,9 +212,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               )}
             </section>
           )}
-          {phases && [phases.menstrual, phases.follicular, phases.luteal].some((phase) => phase.mean !== null) && (
-            <CycleGlucose phases={phases} />
-          )}
+          {phases && (phases.cycles > 0 || phases.hasReadings) && all.length > 0 && <CycleGlucose phases={phases} />}
         </div>
 
         <div className="pane">
@@ -292,6 +290,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
             setOpenDay(null);
             toast({ text: t(entry ? "daySaved" : "dayCleared") });
           }}
+          onStale={() => void load()}
           onPeriod={(values, period) => void quick(values, period)}
           onOpenPeriod={(period, initial) => {
             setOpenDay(null);

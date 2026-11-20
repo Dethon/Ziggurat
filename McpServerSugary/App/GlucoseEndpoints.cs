@@ -41,8 +41,9 @@ public record GlucoseReadingDto(DateTimeOffset At, double MgPerDl, GlucoseTrend 
 public record GlucoseCurveDto(DateTimeOffset From, DateTimeOffset To, int? BucketMinutes, IReadOnlyList<GlucosePoint> Points);
 
 // Her finished cycles' phases (CyclePhases): each phase's figures null under its coverage floor.
+// HasReadings: any reading of hers at all, so the app can say "not yet" to someone wearing a sensor.
 public record CyclePhasesDto(
-    int Cycles, GlucoseUnit Unit, int TargetLow, int TargetHigh, PhaseFigures Menstrual, PhaseFigures Follicular,
+    int Cycles, bool HasReadings, GlucoseUnit Unit, int TargetLow, int TargetHigh, PhaseFigures Menstrual, PhaseFigures Follicular,
     PhaseFigures Luteal);
 
 // Shares are fractions of the time with readings, cumulative bands (GlucoseStatistics); null with none.
@@ -171,8 +172,9 @@ public static class GlucoseEndpoints
                 new DateTimeOffset(cycles[0].Start.AddDays(-1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
                 new DateTimeOffset(cycles[^1].Luteal.Last.AddDays(2).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero), ct);
         var figures = CyclePhases.Of(periods, readings, calendar.Zone, calendar.Today, low, high);
+        var hasReadings = await db.GlucoseReadings.AnyAsync(ct);
         return Results.Ok(new CyclePhasesDto(
-            figures.Cycles, link?.Unit ?? GlucoseUnit.Mgdl, low, high, figures.Menstrual, figures.Follicular, figures.Luteal));
+            figures.Cycles, hasReadings, link?.Unit ?? GlucoseUnit.Mgdl, low, high, figures.Menstrual, figures.Follicular, figures.Luteal));
     }
 
     private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(

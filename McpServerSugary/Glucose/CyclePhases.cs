@@ -14,11 +14,13 @@ public sealed record DayRange(DateOnly First, DateOnly Last)
 // a cycle too short for days between) is null.
 public sealed record CycleParts(DateOnly Start, DayRange? Menstrual, DayRange? Follicular, DayRange Luteal);
 
-// Her glucose over one part of her cycles. The shares are of the time with readings, as the Glucose
-// tab's are; Low and High are under 70 and over 180 (cumulative, GlucoseStatistics). Every figure is
-// null under MinimumCoverage: a few days with readings would be read as her pattern.
+// Her glucose over one part of her cycles, from the cycles whose part had readings for at least
+// MinimumCoverage of its time (a few days would be read as her pattern); Days and Coverage are of those.
+// The shares are of the time with readings, as the Glucose tab's are; Low and High are under 70 and over
+// 180 (cumulative, GlucoseStatistics). Every figure null when no cycle's part was read.
 public sealed record PhaseFigures(int Days, double Coverage, double? Mean, double? InRange, double? Low, double? High);
 
+// Cycles: how many had any part read.
 public sealed record CyclePhaseFigures(int Cycles, PhaseFigures Menstrual, PhaseFigures Follicular, PhaseFigures Luteal);
 
 // Her glucose in each part of the cycles she has finished: her period, the days after it (follicular)
@@ -79,36 +81,56 @@ public static class CyclePhases
     {
         var cycles = Cycles(periods, today);
         var all = readings.OrderBy(r => r.At).ToList();
-        PhaseFigures Phase(Func<CycleParts, DayRange?> part) =>
-            Joined([.. cycles.Select(part).OfType<DayRange>()], all, zone, targetLow, targetHigh);
-        return new CyclePhaseFigures(cycles.Count, Phase(c => c.Menstrual), Phase(c => c.Follicular), Phase(c => c.Luteal));
+        var figured = cycles
+            .Select(cycle => (
+                Menstrual: Figure(cycle.Menstrual, all, zone, targetLow, targetHigh),
+                Follicular: Figure(cycle.Follicular, all, zone, targetLow, targetHigh),
+                Luteal: Figure(cycle.Luteal, all, zone, targetLow, targetHigh)))
+            .ToList();
+        return new CyclePhaseFigures(
+            figured.Count(c => new[] { c.Menstrual, c.Follicular, c.Luteal }.Any(r => r is { Read: true })),
+            Joined([.. figured.Select(c => c.Menstrual).OfType<Range>()]),
+            Joined([.. figured.Select(c => c.Follicular).OfType<Range>()]),
+            Joined([.. figured.Select(c => c.Luteal).OfType<Range>()]));
     }
 
-    // Each range figured as the Glucose tab figures a period, then joined by the minutes each covered,
-    // so a phase across cycles is weighed exactly as one long period would be.
-    private static PhaseFigures Joined(
-        IReadOnlyList<DayRange> ranges, IReadOnlyList<SensorReading> readings, TimeZoneInfo zone, int low, int high)
+    // One cycle's part, figured as the Glucose tab figures a period. Read when its own time with
+    // readings reaches the floor: a sensor worn through one cycle of six still reads that one.
+    private sealed record Range(int Days, double Minutes, double Covered, GlucoseFigures Figures)
     {
-        var figured = ranges
-            .Select(range => (From: StartOf(range.First, zone), To: StartOf(range.Last.AddDays(1), zone)))
-            .Select(span => (Minutes: (span.To - span.From).TotalMinutes,
-                Figures: GlucoseStatistics.Of(readings.Where(r => r.At >= span.From && r.At < span.To), span.From, span.To, low, high)))
-            .Select(f => (f.Minutes, Covered: f.Figures.Coverage * f.Minutes, f.Figures))
-            .ToList();
-        var days = ranges.Sum(range => range.Days);
-        var minutes = figured.Sum(f => f.Minutes);
-        var covered = figured.Sum(f => f.Covered);
-        var coverage = minutes > 0 ? covered / minutes : 0;
-        if (coverage < MinimumCoverage || covered <= 0)
+        public bool Read => Minutes > 0 && Covered / Minutes >= MinimumCoverage && Covered > 0;
+    }
+
+    private static Range? Figure(DayRange? days, IReadOnlyList<SensorReading> readings, TimeZoneInfo zone, int low, int high)
+    {
+        if (days is null)
         {
-            return new PhaseFigures(days, coverage, null, null, null, null);
+            return null;
         }
 
-        double Weighed(Func<GlucoseFigures, double?> figure) =>
-            figured.Where(f => f.Covered > 0).Sum(f => figure(f.Figures)!.Value * f.Covered) / covered;
+        var (from, to) = (StartOf(days.First, zone), StartOf(days.Last.AddDays(1), zone));
+        var minutes = (to - from).TotalMinutes;
+        var figures = GlucoseStatistics.Of(readings.Where(r => r.At >= from && r.At < to), from, to, low, high);
+        return new Range(days.Days, minutes, figures.Coverage * minutes, figures);
+    }
+
+    // The parts read, joined by the minutes each covered, so a phase across cycles is weighed exactly
+    // as one long period would be. None read: its days and coverage over every part, and no figures.
+    private static PhaseFigures Joined(IReadOnlyList<Range> ranges)
+    {
+        var read = ranges.Where(r => r.Read).ToList();
+        if (read.Count == 0)
+        {
+            var minutes = ranges.Sum(r => r.Minutes);
+            return new PhaseFigures(ranges.Sum(r => r.Days), minutes > 0 ? ranges.Sum(r => r.Covered) / minutes : 0, null, null, null, null);
+        }
+
+        var covered = read.Sum(r => r.Covered);
+        double Weighed(Func<GlucoseFigures, double?> figure) => read.Sum(r => figure(r.Figures)!.Value * r.Covered) / covered;
 
         return new PhaseFigures(
-            days, coverage, Weighed(f => f.Mean), Weighed(f => f.InRange), Weighed(f => f.Low), Weighed(f => f.High));
+            read.Sum(r => r.Days), covered / read.Sum(r => r.Minutes),
+            Weighed(f => f.Mean), Weighed(f => f.InRange), Weighed(f => f.Low), Weighed(f => f.High));
     }
 
     private static DateTimeOffset StartOf(DateOnly day, TimeZoneInfo zone)

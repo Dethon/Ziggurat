@@ -3126,7 +3126,14 @@ h1.marked .icon {
   color: var(--color-ink);
 }
 
-.period-reminder-on .button {
+.period-reminder-here {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.period-reminder-on .button,
+.period-reminder-here .button {
   flex: none;
   margin-left: auto;
   white-space: nowrap;

@@ -25,6 +25,7 @@ export function CycleGlucose({ phases }: { phases: CyclePhases }) {
       <h2 id="cycle-glucose-title" className="section-title">
         {t("cycleGlucoseTitle")}
       </h2>
+      {phases.cycles === 0 && <p className="muted small">{t("cycleGlucoseWaiting")}</p>}
       {shift && (
         <p className="cycle-glucose-shift">
           {shift.kind === "same"
@@ -32,20 +33,23 @@ export function CycleGlucose({ phases }: { phases: CyclePhases }) {
             : t(shift.kind === "higher" ? "shiftHigher" : "shiftLower", { mean: glucose(Math.abs(shift.mean)), unit })}
         </p>
       )}
-      <ul className="phases">
-        {PHASES.map(({ key, label }) => (
-          <Phase key={key} label={t(label)} figures={phases[key]} glucose={glucose} unit={unit} />
-        ))}
-      </ul>
-      <p className="notice">
-        <Icon name="info" size={18} />
-        <span>
-          {phases.cycles === 1 ? t("cycleGlucoseBasisOne") : t("cycleGlucoseBasis", { n: phases.cycles })} {t("cycleGlucoseDisclaimer")}
-        </span>
-      </p>
+      {phases.cycles > 0 && (
+        <>
+          <ul className="phases">
+            {PHASES.map(({ key, label }) => (
+              <Phase key={key} label={t(label)} figures={phases[key]} glucose={glucose} unit={unit} />
+            ))}
+          </ul>
+          <p className="notice">
+            <Icon name="info" size={18} />
+            <span>
+              {phases.cycles === 1 ? t("cycleGlucoseBasisOne") : t("cycleGlucoseBasis", { n: phases.cycles })} {t("cycleGlucoseDisclaimer")}
+            </span>
+          </p>
+        </>
+      )}
     </section>
   );
-
 }
 
 function Phase({ label, figures, glucose, unit }: { label: string; figures: PhaseFigures; glucose: (mgPerDl: number) => string; unit: string }) {

@@ -137,4 +137,24 @@ public class CyclePhasesTests
         luteal.Mean.ShouldBeNull();
         luteal.InRange.ShouldBeNull();
     }
+
+    // A sensor worn only through her latest cycle still reads that cycle: the floor is each cycle's,
+    // never all six pooled, and only the cycles read are counted.
+    [Fact]
+    public void ASensorWornForTheLatestCycleOnly_ReadsThatCycle_AndCountsOne()
+    {
+        var periods = Enumerable.Range(0, 7)
+            .Select(n => D("2026-04-07").AddDays(28 * n))
+            .Select(start => new CyclePeriod(start, start.AddDays(4)))
+            .ToList();
+        var latest = CyclePhases.Cycles(periods, Today)[^1];
+        var readings = Flat(latest.Luteal.First.ToString("yyyy-MM-dd"), latest.Luteal.Last.ToString("yyyy-MM-dd"), 190);
+
+        var phases = CyclePhases.Of(periods, readings, Utc, Today, 70, 180);
+
+        phases.Cycles.ShouldBe(1);
+        phases.Luteal.Mean!.Value.ShouldBe(190, 1e-6);
+        phases.Luteal.Days.ShouldBe(14);
+        phases.Follicular.Mean.ShouldBeNull();
+    }
 }

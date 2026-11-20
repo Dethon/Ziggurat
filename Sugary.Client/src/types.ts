@@ -375,7 +375,9 @@ export interface PhaseFigures {
 }
 
 export interface CyclePhases {
+  // How many finished cycles had any part read; hasReadings, any reading of hers at all.
   cycles: number;
+  hasReadings: boolean;
   unit: GlucoseUnit;
   targetLow: number;
   targetHigh: number;

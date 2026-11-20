@@ -56,6 +56,14 @@ export function PeriodReminder() {
           {t("periodReminderTurnOn")}
         </button>
       )}
+      {on && phone === "off" && (
+        <p className="period-reminder-here muted small">
+          <span>{t("periodReminderNotHere")}</span>
+          <button type="button" className="button button-quiet button-small" onClick={() => void change(true)}>
+            {t("remindersTurnOn")}
+          </button>
+        </p>
+      )}
       {on && (phone === "denied" || phone === "unsupported") && (
         <p className="muted small">{t(phone === "denied" ? "remindersDenied" : "remindersUnsupported")}</p>
       )}
