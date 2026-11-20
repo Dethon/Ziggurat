@@ -2422,10 +2422,23 @@ h1.marked .icon {
 
 .forecast-fertile {
   color: var(--color-ink);
+  font-weight: 400;
 }
 
-.forecast-disclaimer {
+/* What the folded forecast always says under its title. */
+.forecast-lede {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
   margin-top: var(--space-1);
+}
+
+.forecast-caveat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-label);
+  color: var(--color-muted);
 }
 
 .day-period {

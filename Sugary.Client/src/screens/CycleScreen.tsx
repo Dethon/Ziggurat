@@ -183,8 +183,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
           )}
 
           {all.length > 0 && (
-            // Folded on a phone: when it is expected on the title's line, and the rest (her reminder
-            // among it) a tap away; being late is said folded too.
+            // Folded on a phone: when it is expected on the title's line, being late, her fertile window
+            // and that it is no contraception under it, always; the likeliest day and her reminder a tap away.
             <Fold
               id="cycle-forecast"
               className="forecast"
@@ -196,34 +196,38 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                   </span>
                 )
               }
-              gist={late > 0 && status.kind === "cycle" ? (late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })) : undefined}
+              lede={
+                expected ? (
+                  <span className="forecast-lede">
+                    {late > 0 && status.kind === "cycle" && (
+                      <span className="notice notice-caution forecast-late">
+                        <Icon name="clock" size={18} />
+                        <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
+                      </span>
+                    )}
+                    {expected.fertile && (
+                      <span className="forecast-fertile">
+                        {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
+                      </span>
+                    )}
+                    <span className="forecast-caveat">
+                      <Icon name="info" size={16} />
+                      {t("forecastDisclaimer")}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="fold-gist">{t("forecastNeedsTwo")}</span>
+                )
+              }
             >
-              {expected ? (
+              {expected && (
                 <>
-                  {late > 0 && status.kind === "cycle" && (
-                    <p className="notice notice-caution forecast-late">
-                      <Icon name="clock" size={18} />
-                      <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
-                    </p>
-                  )}
                   {expected.earliest !== expected.latest && (
                     <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
                   )}
-                  {expected.fertile && (
-                    <p className="forecast-fertile">
-                      {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
-                    </p>
-                  )}
+                  <p className="muted small">{expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })}</p>
                   {!readOnly && <PeriodReminder />}
-                  <p className="notice forecast-disclaimer">
-                    <Icon name="info" size={18} />
-                    <span>
-                      {expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })} {t("forecastDisclaimer")}
-                    </span>
-                  </p>
                 </>
-              ) : (
-                <p className="muted small">{t("forecastNeedsTwo")}</p>
               )}
             </Fold>
           )}

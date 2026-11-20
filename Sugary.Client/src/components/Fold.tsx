@@ -22,6 +22,7 @@ export function Fold({
   title,
   gist,
   aside,
+  lede,
   className = "",
   children,
 }: {
@@ -30,6 +31,8 @@ export function Fold({
   gist?: string;
   // On the title's own line, folded or not: the one thing the card is read for.
   aside?: ReactNode;
+  // Under the title, folded or not: what must never be a tap away.
+  lede?: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
@@ -54,6 +57,7 @@ export function Fold({
             <h2 className="section-title">{title}</h2>
             {aside}
           </span>
+          {lede}
           {!open && gist && <span className="fold-gist">{gist}</span>}
         </span>
         <Icon name="chevron" size={20} />
