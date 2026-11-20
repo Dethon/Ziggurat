@@ -250,6 +250,35 @@ public class SugaryGlucoseApiTests
         Number(figures, "inRange").ShouldBe(0.5, 0.01);
     }
 
+    // Her glucose in each part of her finished cycles, against her range: the luteal days (the fourteen
+    // before a start) read apart from her period and the days after it. Hers alone.
+    [Fact]
+    public async Task HerCycle_IsFiguredByPhase_FromHerOwnPeriodsAndReadings()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+            new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 1), End = new DateOnly(2026, 9, 5) },
+            new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 29), End = null });
+        DateTimeOffset Day(int day) => new(2026, 9, day, 0, 0, 0, TimeSpan.Zero);
+        GlucoseReading[] Every15(int from, int to, double value) =>
+        [
+            .. Enumerable.Range(0, (to - from + 1) * 96).Select(n => Reading(Day(from).AddMinutes(15 * n), value))
+        ];
+        await SeedAsync(server, SugaryServer.Her, [.. Every15(6, 13, 110), .. Every15(16, 27, 200)]);
+        await SeedAsync(server, SugaryServer.Him, Every15(16, 27, 60));
+
+        var phases = await GetAsync(server, "/api/glucose/cycle");
+
+        phases["cycles"]!.GetValue<int>().ShouldBe(1);
+        phases["targetLow"]!.GetValue<int>().ShouldBe(70);
+        phases["unit"]!.GetValue<string>().ShouldBe("mgdl");
+        Number(phases["follicular"]!, "mean").ShouldBe(110, 10);
+        Number(phases["luteal"]!, "mean").ShouldBe(200, 10);
+        Number(phases["luteal"]!, "inRange").ShouldBe(0, 0.15);
+        phases["luteal"]!["days"]!.GetValue<int>().ShouldBe(14);
+        phases["menstrual"]!["mean"].ShouldBeNull();
+    }
+
     // A new link has nothing yet: the figures say so rather than fail on an average of nothing.
     [Fact]
     public async Task NoReadings_HaveNoFigures()

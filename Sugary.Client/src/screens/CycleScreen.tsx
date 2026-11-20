@@ -4,13 +4,14 @@ import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
 import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refusedBecause, trends } from "../cycle";
 import { CycleTrends } from "../components/CycleTrends";
+import { CycleGlucose } from "../components/CycleGlucose";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { DayNote, Period, SavePeriod } from "../types";
+import type { CyclePhases, DayNote, Period, SavePeriod } from "../types";
 import { DaySheet, NOTHING } from "./DaySheet";
 import { PeriodSheet, problemText } from "./PeriodSheet";
 
@@ -30,6 +31,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState<DayNote[]>([]);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  // Her glucose by phase: nothing at all without a sensor, or when it cannot be read.
+  const [phases, setPhases] = useState<CyclePhases | null>(null);
   const today = localDay(new Date(useMinute()));
   const thisYear = today.slice(0, 4);
   const [month, setMonth] = useState(() => today.slice(0, 7));
@@ -40,6 +43,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
       setPeriods(recorded);
       setNotes(written);
       setError(null);
+      api.cyclePhases().then(setPhases, () => setPhases(null));
     } catch (failure) {
       setError(errorMessage(failure, t));
     }
@@ -205,6 +209,9 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                 <p className="muted small">{t("forecastNeedsTwo")}</p>
               )}
             </section>
+          )}
+          {phases && [phases.menstrual, phases.follicular, phases.luteal].some((phase) => phase.mean !== null) && (
+            <CycleGlucose phases={phases} />
           )}
         </div>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, refusedBecause, shiftMonth, trends } from "./cycle";
+import { addDays, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, phaseShift, refusedBecause, shiftMonth, trends } from "./cycle";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -323,5 +323,27 @@ describe("daysLate", () => {
     expect(daysLate(forecast(two, "2026-11-06"), "2026-11-06")).toBe(0);
     expect(daysLate(forecast(two, "2026-10-20"), "2026-10-20")).toBe(0);
     expect(daysLate(null, "2026-10-20")).toBe(0);
+  });
+});
+
+describe("phaseShift", () => {
+  const phase = (mean: number | null, inRange: number | null) => ({ days: 14, coverage: 0.9, mean, inRange, low: 0, high: 0 });
+
+  it("says her glucose runs higher before her period when its average is half a mmol/L or more above the days after", () => {
+    const shift = phaseShift(phase(110, 0.85), phase(130, 0.7))!;
+    expect(shift).toMatchObject({ kind: "higher", mean: 20 });
+    expect(shift.inRange).toBeCloseTo(-0.15);
+  });
+
+  it("says lower the other way round", () => {
+    expect(phaseShift(phase(140, 0.6), phase(125, 0.75))?.kind).toBe("lower");
+  });
+
+  it("says about the same under half a mmol/L apart", () => {
+    expect(phaseShift(phase(120, 0.8), phase(128, 0.78))?.kind).toBe("same");
+  });
+
+  it("says nothing without both", () => {
+    expect(phaseShift(phase(null, null), phase(130, 0.7))).toBeNull();
   });
 });

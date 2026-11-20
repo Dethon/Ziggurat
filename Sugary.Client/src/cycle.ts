@@ -1,5 +1,5 @@
 import type { StringKey } from "./i18n";
-import type { Period } from "./types";
+import type { Period, PhaseFigures } from "./types";
 
 // A period is days on her calendar, written yyyy-MM-dd, never instants: the day it started is the
 // same day wherever it is read. Day arithmetic runs on UTC midnights so no clock change can make a
@@ -299,5 +299,28 @@ export function trends(periods: readonly Period[]): Trends | null {
     averagePeriod: ended.length > 0 ? mean(ended) : null,
     shortest: Math.min(...counted),
     longest: Math.max(...counted),
+  };
+}
+
+// Half a mmol/L, in mg/dL: closer than this, her two halves read as the same.
+const PHASE_SHIFT = 9;
+
+export interface PhaseShift {
+  kind: "higher" | "lower" | "same";
+  // The fourteen days before her period less the days after it: mg/dL, and the share of time in range.
+  mean: number;
+  inRange: number;
+}
+
+// How her glucose before her period compares with the days after it, where both were read.
+export function phaseShift(follicular: PhaseFigures, luteal: PhaseFigures): PhaseShift | null {
+  if (follicular.mean === null || luteal.mean === null || follicular.inRange === null || luteal.inRange === null) {
+    return null;
+  }
+  const mean = luteal.mean - follicular.mean;
+  return {
+    kind: mean >= PHASE_SHIFT ? "higher" : mean <= -PHASE_SHIFT ? "lower" : "same",
+    mean,
+    inRange: luteal.inRange - follicular.inRange,
   };
 }

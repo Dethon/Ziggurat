@@ -1,5 +1,6 @@
 import { asDayNote, kept } from "./days";
 import type {
+  CyclePhases,
   DayEntry,
   DayNote,
   Dose,
@@ -236,6 +237,7 @@ export const api = {
   glucoseCurve: (from: string, to: string) =>
     request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   glucoseStatistics: (days: number) => request<GlucoseStatistics>(`/glucose/statistics?days=${days}`),
+  cyclePhases: () => request<CyclePhases>("/glucose/cycle"),
   // Logs in at LibreLinkUp before anything is kept, so it may take a while and is refused by code.
   linkGlucose: (account: LinkGlucose) => request<GlucoseLink>("/glucose/link", json("PUT", account)),
   chooseGlucoseConnection: (patientId: string) =>

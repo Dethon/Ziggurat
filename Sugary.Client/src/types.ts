@@ -362,3 +362,24 @@ export interface GlucoseSettings {
   targetLow: number;
   targetHigh: number;
 }
+
+// Her glucose over one part of her finished cycles (the server's CyclePhases): mg/dL, shares of the
+// time with readings; every figure null under half the phase's time with readings.
+export interface PhaseFigures {
+  days: number;
+  coverage: number;
+  mean: number | null;
+  inRange: number | null;
+  low: number | null;
+  high: number | null;
+}
+
+export interface CyclePhases {
+  cycles: number;
+  unit: GlucoseUnit;
+  targetLow: number;
+  targetHigh: number;
+  menstrual: PhaseFigures;
+  follicular: PhaseFigures;
+  luteal: PhaseFigures;
+}

@@ -3044,6 +3044,74 @@ h1.marked .icon {
   color: inherit;
 }
 
+/* Her glucose by phase: a row a phase, its average and its time in range. */
+.cycle-glucose {
+  gap: var(--space-3);
+}
+
+.cycle-glucose-shift {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.phases {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.phase + .phase {
+  border-top: 1px solid var(--color-line);
+}
+
+.phase-name {
+  font-weight: 700;
+}
+
+.phase-figure {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.phase-figure strong {
+  font-size: var(--text-number);
+}
+
+.phase-none {
+  text-align: right;
+}
+
+.phase-range {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.phase-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-sponge);
+  overflow: hidden;
+}
+
+.phase-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--color-good);
+}
+
 /* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
    her average a dashed line across. */
 .trends {
