@@ -3026,6 +3026,139 @@ h1.marked .icon {
   white-space: pre-wrap;
 }
 
+/* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
+   her average a dashed line across. */
+.trends {
+  gap: var(--space-4);
+}
+
+.trends-figures {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.trend-bars {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  height: 150px;
+  margin: 0;
+  padding: var(--space-5) 0;
+  list-style: none;
+}
+
+.trend-bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--space-5) + (100% - 2 * var(--space-5)) * var(--average-share, 0));
+  border-top: 1.5px dashed var(--color-muted);
+  pointer-events: none;
+}
+
+.trend-bar {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 44px;
+  display: flex;
+  flex-direction: column;
+}
+
+.trend-bar-column {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.trend-bar-fill {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-radius: var(--radius-s) var(--radius-s) 2px 2px;
+  background: var(--color-sponge);
+  overflow: visible;
+}
+
+.trend-bar-period {
+  width: 100%;
+  border-radius: 0 0 2px 2px;
+  background: var(--color-period);
+}
+
+.trend-bar-days {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  padding-bottom: 2px;
+  text-align: center;
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.trend-bar-month {
+  position: absolute;
+  top: 100%;
+  left: -4px;
+  right: -4px;
+  padding-top: 4px;
+  overflow: hidden;
+  text-align: center;
+  font-size: var(--text-label);
+  color: var(--color-muted);
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+.trend-bar-skipped .trend-bar-fill {
+  background: none;
+  outline: 1.5px dashed var(--color-line);
+  outline-offset: -1.5px;
+}
+
+.trend-bar-skipped .trend-bar-period,
+.trend-bar-skipped .trend-bar-days {
+  opacity: 0.45;
+}
+
+.trends-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+
+.trends-key {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.trends-key + .trends-key,
+.trends-legend .trends-key-average {
+  margin-left: var(--space-2);
+}
+
+.trends-key-period {
+  background: var(--color-period);
+}
+
+.trends-key-average {
+  height: 0;
+  border-top: 1.5px dashed var(--color-muted);
+}
+
+.forecast-late {
+  margin-top: var(--space-1);
+}
+
 /* A desktop: a window as wide as a laptop's. The tab bar becomes a rail down the left, the page
    beside it, and screens with more than one thing to show set them side by side; sheets open in the
    middle of the window rather than rising from its bottom edge. Narrower than this — a phone turned
@@ -3415,8 +3548,13 @@ h1.marked .icon {
   .panes-cycle > .pane:not(.pane-side) {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-6);
+    gap: var(--space-5) var(--space-6);
     align-items: start;
+  }
+
+  /* The month down the left; her cycles and her periods stacked beside it. */
+  .panes-cycle > .pane:not(.pane-side) > .calendar {
+    grid-row: span 2;
   }
 
   /* Settings: three columns of cards. */

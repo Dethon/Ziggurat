@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
-import { cycleStatus, forecast, history, localDay, periodProblem, refusedBecause } from "../cycle";
+import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refusedBecause, trends } from "../cycle";
+import { CycleTrends } from "../components/CycleTrends";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
@@ -52,6 +53,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const status = cycleStatus(all, today);
   const noted = new Set(notes.map((note) => note.day));
   const expected = forecast(all, today);
+  const late = daysLate(expected, today);
+  const cycles = trends(all);
 
   // One tap records today; the rules are asked first so a clash is said in her language.
   async function quick(values: SavePeriod, period?: Period) {
@@ -177,6 +180,12 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               {expected ? (
                 <>
                   <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
+                  {late > 0 && status.kind === "cycle" && (
+                    <p className="notice notice-caution forecast-late">
+                      <Icon name="clock" size={18} />
+                      <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
+                    </p>
+                  )}
                   {expected.earliest !== expected.latest && (
                     <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
                   )}
@@ -211,6 +220,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               onDay={setOpenDay}
             />
           )}
+
+          {cycles && <CycleTrends trends={cycles} thisYear={thisYear} />}
 
           {all.length > 0 && (
             <section className="card" aria-labelledby="periods-title">
