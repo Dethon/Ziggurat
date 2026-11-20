@@ -2834,10 +2834,14 @@ h1.marked .icon {
   gap: 2px;
 }
 
-.glucose-link-ok {
+.glucose-link-ok,
+.glucose-link-brief {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.glucose-link-ok {
   color: var(--color-good);
 }
 
@@ -2998,6 +3002,17 @@ h1.marked .icon {
 .pane,
 .cards {
   display: contents;
+}
+
+/* Glucose's tray of what the period chooses, and its head: a desktop's, on a phone no box at all and
+   its title unsaid, the periods sitting over the curve as they always did. */
+.glucose-period,
+.glucose-period-head {
+  display: contents;
+}
+
+.glucose-period-title {
+  display: none;
 }
 
 .rail-brand {
@@ -3203,6 +3218,10 @@ h1.marked .icon {
 /* Body-sized beside the title, so "Next period" and "Expected 5–6 Dec" share a phone's line. */
 .fold-title-line .forecast-range {
   font-size: var(--text-body);
+}
+
+.glucose-sensor .fold-head {
+  gap: var(--space-1);
 }
 
 .fold-gist {
@@ -3584,6 +3603,99 @@ h1.marked .icon {
     container: side / inline-size;
   }
 
+  /* Glucose: the reading at the top left, its trend beside the number rather than a window away, and
+     her sensor beside it, folded to whom it reads and whether it works, the two as tall as each other.
+     Under both one tray holds all the
+     period chooses, its title and the periods heading her curve and her figures side by side, so a
+     period plainly moves both and nothing else. Somebody else's log has no sensor, and the reading
+     spans the row. Before a first reading there is no tray, and her sensor stands beside the card
+     saying so, as panes always do. The tray's columns are the panes' own (subgrid), so the figures and
+     the sensor share one edge. */
+  .panes-glucose:has(> .pane-lead > .glucose-period) {
+    grid-template-columns: minmax(0, 1fr) var(--side-width);
+  }
+
+  .panes-glucose > .pane-lead:has(> .glucose-period) {
+    display: contents;
+  }
+
+  .panes-glucose > .pane-lead:has(> .glucose-period) > .glucose-now {
+    grid-area: 1 / 1;
+  }
+
+  .panes-glucose:has(> .pane-side:empty) > .pane-lead > .glucose-now {
+    grid-column: 1 / -1;
+  }
+
+  .panes-glucose .glucose-now .glucose-trend {
+    margin-left: var(--space-3);
+  }
+
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-side {
+    grid-area: 1 / 2;
+  }
+
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-lead > .glucose-now,
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-side {
+    align-self: stretch;
+  }
+
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-side > .glucose-sensor {
+    flex: 1;
+    position: relative;
+  }
+
+  /* Opened, what folds drops over the tray as a panel hanging from the card, so the row keeps the
+     reading's height and nothing moves under it. */
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-side > .glucose-sensor[open] {
+    z-index: 2;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .panes-glucose:has(> .pane-lead > .glucose-period) > .pane-side > .glucose-sensor > .fold-body {
+    position: absolute;
+    top: 100%;
+    inset-inline: 0;
+    padding: var(--space-3) var(--space-4) var(--space-4);
+    border-radius: 0 0 var(--radius-l) var(--radius-l);
+    background: var(--color-surface);
+    box-shadow: var(--shadow-2), var(--edge);
+  }
+
+  .glucose-period {
+    grid-area: 2 / 1 / auto / -1;
+    display: grid;
+    grid-template-columns: subgrid;
+    row-gap: var(--space-4);
+    align-items: start;
+    padding: var(--space-4);
+    border: 1.5px solid var(--color-line);
+    border-radius: calc(var(--radius-l) + var(--space-2));
+  }
+
+  .glucose-period-head {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-4);
+  }
+
+  .glucose-period-title {
+    display: block;
+    font-family: var(--font-display);
+    font-variation-settings: "SOFT" 100;
+    font-weight: 600;
+    font-size: var(--text-sheet-title);
+    line-height: 1.2;
+    color: var(--color-ink);
+  }
+
+  .glucose-period-head > .segmented {
+    width: min(24rem, 100%);
+  }
+
   /* A side narrower than the phone's column (a laptop's 1024 px) lays her four record tiles out two
      by two, so "Insulina" and "Gimnasio" keep their words whole. */
   @container side (max-width: 23rem) {
@@ -3753,45 +3865,6 @@ h1.marked .icon {
     width: 100%;
     max-width: calc(var(--side-width) + var(--days-width) + var(--space-6) + 2 * var(--space-8));
     margin-inline: auto;
-  }
-
-  /* Glucose: the reading across the top, its trend beside the number rather than a window away; the
-     periods to look back over sit in the curve's own header, at its right, over the curve they choose
-     (GlucoseChart draws it as wide and tall as the room, WIDE_TALLEST). Her figures and her sensor
-     stand beside, their top on the reading's. */
-  .panes-glucose > .pane-lead:not(:empty) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--space-5);
-  }
-
-  .panes-glucose > .pane-lead > .glucose-now {
-    grid-area: 1 / 1;
-  }
-
-  .panes-glucose .glucose-now .glucose-trend {
-    margin-left: var(--space-3);
-  }
-
-  .panes-glucose > .pane-lead > .segmented {
-    grid-area: 2 / 1;
-    z-index: 1;
-    justify-self: end;
-    align-self: start;
-    width: min(24rem, 55%);
-    margin: var(--space-3) var(--space-4) 0 0;
-  }
-
-  .panes-glucose > .pane-lead > .segmented + .card {
-    grid-area: 2 / 1;
-  }
-
-  /* The curve's title shares its line with the periods: room for them, and the plot starts under both. */
-  .panes-glucose > .pane-lead > .segmented + .card .section-title {
-    min-height: 50px;
-    display: flex;
-    align-items: center;
-    margin-top: calc(-1 * var(--space-1));
   }
 
   /* The cycle: where she is, the month, and her periods, three across. */

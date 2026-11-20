@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 import { api } from "../api";
 import { useConfirm } from "../components/Confirm";
+import { Fold } from "../components/Fold";
 import { GlucoseChart } from "../components/GlucoseChart";
 import { Icon } from "../components/Icon";
 import { useMinute } from "../clock";
@@ -105,25 +106,32 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
         </p>
       )}
 
-      {/* On a desktop her curve leads, her figures and her link standing beside it. */}
+      {/* On a desktop her reading leads; under it one tray holds what the period chooses (her curve
+          and her figures, side by side, the periods heading both), and her sensor, which no period
+          touches, stands outside it. */}
       <div className="panes panes-glucose">
         <div className="pane pane-lead">
           {now && (now.reading || now.link) && <Current now={now} fetchedAt={state.fetchedAt} />}
 
           {now?.reading && (
-            <>
-              <div className="segmented" role="group" aria-label={t("glucosePeriods")}>
-                {PERIODS.map((days) => (
-                  <button
-                    key={days}
-                    type="button"
-                    className={period === days ? "segment segment-on" : "segment"}
-                    aria-pressed={period === days}
-                    onClick={() => setPeriod(days)}
-                  >
-                    {periodLabel(days, t)}
-                  </button>
-                ))}
+            <div className="glucose-period">
+              <div className="glucose-period-head">
+                <h2 id="period-title" className="glucose-period-title">
+                  {t("glucosePeriodScope")}
+                </h2>
+                <div className="segmented" role="group" aria-labelledby="period-title">
+                  {PERIODS.map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      className={period === days ? "segment segment-on" : "segment"}
+                      aria-pressed={period === days}
+                      onClick={() => setPeriod(days)}
+                    >
+                      {periodLabel(days, t)}
+                    </button>
+                  ))}
+                </div>
               </div>
               <section className="card" aria-labelledby="curve-title">
                 <h2 id="curve-title" className="section-title">
@@ -146,12 +154,12 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                   curve && <p className="muted small">{t("curveEmpty")}</p>
                 )}
               </section>
-            </>
+              {statistics && <Statistics figures={statistics} unit={now.unit} />}
+            </div>
           )}
         </div>
 
         <div className="pane pane-side">
-          {now?.reading && statistics && <Statistics figures={statistics} unit={now.unit} />}
           {now && !readOnly && <LinkCard now={now} onChanged={() => void load()} />}
         </div>
       </div>
@@ -289,10 +297,10 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
 }
 
 // The account her readings come from: the form while there is none (or its password was refused),
-// a choice where it follows several people, and otherwise its state, how she reads glucose and a way
-// out.
+// a choice where it follows several people, and otherwise its state, folded over how she reads glucose
+// and a way out.
 function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }) {
-  const { t, language } = useSettings();
+  const { t } = useSettings();
   const toast = useToast();
   const [confirm, confirming] = useConfirm();
   const [error, setError] = useState<string | null>(null);
@@ -324,6 +332,47 @@ function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }
 
   // A password refused, or one this server can no longer open: either way she types it again.
   const refused = link?.lastFailure === "credentials-refused" || link?.lastFailure === "credentials-unreadable";
+
+  // Linked and nothing asked of her: folded to whom it reads and whether it works, everywhere and
+  // until she opens it; linking again, her unit and range, and unlinking are the tap away.
+  if (link && link.patientId !== null && !refused) {
+    return (
+      <Fold id="glucose-sensor" className="glucose-sensor" title={t("glucoseLinkTitle")} start="folded" lede={<LinkState link={link} brief />}>
+        <span className="item-meta">{link.email}</span>
+        {link.lastFailure && (
+          <p className="notice notice-caution">
+            <Icon name="alert" size={18} />
+            <span>{linkFailureText(link.lastFailure, t)}</span>
+          </p>
+        )}
+        {error && (
+          <p className="notice notice-error" role="alert">
+            <Icon name="alert" size={18} /> <span>{error}</span>
+          </p>
+        )}
+        {relinking && now.canLink ? (
+          <LinkForm email={link.email} onLinked={() => {
+            setRelinking(false);
+            onChanged();
+          }} />
+        ) : (
+          now.canLink && (
+            <button type="button" className="button button-quiet" onClick={() => setRelinking(true)}>
+              <Icon name="restart" size={20} />
+              {t("glucoseRelink")}
+            </button>
+          )
+        )}
+        <SettingsForm key={`${link.unit}:${link.targetLow}:${link.targetHigh}`} link={link} onSaved={onChanged} />
+        <button type="button" className="button button-quiet danger" onClick={() => void unlink()}>
+          <Icon name="trash" size={20} />
+          {t("glucoseUnlink")}
+        </button>
+        {confirming}
+      </Fold>
+    );
+  }
+
   return (
     <section className="card setting" aria-labelledby="glucose-link-title">
       <div>
@@ -365,18 +414,8 @@ function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }
       {link && link.patientId !== null && (
         <>
           <div className="glucose-linked">
-            <span className="item-name">{t("glucoseLinkedAs", { name: link.name ?? link.email })}</span>
+            <LinkState link={link} />
             <span className="item-meta">{link.email}</span>
-            {link.lastFailure ? (
-              <span className="item-meta glucose-link-failing">
-                {link.failingSince && `${t("glucoseFailingSince", { time: when(link.failingSince, language) })} `}
-                {linkFailureText(link.lastFailure, t)}
-              </span>
-            ) : (
-              <span className="item-meta glucose-link-ok">
-                <Icon name="checkCircle" size={16} /> {t("glucoseLinkWorking")}
-              </span>
-            )}
           </div>
           {(refused || relinking) && now.canLink ? (
             <LinkForm email={link.email} onLinked={() => {
@@ -403,6 +442,34 @@ function LinkCard({ now, onChanged }: { now: GlucoseNow; onChanged: () => void }
       )}
       {confirming}
     </section>
+  );
+}
+
+// Whom her link reads and whether it works. `brief` is all her sensor says while folded: since when it
+// fails, never why, which the reading's own card already says beside it.
+function LinkState({ link, brief = false }: { link: GlucoseLink; brief?: boolean }) {
+  const { t, language } = useSettings();
+  return (
+    <>
+      <span className="item-name">{t("glucoseLinkedAs", { name: link.name ?? link.email })}</span>
+      {link.lastFailure && brief ? (
+        <span className="item-meta glucose-link-failing glucose-link-brief">
+          <Icon name="alert" size={16} />{" "}
+          {link.failingSince
+            ? t("glucoseFailingSince", { time: when(link.failingSince, language) })
+            : t("glucoseLinkNotWorking")}
+        </span>
+      ) : link.lastFailure ? (
+        <span className="item-meta glucose-link-failing">
+          {link.failingSince && `${t("glucoseFailingSince", { time: when(link.failingSince, language) })} `}
+          {linkFailureText(link.lastFailure, t)}
+        </span>
+      ) : (
+        <span className="item-meta glucose-link-ok">
+          <Icon name="checkCircle" size={16} /> {t("glucoseLinkWorking")}
+        </span>
+      )}
+    </>
   );
 }
 

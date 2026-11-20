@@ -12,4 +12,12 @@ describe("a folding card", () => {
     expect(foldOpen(null, false)).toBe(false);
     expect(foldOpen(null, true)).toBe(true);
   });
+
+  // Her sensor is read for whether it works, which shows folded; the rest is seldom changed, and on a
+  // desktop opens over her figures, so it is never left open for the next visit.
+  it("starts folded on every screen and every visit when the card says so", () => {
+    expect(foldOpen(null, true, "folded")).toBe(false);
+    expect(foldOpen(null, false, "folded")).toBe(false);
+    expect(foldOpen("open", true, "folded")).toBe(false);
+  });
 });

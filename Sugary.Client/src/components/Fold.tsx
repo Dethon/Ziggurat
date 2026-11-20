@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { foldOpen } from "../fold";
+import { foldOpen, type FoldStart } from "../fold";
 import { Icon } from "./Icon";
 
 const key = (id: string) => `sugary.fold.${id}`;
@@ -17,12 +17,14 @@ const desktop = () => typeof matchMedia === "function" && matchMedia("(min-width
 
 // A card she can fold to its title, and its one-line gist while folded; how she left it is kept on the
 // device (a per-viewer convenience, so browser storage), else folded on a phone and open on a desktop.
+// One that starts "folded" keeps nothing: it is folded each time it is drawn.
 export function Fold({
   id,
   title,
   gist,
   aside,
   lede,
+  start = "by-screen",
   className = "",
   children,
 }: {
@@ -33,10 +35,12 @@ export function Fold({
   aside?: ReactNode;
   // Under the title, folded or not: what must never be a tap away.
   lede?: ReactNode;
+  // How it opens until she has folded or opened it on this device.
+  start?: FoldStart;
   className?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(() => foldOpen(stored(id), desktop()));
+  const [open, setOpen] = useState(() => foldOpen(stored(id), desktop(), start));
   return (
     <details
       className={`card fold ${className}`}
@@ -44,6 +48,9 @@ export function Fold({
       onToggle={(event) => {
         const now = event.currentTarget.open;
         setOpen(now);
+        if (start === "folded") {
+          return;
+        }
         try {
           localStorage.setItem(key(id), now ? "open" : "closed");
         } catch {
