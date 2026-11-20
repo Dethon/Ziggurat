@@ -5,7 +5,7 @@ import { pushState, turnOn, type PushState } from "../push";
 import { useSettings } from "../settings";
 import { Icon } from "./Icon";
 
-// Her phones told two days before her period (the server's PeriodReminders): off until she turns it
+// Her phones told three days before her period (the server's PeriodReminders): off until she turns it
 // on, since it shows on a lock screen. Turning it on here also lets this phone show reminders.
 export function PeriodReminder() {
   const { t, language } = useSettings();

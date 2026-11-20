@@ -15,9 +15,9 @@ using Tests.Integration.Fixtures;
 namespace Tests.Integration.McpServerTests;
 
 // A period reminder is hers to turn on: off until she does, since it shows on a lock screen. On, her
-// phones are told two days before the start her cycles make likeliest (the app's forecast), from the
+// phones are told three days before the start her cycles make likeliest (the app's forecast), from the
 // reminder hour on her household's clock, once. Starts on 9 September and 8 October are a 29-day cycle:
-// the next most likely on 6 November, told from 4 November.
+// the next most likely on 6 November, told from 3 November.
 public class SugaryPeriodReminderTests
 {
     private static readonly TimeZoneInfo _madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
@@ -77,23 +77,23 @@ public class SugaryPeriodReminderTests
     private static string Title(JsonNode payload) => payload["title"]!.GetValue<string>();
 
     [Fact]
-    public async Task OnceTurnedOn_SheIsToldTwoDaysBefore_FromTheReminderHour_Once()
+    public async Task OnceTurnedOn_SheIsToldThreeDaysBefore_FromTheReminderHour_Once()
     {
         await using var harness = await StartAsync();
         await harness.SubscribeAsync();
         await harness.PeriodsAsync();
         await harness.TurnOnAsync();
 
-        await harness.RemindAtAsync(11, 3, 12);
-        await harness.RemindAtAsync(11, 4, 8);
+        await harness.RemindAtAsync(11, 2, 12);
+        await harness.RemindAtAsync(11, 3, 8);
         harness.Push.Sent.ShouldBeEmpty();
 
+        await harness.RemindAtAsync(11, 3, 9);
         await harness.RemindAtAsync(11, 4, 9);
-        await harness.RemindAtAsync(11, 5, 9);
 
         var (endpoint, payload) = harness.Push.Sent.ShouldHaveSingleItem();
         endpoint.ShouldBe("https://push.example.com/a");
-        Title(payload).ShouldBe("Tu regla podría empezar en unos 2 días");
+        Title(payload).ShouldBe("Tu regla podría empezar en unos 3 días");
         payload["body"]!.GetValue<string>().ShouldBe("Hacia el 6 de noviembre, según tus últimos ciclos.");
         payload["tag"]!.GetValue<string>().ShouldBe("period");
         payload["url"]!.GetValue<string>().ShouldBe("/#cycle");
