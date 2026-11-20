@@ -105,25 +105,32 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
         </p>
       )}
 
-      {/* On a desktop her curve leads, her figures and her link standing beside it. */}
+      {/* On a desktop her reading leads; under it one tray holds what the period chooses (her curve
+          and her figures, side by side, the periods heading both), and her sensor, which no period
+          touches, stands outside it. */}
       <div className="panes panes-glucose">
         <div className="pane pane-lead">
           {now && (now.reading || now.link) && <Current now={now} fetchedAt={state.fetchedAt} />}
 
           {now?.reading && (
-            <>
-              <div className="segmented" role="group" aria-label={t("glucosePeriods")}>
-                {PERIODS.map((days) => (
-                  <button
-                    key={days}
-                    type="button"
-                    className={period === days ? "segment segment-on" : "segment"}
-                    aria-pressed={period === days}
-                    onClick={() => setPeriod(days)}
-                  >
-                    {periodLabel(days, t)}
-                  </button>
-                ))}
+            <div className="glucose-period">
+              <div className="glucose-period-head">
+                <h2 id="period-title" className="glucose-period-title">
+                  {t("glucosePeriodScope")}
+                </h2>
+                <div className="segmented" role="group" aria-labelledby="period-title">
+                  {PERIODS.map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      className={period === days ? "segment segment-on" : "segment"}
+                      aria-pressed={period === days}
+                      onClick={() => setPeriod(days)}
+                    >
+                      {periodLabel(days, t)}
+                    </button>
+                  ))}
+                </div>
               </div>
               <section className="card" aria-labelledby="curve-title">
                 <h2 id="curve-title" className="section-title">
@@ -146,12 +153,12 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                   curve && <p className="muted small">{t("curveEmpty")}</p>
                 )}
               </section>
-            </>
+              {statistics && <Statistics figures={statistics} unit={now.unit} />}
+            </div>
           )}
         </div>
 
         <div className="pane pane-side">
-          {now?.reading && statistics && <Statistics figures={statistics} unit={now.unit} />}
           {now && !readOnly && <LinkCard now={now} onChanged={() => void load()} />}
         </div>
       </div>
