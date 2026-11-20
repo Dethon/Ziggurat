@@ -26,7 +26,7 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
   return (
     <div className="screen">
       <h1 className="marked">
-        <Icon name="slice" size={28} />
+        <Icon name="jar" size={28} />
         {t("foodsTitle")}
       </h1>
       <FoodList

@@ -44,7 +44,7 @@ export function SettingsScreen({
   return (
     <div className="screen">
       <h1 className="marked">
-        <Icon name="slice" size={28} />
+        <Icon name="sliders" size={28} />
         {t("settingsTitle")}
       </h1>
 
