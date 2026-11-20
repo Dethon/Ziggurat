@@ -183,13 +183,23 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
           )}
 
           {all.length > 0 && (
-            <section className="card forecast" aria-labelledby="forecast-title">
-              <h2 id="forecast-title" className="section-title">
-                {t("forecastTitle")}
-              </h2>
+            // Folded on a phone: when it is expected on the title's line, and the rest (her reminder
+            // among it) a tap away; being late is said folded too.
+            <Fold
+              id="cycle-forecast"
+              className="forecast"
+              title={t("forecastTitle")}
+              aside={
+                expected && (
+                  <span className="forecast-range">
+                    {t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}
+                  </span>
+                )
+              }
+              gist={late > 0 && status.kind === "cycle" ? (late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })) : undefined}
+            >
               {expected ? (
                 <>
-                  <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
                   {late > 0 && status.kind === "cycle" && (
                     <p className="notice notice-caution forecast-late">
                       <Icon name="clock" size={18} />
@@ -215,7 +225,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               ) : (
                 <p className="muted small">{t("forecastNeedsTwo")}</p>
               )}
-            </section>
+            </Fold>
           )}
           {phases && (phases.cycles > 0 || phases.hasReadings) && all.length > 0 && <CycleGlucose phases={phases} />}
         </div>

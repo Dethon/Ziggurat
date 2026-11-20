@@ -2410,7 +2410,7 @@ h1.marked .icon {
   outline-offset: -1.5px;
 }
 
-.forecast {
+.forecast .fold-body {
   gap: var(--space-2);
 }
 
@@ -3177,6 +3177,19 @@ h1.marked .icon {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+}
+
+/* The title and what the card is read for share a line, the second under the first when it will not fit. */
+.fold-title-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+/* Body-sized beside the title, so "Next period" and "Expected 5–6 Dec" share a phone's line. */
+.fold-title-line .forecast-range {
+  font-size: var(--text-body);
 }
 
 .fold-gist {
