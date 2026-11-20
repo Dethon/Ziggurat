@@ -18,7 +18,7 @@ import { fuses, hashOf, openedTab, railTab, railTabs, type Tab, tabOf, visibleTa
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, Profile, SessionState, SugaryPerson } from "./types";
 import { useTypingMark } from "./typing";
-import { firstViewed, hasNoLog, offered, sessionOf, showsPicker } from "./viewing";
+import { firstViewed, hasNoLog, offered, rememberedViewed, rememberViewed, sessionOf, showsPicker } from "./viewing";
 import { useWide } from "./wide";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
@@ -66,7 +66,7 @@ export function App() {
         return;
       }
       // A reader keeping no log of her own opens on the first person she may look at.
-      const first = firstViewed(session);
+      const first = firstViewed(session, rememberedViewed(session.person ?? null));
       setViewing(first);
       const profile = first === null ? own : await api.profile().catch(() => UNSAID);
       setViewed(first);
@@ -83,6 +83,7 @@ export function App() {
   // on screen while theirs is read — its rows under another name would be a false health record.
   function look(userId: string) {
     const next = userId === session?.person ? null : userId;
+    rememberViewed(session?.person ?? null, next);
     setViewing(next);
     setViewed(next);
     setProfile(null);

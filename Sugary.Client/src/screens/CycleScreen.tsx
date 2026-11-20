@@ -6,6 +6,7 @@ import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refu
 import { CycleTrends } from "../components/CycleTrends";
 import { CycleGlucose } from "../components/CycleGlucose";
 import { PeriodReminder } from "../components/PeriodReminder";
+import { Fold } from "../components/Fold";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
@@ -20,6 +21,9 @@ import { PeriodSheet, problemText } from "./PeriodSheet";
 // is the one thing an open period cannot say for itself.
 const LONG_PERIOD_DAY = 10;
 
+// Her last half year at a glance; the rest a tap away.
+const PERIODS_SHOWN = 6;
+
 type Opened = { period?: Period; initial: SavePeriod };
 
 // `readOnly` is somebody else's cycle: her days, forecast and notes are read, never recorded or changed.
@@ -32,6 +36,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState<DayNote[]>([]);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  const [allPeriods, setAllPeriods] = useState(false);
   // Her glucose by phase: nothing at all without a sensor, or when it cannot be read.
   const [phases, setPhases] = useState<CyclePhases | null>(null);
   const today = localDay(new Date(useMinute()));
@@ -178,39 +183,53 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
           )}
 
           {all.length > 0 && (
-            <section className="card forecast" aria-labelledby="forecast-title">
-              <h2 id="forecast-title" className="section-title">
-                {t("forecastTitle")}
-              </h2>
-              {expected ? (
+            // Folded on a phone: when it is expected on the title's line, being late, her fertile window
+            // and that it is no contraception under it, always; the likeliest day and her reminder a tap away.
+            <Fold
+              id="cycle-forecast"
+              className="forecast"
+              title={t("forecastTitle")}
+              aside={
+                expected && (
+                  <span className="forecast-range">
+                    {t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}
+                  </span>
+                )
+              }
+              lede={
+                expected ? (
+                  <span className="forecast-lede">
+                    {late > 0 && status.kind === "cycle" && (
+                      <span className="notice notice-caution forecast-late">
+                        <Icon name="clock" size={18} />
+                        <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
+                      </span>
+                    )}
+                    {expected.fertile && (
+                      <span className="forecast-fertile">
+                        {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
+                      </span>
+                    )}
+                    <span className="forecast-caveat">
+                      <Icon name="info" size={16} />
+                      {t("forecastDisclaimer")}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="fold-gist">{t("forecastNeedsTwo")}</span>
+                )
+              }
+            >
+              {expected && (
                 <>
-                  <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
-                  {late > 0 && status.kind === "cycle" && (
-                    <p className="notice notice-caution forecast-late">
-                      <Icon name="clock" size={18} />
-                      <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
-                    </p>
-                  )}
                   {expected.earliest !== expected.latest && (
                     <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
                   )}
-                  {expected.fertile && (
-                    <p className="forecast-fertile">
-                      {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
-                    </p>
-                  )}
+                  <p className="muted small">{expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })}</p>
                   {!readOnly && <PeriodReminder />}
-                  <p className="notice forecast-disclaimer">
-                    <Icon name="info" size={18} />
-                    <span>
-                      {expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })} {t("forecastDisclaimer")}
-                    </span>
-                  </p>
                 </>
-              ) : (
-                <p className="muted small">{t("forecastNeedsTwo")}</p>
               )}
-            </section>
+            </Fold>
           )}
           {phases && (phases.cycles > 0 || phases.hasReadings) && all.length > 0 && <CycleGlucose phases={phases} />}
         </div>
@@ -231,12 +250,14 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
           {cycles && <CycleTrends trends={cycles} thisYear={thisYear} />}
 
           {all.length > 0 && (
-            <section className="card" aria-labelledby="periods-title">
-              <h2 id="periods-title" className="section-title">
-                {t("pastPeriods")}
-              </h2>
+            <Fold
+              id="cycle-periods"
+              className="periods"
+              title={t("pastPeriods")}
+              gist={all.length === 1 ? t("periodsGistOne") : t("periodsGist", { n: all.length })}
+            >
               <ul className="rows">
-                {history(all).map(({ period, days, cycleDays }) => {
+                {history(all).slice(0, allPeriods ? undefined : PERIODS_SHOWN).map(({ period, days, cycleDays }) => {
                   const said = (
                     <>
                       <Icon name="drop" />
@@ -272,7 +293,12 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                   );
                 })}
               </ul>
-            </section>
+              {!allPeriods && all.length > PERIODS_SHOWN && (
+                <button type="button" className="button button-quiet button-small periods-more" onClick={() => setAllPeriods(true)}>
+                  {t("periodsShowAll", { n: all.length })}
+                </button>
+              )}
+            </Fold>
           )}
         </div>
       </div>
