@@ -40,6 +40,12 @@ public record GlucoseReadingDto(DateTimeOffset At, double MgPerDl, GlucoseTrend 
 // BucketMinutes is null where the points are the readings as kept.
 public record GlucoseCurveDto(DateTimeOffset From, DateTimeOffset To, int? BucketMinutes, IReadOnlyList<GlucosePoint> Points);
 
+// Her finished cycles' phases (CyclePhases): each phase's figures null under its coverage floor.
+// HasReadings: any reading of hers at all, so the app can say "not yet" to someone wearing a sensor.
+public record CyclePhasesDto(
+    int Cycles, bool HasReadings, GlucoseUnit Unit, int TargetLow, int TargetHigh, PhaseFigures Menstrual, PhaseFigures Follicular,
+    PhaseFigures Luteal);
+
 // Shares are fractions of the time with readings, cumulative bands (GlucoseStatistics); null with none.
 public record GlucoseStatisticsDto(
     int Days,
@@ -86,6 +92,7 @@ public static class GlucoseEndpoints
         glucose.MapGet("/current", CurrentAsync);
         glucose.MapGet("/readings", ReadingsAsync);
         glucose.MapGet("/statistics", StatisticsAsync);
+        glucose.MapGet("/cycle", CycleAsync);
     }
 
     // The periods the tab offers; the clinic's report is fourteen days, ninety the longest kept view.
@@ -147,6 +154,27 @@ public static class GlucoseEndpoints
         return Results.Ok(new GlucoseStatisticsDto(
             period, from, to, low, high, figures.Count, figures.Coverage, figures.Mean, figures.Gmi, figures.Cv,
             figures.VeryLow, figures.Low, figures.InRange, figures.High, figures.VeryHigh));
+    }
+
+    // Her glucose in each part of her finished cycles (CyclePhases), against her range, mg/dL.
+    private static async Task<IResult> CycleAsync(SugaryDbContext db, HomeCalendar calendar, CancellationToken ct)
+    {
+        var periods = await db.Periods.AsNoTracking()
+            .Select(p => new CyclePeriod(p.Start, p.End))
+            .ToListAsync(ct);
+        var cycles = CyclePhases.Cycles(periods, calendar.Today);
+        var link = await LinkOf(db, ct);
+        var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
+        // A day either side for the zone: the phases cut the readings at her midnights themselves.
+        var readings = cycles.Count == 0
+            ? []
+            : await ReadingsIn(db,
+                new DateTimeOffset(cycles[0].Start.AddDays(-1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                new DateTimeOffset(cycles[^1].Luteal.Last.AddDays(2).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero), ct);
+        var figures = CyclePhases.Of(periods, readings, calendar.Zone, calendar.Today, low, high);
+        var hasReadings = await db.GlucoseReadings.AnyAsync(ct);
+        return Results.Ok(new CyclePhasesDto(
+            figures.Cycles, hasReadings, link?.Unit ?? GlucoseUnit.Mgdl, low, high, figures.Menstrual, figures.Follicular, figures.Luteal));
     }
 
     private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(

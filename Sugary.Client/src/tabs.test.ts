@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fuses, hashOf, railTab, railTabs, tabOf, visibleTabs } from "./tabs";
+import { fuses, hashOf, openedTab, railTab, railTabs, tabOf, visibleTabs } from "./tabs";
 
 describe("the tab in the address", () => {
   it("reads the tab the page was on", () => {
@@ -53,5 +53,18 @@ describe("a window wide enough for the meal beside the log", () => {
     expect(railTab("log", true)).toBe("log");
     expect(railTab("foods", true)).toBe("foods");
     expect(railTab("meal", false)).toBe("meal");
+  });
+});
+
+describe("the tab a tapped reminder opens", () => {
+  it("is the one its address names, when she is shown it", () => {
+    expect(openedTab("/#cycle", visibleTabs(true))).toBe("cycle");
+  });
+
+  // A pen's reminder names no tab: an open app stays where she is.
+  it("is none for an address naming no tab, or one she is not shown", () => {
+    expect(openedTab("/", visibleTabs(true))).toBeNull();
+    expect(openedTab("/#nonsense", visibleTabs(true))).toBeNull();
+    expect(openedTab("/#cycle", visibleTabs(false))).toBeNull();
   });
 });

@@ -14,7 +14,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { showsCycle, UNSAID } from "./profile";
 import { useSettings } from "./settings";
 import { accountUrl, goNotice, goSignIn } from "./signin";
-import { fuses, hashOf, railTab, railTabs, type Tab, tabOf, visibleTabs } from "./tabs";
+import { fuses, hashOf, openedTab, railTab, railTabs, type Tab, tabOf, visibleTabs } from "./tabs";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, Profile, SessionState, SugaryPerson } from "./types";
 import { useTypingMark } from "./typing";
@@ -206,6 +206,18 @@ function Shell({
   const workspace = fused && (tab === "meal" || tab === "log");
   // Each meal saved is a new log: a log already on screen beside the meal reads its days again.
   const [saves, setSaves] = useState(0);
+  // A reminder tapped while the app is open (push-handler.js) names the tab it is about.
+  useEffect(() => {
+    const opened = (event: MessageEvent) => {
+      const named = event.data?.type === "open" && typeof event.data.url === "string" ? openedTab(event.data.url, shown) : null;
+      if (named) {
+        setTab(named);
+      }
+    };
+    navigator.serviceWorker?.addEventListener("message", opened);
+    return () => navigator.serviceWorker?.removeEventListener("message", opened);
+    // Keyed by the tabs shown, not by the array each render makes.
+  }, [shown.join()]);
   // Replaced, not pushed: the tabs are not pages, so Back leaves the app as it always has.
   useEffect(() => {
     window.history.replaceState(window.history.state, "", hashOf(tab));

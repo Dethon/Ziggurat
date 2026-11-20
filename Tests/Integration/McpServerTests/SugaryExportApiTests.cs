@@ -263,7 +263,7 @@ public class SugaryExportApiTests
         var held = (await server.TableRowsAsync("/periods.parquet")).Single();
         periods[1].ShouldBe($"{held[0]},2026-09-09,2026-09-14,6,");
         held[1..].ShouldBe(["2026-09-09", "2026-09-14", "6", null]);
-        notes.ShouldBe(["date,note", "2026-09-10,cramps"]);
+        notes.ShouldBe(["date,note,flow,symptoms", "2026-09-10,cramps,,"]);
     }
 
     // Who she is and her pens download as the mount renders them: the same tables, the same words.

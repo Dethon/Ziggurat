@@ -39,3 +39,10 @@ export function railTabs(shown: readonly Tab[], fused: boolean): Tab[] {
 export function railTab(tab: Tab, fused: boolean): Tab {
   return fused && tab === "meal" ? "log" : tab;
 }
+
+// The tab a tapped reminder's address names (push-handler.js), or none: a pen's names no tab, and an
+// open app then stays where she is.
+export function openedTab(url: string, shown: readonly Tab[]): Tab | null {
+  const name = new URL(url, "http://sugary").hash.replace(/^#/, "");
+  return shown.find((tab) => tab === name) ?? null;
+}

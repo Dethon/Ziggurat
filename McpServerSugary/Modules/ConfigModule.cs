@@ -101,7 +101,9 @@ public static class ConfigModule
                 .AddSingleton<IPushMessageSender>(sp => new ModernWebPushSender(
                     sp.GetRequiredService<IHttpClientFactory>().CreateClient("WebPush"),
                     settings.WebPush.PublicKey!, settings.WebPush.PrivateKey!, settings.WebPush.Subject!))
+                .AddSingleton<ReminderPhones>()
                 .AddSingleton<PenReminders>()
+                .AddSingleton<PeriodReminders>()
                 .AddHostedService<PenReminderLoop>();
         }
 

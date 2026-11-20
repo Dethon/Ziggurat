@@ -93,7 +93,8 @@ public sealed record LoggedExercise(
 public sealed record LoggedPeriod(Guid Id, DateOnly Start, DateOnly? End);
 
 // What she wrote about one day of her calendar.
-public sealed record LoggedDayNote(DateOnly Day, string Text);
+// Flow and symptoms are the server's codes (spotting/light/medium/heavy; cramps, headache…), unsaid null and empty.
+public sealed record LoggedDayNote(DateOnly Day, string Text, string? Flow = null, IReadOnlyList<string>? Symptoms = null);
 
 // A food from her own list. Amounts are in its unit (g or ml), carbs per 100 of that unit.
 public sealed record SavedFood(

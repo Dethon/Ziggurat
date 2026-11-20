@@ -61,7 +61,8 @@ public static class SugaryTables
         new("days", ColumnType.Integer), new("cycle_days", ColumnType.Integer)
     ];
 
-    private static readonly TableColumn[] _dayNoteColumns = [new("date", ColumnType.Date), new("note", ColumnType.Text)];
+    private static readonly TableColumn[] _dayNoteColumns =
+        [new("date", ColumnType.Date), new("note", ColumnType.Text), new("flow", ColumnType.Text), new("symptoms", ColumnType.Text)];
 
     private static readonly TableColumn[] _glucoseColumns =
     [
@@ -157,7 +158,9 @@ public static class SugaryTables
     }
 
     public static Table DayNotes(IEnumerable<LoggedDayNote> notes) =>
-        new("day_notes", _dayNoteColumns, [.. notes.OrderBy(note => note.Day).Select(note => Row(note.Day, note.Text))]);
+        new("day_notes", _dayNoteColumns, [.. notes.OrderBy(note => note.Day).Select(note => Row(
+            note.Day, note.Text == "" ? null : note.Text, note.Flow,
+            note.Symptoms is { Count: > 0 } said ? string.Join(", ", said) : null))]);
 
     // Oldest first. mmol/L is worked out on every read, to one decimal as a meter shows it, so the two
     // columns never disagree.

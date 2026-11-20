@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { dayAction, dayDate } from "../cycle";
@@ -7,12 +7,19 @@ import { errorMessage } from "../errors";
 import { formatDay, formatDays } from "../format";
 import { sentence } from "../meal";
 import { useSettings } from "../settings";
-import type { Period, SavePeriod } from "../types";
+import { FLOWS, nothingSaid, sameDay, SYMPTOMS, toggled } from "../days";
+import type { DayEntry, Flow, Period, SavePeriod } from "../types";
 
 export const MAX_DAY_NOTE = 500;
 
-// Everything about one day: its note, and the period action that applies to it. `readOnly` is a day
-// of somebody else's cycle: its note is read, and nothing is offered to change.
+export const NOTHING: DayEntry = { text: "", flow: null, symptoms: [] };
+
+// How many drops a flow is drawn with: spotting one small one, heavy three.
+const DROPS: Record<Flow, number> = { spotting: 1, light: 1, medium: 2, heavy: 3 };
+
+// Everything about one day: her flow, her symptoms, her words, and the period action that applies to
+// it. `readOnly` is a day of somebody else's cycle: what was said is read, and nothing is offered to
+// change.
 export function DaySheet({
   day,
   note,
@@ -21,23 +28,29 @@ export function DaySheet({
   today,
   onClose,
   onNoteSaved,
+  onStale,
   onPeriod,
   onOpenPeriod,
 }: {
   day: string;
-  note: string;
+  // What was said of the day when the sheet opened; NOTHING for a day with none.
+  note: DayEntry;
   readOnly?: boolean;
   periods: readonly Period[];
   today: string;
   onClose: () => void;
-  onNoteSaved: (text: string) => void;
+  // What the day now says, or null once nothing is said of it (the server deleted it).
+  onNoteSaved: (entry: DayEntry | null) => void;
+  // Somebody changed this day since the sheet opened (409): read it again, so the next save merges
+  // against what is there now rather than refusing again.
+  onStale: () => void;
   // Save these days at once (start on this day, or end the ongoing period on it).
   onPeriod: (values: SavePeriod, period?: Period) => void;
   // Open the period sheet: the one this day belongs to, or a new one starting on it.
   onOpenPeriod: (period: Period | undefined, initial: SavePeriod) => void;
 }) {
   const { t, language } = useSettings();
-  const [text, setText] = useState(note);
+  const [entry, setEntry] = useState<DayEntry>(note);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
@@ -47,9 +60,12 @@ export function DaySheet({
     setBusy(true);
     setError(null);
     try {
-      await api.setDayNote(day, text.trim());
-      onNoteSaved(text.trim());
+      await api.setDayNote(day, entry, note);
+      onNoteSaved(nothingSaid(entry) ? null : { ...entry, text: entry.text.trim() });
     } catch (failure) {
+      if (failure instanceof ApiError && failure.status === 409) {
+        onStale();
+      }
       setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
@@ -59,8 +75,33 @@ export function DaySheet({
     return (
       <Sheet title={sentence(formatDay(dayDate(day), language))} onClose={onClose}>
         <div className="sheet-form">
-          <p className="field-label">{t("dayNote")}</p>
-          <p className="day-note-read">{note.trim() || t("dayNoNote")}</p>
+          {nothingSaid(note) ? (
+            <p className="day-note-read">{t("dayNoNote")}</p>
+          ) : (
+            <>
+              {note.flow && (
+                <p>
+                  <span className="field-label">{t("dayFlow")}</span>
+                  <br />
+                  {t(`flow_${note.flow}`)}
+                </p>
+              )}
+              {note.symptoms.length > 0 && (
+                <p>
+                  <span className="field-label">{t("daySymptoms")}</span>
+                  <br />
+                  {note.symptoms.map((symptom) => t(`symptom_${symptom}`)).join(", ")}
+                </p>
+              )}
+              {note.text.trim() && (
+                <p>
+                  <span className="field-label">{t("dayNote")}</span>
+                  <br />
+                  <span className="day-note-read">{note.text.trim()}</span>
+                </p>
+              )}
+            </>
+          )}
         </div>
       </Sheet>
     );
@@ -75,9 +116,9 @@ export function DaySheet({
           type="submit"
           form={formId}
           className="button button-primary button-big"
-          disabled={busy || text.trim() === note.trim()}
+          disabled={busy || sameDay(entry, note)}
         >
-          {t("saveNote")}
+          {t("saveDay")}
         </button>
       }
     >
@@ -122,14 +163,56 @@ export function DaySheet({
             {t(action.kind === "end" ? "periodEndThisDay" : "periodStartThisDay")}
           </button>
         )}
+        {/* One flow at most: a tap on the one chosen takes it back. */}
+        <div className="field">
+          <span className="field-label" id={`${formId}-flow`}>
+            {t("dayFlow")}
+          </span>
+          <div className="chips day-flows" role="group" aria-labelledby={`${formId}-flow`}>
+            {FLOWS.map((flow) => (
+              <button
+                key={flow}
+                type="button"
+                className={entry.flow === flow ? "chip chip-on day-flow" : "chip day-flow"}
+                aria-pressed={entry.flow === flow}
+                onClick={() => setEntry((current) => ({ ...current, flow: current.flow === flow ? null : flow }))}
+              >
+                <span className={`day-flow-drops day-flow-${flow}`} aria-hidden="true">
+                  {Array.from({ length: DROPS[flow] }, (_, n) => (
+                    <Icon key={n} name="drop" size={flow === "spotting" ? 12 : 16} />
+                  ))}
+                </span>
+                {t(`flow_${flow}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="field">
+          <span className="field-label" id={`${formId}-symptoms`}>
+            {t("daySymptoms")}
+          </span>
+          <div className="chips" role="group" aria-labelledby={`${formId}-symptoms`}>
+            {SYMPTOMS.map((symptom) => (
+              <button
+                key={symptom}
+                type="button"
+                className={entry.symptoms.includes(symptom) ? "chip chip-on" : "chip"}
+                aria-pressed={entry.symptoms.includes(symptom)}
+                onClick={() => setEntry((current) => ({ ...current, symptoms: toggled(current.symptoms, symptom) }))}
+              >
+                {t(`symptom_${symptom}`)}
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="field">
           <span className="field-label">{t("dayNote")}</span>
           <textarea
-            rows={4}
-            value={text}
+            rows={3}
+            value={entry.text}
             maxLength={MAX_DAY_NOTE}
             placeholder={t("dayNotePlaceholder")}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => setEntry((current) => ({ ...current, text: event.target.value }))}
           />
         </label>
         {error && (

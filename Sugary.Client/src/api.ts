@@ -1,4 +1,7 @@
+import { asDayNote, kept } from "./days";
 import type {
+  CyclePhases,
+  DayEntry,
   DayNote,
   Dose,
   Exercise,
@@ -234,6 +237,9 @@ export const api = {
   glucoseCurve: (from: string, to: string) =>
     request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   glucoseStatistics: (days: number) => request<GlucoseStatistics>(`/glucose/statistics?days=${days}`),
+  cyclePhases: () => request<CyclePhases>("/glucose/cycle"),
+  cycleReminder: () => request<{ on: boolean }>("/cycle/reminder"),
+  setCycleReminder: (on: boolean) => request<{ on: boolean }>("/cycle/reminder", json("PUT", { on })),
   // Logs in at LibreLinkUp before anything is kept, so it may take a while and is refused by code.
   linkGlucose: (account: LinkGlucose) => request<GlucoseLink>("/glucose/link", json("PUT", account)),
   chooseGlucoseConnection: (patientId: string) =>
@@ -241,9 +247,11 @@ export const api = {
   saveGlucoseSettings: (settings: GlucoseSettings, loaded: GlucoseSettings) =>
     request<GlucoseLink>("/glucose/settings", json("PUT", { ...settings, loaded })),
   unlinkGlucose: () => request<void>("/glucose/link", { method: "DELETE" }),
-  dayNotes: () => request<DayNote[]>("/day-notes"),
-  // Empty text deletes the note; the server then answers with nothing.
-  setDayNote: (day: string, text: string) => request<DayNote | undefined>(`/day-notes/${day}`, json("PUT", { text })),
+  dayNotes: () => request<DayNote[]>("/day-notes").then((days) => days.map(asDayNote)),
+  // A day with nothing said is deleted; the server then answers with nothing. Always sends its
+  // symptoms, if none an empty list: a save without them changes only the words (an older app's).
+  setDayNote: (day: string, entry: DayEntry, loaded: DayEntry) =>
+    request<DayNote | undefined>(`/day-notes/${day}`, json("PUT", { ...kept(entry), loaded: kept(loaded) })),
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),

@@ -33,7 +33,7 @@ public static class SugaryReadme
           - `exercise/<YYYY-MM>.parquet` — one row per session of exercise they started that month, oldest first.
           - `foods.parquet` — one row per food they keep on their own list.
           - `periods.parquet` — one row per menstrual period they recorded, oldest first.
-          - `day-notes.parquet` — one row per day they wrote a note about, oldest first.
+          - `day-notes.parquet` — one row per day they said something of (words, flow, symptoms), oldest first.
           - `glucose/<YYYY-MM>.parquet` — one row per glucose reading measured that month, oldest first.
           - `sensors.parquet` — one row per glucose sensor they have worn.
           - `profile.parquet` — one row: their sex, diabetes type, when it was diagnosed and when they were born.
@@ -169,10 +169,14 @@ public static class SugaryReadme
 
           ## day-notes.parquet
 
-          What they wrote about a day — how they felt, what they craved — on a period day or any other.
+          What they said of a day — in their words, how heavy their flow was, what they felt — on a period
+          day or any other. A day is kept while any of the three is said; an unsaid one is empty.
 
           - `date` — the day, on the home's calendar.
           - `note` — what they wrote.
+          - `flow` — `spotting`, `light`, `medium` or `heavy`.
+          - `symptoms` — what they tapped, comma-separated: `cramps`, `headache`, `back_pain`, `tender_breasts`,
+            `bloating`, `nausea`, `tiredness`, `mood_swings`, `cravings`, `acne`.
 
           ## foods.parquet
 

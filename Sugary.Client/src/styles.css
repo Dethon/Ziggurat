@@ -1264,6 +1264,7 @@ h1.title-small {
 .meal-row .item-name {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1485,6 +1486,7 @@ h1.title-small {
 .meal-choice .item-name {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3026,6 +3028,257 @@ h1.marked .icon {
   white-space: pre-wrap;
 }
 
+/* A day's flow, drawn in drops: one small for spotting, up to three for heavy. */
+.day-flow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.day-flow-drops {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: var(--color-period);
+}
+
+.chip-on .day-flow-drops {
+  color: inherit;
+}
+
+/* Her glucose by phase: a row a phase, its average and its time in range. */
+.cycle-glucose {
+  gap: var(--space-3);
+}
+
+.cycle-glucose-shift {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+
+.phases {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  padding: var(--space-3) 0;
+}
+
+.phase + .phase {
+  border-top: 1px solid var(--color-line);
+}
+
+.phase-name {
+  font-weight: 700;
+}
+
+.phase-figure {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.phase-figure strong {
+  font-size: var(--text-number);
+}
+
+.phase-none {
+  text-align: right;
+}
+
+.phase-range {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.phase-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-sponge);
+  overflow: hidden;
+}
+
+.phase-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--color-good);
+}
+
+.period-reminder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.period-reminder-on {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-ink);
+}
+
+.period-reminder-here {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.period-reminder-on .button,
+.period-reminder-here .button {
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Her cycles: her own figures over a bar a cycle, standing on zero, the period's days at its foot and
+   her average a dashed line across. */
+.trends {
+  gap: var(--space-4);
+}
+
+/* Three across where they fit, two and one under where the card is narrow. */
+.trends-figures {
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+}
+
+.trends-figures dd {
+  white-space: nowrap;
+}
+
+.trend-bars {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  height: 150px;
+  margin: 0;
+  padding: var(--space-5) 0;
+  list-style: none;
+}
+
+.trend-bars::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--space-5) + (100% - 2 * var(--space-5)) * var(--average-share, 0));
+  border-top: 1.5px dashed var(--color-muted);
+  pointer-events: none;
+}
+
+.trend-bar {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 44px;
+  display: flex;
+  flex-direction: column;
+}
+
+.trend-bar-column {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.trend-bar-fill {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  border-radius: var(--radius-s) var(--radius-s) 2px 2px;
+  background: var(--color-sponge);
+  overflow: visible;
+}
+
+.trend-bar-period {
+  width: 100%;
+  border-radius: 0 0 2px 2px;
+  background: var(--color-period);
+}
+
+.trend-bar-days {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  padding-bottom: 2px;
+  text-align: center;
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.trend-bar-month {
+  position: absolute;
+  top: 100%;
+  left: -4px;
+  right: -4px;
+  padding-top: 4px;
+  overflow: hidden;
+  text-align: center;
+  font-size: var(--text-label);
+  color: var(--color-muted);
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+.trend-bar-skipped .trend-bar-fill {
+  background: none;
+  outline: 1.5px dashed var(--color-line);
+  outline-offset: -1.5px;
+}
+
+.trend-bar-skipped .trend-bar-period,
+.trend-bar-skipped .trend-bar-days {
+  opacity: 0.45;
+}
+
+.trends-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+}
+
+.trends-key {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.trends-key + .trends-key,
+.trends-legend .trends-key-average {
+  margin-left: var(--space-2);
+}
+
+.trends-key-period {
+  background: var(--color-period);
+}
+
+.trends-key-average {
+  height: 0;
+  border-top: 1.5px dashed var(--color-muted);
+}
+
+.forecast-late {
+  margin-top: var(--space-1);
+}
+
 /* A desktop: a window as wide as a laptop's. The tab bar becomes a rail down the left, the page
    beside it, and screens with more than one thing to show set them side by side; sheets open in the
    middle of the window rather than rising from its bottom edge. Narrower than this — a phone turned
@@ -3415,8 +3668,13 @@ h1.marked .icon {
   .panes-cycle > .pane:not(.pane-side) {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-6);
+    gap: var(--space-5) var(--space-6);
     align-items: start;
+  }
+
+  /* The month down the left; her cycles and her periods stacked beside it. */
+  .panes-cycle > .pane:not(.pane-side) > .calendar {
+    grid-row: span 2;
   }
 
   /* Settings: three columns of cards. */

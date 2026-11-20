@@ -2,15 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
-import { cycleStatus, forecast, history, localDay, periodProblem, refusedBecause } from "../cycle";
+import { cycleStatus, daysLate, forecast, history, localDay, periodProblem, refusedBecause, trends } from "../cycle";
+import { CycleTrends } from "../components/CycleTrends";
+import { CycleGlucose } from "../components/CycleGlucose";
+import { PeriodReminder } from "../components/PeriodReminder";
 import { errorMessage } from "../errors";
 import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { DayNote, Period, SavePeriod } from "../types";
-import { DaySheet } from "./DaySheet";
+import type { CyclePhases, DayNote, Period, SavePeriod } from "../types";
+import { DaySheet, NOTHING } from "./DaySheet";
 import { PeriodSheet, problemText } from "./PeriodSheet";
 
 // Past this day of a period, the status asks whether it is still going: an end she forgot to note
@@ -29,6 +32,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [notes, setNotes] = useState<DayNote[]>([]);
   const [openDay, setOpenDay] = useState<string | null>(null);
+  // Her glucose by phase: nothing at all without a sensor, or when it cannot be read.
+  const [phases, setPhases] = useState<CyclePhases | null>(null);
   const today = localDay(new Date(useMinute()));
   const thisYear = today.slice(0, 4);
   const [month, setMonth] = useState(() => today.slice(0, 7));
@@ -39,6 +44,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
       setPeriods(recorded);
       setNotes(written);
       setError(null);
+      api.cyclePhases().then(setPhases, () => setPhases(null));
     } catch (failure) {
       setError(errorMessage(failure, t));
     }
@@ -52,6 +58,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
   const status = cycleStatus(all, today);
   const noted = new Set(notes.map((note) => note.day));
   const expected = forecast(all, today);
+  const late = daysLate(expected, today);
+  const cycles = trends(all);
 
   // One tap records today; the rules are asked first so a clash is said in her language.
   async function quick(values: SavePeriod, period?: Period) {
@@ -177,6 +185,12 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               {expected ? (
                 <>
                   <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
+                  {late > 0 && status.kind === "cycle" && (
+                    <p className="notice notice-caution forecast-late">
+                      <Icon name="clock" size={18} />
+                      <span>{late === 1 ? t("forecastLateOne") : t("forecastLate", { n: late })}</span>
+                    </p>
+                  )}
                   {expected.earliest !== expected.latest && (
                     <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
                   )}
@@ -185,6 +199,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
                       {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
                     </p>
                   )}
+                  {!readOnly && <PeriodReminder />}
                   <p className="notice forecast-disclaimer">
                     <Icon name="info" size={18} />
                     <span>
@@ -197,6 +212,7 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               )}
             </section>
           )}
+          {phases && (phases.cycles > 0 || phases.hasReadings) && all.length > 0 && <CycleGlucose phases={phases} />}
         </div>
 
         <div className="pane">
@@ -211,6 +227,8 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
               onDay={setOpenDay}
             />
           )}
+
+          {cycles && <CycleTrends trends={cycles} thisYear={thisYear} />}
 
           {all.length > 0 && (
             <section className="card" aria-labelledby="periods-title">
@@ -263,15 +281,16 @@ export function CycleScreen({ readOnly = false }: { readOnly?: boolean }) {
         <DaySheet
           day={openDay}
           readOnly={readOnly}
-          note={notes.find((note) => note.day === openDay)?.text ?? ""}
+          note={notes.find((note) => note.day === openDay) ?? NOTHING}
           periods={all}
           today={today}
           onClose={() => setOpenDay(null)}
-          onNoteSaved={(text) => {
-            setNotes((current) => [...current.filter((note) => note.day !== openDay), ...(text ? [{ day: openDay, text }] : [])]);
+          onNoteSaved={(entry) => {
+            setNotes((current) => [...current.filter((note) => note.day !== openDay), ...(entry ? [{ ...entry, day: openDay }] : [])]);
             setOpenDay(null);
-            toast({ text: t(text ? "noteSaved" : "noteCleared") });
+            toast({ text: t(entry ? "daySaved" : "dayCleared") });
           }}
+          onStale={() => void load()}
           onPeriod={(values, period) => void quick(values, period)}
           onOpenPeriod={(period, initial) => {
             setOpenDay(null);

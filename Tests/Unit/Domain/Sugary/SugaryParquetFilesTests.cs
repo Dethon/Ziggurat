@@ -119,7 +119,7 @@ public class SugaryParquetFilesTests
     {
         var (columns, rows) = await ReadParquetAsync(await BytesAsync("/day-notes.parquet"), "select * from t");
 
-        columns.Keys.ShouldBe(["date", "note"]);
+        columns.Keys.ShouldBe(["date", "note", "flow", "symptoms"]);
         columns["date"].ShouldBe("DATE");
         rows.ShouldBeEmpty();
     }

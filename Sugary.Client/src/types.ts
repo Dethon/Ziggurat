@@ -220,10 +220,30 @@ export interface Period {
 
 export type SavePeriod = Omit<Period, "id">;
 
-// What she wrote about a day of her calendar, period or not.
-export interface DayNote {
-  day: string;
+export type Flow = "spotting" | "light" | "medium" | "heavy";
+
+export type Symptom =
+  | "cramps"
+  | "headache"
+  | "back_pain"
+  | "tender_breasts"
+  | "bloating"
+  | "nausea"
+  | "tiredness"
+  | "mood_swings"
+  | "cravings"
+  | "acne";
+
+// What she said of a day: her words ("" for none), her flow, her symptoms.
+export interface DayEntry {
   text: string;
+  flow: Flow | null;
+  symptoms: Symptom[];
+}
+
+// A day of her calendar, period or not, with something said of it.
+export interface DayNote extends DayEntry {
+  day: string;
 }
 
 export interface DraftItem extends MealItem {
@@ -341,4 +361,27 @@ export interface GlucoseSettings {
   unit: GlucoseUnit;
   targetLow: number;
   targetHigh: number;
+}
+
+// Her glucose over one part of her finished cycles (the server's CyclePhases): mg/dL, shares of the
+// time with readings; every figure null under half the phase's time with readings.
+export interface PhaseFigures {
+  days: number;
+  coverage: number;
+  mean: number | null;
+  inRange: number | null;
+  low: number | null;
+  high: number | null;
+}
+
+export interface CyclePhases {
+  // How many finished cycles had any part read; hasReadings, any reading of hers at all.
+  cycles: number;
+  hasReadings: boolean;
+  unit: GlucoseUnit;
+  targetLow: number;
+  targetHigh: number;
+  menstrual: PhaseFigures;
+  follicular: PhaseFigures;
+  luteal: PhaseFigures;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, dayAction, daysBetween, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, refusedBecause, shiftMonth } from "./cycle";
+import { addDays, cycleStatus, dayAction, daysBetween, daysLate, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, phaseShift, refusedBecause, shiftMonth, trends } from "./cycle";
+import forecastCases from "./cases/forecast.json";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -268,4 +269,92 @@ describe("a save the server refused", () => {
 
     expect(refused).toBeNull();
   });
+});
+
+describe("trends", () => {
+  const starts = (days: string[], length = 5) => days.map((start) => period(start, addDays(start, length - 1)));
+
+  it("says nothing before a whole cycle", () => {
+    expect(trends([])).toBeNull();
+    expect(trends([period("2026-10-08", null)])).toBeNull();
+  });
+
+  it("lays out each whole cycle, oldest first, with its period's days", () => {
+    const four = [period("2026-07-14", "2026-07-18"), period("2026-08-11", "2026-08-16"), period("2026-09-09", null), period("2026-10-08", null)];
+    expect(trends(four)?.cycles).toEqual([
+      { start: "2026-07-14", days: 28, periodDays: 5, skipped: false },
+      { start: "2026-08-11", days: 29, periodDays: 6, skipped: false },
+      { start: "2026-09-09", days: 29, periodDays: null, skipped: false },
+    ]);
+  });
+
+  it("averages her cycles and her periods, and names the shortest and the longest", () => {
+    const five = starts(["2026-06-16", "2026-07-14", "2026-08-13", "2026-09-09", "2026-10-07"]);
+    expect(trends(five)).toMatchObject({ averageCycle: 28, averagePeriod: 5, shortest: 27, longest: 30 });
+  });
+
+  it("averages only the periods whose end she noted", () => {
+    const mixed = [period("2026-08-11", "2026-08-13"), period("2026-09-08", null), period("2026-10-06", "2026-10-12")];
+    expect(trends(mixed)?.averagePeriod).toBe(5);
+  });
+
+  // The forecast's rule: a period she did not note makes one cycle about twice as long.
+  it("draws a cycle longer than one and a half times the median but counts it in nothing", () => {
+    const gap = starts(["2026-05-19", "2026-06-16", "2026-08-11", "2026-09-09"]);
+    const read = trends(gap)!;
+    expect(read.cycles.map((cycle) => cycle.skipped)).toEqual([false, true, false]);
+    expect(read).toMatchObject({ averageCycle: 29, shortest: 28, longest: 29 });
+  });
+
+  it("reads her last year: twelve cycles at most", () => {
+    const year = Array.from({ length: 15 }, (_, n) => addDays("2025-08-01", n * 28));
+    expect(trends(starts(year))?.cycles).toHaveLength(12);
+    expect(trends(starts(year))?.cycles[0].start).toBe(year[2]);
+  });
+});
+
+describe("daysLate", () => {
+  const two = [period("2026-09-09", "2026-09-13"), period("2026-10-08", "2026-10-12")];
+
+  it("counts the days past the latest expected start", () => {
+    expect(daysLate(forecast(two, "2026-11-09"), "2026-11-09")).toBe(3);
+  });
+
+  it("is nothing on or before the latest expected start, or without a forecast", () => {
+    expect(daysLate(forecast(two, "2026-11-06"), "2026-11-06")).toBe(0);
+    expect(daysLate(forecast(two, "2026-10-20"), "2026-10-20")).toBe(0);
+    expect(daysLate(null, "2026-10-20")).toBe(0);
+  });
+});
+
+describe("phaseShift", () => {
+  const phase = (mean: number | null, inRange: number | null) => ({ days: 14, coverage: 0.9, mean, inRange, low: 0, high: 0 });
+
+  it("says her glucose runs higher before her period when its average is half a mmol/L or more above the days after", () => {
+    const shift = phaseShift(phase(110, 0.85), phase(130, 0.7))!;
+    expect(shift).toMatchObject({ kind: "higher", mean: 20 });
+    expect(shift.inRange).toBeCloseTo(-0.15);
+  });
+
+  it("says lower the other way round", () => {
+    expect(phaseShift(phase(140, 0.6), phase(125, 0.75))?.kind).toBe("lower");
+  });
+
+  it("says about the same under half a mmol/L apart", () => {
+    expect(phaseShift(phase(120, 0.8), phase(128, 0.78))?.kind).toBe("same");
+  });
+
+  it("says nothing without both", () => {
+    expect(phaseShift(phase(null, null), phase(130, 0.7))).toBeNull();
+  });
+});
+
+// The server reminds her by the same forecast (CycleForecast); both read these cases.
+describe("forecast, as the server reads it", () => {
+  for (const { name, today, starts, expected } of forecastCases.cases) {
+    it(name, () => {
+      const read = forecast(starts.map((start) => period(start, addDays(start, 4))), today);
+      expect(read && { earliest: read.earliest, latest: read.latest, likeliest: read.likeliest }).toEqual(expected);
+    });
+  }
 });

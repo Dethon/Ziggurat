@@ -51,7 +51,7 @@ The log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 - `doses` — one row per insulin dose they took: its `units`, `rapid` or `basal` (long-acting). `dose_meals` links it to meals; unlinked, a rapid dose may be for a nearby meal, not only a correction.
 - `exercise` — one row per session they started: `walk`, `gym` or a named `other`, its start and end, and its `minutes` (empty while it is running).
 - `foods` — the foods they keep, one row each: what they call it, its carbs per 100 g or ml, the amount they usually have and, for a food kept only as a portion, the carbs in that portion.
-- `periods` — their menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what they wrote about a day. Both are days on the home's calendar: read `glucose` for those days beside them.
+- `periods` — their menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what they wrote about a day, its flow and symptoms. Both are days on the home's calendar: read `glucose` for those days beside them.
 - `glucose` — one row per reading their sensor measured, in mg/dL with the arrow; `sensors` — the sensors they wore. The README gives time in range, mean, GMI and CV as SQL to copy.
 - `profile` — one row: their `sex`, `diabetes_type`, `diagnosed_on` and `born_on`, an empty cell being unsaid. `heights`, `weights` — over time, the latest row for now. `pens` — which insulin each dose `kind` is, the one with no `replaced_on` in use. Context, never a number to dose from.
 
