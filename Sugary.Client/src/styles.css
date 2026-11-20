@@ -1264,6 +1264,7 @@ h1.title-small {
 .meal-row .item-name {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1485,6 +1486,7 @@ h1.title-small {
 .meal-choice .item-name {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

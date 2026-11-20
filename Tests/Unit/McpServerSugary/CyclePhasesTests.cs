@@ -9,8 +9,11 @@ namespace Tests.Unit.McpServerSugary;
 // GlucoseStatistics' over each day range, joined by the minutes each covered.
 public class CyclePhasesTests
 {
-    private static readonly TimeZoneInfo Utc = TimeZoneInfo.Utc;
-    private static readonly DateOnly Today = new(2026, 11, 20);
+    private static readonly TimeZoneInfo _utc = TimeZoneInfo.Utc;
+    private static readonly DateOnly _today = new(2026, 11, 20);
+
+    // A period not noted between June and August: one cycle of 56 days.
+    private static readonly string[] _gapStarts = ["2026-05-19", "2026-06-16", "2026-08-11", "2026-09-09"];
 
     private static DateOnly D(string day) => DateOnly.Parse(day);
 
@@ -30,7 +33,7 @@ public class CyclePhasesTests
     [Fact]
     public void ACycle_IsHerPeriod_TheDaysAfter_AndTheFourteenBeforeTheNext()
     {
-        var cycles = CyclePhases.Cycles([P("2026-09-01", "2026-09-05"), P("2026-09-29", null)], Today);
+        var cycles = CyclePhases.Cycles([P("2026-09-01", "2026-09-05"), P("2026-09-29", null)], _today);
 
         var cycle = cycles.ShouldHaveSingleItem();
         cycle.Menstrual.ShouldBe(new DayRange(D("2026-09-01"), D("2026-09-05")));
@@ -41,15 +44,15 @@ public class CyclePhasesTests
     [Fact]
     public void NoFinishedCycle_IsNoCycle()
     {
-        CyclePhases.Cycles([], Today).ShouldBeEmpty();
-        CyclePhases.Cycles([P("2026-11-10", null)], Today).ShouldBeEmpty();
+        CyclePhases.Cycles([], _today).ShouldBeEmpty();
+        CyclePhases.Cycles([P("2026-11-10", null)], _today).ShouldBeEmpty();
     }
 
     // Without her period's end its days and the ones after cannot be told apart; the luteal days still can.
     [Fact]
     public void APeriodWhoseEndWasNotNoted_GivesOnlyItsLutealDays()
     {
-        var cycle = CyclePhases.Cycles([P("2026-09-01", null), P("2026-09-29", "2026-10-03")], Today).Single();
+        var cycle = CyclePhases.Cycles([P("2026-09-01", null), P("2026-09-29", "2026-10-03")], _today).Single();
 
         cycle.Menstrual.ShouldBeNull();
         cycle.Follicular.ShouldBeNull();
@@ -60,7 +63,7 @@ public class CyclePhasesTests
     [Fact]
     public void AShortCycle_HasNoFollicularDays_AndItsLutealDaysStartAfterHerPeriod()
     {
-        var cycle = CyclePhases.Cycles([P("2026-09-01", "2026-09-06"), P("2026-09-19", null)], Today).Single();
+        var cycle = CyclePhases.Cycles([P("2026-09-01", "2026-09-06"), P("2026-09-19", null)], _today).Single();
 
         cycle.Follicular.ShouldBeNull();
         cycle.Luteal.ShouldBe(new DayRange(D("2026-09-07"), D("2026-09-18")));
@@ -70,11 +73,11 @@ public class CyclePhasesTests
     [Fact]
     public void ACycleHalfAgainLongerThanTheMedian_IsLeftOut()
     {
-        var periods = new[] { "2026-05-19", "2026-06-16", "2026-08-11", "2026-09-09" }
+        var periods = _gapStarts
             .Select(start => P(start, D(start).AddDays(4).ToString("yyyy-MM-dd")))
             .ToList();
 
-        CyclePhases.Cycles(periods, Today).Select(c => c.Start).ShouldBe([D("2026-05-19"), D("2026-08-11")]);
+        CyclePhases.Cycles(periods, _today).Select(c => c.Start).ShouldBe([D("2026-05-19"), D("2026-08-11")]);
     }
 
     [Fact]
@@ -85,7 +88,7 @@ public class CyclePhasesTests
             .Select(start => new CyclePeriod(start, start.AddDays(4)))
             .ToList();
 
-        CyclePhases.Cycles(periods, Today).Select(c => c.Start).ShouldBe(periods.Skip(2).Take(6).Select(p => p.Start));
+        CyclePhases.Cycles(periods, _today).Select(c => c.Start).ShouldBe(periods.Skip(2).Take(6).Select(p => p.Start));
     }
 
     [Fact]
@@ -96,7 +99,7 @@ public class CyclePhasesTests
             .Concat(Flat("2026-09-06", "2026-09-14", 110))
             .Concat(Flat("2026-09-15", "2026-09-28", 200));
 
-        var phases = CyclePhases.Of(periods, readings, Utc, Today, 70, 180);
+        var phases = CyclePhases.Of(periods, readings, _utc, _today, 70, 180);
 
         phases.Cycles.ShouldBe(1);
         var (menstrual, follicular, luteal) = (phases.Menstrual, phases.Follicular, phases.Luteal);
@@ -117,7 +120,7 @@ public class CyclePhasesTests
         var periods = new[] { P("2026-08-04", "2026-08-08"), P("2026-09-01", "2026-09-05"), P("2026-09-29", "2026-10-03") };
         var readings = Flat("2026-08-18", "2026-08-31", 100).Concat(Flat("2026-09-15", "2026-09-21", 220));
 
-        var luteal = CyclePhases.Of(periods, readings, Utc, Today, 70, 180).Luteal;
+        var luteal = CyclePhases.Of(periods, readings, _utc, _today, 70, 180).Luteal;
 
         // 14 days at 100, 7 at 220: (14 × 100 + 7 × 220) / 21, give or take the 220s' last reading, which
         // stands for the fifteen minutes after it (GlucoseStatistics' cap) where the 100s' meet the end.
@@ -131,7 +134,7 @@ public class CyclePhasesTests
     {
         var periods = new[] { P("2026-09-01", "2026-09-05"), P("2026-09-29", "2026-10-03") };
 
-        var luteal = CyclePhases.Of(periods, Flat("2026-09-15", "2026-09-20", 200), Utc, Today, 70, 180).Luteal;
+        var luteal = CyclePhases.Of(periods, Flat("2026-09-15", "2026-09-20", 200), _utc, _today, 70, 180).Luteal;
 
         luteal.Coverage.ShouldBeLessThan(0.5);
         luteal.Mean.ShouldBeNull();
@@ -147,10 +150,10 @@ public class CyclePhasesTests
             .Select(n => D("2026-04-07").AddDays(28 * n))
             .Select(start => new CyclePeriod(start, start.AddDays(4)))
             .ToList();
-        var latest = CyclePhases.Cycles(periods, Today)[^1];
+        var latest = CyclePhases.Cycles(periods, _today)[^1];
         var readings = Flat(latest.Luteal.First.ToString("yyyy-MM-dd"), latest.Luteal.Last.ToString("yyyy-MM-dd"), 190);
 
-        var phases = CyclePhases.Of(periods, readings, Utc, Today, 70, 180);
+        var phases = CyclePhases.Of(periods, readings, _utc, _today, 70, 180);
 
         phases.Cycles.ShouldBe(1);
         phases.Luteal.Mean!.Value.ShouldBe(190, 1e-6);

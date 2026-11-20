@@ -14,10 +14,10 @@ public class SugaryDayNoteApiTests
 {
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
-    private static readonly TimeZoneInfo Madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
+    private static readonly TimeZoneInfo _madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
 
     private static string FromToday(int days) =>
-        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, Madrid).DateTime).AddDays(days)
+        DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _madrid).DateTime).AddDays(days)
             .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static async Task<JsonArray> ListAsync(HttpClient client, string query = "") =>

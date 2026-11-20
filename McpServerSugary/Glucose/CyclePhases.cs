@@ -126,11 +126,11 @@ public static class CyclePhases
         }
 
         var covered = read.Sum(r => r.Covered);
-        double Weighed(Func<GlucoseFigures, double?> figure) => read.Sum(r => figure(r.Figures)!.Value * r.Covered) / covered;
+        double weighed(Func<GlucoseFigures, double?> figure) => read.Sum(r => figure(r.Figures)!.Value * r.Covered) / covered;
 
         return new PhaseFigures(
             read.Sum(r => r.Days), covered / read.Sum(r => r.Minutes),
-            Weighed(f => f.Mean), Weighed(f => f.InRange), Weighed(f => f.Low), Weighed(f => f.High));
+            weighed(f => f.Mean), weighed(f => f.InRange), weighed(f => f.Low), weighed(f => f.High));
     }
 
     private static DateTimeOffset StartOf(DateOnly day, TimeZoneInfo zone)

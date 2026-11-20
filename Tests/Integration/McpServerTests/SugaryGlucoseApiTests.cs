@@ -20,7 +20,7 @@ namespace Tests.Integration.McpServerTests;
 public class SugaryGlucoseApiTests
 {
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
-    private static readonly DateTimeOffset Morning = new(2026, 11, 1, 8, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset _morning = new(2026, 11, 1, 8, 0, 0, TimeSpan.Zero);
 
     private static async Task SeedAsync(SugaryServer server, Account person, params GlucoseReading[] readings)
     {
@@ -145,16 +145,16 @@ public class SugaryGlucoseApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         await SeedAsync(server, SugaryServer.Her,
-            Reading(Morning.AddMinutes(-30), 99), Reading(Morning, 100), Reading(Morning.AddMinutes(5), 110),
-            Reading(Morning.AddHours(25), 300));
-        await SeedAsync(server, SugaryServer.Him, Reading(Morning.AddMinutes(10), 250));
+            Reading(_morning.AddMinutes(-30), 99), Reading(_morning, 100), Reading(_morning.AddMinutes(5), 110),
+            Reading(_morning.AddHours(25), 300));
+        await SeedAsync(server, SugaryServer.Him, Reading(_morning.AddMinutes(10), 250));
 
         var curve = await GetAsync(server,
-            $"/api/glucose/readings?from={Q(Morning.AddMinutes(-1))}&to={Q(Morning.AddHours(23))}");
+            $"/api/glucose/readings?from={Q(_morning.AddMinutes(-1))}&to={Q(_morning.AddHours(23))}");
 
         curve["bucketMinutes"].ShouldBeNull();
         curve["points"]!.AsArray().Select(p => Number(p, "mgPerDl")).ShouldBe([100, 110]);
-        curve["points"]![0]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(Morning);
+        curve["points"]![0]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(_morning);
     }
 
     [Fact]
@@ -162,26 +162,26 @@ public class SugaryGlucoseApiTests
     {
         await using var server = await SugaryServer.StartAsync();
         await SeedAsync(server, SugaryServer.Her,
-            Reading(Morning, 100), Reading(Morning.AddMinutes(5), 110), Reading(Morning.AddMinutes(10), 121),
-            Reading(Morning.AddHours(3), 180));
+            Reading(_morning, 100), Reading(_morning.AddMinutes(5), 110), Reading(_morning.AddMinutes(10), 121),
+            Reading(_morning.AddHours(3), 180));
 
         var curve = await GetAsync(server,
-            $"/api/glucose/readings?from={Q(Morning.AddDays(-7))}&to={Q(Morning.AddDays(7))}");
+            $"/api/glucose/readings?from={Q(_morning.AddDays(-7))}&to={Q(_morning.AddDays(7))}");
 
         curve["bucketMinutes"]!.GetValue<int>().ShouldBe(15);
         var points = curve["points"]!.AsArray();
         points.Select(p => Number(p, "mgPerDl")).ShouldBe([110.3, 180]);
-        points[0]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(Morning.AddMinutes(7.5));
+        points[0]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(_morning.AddMinutes(7.5));
     }
 
     [Fact]
     public async Task NinetyDays_AreHourlyMeans()
     {
         await using var server = await SugaryServer.StartAsync();
-        await SeedAsync(server, SugaryServer.Her, Reading(Morning, 100), Reading(Morning.AddMinutes(40), 140));
+        await SeedAsync(server, SugaryServer.Her, Reading(_morning, 100), Reading(_morning.AddMinutes(40), 140));
 
         var curve = await GetAsync(server,
-            $"/api/glucose/readings?from={Q(Morning.AddDays(-89))}&to={Q(Morning.AddDays(1))}");
+            $"/api/glucose/readings?from={Q(_morning.AddDays(-89))}&to={Q(_morning.AddDays(1))}");
 
         curve["bucketMinutes"]!.GetValue<int>().ShouldBe(60);
         curve["points"]!.AsArray().Select(p => Number(p, "mgPerDl")).ShouldBe([120]);
@@ -196,7 +196,7 @@ public class SugaryGlucoseApiTests
         await using var server = await SugaryServer.StartAsync();
 
         (await RefusalAsync(server,
-                $"/api/glucose/readings?from={Q(Morning.AddDays(fromDays))}&to={Q(Morning.AddDays(toDays))}"))
+                $"/api/glucose/readings?from={Q(_morning.AddDays(fromDays))}&to={Q(_morning.AddDays(toDays))}"))
             .ShouldBe((HttpStatusCode.BadRequest, code));
     }
 
@@ -259,13 +259,13 @@ public class SugaryGlucoseApiTests
         await server.SaveAsync(
             new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 1), End = new DateOnly(2026, 9, 5) },
             new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 29), End = null });
-        DateTimeOffset Day(int day) => new(2026, 9, day, 0, 0, 0, TimeSpan.Zero);
-        GlucoseReading[] Every15(int from, int to, double value) =>
+        DateTimeOffset day(int day) => new(2026, 9, day, 0, 0, 0, TimeSpan.Zero);
+        GlucoseReading[] every15(int from, int to, double value) =>
         [
-            .. Enumerable.Range(0, (to - from + 1) * 96).Select(n => Reading(Day(from).AddMinutes(15 * n), value))
+            .. Enumerable.Range(0, (to - from + 1) * 96).Select(n => Reading(day(from).AddMinutes(15 * n), value))
         ];
-        await SeedAsync(server, SugaryServer.Her, [.. Every15(6, 13, 110), .. Every15(16, 27, 200)]);
-        await SeedAsync(server, SugaryServer.Him, Every15(16, 27, 60));
+        await SeedAsync(server, SugaryServer.Her, [.. every15(6, 13, 110), .. every15(16, 27, 200)]);
+        await SeedAsync(server, SugaryServer.Him, every15(16, 27, 60));
 
         var phases = await GetAsync(server, "/api/glucose/cycle");
 

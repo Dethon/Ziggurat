@@ -12,13 +12,13 @@ public static class PenReminderText
 {
     public static readonly IReadOnlySet<string?> Languages = new HashSet<string?> { "es", "en" };
 
-    private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-ES");
-    private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-GB");
+    private static readonly CultureInfo _spanish = CultureInfo.GetCultureInfo("es-ES");
+    private static readonly CultureInfo _english = CultureInfo.GetCultureInfo("en-GB");
 
     public static PenNotification For(Pen pen, PenReminder reminder, DateOnly today, string language)
     {
         var spanish = language == "es";
-        var started = pen.OpenedOn.ToString(spanish ? "d 'de' MMMM" : "d MMMM", spanish ? Spanish : English);
+        var started = pen.OpenedOn.ToString(spanish ? "d 'de' MMMM" : "d MMMM", spanish ? _spanish : _english);
         var used = today.DayNumber - pen.OpenedOn.DayNumber;
         var (title, body) = (reminder, spanish) switch
         {
