@@ -61,9 +61,9 @@ public class WebSearchToolTests
             It.IsAny<WebSearchQuery>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
-    private class TestableWebSearchTool(IWebSearchClient client) : WebSearchTool(client)
+    private class TestableWebSearchTool(IWebSearchClient client) : WebSearchTool
     {
         public Task<System.Text.Json.Nodes.JsonNode> TestRun(string query, CancellationToken ct)
-            => RunAsync(query, 10, null, null, ct);
+            => RunAsync(client, query, 10, null, null, ct);
     }
 }

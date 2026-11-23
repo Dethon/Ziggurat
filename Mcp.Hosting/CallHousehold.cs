@@ -30,6 +30,8 @@ public sealed class CallHousehold : ICallHousehold
 
     public Task<IdealistaKeys?> IdealistaKeysAsync(CancellationToken ct) => _configuration().IdealistaKeysAsync(Id, _proof, ct);
 
+    public Task<BraveSearchKey?> BraveSearchKeyAsync(CancellationToken ct) => _configuration().BraveSearchKeyAsync(Id, _proof, ct);
+
     public Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct) => _configuration().AgentNamesAsync(Id, _proof, ct);
 
     public Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct) => _configuration().SugaryPeopleAsync(Id, _proof, ct);

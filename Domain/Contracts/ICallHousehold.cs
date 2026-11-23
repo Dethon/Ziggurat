@@ -19,6 +19,9 @@ public interface ICallHousehold
     // None when the household has set no Idealista keys.
     Task<IdealistaKeys?> IdealistaKeysAsync(CancellationToken ct);
 
+    // None when the household has set no Brave Search key.
+    Task<BraveSearchKey?> BraveSearchKeyAsync(CancellationToken ct);
+
     // The agents the household runs, under their names: what the schedules mount shows it.
     Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct);
 

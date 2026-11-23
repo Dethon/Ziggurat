@@ -1,5 +1,6 @@
 using Domain.Security;
 using Domain.Tools.Web;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Mcp.Hosting;
@@ -15,7 +16,12 @@ public record McpSettings : IMcpHostSettings
     // reach the one by naming the other.
     public ListenerConfiguration Listeners { get; init; } = new();
 
-    public required BraveSearchConfiguration BraveSearch { get; init; }
+    // Brave's address. Its key is each calling household's own, in its keys section.
+    public BraveSearchConfiguration BraveSearch { get; init; } = new();
+
+    // Where the accounts service answers that key: on a tunnel, this server's accounts back-call.
+    public AccountsClientConfig Accounts { get; init; } = new();
+
     public CapSolverConfiguration? CapSolver { get; init; }
     public CamoufoxConfiguration? Camoufox { get; init; }
     public BrowsingConfiguration Browsing { get; init; } = new();
@@ -91,7 +97,6 @@ public record LoginsConfiguration
 
 public record BraveSearchConfiguration
 {
-    public required string ApiKey { get; init; }
     public string ApiUrl { get; init; } = "https://api.search.brave.com/res/v1/";
 }
 

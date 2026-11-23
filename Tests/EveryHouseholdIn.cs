@@ -10,12 +10,17 @@ namespace Tests;
 // `agents` are every household's agents, for a stack whose schedules mount lists them; `sugaryPeople`
 // every household's people as Sugary's view answers them (nobody, and so nobody granted, by default);
 // `sugaryOff` which households turn Sugary off and whom it is off for (none by default), asked each time so a test can switch
-// one, or throw for an accounts service that cannot answer.
+// one, or throw for an accounts service that cannot answer. `braveKeys` are the households' search keys
+// by id; with none every household holds a placeholder, for a stack whose Brave is a fake.
 internal sealed class EveryHouseholdIn(
     TimeZoneInfo zone, IReadOnlyList<HouseholdAgentName>? agents = null,
     IReadOnlyDictionary<string, TimeZoneInfo>? zones = null, HouseholdSugaryPeople? sugaryPeople = null,
-    Func<HouseholdsWithSugaryOff>? sugaryOff = null) : IHouseholdConfiguration
+    Func<HouseholdsWithSugaryOff>? sugaryOff = null,
+    IReadOnlyDictionary<string, BraveSearchKey>? braveKeys = null) : IHouseholdConfiguration
 {
+    public Task<BraveSearchKey?> BraveSearchKeyAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult(braveKeys is null ? new BraveSearchKey("stand-in") : braveKeys.GetValueOrDefault(householdId));
+
     public Task<HouseholdsWithSugaryOff> SugaryOffAsync(CancellationToken ct) =>
         Task.FromResult(sugaryOff?.Invoke() ?? new HouseholdsWithSugaryOff([], []));
 

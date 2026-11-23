@@ -7,6 +7,7 @@ using Domain.Prompts;
 using Domain.Security.Sealing;
 using Domain.Tools.Web;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Extensions;
 using Infrastructure.Judgments;
@@ -62,6 +63,10 @@ public static class ConfigModule
                 .AddSingleton<LoginsPages>()
                 .AddSingleton<ILoginsPages>(sp => sp.GetRequiredService<LoginsPages>())
                 .AddWebSearchClients(settings)
+                // The calling household's Brave key, asked over this server's accounts back-call. The
+                // Redis it holds is the kit's, which no save is announced on, so a saved key reaches
+                // it when what it kept runs out.
+                .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret, hearSaves: false)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
                 .WithTools<McpWebBrowseTool>()
@@ -88,17 +93,17 @@ public static class ConfigModule
 
         private IServiceCollection AddWebSearchClients(McpSettings settings)
         {
-            services.AddHttpClient<IWebSearchClient, BraveSearchClient>((httpClient, _) =>
+            services.AddHttpClient(BraveSearchClients.ClientName, httpClient =>
                 {
                     httpClient.BaseAddress = new Uri(settings.BraveSearch.ApiUrl);
                     httpClient.Timeout = TimeSpan.FromSeconds(30);
-                    return new BraveSearchClient(httpClient, settings.BraveSearch.ApiKey);
                 })
                 .AddRetryOnRateLimitPolicy(attempts: 3, waitTime: TimeSpan.FromSeconds(2))
                 .AddRetryWithExponentialWaitPolicy(
                     attempts: 3,
                     waitTime: TimeSpan.FromSeconds(1),
                     attemptTimeout: TimeSpan.FromSeconds(15));
+            services.AddSingleton<BraveSearchClients>();
 
             if (!string.IsNullOrEmpty(settings.CapSolver?.ApiKey))
             {

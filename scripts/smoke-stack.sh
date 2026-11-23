@@ -109,15 +109,16 @@ export PRINTER_URI="${PRINTER_URI:-ipp://smoke-printer.local:8631/ipp/print}"
 
 # The kit's web search asks Brave, and CapSolver for a challenge, with the keys a developer keeps in the
 # web search server's user secrets for local testing — read here because the kit's containers mount no
-# user secrets. Without them every web_search on this stack is refused, which is a stack that cannot be
+# user secrets. Brave's is saved into the home's keys section (seed_brave_key), CapSolver's handed to
+# the kit. Without them every web_search on this stack is refused, which is a stack that cannot be
 # driven by hand. Left empty where there are none (or no dotnet), and never printed.
 user_secret() {
   command -v dotnet > /dev/null || return 0
   dotnet user-secrets list --project "$1" 2>/dev/null | sed -n "s/^$2 = //p"
 }
-BRAVESEARCH__APIKEY="${BRAVESEARCH__APIKEY:-$(user_secret McpServerWebSearch braveSearch:apiKey)}"
+BRAVE_KEY="${BRAVESEARCH__APIKEY:-$(user_secret McpServerWebSearch braveSearch:apiKey)}"
 CAPSOLVER__APIKEY="${CAPSOLVER__APIKEY:-$(user_secret McpServerWebSearch capSolver:apiKey)}"
-export BRAVESEARCH__APIKEY CAPSOLVER__APIKEY
+export CAPSOLVER__APIKEY
 
 # Asks until the command succeeds: the accounts service's verbs need its store prepared, and Caddy
 # makes its local CA on its first start.
@@ -204,6 +205,17 @@ voice_open() {
 
 # One credential per kit server for the home household, minted once per smoke state and kept beside it
 # (credentials.env), so a second up starts the kit with the same ones.
+# The developer's Brave key into the home's keys section, beside whatever it holds: read back with its
+# secrets marked as kept, the one field laid over, and saved on the command's input, never its arguments.
+seed_brave_key() {
+  [[ -n "$BRAVE_KEY" ]] || return 0
+  local home
+  home="$(cat "$KIT_STATE/household")"
+  docker exec accounts dotnet Accounts.dll get-household-config --household "$home" --section keys \
+    | BRAVE_KEY="$BRAVE_KEY" python3 -c 'import json, os, sys; d = json.load(sys.stdin); d["braveSearch"] = {"apiKey": os.environ["BRAVE_KEY"]}; json.dump(d, sys.stdout)' \
+    | docker exec -i accounts dotnet Accounts.dll set-household-config --household "$home" --section keys --file - > /dev/null
+}
+
 credentials() {
   if [[ ! -s "$KIT_STATE/credentials.env" ]]; then
     local made home
@@ -267,6 +279,7 @@ case "${1:-}" in
     retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health \
       || echo "warning: Lemonade is not answering yet; memory is dropped until it does" >&2
     migrate_home
+    seed_brave_key
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.
     retry docker exec caddy test -s /data/caddy/pki/authorities/local/root.crt

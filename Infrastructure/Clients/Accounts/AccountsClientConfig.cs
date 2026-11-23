@@ -52,9 +52,10 @@ public static class AccountsClientRegistration
     // agent's CALLERS__agent one with a token of its own (agentToken, HouseholdConfigurationClient.AgentToken),
     // a shared server its own /mcp credential and no token. Saves are heard on the host's Redis
     // (its IConnectionMultiplexer) when it registers one; without, a view is kept for its lifetime alone.
+    // A household's own server whose Redis is its kit's says hearSaves: false, since none is announced there.
     public static IServiceCollection AddHouseholdConfiguration(
         this IServiceCollection services, AccountsClientConfig config, string credential,
-        Func<IServiceProvider, Func<string>>? agentToken = null)
+        Func<IServiceProvider, Func<string>>? agentToken = null, bool hearSaves = true)
     {
         services.AddHttpClient(HouseholdConfigurationClient.ClientName, http =>
         {
@@ -72,7 +73,7 @@ public static class AccountsClientRegistration
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(HouseholdConfigurationClient.ClientName),
                 credential,
                 agentToken?.Invoke(sp),
-                sp.GetService<IConnectionMultiplexer>(),
+                hearSaves ? sp.GetService<IConnectionMultiplexer>() : null,
                 TimeProvider.System,
                 config.ConfigurationLifetime,
                 sp.GetService<ILogger<HouseholdConfigurationClient>>()))

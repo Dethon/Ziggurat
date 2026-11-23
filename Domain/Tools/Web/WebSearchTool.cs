@@ -3,7 +3,7 @@ using Domain.Contracts;
 
 namespace Domain.Tools.Web;
 
-public class WebSearchTool(IWebSearchClient searchClient)
+public class WebSearchTool
 {
     public const string Name = "web_search";
 
@@ -15,6 +15,7 @@ public class WebSearchTool(IWebSearchClient searchClient)
                                          """;
 
     protected async Task<JsonNode> RunAsync(
+        IWebSearchClient searchClient,
         string query,
         int maxResults,
         string? site,

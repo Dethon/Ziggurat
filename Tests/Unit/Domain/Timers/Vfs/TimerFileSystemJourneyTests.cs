@@ -207,6 +207,8 @@ public class TimerFileSystemJourneyTests
 
         public Task<IdealistaKeys?> IdealistaKeysAsync(CancellationToken ct) => Task.FromResult<IdealistaKeys?>(null);
 
+        public Task<BraveSearchKey?> BraveSearchKeyAsync(CancellationToken ct) => Task.FromResult<BraveSearchKey?>(null);
+
         public Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct) =>
             Task.FromResult(new HouseholdAgentNames(null, []));
 

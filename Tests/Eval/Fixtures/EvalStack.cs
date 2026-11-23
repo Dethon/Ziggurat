@@ -17,6 +17,7 @@ using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
@@ -400,11 +401,7 @@ public sealed class EvalStack : IAsyncDisposable
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services.ConfigureMcp(new WebSearchSettings
         {
-            BraveSearch = new BraveSearchConfiguration
-            {
-                ApiKey = "eval",
-                ApiUrl = EvalWeb.SearchApiUrl
-            },
+            BraveSearch = new BraveSearchConfiguration { ApiUrl = EvalWeb.SearchApiUrl },
             Mcp = McpTestSecret.Gate,
             // Every turn acts for the run's account (EvalRun), so a turn can browse as its person
             // and hand them a login from any channel; the link's address is a placeholder nothing
@@ -414,8 +411,9 @@ public sealed class EvalStack : IAsyncDisposable
             Handoff = new HandoffConfiguration { PublicBaseUrl = EvalWeb.HandoffBase }
         });
 
-        // The typed client keeps its name from the interface it is registered against.
-        builder.Services.AddHttpClient(nameof(IWebSearchClient))
+        // A stack with no accounts service: every household holds a key, which the fake Brave ignores.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
+        builder.Services.AddHttpClient(BraveSearchClients.ClientName)
             .ConfigurePrimaryHttpMessageHandler(() => Web.SearchTransport);
 
         // The one browser behind every role the module gives it — the tabs browsed, the tabs a

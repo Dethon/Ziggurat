@@ -771,6 +771,7 @@ internal sealed partial class WebChatStack
             .WithExtraHost("host.docker.internal", "host-gateway")
             .WithEnvironment("KEYPROBES__OPENROUTERURL", _keyProviders.OpenRouterUrlOn("host.docker.internal"))
             .WithEnvironment("KEYPROBES__IDEALISTAURL", _keyProviders.RootOn("host.docker.internal"))
+            .WithEnvironment("KEYPROBES__BRAVESEARCHURL", _keyProviders.BraveSearchUrlOn("host.docker.internal"))
             .WithEnvironment("KEYPROBES__TELEGRAMURL", _keyProviders.RootOn("host.docker.internal"))
             .WithTmpfsMount("/data")
             .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")

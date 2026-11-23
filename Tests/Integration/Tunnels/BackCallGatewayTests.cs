@@ -1,9 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text;
-using System.Text.Json;
 using Accounts.Commands;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
@@ -101,17 +100,12 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
             AccountsCommand.SetHouseholdConfig, "--household", _household, "--section", HouseholdSections.Keys, "--file", "-"))
             .Exit.ShouldBe(0);
         var port = await ServerOfAsync(_household, HouseholdServerNames.WebSearch, BackCallProtocol.Accounts);
-        using var http = new HttpClient { BaseAddress = Loopback(port) };
+        await using var reader = new HouseholdConfigurationClient(
+            new HttpClient { BaseAddress = Loopback(port) }, "", null, null, TimeProvider.System, TimeSpan.FromMinutes(1));
         var token = McpTestSecret.CallTokens.For(IdentityClaims.Person(_ana, _household, "signalr", ["owner"]),
             TokenAudiences.CallTo(ServerAddress.Tunnelled(_household, HouseholdServerNames.WebSearch)));
 
-        using var response = await http.PostAsJsonAsync(
-            HouseholdConfigProtocol.PathOf(HouseholdConfigProtocol.BraveSearchView).TrimStart('/'),
-            new HouseholdConfigQuery(CallToken: token));
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
-        (await response.Content.ReadFromJsonAsync<HouseholdConfigAnswer<BraveSearchKey>>(JsonSerializerOptions.Web))!
-            .Section.ShouldBe(key);
+        (await reader.BraveSearchKeyAsync(_household, HouseholdProof.OfCallToken(token), CancellationToken.None)).ShouldBe(key);
     }
 
     [Fact]

@@ -60,7 +60,6 @@ public class StatelessProtocolContractTests
             "websearch",
             services => services.ConfigureMcp(new WebSearchSettings.McpSettings
             {
-                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 Mcp = McpTestSecret.Gate
             })
         },
