@@ -25,7 +25,7 @@ public sealed record LibreLinkUpConnection(
     SensorReading? Current);
 
 // A connection's last twelve hours or so: the connection with its current reading, the points of the
-// curve (every five minutes, oldest first, no arrow), and every sensor LibreLinkUp calls active.
+// curve (every five to fifteen minutes, oldest first, no arrow), and every sensor LibreLinkUp calls active.
 public sealed record LibreLinkUpGraph(
     LibreLinkUpConnection Connection,
     IReadOnlyList<SensorReading> Points,

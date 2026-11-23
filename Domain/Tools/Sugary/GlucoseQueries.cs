@@ -9,7 +9,8 @@ namespace Domain.Tools.Sugary;
 // for the minutes until the next one, up to 20, and the period's end ends the last; a longer gap is
 // time not covered, an hourly mean's included. One weight serves every figure: time in each range,
 // the mean, the spread and the coverage. The app's GlucoseStatistics computes the same figures the
-// same way (its Cap), so what the agent says and what the app shows agree.
+// same way (its Cap), so what the agent says and what the app shows agree. Both read the smoothed
+// values (GlucoseSmoothing), the app's default view, so a brief misread is no low in either.
 public static class GlucoseQueries
 {
     // The longest a reading stands for; a longer gap is time with no reading. LibreLinkUp backfills a
@@ -30,7 +31,7 @@ public static class GlucoseQueries
            select {since} as since, {until} as until
          ),
          weighted as (
-           select g.mg_dl,
+           select g.smoothed_mg_dl as mg_dl,
                   least(date_diff('second', g.read_at, coalesce(lead(g.read_at) over (order by g.read_at), p.until)) / 60.0,
                         {MaxMinutesPerReading}) as minutes
            from glucose g, period p
@@ -59,10 +60,10 @@ public static class GlucoseQueries
     public const string AfterMeals =
         """
         select m.meal_id, m.eaten_at, m.carbs_g,
-               arg_min(g.mg_dl, g.read_at) as first_mg_dl,
-               max(g.mg_dl) as peak_mg_dl,
-               arg_max(g.read_at, g.mg_dl) as peak_at,
-               arg_max(g.mg_dl, g.read_at) as last_mg_dl
+               arg_min(g.smoothed_mg_dl, g.read_at) as first_mg_dl,
+               max(g.smoothed_mg_dl) as peak_mg_dl,
+               arg_max(g.read_at, g.smoothed_mg_dl) as peak_at,
+               arg_max(g.smoothed_mg_dl, g.read_at) as last_mg_dl
         from meals m
         join glucose g on g.read_at >= m.eaten_at and g.read_at < m.eaten_at + interval 3 hour
         group by m.meal_id, m.eaten_at, m.carbs_g

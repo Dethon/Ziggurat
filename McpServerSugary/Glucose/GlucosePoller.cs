@@ -178,7 +178,7 @@ public sealed class GlucosePoller(
 
     // The current reading is kept whenever the sensor has measured since: each is its own minute, and
     // at a poll a minute keeping only one every few minutes would thin the log the trend and the
-    // statistics read. The curve is those same minutes thinned to five, so a curve point within
+    // statistics read. The curve covers those same minutes more sparsely, so a curve point within
     // GlucoseReadingRules.Spacing of a reading she has — the current one of this poll included — is
     // the same moment seen twice and is not kept; one filling a gap (before the link, while her phone
     // was out of reach) is. Curve points carry no arrow: only the current reading says where she was

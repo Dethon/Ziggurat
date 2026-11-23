@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { formatDays, formatTime } from "./format";
+import { formatDayTime, formatDays, formatTime } from "./format";
 
 describe("formatTime", () => {
   it("uses a 24-hour clock in English as in Spanish", () => {
     const afternoon = new Date(2026, 9, 15, 14, 25).toISOString();
     expect(formatTime(afternoon, "en")).toBe("14:25");
     expect(formatTime(afternoon, "es")).toBe("14:25");
+  });
+});
+
+describe("formatDayTime", () => {
+  it("names the day and month beside a 24-hour time, so a day months ago is not mistaken for this month's", () => {
+    const afternoon = new Date(2026, 9, 15, 14, 25).toISOString();
+    expect(formatDayTime(afternoon, "en")).toBe("15 Oct, 14:25");
+    expect(formatDayTime(afternoon, "es")).toBe("15 oct, 14:25");
   });
 });
 

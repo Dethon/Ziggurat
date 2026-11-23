@@ -2744,6 +2744,13 @@ h1.marked .icon {
   touch-action: pan-y;
 }
 
+.glucose-curve-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .glucose-readout {
   min-height: 1.4em;
   margin: 0;
@@ -2753,6 +2760,62 @@ h1.marked .icon {
 
 .glucose-readout strong {
   color: var(--color-ink);
+}
+
+.glucose-view {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target);
+  /* A full tap target that adds no height, so this title lines up with the Statistics title beside it. */
+  margin-block: calc((1.5rem - var(--target)) / 2);
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.glucose-view[aria-checked="true"] {
+  color: var(--color-ink);
+}
+
+.glucose-view-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--color-field);
+  transition: background-color 120ms ease;
+}
+
+.glucose-view[aria-checked="true"] .glucose-view-track {
+  background: var(--color-primary);
+}
+
+.glucose-view-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1);
+  transition: transform 120ms ease;
+}
+
+.glucose-view[aria-checked="true"] .glucose-view-thumb {
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glucose-view-track,
+  .glucose-view-thumb {
+    transition: none;
+  }
 }
 
 .glucose-chart-band {
@@ -2863,6 +2926,12 @@ h1.marked .icon {
   font-size: var(--text-number);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+}
+
+/* The unit beside a figure is smaller, so "10.4 mmol/L" stays on one line in a laptop's narrow column. */
+.glucose-figures dd .muted {
+  font-size: var(--text-label);
+  white-space: nowrap;
 }
 
 .glucose-figure-note {

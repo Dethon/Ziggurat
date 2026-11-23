@@ -37,6 +37,43 @@ public class GlucoseStatisticsTests
         figures.Cv!.Value.ShouldBe(Math.Sqrt(6275) / 155, 1e-9);
     }
 
+    [Fact]
+    public void TheLowestAndHighest_SayWhen()
+    {
+        var figures = Over(20, At(0, 100), At(5, 62), At(10, 210), At(15, 130));
+
+        figures.Lowest.ShouldBe(new GlucosePoint(Start.AddMinutes(5), 62));
+        figures.Highest.ShouldBe(new GlucosePoint(Start.AddMinutes(10), 210));
+    }
+
+    // A value held for a while happened when it was first reached.
+    [Fact]
+    public void ATiedLowestOrHighest_IsItsFirstReading()
+    {
+        var figures = Over(25, At(0, 100), At(5, 62), At(10, 62), At(15, 210), At(20, 210));
+
+        figures.Lowest!.At.ShouldBe(Start.AddMinutes(5));
+        figures.Highest!.At.ShouldBe(Start.AddMinutes(15));
+    }
+
+    [Fact]
+    public void AReadingOutsideThePeriod_IsNeitherLowestNorHighest()
+    {
+        var figures = Over(10, At(-5, 40), At(0, 100), At(5, 120), At(10, 400));
+
+        figures.Lowest!.MgPerDl.ShouldBe(100);
+        figures.Highest!.MgPerDl.ShouldBe(120);
+    }
+
+    [Fact]
+    public void NoReadings_HaveNoLowestOrHighest()
+    {
+        var figures = Over(10);
+
+        figures.Lowest.ShouldBeNull();
+        figures.Highest.ShouldBeNull();
+    }
+
     // The clinic's bands are cumulative: under 54 is also under 70, over 250 is also over 180.
     [Fact]
     public void TheBands_AreCumulative()

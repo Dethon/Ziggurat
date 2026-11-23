@@ -9,6 +9,7 @@ import {
   ageMinutes,
   ageText,
   band,
+  DEFAULT_VIEW,
   formatGlucose,
   formatShare,
   glucoseErrorMessage,
@@ -19,6 +20,7 @@ import {
   LOWEST,
   linkFailureText,
   PERIODS,
+  periodLabel,
   rangeDraft,
   rangeProblem,
   REGIONS,
@@ -33,16 +35,14 @@ import {
   type Period,
 } from "../glucose";
 import { errorMessage } from "../errors";
-import { formatShortDay, formatTime, locale } from "../format";
-import type { Language, Translate } from "../i18n";
+import { formatDayTime, formatShortDay, formatTime, locale } from "../format";
+import type { Language } from "../i18n";
 import { overRecord, useShown } from "../stale";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucoseSettings, GlucoseStatistics, GlucoseUnit } from "../types";
+import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucosePoint, GlucoseSettings, GlucoseStatistics, GlucoseUnit, GlucoseView } from "../types";
 
 const UNITS: GlucoseUnit[] = ["mgdl", "mmol"];
-
-const periodLabel = (days: Period, t: Translate) => (days === 1 ? t("glucosePeriodHours", { n: 24 }) : t("glucosePeriodDays", { n: days }));
 
 // Her glucose: where she is now, how her days went, what a clinic would read off them, and the
 // LibreLinkUp account it all comes from. `readOnly` is somebody else's: her readings and figures, but
@@ -53,6 +53,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [state, setState] = useState<{ now: GlucoseNow; fetchedAt: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>(1);
+  const [view, setView] = useState<GlucoseView>(DEFAULT_VIEW);
   const [curve, setCurve] = useState<GlucoseCurve | null>(null);
   const [statistics, setStatistics] = useState<GlucoseStatistics | null>(null);
 
@@ -72,14 +73,14 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   }, [load, minute]);
 
   const newest = state?.now.reading?.at ?? null;
-  // The curve and the figures move only when a reading arrives, or she picks another period.
+  // The curve and the figures move only when a reading arrives, or she picks another period or view.
   useEffect(() => {
     if (newest === null) {
       return;
     }
     const window = windowOf(period, Date.now());
     let current = true;
-    Promise.all([api.glucoseCurve(window.from, window.to), api.glucoseStatistics(period)]).then(
+    Promise.all([api.glucoseCurve(window.from, window.to, view), api.glucoseStatistics(period, view)]).then(
       ([points, figures]) => {
         if (current) {
           setCurve(points);
@@ -91,7 +92,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
     return () => {
       current = false;
     };
-  }, [newest, period, t]);
+  }, [newest, period, view, t]);
 
   const now = state?.now;
   return (
@@ -134,9 +135,12 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                 </div>
               </div>
               <section className="card" aria-labelledby="curve-title">
-                <h2 id="curve-title" className="section-title">
-                  {t("curveTitle")}
-                </h2>
+                <div className="glucose-curve-head">
+                  <h2 id="curve-title" className="section-title">
+                    {t("curveTitle")}
+                  </h2>
+                  <ViewSwitch view={view} onView={setView} />
+                </div>
                 {curve && curve.points.length > 0 ? (
                   <GlucoseChart
                     curve={curve}
@@ -164,6 +168,26 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Whether the curve and the figures read smoothed values or the sensor's own.
+function ViewSwitch({ view, onView }: { view: GlucoseView; onView: (view: GlucoseView) => void }) {
+  const { t } = useSettings();
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="glucose-view"
+      aria-checked={view === "smoothed"}
+      title={t("curveSmoothedHint")}
+      onClick={() => onView(view === "smoothed" ? "raw" : "smoothed")}
+    >
+      <span>{t("curveSmoothed")}</span>
+      <span className="glucose-view-track" aria-hidden="true">
+        <span className="glucose-view-thumb" />
+      </span>
+    </button>
   );
 }
 
@@ -262,6 +286,8 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
           </ul>
           <p className="muted small">{t("statsCumulative")}</p>
           <dl className="glucose-figures">
+            {figures.highest && <Extreme label={t("statsHighest")} point={figures.highest} unit={unit} />}
+            {figures.lowest && <Extreme label={t("statsLowest")} point={figures.lowest} unit={unit} />}
             <div>
               <dt>{t("statsMean")}</dt>
               <dd>
@@ -293,6 +319,19 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
         </>
       )}
     </section>
+  );
+}
+
+function Extreme({ label, point, unit }: { label: string; point: GlucosePoint; unit: GlucoseUnit }) {
+  const { language } = useSettings();
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {formatGlucose(point.mgPerDl, unit, language)} <span className="muted">{UNIT_LABEL[unit]}</span>
+        <span className="glucose-figure-note">{formatDayTime(point.at, language)}</span>
+      </dd>
+    </div>
   );
 }
 

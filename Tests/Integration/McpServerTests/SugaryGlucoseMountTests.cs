@@ -64,7 +64,7 @@ public class SugaryGlucoseMountTests
 
         (await server.GlobAsync("glucose/*")).ShouldBe(
             ["/glucose/2026-07.parquet", "/glucose/2026-09.parquet", "/glucose/2026-10.parquet"]);
-        (await server.TableRowsAsync("/glucose/2026-09.parquet")).ShouldBe([["2026-08-31 23:30:00+00", "2026-09-01 01:30:00", "110.0", "6.1", "unknown", "graph"]]);
+        (await server.TableRowsAsync("/glucose/2026-09.parquet")).ShouldBe([["2026-08-31 23:30:00+00", "2026-09-01 01:30:00", "110.0", "6.1", "unknown", "graph", "110.0"]]);
         (await server.TableRowsAsync("/sensors.parquet")).ShouldBe([
             ["SN-1", "2026-09-25 08:00:00+00", "2026-09-25 10:00:00", "2026-10-09 08:00:00+00", "2026-10-09 10:00:00",
                 "2026-09-30 22:00:00+00", "2026-10-01 00:00:00"]
@@ -74,13 +74,24 @@ public class SugaryGlucoseMountTests
     [Fact]
     public async Task TheReadmesStatistics_RunOverTheStore()
     {
-        await using var server = await SeededAsync();
+        // Five minutes apart, so the figures are of the values written and not of their smoothing.
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+        [
+            Reading(0, 50, GlucoseSource.Current),
+            Reading(5, 60, GlucoseSource.Current),
+            Reading(10, 100, GlucoseSource.Graph),
+            Reading(15, 200, GlucoseSource.Graph),
+            Reading(20, 260, GlucoseSource.Graph),
+            Reading(25, 170, GlucoseSource.Graph),
+            Reading(60, 120, GlucoseSource.ImportHourly)
+        ]);
 
         var rows = await server.QueryAsync(GlucoseQueries.Statistics(
             "TIMESTAMPTZ '2026-10-01 00:00:00'", "TIMESTAMPTZ '2026-10-01 02:00:00'", 80, 160));
 
         var row = rows.ShouldHaveSingleItem()!.AsArray();
-        row.Select(cell => cell!.GetValue<double>()).ShouldBe([1.7, 3.3, 80.0, 46.7, 16.7, 8.3, 150.2, 6.9, 31.8, 50.0]);
+        row.Select(cell => cell!.GetValue<double>()).ShouldBe([7.7, 15.4, 69.2, 38.5, 15.4, 7.7, 140.8, 6.7, 39.1, 54.2]);
     }
 
     [Fact]

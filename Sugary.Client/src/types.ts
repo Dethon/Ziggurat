@@ -323,6 +323,9 @@ export interface GlucosePoint {
   mgPerDl: number;
 }
 
+// Which values the curve and the figures read: false spikes and sensor noise taken out, or the sensor's own.
+export type GlucoseView = "smoothed" | "raw";
+
 // Points as read, or bucket means where bucketMinutes is set; a silent stretch has none.
 export interface GlucoseCurve {
   from: string;
@@ -349,6 +352,9 @@ export interface GlucoseStatistics {
   inRange: number | null;
   high: number | null;
   veryHigh: number | null;
+  // Single readings of the view asked for, with when they happened.
+  lowest: GlucosePoint | null;
+  highest: GlucosePoint | null;
 }
 
 export interface LinkGlucose {

@@ -73,7 +73,7 @@ public class GlucoseStatisticsParityTests
         var readings = log == "hand-checked" ? HandChecked() : Uneven();
 
         var app = GlucoseStatistics.Of(
-            readings.Select(r => new SensorReading(r.At, r.MgPerDl, r.Trend)), _from, _to, 80, 160);
+            GlucoseSmoothing.Of(readings.Select(r => new SensorReading(r.At, r.MgPerDl, r.Trend))), _from, _to, 80, 160);
         var sql = await StatementAsync(readings, GlucoseQueries.Statistics(Since, Until, 80, 160));
 
         var row = sql.ShouldNotBeNull();

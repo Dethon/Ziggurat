@@ -201,9 +201,12 @@ public static class SugaryReadme
           - `mmol_l` — the same value in mmol/L (mg/dL ÷ 18.016), to one decimal.
           - `trend` — the sensor's arrow when it was read: `falling_fast`, `falling`, `steady`, `rising`,
             `rising_fast`, or `unknown`. Only `current` readings carry an arrow.
+          - `smoothed_mg_dl` — the value with false spikes removed and the sensor's wander averaged out over
+            the 30 minutes each side, moved at most 4 mg/dL by the averaging. The app's default view and the
+            statements below read this. Use `mg_dl` only when asked what the sensor itself reported.
           - `source` — where the reading came from:
             - `current` — the reading LibreLinkUp showed live, about one a minute while their phone was in reach;
-            - `graph` — a point of the curve LibreLinkUp keeps, every 5 minutes, kept only where there was no
+            - `graph` — a point of the curve LibreLinkUp keeps, every 5 to 15 minutes, kept only where there was no
               live reading: before they linked, or while their phone was out of reach;
             - `import` — a value from Home Assistant's history, at irregular times;
             - `import-hourly` — an hourly mean from Home Assistant's long-term statistics: an hour's average,
@@ -269,7 +272,7 @@ public static class SugaryReadme
 
           The clinic's figures for a period, as one statement: change the `period` line and run it with `query`.
           They are shares of time, not of rows. Readings come at uneven intervals — about one a minute live,
-          every 5 minutes on the curve, hourly from `import-hourly` — so a count of rows weighs a stretch by
+          every 5 to 15 minutes on the curve, hourly from `import-hourly` — so a count of rows weighs a stretch by
           how often it was read. Each reading stands for the minutes until the next one, at most
           {{GlucoseQueries.MaxMinutesPerReading}}; a longer gap, an hourly mean's included, is time with no reading. These are the
           figures the Sugary app shows them, worked out the same way. A `TIMESTAMPTZ '2026-10-01 00:00:00'`
