@@ -201,9 +201,9 @@ public static class SugaryReadme
           - `mmol_l` — the same value in mmol/L (mg/dL ÷ 18.016), to one decimal.
           - `trend` — the sensor's arrow when it was read: `falling_fast`, `falling`, `steady`, `rising`,
             `rising_fast`, or `unknown`. Only `current` readings carry an arrow.
-          - `smoothed_mg_dl` — the value with brief sensor misreads removed: the median of the reading
-            and up to two readings each side, within 4.5 minutes. The app's default view and the statements
-            below read this. Use `mg_dl` only when asked what the sensor itself reported.
+          - `smoothed_mg_dl` — the value with false spikes removed and the sensor's wander averaged out over
+            the 30 minutes each side, moved at most 4 mg/dL by the averaging. The app's default view and the
+            statements below read this. Use `mg_dl` only when asked what the sensor itself reported.
           - `source` — where the reading came from:
             - `current` — the reading LibreLinkUp showed live, about one a minute while their phone was in reach;
             - `graph` — a point of the curve LibreLinkUp keeps, every 5 to 15 minutes, kept only where there was no

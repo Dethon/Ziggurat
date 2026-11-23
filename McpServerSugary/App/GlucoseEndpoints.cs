@@ -195,7 +195,7 @@ public static class GlucoseEndpoints
     private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(
         SugaryDbContext db, DateTimeOffset from, DateTimeOffset to, GlucoseView view, CancellationToken ct)
     {
-        var margin = view == GlucoseView.Smoothed ? GlucoseSmoothing.Reach : TimeSpan.Zero;
+        var margin = view == GlucoseView.Smoothed ? GlucoseSmoothing.Margin : TimeSpan.Zero;
         var (first, last) = (from - margin, to + margin);
         var rows = await db.GlucoseReadings.AsNoTracking()
             .Where(r => r.At >= first && r.At < last)

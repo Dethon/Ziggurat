@@ -330,6 +330,24 @@ public class SugaryGlucoseApiTests
     }
 
     [Fact]
+    public async Task AnInstant_ReadsTheSame_InAnyWindow()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var values = Enumerable.Range(0, 150)
+            .Select(minute => Math.Round(120 + 30 * Math.Sin(minute / 40.0) + 4 * Math.Sin(minute * 2 * Math.PI / 8)))
+            .ToArray();
+        await SeedAsync(server, SugaryServer.Her, Minutes(_morning, values));
+        var instant = _morning.AddMinutes(75);
+
+        var whole = await GetAsync(server,
+            $"/api/glucose/readings?from={Q(_morning)}&to={Q(_morning.AddMinutes(150))}");
+        var alone = await GetAsync(server,
+            $"/api/glucose/readings?from={Q(instant)}&to={Q(instant.AddMinutes(1))}");
+
+        CurveValues(alone).ShouldBe([CurveValues(whole)[75]]);
+    }
+
+    [Fact]
     public async Task ALongWindow_AveragesTheSmoothedReadings()
     {
         await using var server = await SugaryServer.StartAsync();

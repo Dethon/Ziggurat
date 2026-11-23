@@ -44,7 +44,7 @@ public class GlucoseSmoothingTests
         var smoothed = GlucoseSmoothing.Of(Minutes(low));
 
         Values(smoothed).Count(value => value < 70).ShouldBe(low.Count(value => value < 70));
-        Values(smoothed).Min().ShouldBe(62);
+        Values(smoothed).Min().ShouldBeInRange(61, 62);
     }
 
     [Fact]
@@ -111,11 +111,73 @@ public class GlucoseSmoothingTests
     [Fact]
     public void TheResult_IsOldestFirst_WithEachReadingsTimeAndArrow()
     {
-        SensorReading[] readings = [At(2, 80, GlucoseTrend.Rising), At(0, 90, GlucoseTrend.Steady), At(1, 60, GlucoseTrend.Falling)];
+        SensorReading[] readings = [At(2, 85, GlucoseTrend.Rising), At(0, 85, GlucoseTrend.Steady), At(1, 85, GlucoseTrend.Falling)];
 
         var smoothed = GlucoseSmoothing.Of(readings);
 
-        smoothed.ShouldBe([At(0, 90, GlucoseTrend.Steady), At(1, 80, GlucoseTrend.Falling), At(2, 80, GlucoseTrend.Rising)]);
+        smoothed.ShouldBe([At(0, 85, GlucoseTrend.Steady), At(1, 85, GlucoseTrend.Falling), At(2, 85, GlucoseTrend.Rising)]);
+    }
+
+    private static double Rms(IEnumerable<double> errors) => Math.Sqrt(errors.Average(error => error * error));
+
+    // The swings a median leaves alone: a few mg/dL, a few minutes long, on a curve that moves slowly.
+    [Theory]
+    [InlineData(8)]
+    [InlineData(12)]
+    [InlineData(20)]
+    public void ASensorsWobble_IsAveragedOut(int period)
+    {
+        static double Truth(int minute) => 120 + 30 * Math.Sin(minute / 60.0);
+        var wobbly = Enumerable.Range(0, 240)
+            .Select(minute => At(minute, Truth(minute) + 4 * Math.Sin(minute * 2 * Math.PI / period)))
+            .ToArray();
+
+        var smoothed = GlucoseSmoothing.Of(wobbly);
+
+        var middle = Enumerable.Range(60, 120).ToList();
+        Rms(middle.Select(m => smoothed[m].MgPerDl - Truth(m)))
+            .ShouldBeLessThan(Rms(middle.Select(m => wobbly[m].MgPerDl - Truth(m))) / 4);
+    }
+
+    // A dip to 65 from 120; the narrowest spends about seven minutes under 70.
+    [Theory]
+    [InlineData(8)]
+    [InlineData(10)]
+    [InlineData(15)]
+    public void ARealLow_StaysUnderSeventy(int width)
+    {
+        var low = Enumerable.Range(0, 180)
+            .Select(minute => At(minute, 120 - 55 * Math.Exp(-Math.Pow(minute - 90, 2) / (2 * width * width))))
+            .ToArray();
+
+        Values(GlucoseSmoothing.Of(low)).Min().ShouldBeLessThan(70);
+    }
+
+    // Seven minutes under 70 in an otherwise flat day: a wide fit alone reads it as 74.
+    [Fact]
+    public void AShortLowInAFlatDay_StaysUnderSeventy()
+    {
+        double[] day =
+        [
+            .. Enumerable.Repeat(100.0, 30),
+            90, 84, 78, 72, 68, 64, 62, 61, 62, 65, 69, 73, 79, 85, 90,
+            .. Enumerable.Repeat(100.0, 30)
+        ];
+
+        var smoothed = Values(GlucoseSmoothing.Of(Minutes(day)));
+
+        smoothed.Count(value => value < 70).ShouldBeGreaterThanOrEqualTo(5);
+        smoothed.Min().ShouldBeLessThanOrEqualTo(66);
+    }
+
+    [Fact]
+    public void AMealsPeak_KeepsItsHeight()
+    {
+        var meal = Enumerable.Range(0, 240)
+            .Select(minute => At(minute, 120 + 80 * Math.Exp(-Math.Pow(minute - 120, 2) / (2 * 25 * 25))))
+            .ToArray();
+
+        Values(GlucoseSmoothing.Of(meal)).Max().ShouldBeGreaterThan(197);
     }
 
     [Fact]

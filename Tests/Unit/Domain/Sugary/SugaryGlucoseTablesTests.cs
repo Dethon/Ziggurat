@@ -88,24 +88,44 @@ public class SugaryGlucoseTablesTests
     [Fact]
     public async Task TheReadmesStatistics_AnswerTheFiguresWorkedOutByHand()
     {
+        UseReadingsTooFarApartToSmooth();
+
         var answer = await Query(GlucoseQueries.Statistics(Since, Until, 80, 160));
 
-        // Covered: ten live minutes, two curve points of five, one of twenty (its gap is forty) and an
-        // hourly mean of twenty (the hour to the period's end) — 60 of the period's 120 minutes. The
-        // readings before and after the period are not in it. Counted by rows, 50 would be 1 of 14.
-        // Below 54: 1 of 60; below 70: 2; 70–180: 8 + 20 + 20 = 48; her 80–160: 8 + 20 = 28; above
-        // 180: 5 + 5 = 10; above 250: 5. Mean (50 + 60 + 800 + 1000 + 1300 + 3400 + 2400) / 60 = 150.17.
+        // Covered: six points of five minutes, then one of twenty (its gap is thirty-five) and an hourly
+        // mean of twenty (the hour to the period's end) — 65 of the period's 120 minutes. The readings
+        // before and after the period are not in it. Below 54: 5 of 65; below 70: 10; 70–180: 5 + 20 + 20
+        // = 45; her 80–160: 5 + 20 = 25; above 180: 5 + 5 = 10; above 250: 5.
+        // Mean (250 + 300 + 500 + 1000 + 1300 + 3400 + 2400) / 65 = 140.77.
         var row = Row(answer);
-        row["below_54_pct"]!.GetValue<double>().ShouldBe(1.7);
-        row["below_70_pct"]!.GetValue<double>().ShouldBe(3.3);
-        row["in_70_180_pct"]!.GetValue<double>().ShouldBe(80.0);
-        row["in_target_pct"]!.GetValue<double>().ShouldBe(46.7);
-        row["above_180_pct"]!.GetValue<double>().ShouldBe(16.7);
-        row["above_250_pct"]!.GetValue<double>().ShouldBe(8.3);
-        row["mean_mg_dl"]!.GetValue<double>().ShouldBe(150.2);
-        row["gmi_pct"]!.GetValue<double>().ShouldBe(6.9);
-        row["cv_pct"]!.GetValue<double>().ShouldBe(31.8);
-        row["coverage_pct"]!.GetValue<double>().ShouldBe(50.0);
+        row["below_54_pct"]!.GetValue<double>().ShouldBe(7.7);
+        row["below_70_pct"]!.GetValue<double>().ShouldBe(15.4);
+        row["in_70_180_pct"]!.GetValue<double>().ShouldBe(69.2);
+        row["in_target_pct"]!.GetValue<double>().ShouldBe(38.5);
+        row["above_180_pct"]!.GetValue<double>().ShouldBe(15.4);
+        row["above_250_pct"]!.GetValue<double>().ShouldBe(7.7);
+        row["mean_mg_dl"]!.GetValue<double>().ShouldBe(140.8);
+        row["gmi_pct"]!.GetValue<double>().ShouldBe(6.7);
+        row["cv_pct"]!.GetValue<double>().ShouldBe(39.1);
+        row["coverage_pct"]!.GetValue<double>().ShouldBe(54.2);
+    }
+
+    // Five minutes apart, so what a test of the weighting reads is the values it wrote.
+    private void UseReadingsTooFarApartToSmooth()
+    {
+        _log.Glucose.Clear();
+        _log.Glucose.AddRange(
+        [
+            Reading(-5, 300, GlucoseSource.Current),
+            Reading(0, 50, GlucoseSource.Current),
+            Reading(5, 60, GlucoseSource.Current),
+            Reading(10, 100, GlucoseSource.Graph),
+            Reading(15, 200, GlucoseSource.Graph),
+            Reading(20, 260, GlucoseSource.Graph),
+            Reading(25, 170, GlucoseSource.Graph),
+            Reading(60, 120, GlucoseSource.ImportHourly),
+            Reading(120, 90, GlucoseSource.Current)
+        ]);
     }
 
     private void SeedMinutes(DateTimeOffset start, params double[] values) =>
@@ -172,12 +192,14 @@ public class SugaryGlucoseTablesTests
     [Fact]
     public async Task AMeal_IsJoinedToTheGlucoseOfTheHoursAfterIt()
     {
+        UseReadingsTooFarApartToSmooth();
+
         var row = Row(await Query(GlucoseQueries.AfterMeals));
 
         row["meal_id"]!.GetValue<string>().ShouldBe(_dinner.ToString());
-        row["first_mg_dl"]!.GetValue<double>().ShouldBe(100);
+        row["first_mg_dl"]!.GetValue<double>().ShouldBe(60);
         row["peak_mg_dl"]!.GetValue<double>().ShouldBe(260);
-        row["peak_at"]!.GetValue<string>().ShouldBe("2026-10-01T00:15:00+02:00");
+        row["peak_at"]!.GetValue<string>().ShouldBe("2026-10-01T00:20:00+02:00");
         row["last_mg_dl"]!.GetValue<double>().ShouldBe(90);
     }
 
