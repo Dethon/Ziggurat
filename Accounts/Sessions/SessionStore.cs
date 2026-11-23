@@ -87,13 +87,16 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
     public async Task<SessionIdentity?> LiveAsync(string userId, string sessionId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        var user = await db.Sessions
+        var found = await db.Sessions
             .Where(s => s.Id == sessionId && s.UserId == userId && s.RevokedAt == null)
             .Join(db.Users.Where(u => u.DisabledAt == null), s => s.UserId, u => u.Id, (_, u) => u)
+            .Join(db.Tenants, u => u.TenantId, t => t.Id,
+                (user, tenant) => new { User = user, Suspended = tenant.SuspendedAt != null })
             .SingleOrDefaultAsync(ct);
-        return user is null
+        return found is null
             ? null
-            : new SessionIdentity(sessionId, user.Id, user.TenantId, Roles.Of(user), user.DisplayName, user.AvatarUrl);
+            : new SessionIdentity(sessionId, found.User.Id, found.User.TenantId, Roles.Of(found.User), found.User.DisplayName,
+                found.User.AvatarUrl, found.Suspended);
     }
 
     public async Task<IReadOnlyList<SignedInDevice>> ListAsync(string userId, CancellationToken ct)

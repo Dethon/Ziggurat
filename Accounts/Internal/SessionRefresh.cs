@@ -31,7 +31,8 @@ public static class SessionRefresh
 
             return await sessions.LiveAsync(query.UserId, query.SessionId, ct) is { } session
                 ? Results.Ok(new ResolvedIdentity(
-                    session.TenantId, session.UserId, session.DisplayName, assertions.Of(session, channel)))
+                    session.TenantId, session.UserId, session.DisplayName, assertions.Of(session, channel),
+                    session.HouseholdSuspended))
                 : Results.NotFound();
         });
 }

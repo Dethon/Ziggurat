@@ -12,7 +12,8 @@ public sealed record IdentityQuery(string Channel, string Identity);
 
 // The assertion vouches for the rest: signed for the channel asked about, it is what the channel
 // server carries on the turn it starts and what the agent believes.
-public sealed record ResolvedIdentity(string TenantId, string UserId, string DisplayName, string Assertion);
+public sealed record ResolvedIdentity(
+    string TenantId, string UserId, string DisplayName, string Assertion, bool HouseholdSuspended = false);
 
 public sealed record GuestQuery(string Channel);
 
