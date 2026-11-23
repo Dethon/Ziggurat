@@ -70,7 +70,7 @@ public class McpWebSearchHouseholdKeyTests
         _brave.Tokens.ShouldBeEmpty();
     }
 
-    private sealed class RecordingBrave : HttpMessageHandler
+    internal sealed class RecordingBrave : HttpMessageHandler
     {
         private readonly ConcurrentQueue<string> _tokens = new();
 
