@@ -222,7 +222,8 @@ const en = {
   widgetRemoveTitle: "Remove the widget's address?",
   widgetRemoveBody: "The widget using it stops updating.",
   widgetWarning: "Anyone who has these can read this glucose, so treat them like a password. They are only shown now.",
-  widgetSteps: "In KWGT, paste each formula into a text item, the colour into its paint, and the curve's address into an image.",
+  widgetSteps:
+    "In KWGT, paste each formula into a text item, the colour into its paint, and the curve's address into an image. Always show the time since the reading: without it, an old value looks current.",
   widgetReading: "Reading",
   widgetUnit: "Unit",
   widgetArrow: "Trend arrow",
@@ -951,7 +952,8 @@ const es: Strings = {
   widgetRemoveTitle: "¿Quitar la dirección del widget?",
   widgetRemoveBody: "El widget que la usa dejará de actualizarse.",
   widgetWarning: "Quien tenga estos datos puede leer esta glucosa, así que trátalos como una contraseña. Solo se muestran ahora.",
-  widgetSteps: "En KWGT, pega cada fórmula en un texto, el color en su pintura y la dirección de la curva en una imagen.",
+  widgetSteps:
+    "En KWGT, pega cada fórmula en un texto, el color en su pintura y la dirección de la curva en una imagen. Muestra siempre el tiempo desde la lectura: sin él, un valor antiguo parece actual.",
   widgetReading: "Lectura",
   widgetUnit: "Unidad",
   widgetArrow: "Flecha de tendencia",
