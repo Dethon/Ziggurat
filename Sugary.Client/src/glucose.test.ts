@@ -32,14 +32,14 @@ import { dictionaries, translator } from "./i18n";
 const en = translator("en");
 const es = translator("es");
 
-// Kept for the tab: a reload keeps the period and the switch, the next open of the app starts over.
+// Kept on the device: a reload and closing the app both keep the period and the switch.
 describe("how she left the curve", () => {
   const KEY = "sugary.glucose.look";
   const opening = { period: 1, view: DEFAULT_VIEW };
 
   function storage(seed?: string) {
     const kept = new Map<string, string>(seed === undefined ? [] : [[KEY, seed]]);
-    vi.stubGlobal("sessionStorage", {
+    vi.stubGlobal("localStorage", {
       getItem: (key: string) => kept.get(key) ?? null,
       setItem: (key: string, value: string) => kept.set(key, value),
     });
@@ -47,7 +47,7 @@ describe("how she left the curve", () => {
 
   afterEach(() => vi.unstubAllGlobals());
 
-  it("comes back after a reload", () => {
+  it("comes back after a reload or the app being closed", () => {
     storage();
     rememberLook({ period: 7, view: "raw" });
     expect(rememberedLook()).toEqual({ period: 7, view: "raw" });
@@ -77,7 +77,7 @@ describe("how she left the curve", () => {
     const refused = () => {
       throw new Error("refused");
     };
-    vi.stubGlobal("sessionStorage", { getItem: refused, setItem: refused });
+    vi.stubGlobal("localStorage", { getItem: refused, setItem: refused });
     expect(() => rememberLook({ period: 7, view: "raw" })).not.toThrow();
     expect(rememberedLook()).toEqual(opening);
   });

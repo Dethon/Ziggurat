@@ -3,6 +3,7 @@ import type { IconName } from "./components/Icon";
 import { errorMessage } from "./errors";
 import { locale } from "./format";
 import type { Language, StringKey, Translate } from "./i18n";
+import { load, store } from "./settings";
 import type { GlucosePoint, GlucoseTrend, GlucoseUnit, GlucoseView } from "./types";
 
 // Every value the server keeps or answers is mg/dL, whatever she reads; mmol/L is only how it is shown
@@ -28,7 +29,7 @@ export const VERY_HIGH = 250;
 // In days; the two shortest are named in hours.
 export const PERIODS = [0.5, 1, 7, 14, 90] as const;
 
-// What the tab shows each time the app is opened: the sensor's own values are a look she asks for.
+// What the tab shows until she picks otherwise: the sensor's own values are a look she asks for.
 export const DEFAULT_VIEW: GlucoseView = "smoothed";
 const DEFAULT_PERIOD = 1;
 const VIEWS: readonly GlucoseView[] = ["smoothed", "raw"];
@@ -45,29 +46,18 @@ export interface GlucoseLook {
   view: GlucoseView;
 }
 
-// The period and the switch as she left them, kept for this tab alone (sessionStorage: a reload, a
-// pull-down to refresh, a visit to another tab of the app, never the next time she opens it).
+// The period and the switch as she left them, kept on the device: through a reload and through
+// closing the app.
 const LOOK = "sugary.glucose.look";
 
-export function rememberLook(look: GlucoseLook): void {
-  try {
-    sessionStorage.setItem(LOOK, JSON.stringify(look));
-  } catch {
-    // Storage refused (a private window): a reload opens as usual.
-  }
-}
+export const rememberLook = (look: GlucoseLook) => store(LOOK, look);
 
 // Each read on its own, and only if still offered: the server refuses any other period or view.
 export function rememberedLook(): GlucoseLook {
-  let kept: Partial<GlucoseLook> | null = null;
-  try {
-    kept = JSON.parse(sessionStorage.getItem(LOOK) ?? "null") as Partial<GlucoseLook> | null;
-  } catch {
-    // Unreadable, or storage refused: opens as usual.
-  }
+  const kept = load<Partial<GlucoseLook>>(LOOK, {});
   return {
-    period: PERIODS.find((days) => days === kept?.period) ?? DEFAULT_PERIOD,
-    view: VIEWS.find((view) => view === kept?.view) ?? DEFAULT_VIEW,
+    period: PERIODS.find((days) => days === kept.period) ?? DEFAULT_PERIOD,
+    view: VIEWS.find((view) => view === kept.view) ?? DEFAULT_VIEW,
   };
 }
 
