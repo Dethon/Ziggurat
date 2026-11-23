@@ -16,6 +16,8 @@ import {
   periodLabel,
   rangeDraft,
   rangeProblem,
+  rememberedLook,
+  rememberLook,
   retypeRange,
   switchRangeUnit,
   shownRange,
@@ -29,6 +31,57 @@ import { dictionaries, translator } from "./i18n";
 
 const en = translator("en");
 const es = translator("es");
+
+// Kept for the tab: a reload keeps the period and the switch, the next open of the app starts over.
+describe("how she left the curve", () => {
+  const KEY = "sugary.glucose.look";
+  const opening = { period: 1, view: DEFAULT_VIEW };
+
+  function storage(seed?: string) {
+    const kept = new Map<string, string>(seed === undefined ? [] : [[KEY, seed]]);
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => kept.get(key) ?? null,
+      setItem: (key: string, value: string) => kept.set(key, value),
+    });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("comes back after a reload", () => {
+    storage();
+    rememberLook({ period: 7, view: "raw" });
+    expect(rememberedLook()).toEqual({ period: 7, view: "raw" });
+  });
+
+  it("is twenty-four hours, smoothed, when nothing was kept", () => {
+    storage();
+    expect(rememberedLook()).toEqual(opening);
+  });
+
+  // Either would be refused by the server, leaving the page in an error on every load.
+  it("keeps only what is still offered, each on its own", () => {
+    storage(JSON.stringify({ period: 30, view: "raw" }));
+    expect(rememberedLook()).toEqual({ period: 1, view: "raw" });
+    storage(JSON.stringify({ period: 14, view: "wobbly" }));
+    expect(rememberedLook()).toEqual({ period: 14, view: DEFAULT_VIEW });
+  });
+
+  it("opens as usual on something unreadable", () => {
+    for (const seed of ["not json", "null", "7", "[]"]) {
+      storage(seed);
+      expect(rememberedLook()).toEqual(opening);
+    }
+  });
+
+  it("opens as usual, and saves nothing, where storage is refused", () => {
+    const refused = () => {
+      throw new Error("refused");
+    };
+    vi.stubGlobal("sessionStorage", { getItem: refused, setItem: refused });
+    expect(() => rememberLook({ period: 7, view: "raw" })).not.toThrow();
+    expect(rememberedLook()).toEqual(opening);
+  });
+});
 
 describe("a share of the time", () => {
   it("is a whole percent, and a sliver is not rounded away", () => {

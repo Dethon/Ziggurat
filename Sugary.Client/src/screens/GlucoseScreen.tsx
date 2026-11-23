@@ -9,7 +9,6 @@ import {
   ageMinutes,
   ageText,
   band,
-  DEFAULT_VIEW,
   formatGlucose,
   formatShare,
   glucoseErrorMessage,
@@ -24,6 +23,8 @@ import {
   rangeDraft,
   rangeProblem,
   REGIONS,
+  rememberedLook,
+  rememberLook,
   retypeRange,
   shownRange,
   switchRangeUnit,
@@ -32,7 +33,7 @@ import {
   VERY_HIGH,
   VERY_LOW,
   windowOf,
-  type Period,
+  type GlucoseLook,
 } from "../glucose";
 import { errorMessage } from "../errors";
 import { formatDayTime, formatShortDay, formatTime, locale } from "../format";
@@ -52,10 +53,16 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   const minute = useMinute();
   const [state, setState] = useState<{ now: GlucoseNow; fetchedAt: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>(1);
-  const [view, setView] = useState<GlucoseView>(DEFAULT_VIEW);
+  const [look, setLook] = useState(rememberedLook);
+  const { period, view } = look;
   const [curve, setCurve] = useState<GlucoseCurve | null>(null);
   const [statistics, setStatistics] = useState<GlucoseStatistics | null>(null);
+
+  function changeLook(change: Partial<GlucoseLook>) {
+    const next = { ...look, ...change };
+    setLook(next);
+    rememberLook(next);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -127,7 +134,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                       type="button"
                       className={period === days ? "segment segment-on" : "segment"}
                       aria-pressed={period === days}
-                      onClick={() => setPeriod(days)}
+                      onClick={() => changeLook({ period: days })}
                     >
                       {periodLabel(days, t)}
                     </button>
@@ -139,7 +146,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                   <h2 id="curve-title" className="section-title">
                     {t("curveTitle")}
                   </h2>
-                  <ViewSwitch view={view} onView={setView} />
+                  <ViewSwitch view={view} onView={(next) => changeLook({ view: next })} />
                 </div>
                 {curve && curve.points.length > 0 ? (
                   <GlucoseChart

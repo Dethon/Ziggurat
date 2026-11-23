@@ -28,8 +28,10 @@ export const VERY_HIGH = 250;
 // In days; the two shortest are named in hours.
 export const PERIODS = [0.5, 1, 7, 14, 90] as const;
 
-// What the tab opens on each time: the sensor's own values are a look she asks for.
+// What the tab shows each time the app is opened: the sensor's own values are a look she asks for.
 export const DEFAULT_VIEW: GlucoseView = "smoothed";
+const DEFAULT_PERIOD = 1;
+const VIEWS: readonly GlucoseView[] = ["smoothed", "raw"];
 
 // LibreLinkUp's regions, for an account the global address does not place by itself.
 export const REGIONS = ["ae", "ap", "au", "ca", "de", "eu", "eu2", "fr", "jp", "la", "ru", "us"] as const;
@@ -37,6 +39,37 @@ export type Period = (typeof PERIODS)[number];
 
 export const periodLabel = (days: Period, t: Translate) =>
   days <= 1 ? t("glucosePeriodHours", { n: days * 24 }) : t("glucosePeriodDays", { n: days });
+
+export interface GlucoseLook {
+  period: Period;
+  view: GlucoseView;
+}
+
+// The period and the switch as she left them, kept for this tab alone (sessionStorage: a reload, a
+// pull-down to refresh, a visit to another tab of the app, never the next time she opens it).
+const LOOK = "sugary.glucose.look";
+
+export function rememberLook(look: GlucoseLook): void {
+  try {
+    sessionStorage.setItem(LOOK, JSON.stringify(look));
+  } catch {
+    // Storage refused (a private window): a reload opens as usual.
+  }
+}
+
+// Each read on its own, and only if still offered: the server refuses any other period or view.
+export function rememberedLook(): GlucoseLook {
+  let kept: Partial<GlucoseLook> | null = null;
+  try {
+    kept = JSON.parse(sessionStorage.getItem(LOOK) ?? "null") as Partial<GlucoseLook> | null;
+  } catch {
+    // Unreadable, or storage refused: opens as usual.
+  }
+  return {
+    period: PERIODS.find((days) => days === kept?.period) ?? DEFAULT_PERIOD,
+    view: VIEWS.find((view) => view === kept?.view) ?? DEFAULT_VIEW,
+  };
+}
 
 export const toUnit = (mgPerDl: number, unit: GlucoseUnit) => (unit === "mmol" ? mgPerDl / MMOL_FACTOR : mgPerDl);
 
