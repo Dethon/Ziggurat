@@ -22,6 +22,9 @@ public static class HouseholdConfigProtocol
     // Idealista's own keys.
     public const string IdealistaView = "idealista";
 
+    // A household's own web search server's, on its tunnel's credential: the key it asks Brave with.
+    public const string BraveSearchView = "brave-search";
+
     // The chat hub's: the household's spaces.
     public const string SpacesView = "spaces";
 

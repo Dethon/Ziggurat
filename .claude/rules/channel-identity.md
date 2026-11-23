@@ -79,6 +79,9 @@ These routes are **server to server only**:
   vault's or outpost's is 403, here as well as at the relay, because a resolution signs an assertion for
   anybody in the household. It asks about `voice` alone and its own household alone (`resolve` 404 for
   others, `guest` its household's).
+- **A household's own web search** (`InternalCallers.HouseholdWebSearch`) is admitted the same way, by a
+  live credential minted for `HouseholdServerNames.WebSearch`. It is no channel and mints nobody: its one
+  question is the `brave-search` view of its own household (`.claude/rules/household-config.md`).
 - Every Caddy host reaching the service answers `handle /accounts/internal/*` with `respond 404`
   **before** `/accounts/*` (conformance-checked); a new host routing `/accounts/*` needs the same block,
   and the `/accounts/verify*` one beside it.

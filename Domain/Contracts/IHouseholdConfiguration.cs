@@ -24,6 +24,10 @@ public interface IHouseholdConfiguration
     // None when the household has set no Idealista keys.
     Task<IdealistaKeys?> IdealistaKeysAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 
+    // The household's own web search's alone: a reader that is not one has no key to read.
+    Task<BraveSearchKey?> BraveSearchKeyAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult<BraveSearchKey?>(null);
+
     Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 
     // The household's agents by id and name, and its default: what a person picks among on a channel.

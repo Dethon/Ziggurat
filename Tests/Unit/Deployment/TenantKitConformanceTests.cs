@@ -233,6 +233,7 @@ public class TenantKitConformanceTests
     [InlineData("mcp-channel-voice", "STT__OPENAI__BASEURL", BackCallProtocol.Lemonade, "/v1")]
     [InlineData("mcp-channel-voice", "TTS__OPENAI__BASEURL", BackCallProtocol.Lemonade, "/v1")]
     [InlineData("mcp-channel-voice", "METRICS__URL", BackCallProtocol.Metrics, BackCallProtocol.MetricsPath)]
+    [InlineData(BrowseServerListeners.Service, "ACCOUNTS__BASEURL", BackCallProtocol.Accounts, "")]
     [InlineData(BrowseServerListeners.Service, "METRICS__URL", BackCallProtocol.Metrics, BackCallProtocol.MetricsPath)]
     [InlineData("mcp-sandbox", "VFSBRIDGEURL", BackCallProtocol.VfsBridge, "/api/vfs-bridge")]
     public void AClientOfADeploymentService_DialsItsServersBackCallPort(string service, string client, string tag, string path)
@@ -243,6 +244,12 @@ public class TenantKitConformanceTests
         environment.GetValueOrDefault(client)
             .ShouldBe($"http://127.0.0.1:{environment[$"MCP__TUNNEL__BACKCALLS__{tag}".ToUpperInvariant()]}{path}");
     }
+
+    // The household's Brave key is its keys section's, where an owner sets and checks it: a second copy
+    // in the kit would be one the page cannot see.
+    [Fact]
+    public void TheKit_HoldsNoBraveKey() =>
+        Kit.Service(BrowseServerListeners.Service).Environment.Keys.ShouldNotContain("BRAVESEARCH__APIKEY");
 
     // Every server of the household is a tile on the deployment's dashboard, which only its own
     // heartbeat can light: it has no other way out than its tunnel, so it posts it on its metrics

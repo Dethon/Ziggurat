@@ -19,6 +19,7 @@ public sealed class KeysAdmin(
     HouseholdKeyChecks checks,
     IKeyProbe<OpenRouterKey> openRouter,
     IKeyProbe<IdealistaKeys> idealista,
+    IKeyProbe<BraveSearchKey> braveSearch,
     IKeyProbe<TelegramBotKey> telegram,
     IKeyProbe<LemonadeBox> lemonade,
     ConnectedServersClient servers,
@@ -55,6 +56,10 @@ public sealed class KeysAdmin(
             (AdminCaller caller, IdealistaKeys? key, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.SaveIdealistaAsync(key, new Saving(caller, http, log), ct));
 
+        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.BraveSearchKey),
+            (AdminCaller caller, BraveSearchKey? key, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.SaveBraveSearchAsync(key, new Saving(caller, http, log), ct));
+
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.LemonadeBox),
             (AdminCaller caller, LemonadeBox? box, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.SaveLemonadeAsync(box, new Saving(caller, http, log), ct));
@@ -75,6 +80,10 @@ public sealed class KeysAdmin(
             (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.CheckIdealistaAsync(new Saving(caller, http, log), ct));
 
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.BraveSearchKeyCheck),
+            (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.CheckBraveSearchAsync(new Saving(caller, http, log), ct));
+
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.LemonadeBoxCheck),
             (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.CheckLemonadeAsync(new Saving(caller, http, log), ct));
@@ -87,6 +96,8 @@ public sealed class KeysAdmin(
     private Task<IResult> CheckOpenRouterAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.OpenRouter, openRouter, saving, ct);
 
     private Task<IResult> CheckIdealistaAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.Idealista, idealista, saving, ct);
+
+    private Task<IResult> CheckBraveSearchAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.BraveSearch, braveSearch, saving, ct);
 
     private Task<IResult> CheckLemonadeAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.Lemonade, lemonade, saving, ct);
 
@@ -138,6 +149,9 @@ public sealed class KeysAdmin(
 
     private Task<IResult> SaveIdealistaAsync(IdealistaKeys? key, Saving saving, CancellationToken ct) =>
         SaveAsync(KeySlot.Idealista, idealista, key, saving, ct);
+
+    private Task<IResult> SaveBraveSearchAsync(BraveSearchKey? key, Saving saving, CancellationToken ct) =>
+        SaveAsync(KeySlot.BraveSearch, braveSearch, key, saving, ct);
 
     // Another household's box is a public https address; the home's may be on the deployment's own
     // network, where its box has always been (LemonadeAddresses). A box through the tenant kit has no
@@ -242,6 +256,7 @@ public sealed class KeysAdmin(
             ])
         {
             IsHome = household.IsHome,
+            BraveSearch = Status(KeySlot.BraveSearch, keys, known),
             Lemonade = keys.Lemonade switch
             {
                 { ThroughKit: true } => new LemonadeBoxStatus(null, null)
@@ -397,6 +412,10 @@ public static class KeySlot
     public static readonly KeySlot<IdealistaKeys> Idealista = new(
         "idealista", "Idealista keys", keys => keys.Idealista, (keys, key) => keys with { Idealista = key },
         key => $"{key.ApiKey}\n{key.Secret}", key => key.ApiKey);
+
+    public static readonly KeySlot<BraveSearchKey> BraveSearch = new(
+        "braveSearch", "Brave Search key", keys => keys.BraveSearch, (keys, key) => keys with { BraveSearch = key },
+        key => key.ApiKey, key => key.ApiKey);
 
     public static readonly KeySlot<LemonadeBox> Lemonade = new(
         "lemonade", "Lemonade box", keys => keys.Lemonade, (keys, box) => keys with { Lemonade = box },

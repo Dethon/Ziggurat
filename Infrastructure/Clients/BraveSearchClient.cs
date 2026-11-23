@@ -23,7 +23,7 @@ public class BraveSearchClient(HttpClient httpClient, string apiKey) : IWebSearc
         if (response.StatusCode == HttpStatusCode.UnprocessableEntity && await RefusesTheKeyAsync(response, ct))
         {
             throw new HttpRequestException(
-                "Brave Search refused the web search server's API key (missing or invalid).",
+                "Brave Search refused the household's key (missing or invalid). An owner of the household replaces it on the Keys page.",
                 null, HttpStatusCode.Unauthorized);
         }
 

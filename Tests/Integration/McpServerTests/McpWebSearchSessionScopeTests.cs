@@ -44,7 +44,6 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services.ConfigureMcp(new McpSettings
         {
-            BraveSearch = new BraveSearchConfiguration { ApiKey = "test" },
             Camoufox = null,
             CapSolver = null,
             // The host starts the heartbeat, which dials the metrics connection: unreachable but

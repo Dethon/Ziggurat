@@ -24,6 +24,7 @@ public static class AdminProtocol
     public const string OpenRouterKey = Keys + "/openrouter";
     public const string LemonadeBox = Keys + "/lemonade";
     public const string IdealistaKeys = Keys + "/idealista";
+    public const string BraveSearchKey = Keys + "/brave-search";
     public const string TelegramBots = Keys + "/telegram";
     public const string TelegramBotRoute = TelegramBots + "/{agentId}";
 
@@ -34,6 +35,7 @@ public static class AdminProtocol
     public const string CheckSuffix = "/check";
     public const string OpenRouterKeyCheck = OpenRouterKey + CheckSuffix;
     public const string IdealistaKeysCheck = IdealistaKeys + CheckSuffix;
+    public const string BraveSearchKeyCheck = BraveSearchKey + CheckSuffix;
     public const string LemonadeBoxCheck = LemonadeBox + CheckSuffix;
     public const string TelegramBotCheckRoute = TelegramBotRoute + CheckSuffix;
 
@@ -158,6 +160,9 @@ public sealed record HouseholdKeys(
 
     // The household's own Lemonade box: at its address with its key's state, or through the tenant kit.
     public LemonadeBoxStatus? Lemonade { get; init; }
+
+    // What the household's web search asks Brave with: with none, its searches are refused.
+    public KeyStatus? BraveSearch { get; init; }
 
     // The home: with no box of its own it runs on the deployment's, and its own may be on its network.
     public bool IsHome { get; init; }

@@ -67,6 +67,9 @@ public sealed class HouseholdConfigurationClient(
     public Task<IdealistaKeys?> IdealistaKeysAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         SectionAsync<IdealistaKeys?>(HouseholdConfigProtocol.IdealistaView, householdId, proof, ct);
 
+    public Task<BraveSearchKey?> BraveSearchKeyAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        SectionAsync<BraveSearchKey?>(HouseholdConfigProtocol.BraveSearchView, householdId, proof, ct);
+
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         SectionAsync<SpacesSection>(HouseholdConfigProtocol.SpacesView, householdId, proof, ct);
 

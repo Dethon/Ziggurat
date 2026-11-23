@@ -1,3 +1,4 @@
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
 using Domain.Outposts;
@@ -18,22 +19,28 @@ public sealed record BackCallSettings
 // sends is let through — not another accounts route (a tunnel credential's verify, the Telegram bot's,
 // the chat hub's sessions), not Lemonade's model management, not any agent route but the bridge's and
 // topic minting — and no back-call from a server it is not for: the accounts back-call mints voice
-// assertions for anybody in the household, so a printer's or an outpost's credential must not reach it.
+// assertions for anybody in the household, so a printer's or an outpost's credential must not reach it,
+// and web search reaches its one key there and none of voice's routes.
 public sealed class BackCallTargets(Uri accounts, Uri lemonade)
 {
     private const string AccountsInternal = "/accounts/internal";
 
     private static readonly Dictionary<string, Allowed> _allowed = new(StringComparer.Ordinal)
     {
-        [BackCallProtocol.Accounts] = new(
-            IsVoice, Target.Accounts, [AccountsInternal + "/resolve", AccountsInternal + "/guest"], []),
-        [BackCallProtocol.Lemonade] = new(IsVoice, Target.Lemonade, ["/v1/audio/transcriptions", "/v1/audio/speech"], []),
-        [BackCallProtocol.VfsBridge] = new(
-            server => server == HouseholdServerNames.Sandbox, Target.Agent, [], [BridgeRoute + "/"]),
-        [BackCallProtocol.Topics] = new(IsVoice, Target.Agent, [Domain.DTOs.Channel.TopicMinting.Path], []),
+        [BackCallProtocol.Accounts] = new(Target.Accounts,
+            new Grant(IsVoice, [AccountsInternal + "/resolve", AccountsInternal + "/guest"], []),
+            new Grant(
+                server => server == HouseholdServerNames.WebSearch,
+                [HouseholdConfigProtocol.PathOf(HouseholdConfigProtocol.BraveSearchView)], [])),
+        [BackCallProtocol.Lemonade] = new(Target.Lemonade,
+            new Grant(IsVoice, ["/v1/audio/transcriptions", "/v1/audio/speech"], [])),
+        [BackCallProtocol.VfsBridge] = new(Target.Agent,
+            new Grant(server => server == HouseholdServerNames.Sandbox, [], [BridgeRoute + "/"])),
+        [BackCallProtocol.Topics] = new(Target.Agent,
+            new Grant(IsVoice, [Domain.DTOs.Channel.TopicMinting.Path], [])),
         // Every household's server may report on itself; an outpost publishes nothing.
-        [BackCallProtocol.Metrics] = new(
-            server => OutpostServerName.NameOf(server) is null, Target.Relay, [BackCallProtocol.MetricsPath], [])
+        [BackCallProtocol.Metrics] = new(Target.Relay,
+            new Grant(server => OutpostServerName.NameOf(server) is null, [BackCallProtocol.MetricsPath], []))
     };
 
     // Agent/App/VfsBridgeApi.Route, which Infrastructure cannot see; BackCallGatewayTests asks the
@@ -57,9 +64,9 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
 
     public bool Allows(string tag, string serverName, string path) =>
         _allowed.TryGetValue(tag, out var allowed)
-        && allowed.From(serverName)
-        && (allowed.Paths.Contains(path, StringComparer.Ordinal)
-            || allowed.Prefixes.Any(prefix => path.StartsWith(prefix, StringComparison.Ordinal) && !path.Contains("..")));
+        && allowed.Grants.Any(grant => grant.From(serverName)
+            && (grant.Paths.Contains(path, StringComparer.Ordinal)
+                || grant.Prefixes.Any(prefix => path.StartsWith(prefix, StringComparison.Ordinal) && !path.Contains(".."))));
 
     // The accounts service is shown the tunnel's own credential, so it reads who asks off it.
     public bool PresentsCredential(string tag) => tag == BackCallProtocol.Accounts;
@@ -82,5 +89,9 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
         Relay
     }
 
-    private sealed record Allowed(Func<string, bool> From, Target Target, string[] Paths, string[] Prefixes);
+    private sealed record Allowed(Target Target, params Grant[] Grants);
+
+    // Which servers may ask which paths of a back-call's target: one target can serve two servers
+    // different routes, and neither reaches the other's.
+    private sealed record Grant(Func<string, bool> From, string[] Paths, string[] Prefixes);
 }

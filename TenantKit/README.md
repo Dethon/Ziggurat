@@ -19,7 +19,7 @@ this file to it.
 
 | Server | Tunnel name | Back-calls | Beside it |
 |---|---|---|---|
-| `mcp-websearch` | `websearch` | metrics | `camoufox`, the kit's `redis` |
+| `mcp-websearch` | `websearch` | accounts, metrics | `camoufox`, the kit's `redis` |
 | `mcp-vault` | `vault` | metrics | |
 | `mcp-library` | `library` | metrics | `qbittorrent`, `jackett`, the kit's `redis` |
 | `mcp-sandbox` | `sandbox` | vfs-bridge, metrics | a network of its own |
@@ -183,11 +183,12 @@ Music Assistant would fight over their ports.
    does not exist there, and `docker volume ls` says so): skip that copy rather than let `docker run`
    make an empty volume to copy from.
 
-   The kit's `.env` takes the keys that moved with the servers from the deployment's old one (Brave,
-   CapSolver, Jackett, qBittorrent, the Home Assistant and Music Assistant tokens, `Announce__Token`,
+   The kit's `.env` takes the keys that moved with the servers from the deployment's old one (CapSolver,
+   Jackett, qBittorrent, the Home Assistant and Music Assistant tokens, `Announce__Token`,
    `LOGINS__STATEKEY`): `scripts/upgrade/carry-env.sh ~/old.env TenantKit/.env` fills every one both
    files name, and lists the kit's own that are still empty (its credentials, `DEPLOYMENT_HOST`,
-   `KIT_REDIS_PASSWORD`, ...).
+   `KIT_REDIS_PASSWORD`, ...). The Brave key is not among them: an owner saves it on the household's
+   Keys page, **before** the kit is updated, since a kit from this version searches on that key alone.
 
 6. **Run the state move**: the remembered logins, the one-time links and the library's download
    routing, out of the deployment's Redis and into the kit's. It reaches both on the host's loopback

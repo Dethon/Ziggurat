@@ -40,7 +40,7 @@ document's problems name the field, never its value, which may be a key.
 |---|---|---|
 | `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation) |
 | `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
-| `keys` | `KeysSection` | `openRouter`, `idealista`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
+| `keys` | `KeysSection` | `openRouter`, `idealista`, `braveSearch`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
 | `features` | `FeaturesSection` | six bools; default all on but Idealista |
 | `spaces` | `SpacesSection` | at least one space |
 
@@ -86,6 +86,7 @@ to its callers (`InternalCallers`' view table); anyone else is 403 before a row 
 | `openrouter-key-refused` (204, not a view; `.claude/rules/admin-keys.md`) | `agent` | as `agent` | none |
 | `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | call token / assertion / delegation | none |
 | `idealista` | `mcp-idealista` | call token | Idealista's two |
+| `brave-search` | `household-websearch` (`InternalCallers.HouseholdWebSearch`) | its live tunnel credential **and** a call token signed for that server, acting for that household (`HouseholdProofs.OwnWebSearchAsync`) | Brave's key |
 | `spaces`, `member-names` (disabled members too: their topics are kept) | `mcp-channel-signalr` | the session refresh's assertion (hub bullet below) | none |
 | `agent-names` (`HouseholdAgents.Names`, never custom instructions) | `mcp-scheduling` | call token | none |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | the person's assertion on the asker's channel | none |
@@ -197,7 +198,8 @@ Writer and readers share this contract (`HouseholdConfigProtocol`):
   save or people change. An answer asked while a save was announced is returned but not kept. A refusal is
   `HouseholdConfigRefusedException`; an outage or a 503 is `HttpRequestException`.
 - Idealista and Sugary are given no Redis for this, deliberately: a minute is "without a restart", and
-  Sugary keeps off Redis (`docs/adr/0043`).
+  Sugary keeps off Redis (`docs/adr/0043`). A kit's web search has a Redis, but the kit's, where no save is
+  announced (`hearSaves: false`), so it too reads a new key within the minute.
 
 ## A shared server's accessor
 
@@ -213,7 +215,7 @@ or an outage (`HttpRequestException`) is never mistaken for a household with not
 - The admin area (`.claude/rules/admin.md`) saves through the same `HouseholdConfigStore.SaveAsync` and
   schema as `get-household-config` / `set-household-config` (`HouseholdConfigCommands`).
   `set-household-config --file -` reads the input, so no secret sits in a file in the volume.
-- The deployment holds no Idealista key: the home's go in its `keys` section.
+- The deployment holds no Idealista key and a kit no Brave key: the home's go in its `keys` section.
 - **Seeding** is `POST /accounts/internal/household-config-seed` (`HouseholdConfigSeedApi`,
   `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved, kept }`, 400 with the problems),
   for `CALLERS__household-migration` alone. A section already saved is left as it is (a rerun changes

@@ -29,6 +29,8 @@ public sealed class HouseholdKeysEffect : IDisposable
                 SaveAsync(KeyForm.OpenRouter, _admin.SaveOpenRouterKeyAsync(action.Key)).LogFaults(logger, nameof(SaveOpenRouterKey))),
             dispatcher.RegisterHandler<SaveIdealistaKeys>(action =>
                 SaveAsync(KeyForm.Idealista, _admin.SaveIdealistaKeysAsync(action.Keys)).LogFaults(logger, nameof(SaveIdealistaKeys))),
+            dispatcher.RegisterHandler<SaveBraveSearchKey>(action =>
+                SaveAsync(KeyForm.BraveSearch, _admin.SaveBraveSearchKeyAsync(action.Key)).LogFaults(logger, nameof(SaveBraveSearchKey))),
             dispatcher.RegisterHandler<SaveLemonadeBox>(action =>
                 SaveAsync(KeyForm.Lemonade, _admin.SaveLemonadeBoxAsync(action.Box)).LogFaults(logger, nameof(SaveLemonadeBox))),
             dispatcher.RegisterHandler<RemoveLemonadeBox>(_ =>
@@ -51,6 +53,7 @@ public sealed class HouseholdKeysEffect : IDisposable
         {
             KeyForm.OpenRouter => AdminProtocol.OpenRouterKeyCheck,
             KeyForm.Idealista => AdminProtocol.IdealistaKeysCheck,
+            KeyForm.BraveSearch => AdminProtocol.BraveSearchKeyCheck,
             KeyForm.Lemonade => AdminProtocol.LemonadeBoxCheck,
             _ => AdminProtocol.TelegramBotCheck(action.AgentId ?? "")
         }), answered => new HouseholdKeyChecked(action.Form, answered.Value, answered.Warning));

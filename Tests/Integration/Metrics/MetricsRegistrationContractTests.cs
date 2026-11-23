@@ -68,7 +68,6 @@ public class MetricsRegistrationContractTests
             "mcp-websearch",
             services => services.ConfigureMcp(new WebSearchSettings.McpSettings
             {
-                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis
             })
         },
@@ -84,7 +83,6 @@ public class MetricsRegistrationContractTests
             "mcp-websearch on a tunnel",
             services => services.ConfigureMcp(new WebSearchSettings.McpSettings
             {
-                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis,
                 Metrics = new MetricsFeedConfig { Url = FeedUrl }
             })

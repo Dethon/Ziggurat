@@ -38,6 +38,8 @@ to (`TenantKitConformanceTests`, through `DeploymentFiles.KitCompose`):
     `BOX__URL` (the kit's `LEMONADE_URL`; empty refuses its start) adding `BOX__APIKEY`, so the box's
     key never leaves the house. The agent reaches it through `TunnelRegistry.StreamsTo`
     (`LemonadeForwarderTests`).
+- **The household's Brave key is not the kit's**: web search reads it from the keys section over its own
+  `accounts` back-call (`ACCOUNTS__BASEURL`), so a kit updated before an owner saved one searches nothing.
 - **Back-calls are loopback ports dialled by their client**: voice's `accounts` (`ACCOUNTS__BASEURL`),
   `topics` (`AGENT__BASEURL`), `lemonade` (`Stt__OpenAi__BaseUrl`/`Tts__OpenAi__BaseUrl`, `/v1`) and
   `metrics` (`METRICS__URL`, so voice opens no Redis); every other server's `metrics` for its heartbeat

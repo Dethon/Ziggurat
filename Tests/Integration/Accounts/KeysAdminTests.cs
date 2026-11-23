@@ -21,6 +21,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
 {
     private const string WorkingKey = "sk-or-v1-0123456789abcdef0123456789abcdef-work";
     private const string AgentCredential = "agent-credential";
+    private const string BraveKey = "BSA-brave-key-0123456789-bkey";
 
     private FakeKeyProviders _providers = null!;
 
@@ -119,6 +120,71 @@ public sealed class KeysAdminTests : IAsyncLifetime
         (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.Idealista
             .ShouldBe(new KeyStatus(KeyState.Working, "apik", server.Clock.GetUtcNow()));
         (await KeysSectionAsync(server, household)).Idealista.ShouldBe(pair);
+    }
+
+    // Brave answers a key it refuses with the 422 it gives any bad request, and says which in the body.
+    [Fact]
+    public async Task ABraveKey_IsProbedByOneSearch_RefusedByWhatItsBodySays_AndShownByItsLastCharacters()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var key = new BraveSearchKey(BraveKey);
+
+        var refused = await admin.PutAsync(AdminProtocol.BraveSearchKey, key);
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message
+            .ShouldBe("The Brave Search key was not saved: Brave Search refused it (422).");
+        (await KeysSectionAsync(server, household)).BraveSearch.ShouldBeNull();
+
+        _providers.Accept(key.ApiKey);
+        var saved = await admin.PutAsync(AdminProtocol.BraveSearchKey, key);
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await saved.Content.ReadAsStringAsync()).ShouldNotContain(key.ApiKey);
+        (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.BraveSearch
+            .ShouldBe(new KeyStatus(KeyState.Working, "bkey", server.Clock.GetUtcNow()));
+        (await KeysSectionAsync(server, household)).BraveSearch.ShouldBe(key);
+    }
+
+    // A 422 that does not name the key says nothing about it, and a rate limit is Brave's free tier
+    // working as intended: neither may cost the owner their save.
+    [Theory]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "Brave Search answered 422")]
+    [InlineData(HttpStatusCode.TooManyRequests, "Brave Search answered 429")]
+    public async Task ABraveAnswerThatDoesNotNameTheKey_SavesItUnchecked(HttpStatusCode answer, string why)
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var key = new BraveSearchKey(BraveKey);
+        _providers.Answer(key.ApiKey, answer);
+
+        var saved = await admin.PutAsync(AdminProtocol.BraveSearchKey, key);
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.BraveSearch
+            .ShouldBe(new KeyStatus(KeyState.Unchecked, "bkey", server.Clock.GetUtcNow(), why));
+        (await KeysSectionAsync(server, household)).BraveSearch.ShouldBe(key);
+    }
+
+    [Fact]
+    public async Task ASavedBraveKey_IsCheckedAgainFromWhatIsStored()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var key = new BraveSearchKey(BraveKey);
+        _providers.Accept(key.ApiKey);
+        (await admin.PutAsync(AdminProtocol.BraveSearchKey, key)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        _providers.Answer(key.ApiKey, HttpStatusCode.Unauthorized);
+
+        var checkedAgain = await admin.PostAsync(AdminProtocol.BraveSearchKeyCheck);
+
+        checkedAgain.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await checkedAgain.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.BraveSearch!.State
+            .ShouldBe(KeyState.Rejected);
     }
 
     // A bot is bound to one of the household's agents; a household that saved none has the two
@@ -228,17 +294,20 @@ public sealed class KeysAdminTests : IAsyncLifetime
             {
                 ["openRouter"] = new JsonObject { ["apiKey"] = WorkingKey },
                 ["idealista"] = new JsonObject { ["apiKey"] = pair.ApiKey, ["secret"] = pair.Secret },
+                ["braveSearch"] = new JsonObject { ["apiKey"] = BraveKey },
                 ["telegramBots"] = new JsonObject { ["jonas"] = new JsonObject { ["token"] = token } }
             }.ToJsonString(),
             "set-household-config", "--household", household, "--section", HouseholdSections.Keys, "--file", "-");
         _providers.Accept(WorkingKey);
         _providers.Accept(pair.ApiKey);
+        _providers.Accept(BraveKey);
         _providers.Accept(token);
 
         HttpResponseMessage[] checkedAgain =
         [
             await admin.PostAsync(AdminProtocol.OpenRouterKeyCheck),
             await admin.PostAsync(AdminProtocol.IdealistaKeysCheck),
+            await admin.PostAsync(AdminProtocol.BraveSearchKeyCheck),
             await admin.PostAsync(AdminProtocol.TelegramBotCheck("jonas"))
         ];
 
@@ -248,6 +317,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
             var text = await answer.Content.ReadAsStringAsync();
             text.ShouldNotContain(WorkingKey);
             text.ShouldNotContain(pair.Secret);
+            text.ShouldNotContain(BraveKey);
             text.ShouldNotContain(token);
         }
 
@@ -255,12 +325,13 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var now = server.Clock.GetUtcNow();
         keys.OpenRouter.ShouldBe(new KeyStatus(KeyState.Working, "work", now));
         keys.Idealista.ShouldBe(new KeyStatus(KeyState.Working, "apik", now));
+        keys.BraveSearch.ShouldBe(new KeyStatus(KeyState.Working, "bkey", now));
         keys.TelegramBots.ShouldHaveSingleItem().Key.ShouldBe(new KeyStatus(KeyState.Working, "ghij", now));
         (await KeysSectionAsync(server, household)).OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
-        // All three are recorded at the one instant the clock stands at, so "newest first" ties them:
+        // All four are recorded at the one instant the clock stands at, so "newest first" ties them:
         // which order the log lists them in is the database's, not a claim of this test.
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
-            ["Checked the Telegram bot for jonas", "Checked the Idealista keys", "Checked the OpenRouter key"],
+            ["Checked the Telegram bot for jonas", "Checked the Brave Search key", "Checked the Idealista keys", "Checked the OpenRouter key"],
             ignoreOrder: true);
     }
 
@@ -300,6 +371,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var admin = server.Admin(await server.MintSessionAsync(ana));
 
         (await admin.PostAsync(AdminProtocol.OpenRouterKeyCheck)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await admin.PostAsync(AdminProtocol.BraveSearchKeyCheck)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await admin.PostAsync(AdminProtocol.TelegramBotCheck("jonas"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await admin.PutAsync(AdminProtocol.LemonadeBox, LemonadeBox.Kit)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
@@ -667,6 +739,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
                 {
                     OpenRouterUrl = _providers.OpenRouterUrl,
                     IdealistaUrl = _providers.IdealistaUrl,
+                    BraveSearchUrl = _providers.BraveSearchUrl,
                     TelegramUrl = _providers.TelegramUrl
                 }
             };

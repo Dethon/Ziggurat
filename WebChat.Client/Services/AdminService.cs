@@ -35,6 +35,9 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys) =>
         SaveKeysAsync(AdminProtocol.IdealistaKeys, keys);
 
+    public Task<AdminAnswer<HouseholdKeys>> SaveBraveSearchKeyAsync(BraveSearchKey key) =>
+        SaveKeysAsync(AdminProtocol.BraveSearchKey, key);
+
     public Task<AdminAnswer<HouseholdKeys>> SaveLemonadeBoxAsync(LemonadeBox box) =>
         SaveKeysAsync(AdminProtocol.LemonadeBox, box);
 

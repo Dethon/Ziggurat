@@ -12,6 +12,7 @@ using Accounts.Tunnels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Security;
@@ -391,6 +392,105 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         }
     }
 
+    private const string BraveKey = "BSA-brave-key-of-the-household";
+
+    // A kit's web search holds no deployment secret: its tunnel's credential says which server of which
+    // household asks, and the call token it was handed must be signed for that very server.
+    [Fact]
+    public async Task AHouseholdsWebSearch_ReadsItsOwnBraveKey_OnItsTunnelCredentialAndCallToken()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Keys, $$"""{ "braveSearch": { "apiKey": "{{BraveKey}}" } }""");
+        var credential = await server.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch);
+
+        var answer = await AskAsync<HouseholdConfigAnswer<BraveSearchKey>>(server, credential.Credential,
+            HouseholdConfigProtocol.BraveSearchView,
+            new HouseholdConfigQuery(CallToken: WebSearchToken(household, household, person)));
+
+        answer.HouseholdId.ShouldBe(household);
+        answer.Section.ShouldBe(new BraveSearchKey(BraveKey));
+    }
+
+    // The credential and the token must agree: one household's stolen credential does not open another's
+    // key with a token of that other household, nor does a token signed for a different server.
+    [Fact]
+    public async Task AWebSearchCredential_OpensNoOtherHouseholdsKey_AndNoTokenSignedForAnotherServer()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var (other, stranger) = await server.SeedHouseholdAsync("Otra", "Bea");
+        await SetAsync(server, other, HouseholdSections.Keys, $$"""{ "braveSearch": { "apiKey": "{{BraveKey}}" } }""");
+        var credential = (await server.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch)).Credential;
+
+        foreach (var token in new[]
+                 {
+                     WebSearchToken(other, other, stranger),
+                     WebSearchToken(household, other, stranger),
+                     CallToken("mcp-idealista", household, person)
+                 })
+        {
+            var response = await PostAsync(server, credential, HouseholdConfigProtocol.BraveSearchView,
+                new HouseholdConfigQuery(CallToken: token));
+
+            (await RefusalAsync(response, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+            (await response.Content.ReadAsStringAsync()).ShouldNotContain(BraveKey);
+        }
+    }
+
+    [Theory]
+    [InlineData(HouseholdServerNames.Voice)]
+    [InlineData("printer")]
+    [InlineData("vault")]
+    public async Task AnotherOfTheHouseholdsServers_IsRefusedTheBraveKey(string serverName)
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Keys, $$"""{ "braveSearch": { "apiKey": "{{BraveKey}}" } }""");
+        var credential = await server.MintTunnelCredentialAsync(household, serverName);
+
+        var response = await PostAsync(server, credential.Credential, HouseholdConfigProtocol.BraveSearchView,
+            new HouseholdConfigQuery(CallToken: WebSearchToken(household, household, person)));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    // Its credential is good for that one view: no other section, and none of voice's people.
+    [Theory]
+    [InlineData(HouseholdConfigProtocol.IdealistaView)]
+    [InlineData(HouseholdConfigProtocol.SettingsView)]
+    [InlineData(HouseholdConfigProtocol.AgentView)]
+    [InlineData(HouseholdConfigProtocol.TelegramBotsView)]
+    public async Task AWebSearchCredential_ReadsNoOtherView(string view)
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Keys, _keys);
+        var credential = await server.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch);
+
+        var response = await PostAsync(server, credential.Credential, view,
+            new HouseholdConfigQuery(CallToken: WebSearchToken(household, household, person)));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Theory]
+    [InlineData("/accounts/internal/resolve", """{ "channel": "voice", "identity": "ana" }""")]
+    [InlineData("/accounts/internal/guest", """{ "channel": "voice" }""")]
+    public async Task AWebSearchCredential_MintsNoVoiceAssertion(string path, string body)
+    {
+        await using var server = await StartAsync();
+        var (household, _) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var credential = await server.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch);
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential.Credential));
+
+        (await server.Client().SendAsync(request)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     public static TheoryData<string, string> AnotherServersViews => new()
     {
         { Scheduling, HouseholdConfigProtocol.IdealistaView },
@@ -402,6 +502,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { SignalR, HouseholdConfigProtocol.TelegramBotsView },
         { Idealista, HouseholdConfigProtocol.AgentNamesView },
         { Agent, HouseholdConfigProtocol.IdealistaView },
+        { Agent, HouseholdConfigProtocol.BraveSearchView },
+        { Idealista, HouseholdConfigProtocol.BraveSearchView },
+        { Sugary, HouseholdConfigProtocol.BraveSearchView },
         { Agent, HouseholdConfigProtocol.TelegramBotsView },
         { Scheduling, HouseholdConfigProtocol.SugaryPeopleView },
         { SignalR, HouseholdConfigProtocol.SugaryPeopleView },
@@ -989,6 +1092,11 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     private static string CallToken(string server, string household, string person) =>
         McpTestSecret.CallTokens.For(IdentityClaims.Person(person, household, "signalr", ["owner"]),
             TokenAudiences.CallTo(ServerAddress.Named(server)));
+
+    // The call token for a household's own web search, signed for its tunnelled address.
+    private static string WebSearchToken(string serverHousehold, string household, string person) =>
+        McpTestSecret.CallTokens.For(IdentityClaims.Person(person, household, "signalr", ["owner"]),
+            TokenAudiences.CallTo(ServerAddress.Tunnelled(serverHousehold, HouseholdServerNames.WebSearch)));
 
     private static async Task<AgentHouseholdConfig> AgentViewAsync(AccountsServer server, string household) =>
         await AskAsync<AgentHouseholdConfig>(server, Agent, HouseholdConfigProtocol.AgentView, new HouseholdConfigQuery(household, AgentToken()));

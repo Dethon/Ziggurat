@@ -165,6 +165,9 @@ public record KeyProbeSettings
     // Idealista's API, whose token exchange is what its search does first with the pair.
     public string IdealistaUrl { get; init; } = "https://api.idealista.com/";
 
+    // Brave's search API. It has no route that checks a key for free, so a check is one search of one result.
+    public string BraveSearchUrl { get; init; } = "https://api.search.brave.com/res/v1/";
+
     // Telegram's Bot API, whose getMe answers the bot a token belongs to.
     public string TelegramUrl { get; init; } = "https://api.telegram.org/";
 

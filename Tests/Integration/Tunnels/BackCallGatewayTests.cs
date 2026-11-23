@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using Accounts.Commands;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Tunnel;
@@ -85,6 +88,24 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         guest.TenantId.ShouldBe(_household);
         ana.ShouldNotBeNull().Account.TenantId.ShouldBe(_household);
         fran.ShouldBeNull();
+    }
+
+    // A kit's web search reads the key it asks Brave with over its own tunnel, holding no deployment
+    // secret: the relay shows the accounts service the tunnel's credential, as for voice.
+    [Fact]
+    public async Task TheWebSearchsAccountsBackCall_ReadsItsHouseholdsBraveKey()
+    {
+        var key = new BraveSearchKey("BSA-brave-key-of-the-household");
+        (await _accounts.RunAsync(_accounts.Settings, $$"""{ "braveSearch": { "apiKey": "{{key.ApiKey}}" } }""",
+            AccountsCommand.SetHouseholdConfig, "--household", _household, "--section", HouseholdSections.Keys, "--file", "-"))
+            .Exit.ShouldBe(0);
+        var port = await ServerOfAsync(_household, HouseholdServerNames.WebSearch, BackCallProtocol.Accounts);
+        await using var reader = new HouseholdConfigurationClient(
+            new HttpClient { BaseAddress = Loopback(port) }, "", null, null, TimeProvider.System, TimeSpan.FromMinutes(1));
+        var token = McpTestSecret.CallTokens.For(IdentityClaims.Person(_ana, _household, "signalr", ["owner"]),
+            TokenAudiences.CallTo(ServerAddress.Tunnelled(_household, HouseholdServerNames.WebSearch)));
+
+        (await reader.BraveSearchKeyAsync(_household, HouseholdProof.OfCallToken(token), CancellationToken.None)).ShouldBe(key);
     }
 
     [Fact]
@@ -278,6 +299,11 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
     public static TheoryData<string, string, string> OtherServers => new()
     {
         { "vault", BackCallProtocol.Accounts, "accounts/internal/guest" },
+        { HouseholdServerNames.WebSearch, BackCallProtocol.Accounts, "accounts/internal/guest" },
+        { HouseholdServerNames.WebSearch, BackCallProtocol.Accounts, "accounts/internal/resolve" },
+        { HouseholdServerNames.WebSearch, BackCallProtocol.Accounts, "accounts/internal/household-config/idealista" },
+        { HouseholdServerNames.Voice, BackCallProtocol.Accounts, "accounts/internal/household-config/brave-search" },
+        { "vault", BackCallProtocol.Accounts, "accounts/internal/household-config/brave-search" },
         { OutpostServerName.For("laptop"), BackCallProtocol.Accounts, "accounts/internal/resolve" },
         { "printer", BackCallProtocol.Topics, TopicMinting.Path.TrimStart('/') },
         { "library", BackCallProtocol.Lemonade, "v1/audio/speech" },

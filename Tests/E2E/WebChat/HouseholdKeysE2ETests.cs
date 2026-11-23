@@ -47,9 +47,19 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
 
         await Assertions.Expect(openRouter.GetByRole(AriaRole.Alert))
             .ToHaveTextAsync("The OpenRouter key was not saved: OpenRouter refused it (401).");
+
+        // Brave refuses a key with a 422 whose body says so, and the owner is told it was the key.
+        var brave = page.Locator("form[aria-labelledby=admin-key-brave-search]");
+        await Assertions.Expect(brave.Locator(".admin-key-status")).ToHaveTextAsync("Not set");
+        await brave.Locator("input[name=braveSearchKey]").FillAsync("BSA-a-key-nobody-issued-0123456789");
+        await brave.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
+        await Assertions.Expect(brave.GetByRole(AriaRole.Alert))
+            .ToHaveTextAsync("The Brave Search key was not saved: Brave Search refused it (422).");
+
         await page.ReloadAsync();
         await Assertions.Expect(openRouter.Locator(".admin-key-status"))
             .ToHaveTextAsync("Not set", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
+        await Assertions.Expect(brave.Locator(".admin-key-status")).ToHaveTextAsync("Not set");
     }
 
     // A household with no OpenRouter key of its own: its agents refuse every turn until it has one, so

@@ -87,7 +87,6 @@ services:
     environment:
       <<: [*timezone, *hub]
       OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
-      BRAVESEARCH__APIKEY: ${BRAVESEARCH__APIKEY}
       CAPSOLVER__APIKEY: ${CAPSOLVER__APIKEY}
       REDISCONNECTIONSTRING: redis:6379,password=${KIT_REDIS_PASSWORD}
       # Seals each person's remembered logins in the kit's Redis. Moving the home keeps the value the
@@ -99,6 +98,10 @@ services:
       # The name the deployment finds the household's browser by (HouseholdServerNames.WebSearch).
       MCP__TUNNEL__SERVERNAME: websearch
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_WEBSEARCH}
+      # The household's Brave key, from its keys section on the deployment's accounts service, over
+      # this server's tunnel: the kit holds none.
+      MCP__TUNNEL__BACKCALLS__accounts: "7802"
+      ACCOUNTS__BASEURL: http://127.0.0.1:7802
       # The browser beside it, probed and reported on its feed: it has no tunnel of its own.
       METRICS__HELPERS__camoufox: http://camoufox:9377/json
       MCP__TUNNEL__BACKCALLS__metrics: "7801"

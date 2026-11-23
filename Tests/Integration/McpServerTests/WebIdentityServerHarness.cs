@@ -71,7 +71,6 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         });
         var configured = new McpSettings
         {
-            BraveSearch = new BraveSearchConfiguration { ApiKey = "test" },
             Camoufox = null,
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
