@@ -60,6 +60,30 @@
             <KeyFormNotice Form="KeyForm.OpenRouter" State="_state" />
         </form>
 
+        <form class="admin-form admin-key" aria-labelledby="admin-key-brave-search" @onsubmit="SaveBraveSearch">
+            <h2 id="admin-key-brave-search">Brave Search</h2>
+            <p class="admin-field-hint">
+                What the household's agents search the web with: until a key is set here they cannot search.
+                Saving or checking a key spends one search.
+            </p>
+            <KeyStatusView Status="keys.BraveSearch" />
+            @if (keys.BraveSearch is not null)
+            {
+                <CheckAgainButton Label="@CheckLabel(KeyForm.BraveSearch, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.BraveSearch)" />
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">@(keys.BraveSearch is null ? "API key" : "Replace the API key")</span>
+                <input name="braveSearchKey" type="password" @bind="_braveSearchKey" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@Busy">
+                    @(_state.Saving == KeyForm.BraveSearch ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.BraveSearch" State="_state" />
+        </form>
+
         <form class="admin-form admin-key" aria-labelledby="admin-key-idealista" @onsubmit="SaveIdealista">
             <h2 id="admin-key-idealista">Idealista</h2>
             <KeyStatusView Status="keys.Idealista" />
@@ -193,6 +217,7 @@
 @code {
     private HouseholdKeysState _state = HouseholdKeysState.Initial;
     private string _openRouterKey = "";
+    private string _braveSearchKey = "";
     private string _idealistaKey = "";
     private string _idealistaSecret = "";
     private string _telegramAgent = "";
@@ -216,6 +241,9 @@
                 case KeyForm.OpenRouter:
                     _openRouterKey = "";
                     break;
+                case KeyForm.BraveSearch:
+                    _braveSearchKey = "";
+                    break;
                 case KeyForm.Idealista:
                     (_idealistaKey, _idealistaSecret) = ("", "");
                     break;
@@ -231,6 +259,8 @@
     }
 
     private void SaveOpenRouter() => Dispatcher.Dispatch(new SaveOpenRouterKey(new OpenRouterKey(_openRouterKey.Trim())));
+
+    private void SaveBraveSearch() => Dispatcher.Dispatch(new SaveBraveSearchKey(new BraveSearchKey(_braveSearchKey.Trim())));
 
     private void SaveIdealista() =>
         Dispatcher.Dispatch(new SaveIdealistaKeys(new IdealistaKeys(_idealistaKey.Trim(), _idealistaSecret.Trim())));

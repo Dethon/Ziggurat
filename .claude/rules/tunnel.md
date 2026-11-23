@@ -144,7 +144,8 @@ that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1
 
 | Tag | From (server name) | Reaches | Paths (all POST) | For |
 |---|---|---|---|---|
-| `accounts` | `voice` only | the accounts service (`Accounts:BaseUrl`) | `/accounts/internal/resolve`, `/accounts/internal/guest` | voice's speakers and guest |
+| `accounts` | `voice` | the accounts service (`Accounts:BaseUrl`) | `/accounts/internal/resolve`, `/accounts/internal/guest` | voice's speakers and guest |
+| `accounts` | `websearch` | the accounts service | `/accounts/internal/household-config/brave-search` | the household's Brave key; neither server reaches the other's paths (`BackCallTargets`' grants) |
 | `topics` | `voice` only | the agent's own `TopicMinting.Path` | `/internal/topics` | voice's topics |
 | `lemonade` | `voice` only | the shared Lemonade (`backCalls:lemonadeUrl`) | `/v1/audio/transcriptions`, `/v1/audio/speech` | voice's STT and TTS |
 | `vfs-bridge` | `sandbox` only | the agent's own exec bridge | under `/api/vfs-bridge/` | the sandbox's FUSE daemon |
@@ -176,7 +177,7 @@ new back-call, or a server that comes to need one, names its server here and in 
 - **Each target believes what it already believed.** The bridge trusts only its call token, passed through in `Authorization`; topic
   minting only the accounts assertion. **The accounts back-call is shown the tunnel's own credential**:
   the relay replaces `Authorization` with it and the accounts service checks that live credential itself
-  (`InternalCallers.HouseholdServer`, channel-identity.md: `voice` only, else 403) rather than trusting
+  (`InternalCallers.HouseholdServer` for `voice`, `HouseholdWebSearch` for `websearch`, channel-identity.md; any other server 403) rather than trusting
   the relay's allowlist alone — so tunnelled voice holds no deployment secret, no header is believed
   by a service every compose container can reach, and the household is the credential's. The relay's own `CALLERS__agent` is never lent out.
 - **Metrics are published by the relay.** A server given `METRICS__URL` posts each event

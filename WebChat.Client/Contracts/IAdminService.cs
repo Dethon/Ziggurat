@@ -19,6 +19,8 @@ public interface IAdminService
 
     Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys);
 
+    Task<AdminAnswer<HouseholdKeys>> SaveBraveSearchKeyAsync(BraveSearchKey key);
+
     Task<AdminAnswer<HouseholdKeys>> SaveLemonadeBoxAsync(LemonadeBox box);
 
     Task<AdminAnswer<HouseholdKeys>> RemoveLemonadeBoxAsync();

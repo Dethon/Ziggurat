@@ -26,7 +26,7 @@ See also: `admin.md` (routes, gate, answers, change log, the admin area), `admin
 
 The keys page (`KeysAdmin`, over 4b's `keys` section) saves each key on its own route — `GET /household/keys`
 (`HouseholdKeys`), `PUT /household/keys/openrouter` (`OpenRouterKey`), `/household/keys/idealista`
-(`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`), `/household/keys/lemonade` —
+(`IdealistaKeys`), `/household/keys/brave-search` (`BraveSearchKey`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`), `/household/keys/lemonade` —
 **after its provider was asked** (`Accounts/Keys/KeyProbes.cs`):
 
 - **One contract, one probe per provider**: `IKeyProbe<TKey>` answering `KeyProbeOutcome.Working`,
@@ -36,9 +36,13 @@ The keys page (`KeysAdmin`, over 4b's `keys` section) saves each key on its own 
   unreachable.
   - OpenRouter: `GET {OpenRouterUrl}key` with the key as bearer (bills nothing).
   - Idealista: its token exchange.
+  - Brave: one search of one result, since it has no free route that checks a key: **a save or a check
+    spends one query**. It refuses a key with the 422 it gives any bad request, so `BraveSearchKeyProbe`
+    reads the body (`SUBSCRIPTION_TOKEN_INVALID`, or an error on the token header); another 422 is
+    unreachable, never a refusal.
   - Telegram: `getMe`, after the token is checked against BotFather's shape (it goes into a URL path).
   - Adding a provider is one probe and one `KeySlot`.
-- **The base URLs are settings** (`KeyProbes:OpenRouterUrl`, `IdealistaUrl`, `TelegramUrl`, `Timeout` in
+- **The base URLs are settings** (`KeyProbes:OpenRouterUrl`, `IdealistaUrl`, `BraveSearchUrl`, `TelegramUrl`, `Timeout` in
   `Accounts/appsettings.json`, real hosts by default), so a stack points them at a stub (`FakeKeyProviders`;
   the E2E stack's `KEYPROBES__*` at one in process through the host's gateway). The probes' HTTP client
   (`key-probes`) has its request loggers removed: a bot's token is in the URL.
@@ -71,7 +75,7 @@ The keys page (`KeysAdmin`, over 4b's `keys` section) saves each key on its own 
   - No master key: a read or a save answers **503** `AdminRefusal` with
     `KeysAdmin.SecretsUnavailableMessage` — the deployment's to fix, never a 500 or 400; the chat client
     shows the message (`AdminAnswer.Unreachable(message)`).
-- **Check again** (user, 2026-11-13): `POST .../openrouter/check`, `.../idealista/check`,
+- **Check again** (user, 2026-11-13): `POST .../openrouter/check`, `.../idealista/check`, `.../brave-search/check`,
   `.../lemonade/check`, `.../telegram/{agentId}/check` (`AdminProtocol.*Check`) put the **stored** key to
   its provider — the page sends none and is answered none — and record the result as a save's check is:
   working; rejected with the provider's why (the key stays saved; a warning says so); or unchecked with the
@@ -81,13 +85,13 @@ The keys page (`KeysAdmin`, over 4b's `keys` section) saves each key on its own 
   button beside every saved key's status (`CheckAgainButton`), one save or check at a time
   (`HouseholdKeysState.Checking`).
 - **State lives beside the section, not in it**: `HouseholdKeyChecks` (table `HouseholdKeyChecks`, one row
-  per household and key name — `openRouter`, `idealista`, `telegramBots/<agent>`): state, when checked
+  per household and key name — `openRouter`, `idealista`, `braveSearch`, `telegramBots/<agent>`): state, when checked
   (`AccountsClock`), a reason, and the key's **fingerprint** (`Tokens.Hash` of the key, Idealista's of its
   pair). Not in the section because a state change is not a save — every save is announced and drops every
   reader's cache, Telegram's bots included — and the operator's `get`/`set-household-config` and the seed
   route stay as 4b made them. A key whose fingerprint is not the stored check's (the operator's command
   replaced it) reads **unchecked** with no check time.
-- **Never the key**: `HouseholdKeys { paysWithDeploymentKey, openRouter, idealista, telegramBots,
+- **Never the key**: `HouseholdKeys { paysWithDeploymentKey, openRouter, idealista, braveSearch, telegramBots,
   needsOpenRouterKey, lemonade, isHome }`, each key a `KeyStatus { state, lastCharacters, checkedAt, reason }`
   — `AdminProtocol.KeyCharactersShown` (4) last characters, none under `ShortestKeyShown` (12), Idealista's
   from its API key alone, never its secret.

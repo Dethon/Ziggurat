@@ -52,6 +52,35 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
             .ToHaveTextAsync("Not set", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
     }
 
+    // The key web search asks Brave with is the household's, set here like any other. Brave refuses a
+    // key with a 422 whose body says so, and the owner is told it was the key.
+    [SkippableFact]
+    public async Task AnOwner_SubmitsABraveKeyItRefuses_AndIsToldWhy_AndNothingIsSaved()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var owner = $"Owner {Guid.NewGuid().ToString("N")[..4]}";
+        var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync(owner));
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+        await Assertions.Expect(page.Locator(".signed-in-person"))
+            .ToHaveAttributeAsync("title", owner, new LocatorAssertionsToHaveAttributeOptions { Timeout = 60_000 });
+        await page.GetByLabel("Household settings").ClickAsync();
+        await page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Keys" }).ClickAsync();
+        await page.WaitForURLAsync(new Regex("/admin/keys$"));
+
+        var brave = page.Locator("form[aria-labelledby=admin-key-brave-search]");
+        await Assertions.Expect(brave.Locator(".admin-key-status"))
+            .ToHaveTextAsync("Not set", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
+        await brave.Locator("input[name=braveSearchKey]").FillAsync("BSA-a-key-nobody-issued-0123456789");
+        await brave.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
+
+        await Assertions.Expect(brave.GetByRole(AriaRole.Alert))
+            .ToHaveTextAsync("The Brave Search key was not saved: Brave Search refused it (422).");
+        await page.ReloadAsync();
+        await Assertions.Expect(brave.Locator(".admin-key-status"))
+            .ToHaveTextAsync("Not set", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
+    }
+
     // A household with no OpenRouter key of its own: its agents refuse every turn until it has one, so
     // its owner is taken to the keys page as the chat loads, and told why there.
     [SkippableFact]
