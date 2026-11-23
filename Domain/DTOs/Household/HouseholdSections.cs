@@ -25,7 +25,7 @@ public static partial class HouseholdSections
 
     public static readonly SectionSchema<KeysSection> KeysSchema = new(
         Keys, [SectionSteps.Unversioned], KeysProblems,
-        ["openRouter/apiKey", "idealista/apiKey", "idealista/secret", "telegramBots/*/token", "lemonade/apiKey"]);
+        ["openRouter/apiKey", "idealista/apiKey", "idealista/secret", "braveSearch/apiKey", "telegramBots/*/token", "lemonade/apiKey"]);
 
     public static readonly SectionSchema<FeaturesSection> FeaturesSchema = new(
         Features, [SectionSteps.Unversioned], _ => []);
@@ -134,6 +134,11 @@ public static partial class HouseholdSections
             && (string.IsNullOrWhiteSpace(idealista.ApiKey) || string.IsNullOrWhiteSpace(idealista.Secret)))
         {
             yield return "keys.idealista needs both apiKey and secret; leave idealista out for none";
+        }
+
+        if (keys.BraveSearch is { ApiKey: var brave } && string.IsNullOrWhiteSpace(brave))
+        {
+            yield return "keys.braveSearch.apiKey is empty; leave braveSearch out for no key";
         }
 
         if (keys.Lemonade is { ThroughKit: true } kit && (kit.ApiUrl is not null || kit.ApiKey is not null))
@@ -250,14 +255,18 @@ public sealed record HouseholdAgent
 }
 
 // The household's secrets. Every field is sealed at rest, and each is unsealed only into the view of
-// the server it belongs to: the OpenRouter key into the agent's, Idealista's into Idealista's, the
-// bots into Telegram's. A bot is keyed by the id of the agent it is bound to, which is also what its
+// the server it belongs to: the OpenRouter key into the agent's, Idealista's into Idealista's,
+// Brave's into the household's web search, the bots into Telegram's. A bot is keyed by the id of the agent it is bound to, which is also what its
 // token is sealed for, so one bot's token moved under another's entry does not open.
 [PublicAPI]
 public sealed record KeysSection
 {
     public OpenRouterKey? OpenRouter { get; init; }
     public IdealistaKeys? Idealista { get; init; }
+
+    // What the household's web search asks Brave with; the kit holds none of its own.
+    public BraveSearchKey? BraveSearch { get; init; }
+
     public IReadOnlyDictionary<string, TelegramBotKey> TelegramBots { get; init; } = new Dictionary<string, TelegramBotKey>();
 
     // The household's own Lemonade chat host: the models on it are offered to its people alone, and
@@ -289,6 +298,9 @@ public sealed record OpenRouterKey(string ApiKey);
 
 [PublicAPI]
 public sealed record IdealistaKeys(string ApiKey, string Secret);
+
+[PublicAPI]
+public sealed record BraveSearchKey(string ApiKey);
 
 [PublicAPI]
 public sealed record TelegramBotKey(string Token);

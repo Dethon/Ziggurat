@@ -28,6 +28,10 @@ public sealed class FakeKeyProviders : IAsyncDisposable
 
     public string TelegramUrl => RootOn("127.0.0.1");
 
+    public string BraveSearchUrl => BraveSearchUrlOn("127.0.0.1");
+
+    public string BraveSearchUrlOn(string host) => $"{RootOn(host)}res/v1/";
+
     // A household's own Lemonade box: its address carries its API's base.
     public string LemonadeUrl => $"{RootOn("127.0.0.1")}lemonade";
 
@@ -87,6 +91,13 @@ public sealed class FakeKeyProviders : IAsyncDisposable
                 fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
                     """{"data":[]}"""));
 
+            // Brave refuses a key it never issued with the 422 it gives any bad request, saying which in the body.
+            fake._app.MapGet("/res/v1/web/search", (HttpContext http, CancellationToken _) =>
+                fake.AnswerAsync(http, http.Request.Headers["X-Subscription-Token"].ToString(),
+                    """{"type":"search","web":{"results":[]}}""",
+                    StatusCodes.Status422UnprocessableEntity,
+                    """{"type":"ErrorResponse","error":{"code":"SUBSCRIPTION_TOKEN_INVALID","status":422}}"""));
+
             fake._app.MapGet("/{bot}/getMe", (string bot, HttpContext http) =>
                 fake.AnswerAsync(http, bot.StartsWith("bot", StringComparison.Ordinal) ? bot[3..] : "",
                     """{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"test_bot"}}"""));
@@ -101,7 +112,8 @@ public sealed class FakeKeyProviders : IAsyncDisposable
         TestPort.Release(_port);
     }
 
-    private async Task<IResult> AnswerAsync(HttpContext http, string key, string accepted)
+    private async Task<IResult> AnswerAsync(
+        HttpContext http, string key, string accepted, int unknown = StatusCodes.Status401Unauthorized, string? unknownBody = null)
     {
         _asked.Enqueue(key);
         if (_held.TryGetValue(key, out var held))
@@ -109,7 +121,12 @@ public sealed class FakeKeyProviders : IAsyncDisposable
             await held.Task.WaitAsync(http.RequestAborted);
         }
 
-        switch (_answers.GetValueOrDefault(key, StatusCodes.Status401Unauthorized))
+        if (!_answers.TryGetValue(key, out var answer))
+        {
+            return Results.Text(unknownBody ?? """{"error":"no"}""", "application/json", statusCode: unknown);
+        }
+
+        switch (answer)
         {
             case Stalled:
                 await Task.Delay(Timeout.Infinite, http.RequestAborted).ContinueWith(_ => { }, CancellationToken.None);

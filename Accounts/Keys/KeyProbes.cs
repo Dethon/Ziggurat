@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Accounts.Settings;
 using Domain.DTOs.Household;
@@ -40,6 +41,7 @@ public static partial class KeyProbes
         return services
             .AddSingleton<IKeyProbe<OpenRouterKey>, OpenRouterKeyProbe>()
             .AddSingleton<IKeyProbe<IdealistaKeys>, IdealistaKeyProbe>()
+            .AddSingleton<IKeyProbe<BraveSearchKey>, BraveSearchKeyProbe>()
             .AddSingleton<IKeyProbe<TelegramBotKey>, TelegramBotProbe>()
             .AddSingleton<IKeyProbe<LemonadeBox>, LemonadeBoxProbe>();
     }
@@ -72,7 +74,7 @@ public abstract class HttpKeyProbe<TKey>(IHttpClientFactory http, AccountsSettin
             using var response = await http.CreateClient(KeyProbes.ClientName).SendAsync(request, deadline.Token);
             return response.IsSuccessStatusCode
                 ? new KeyProbeOutcome.Working()
-                : Refusals.Contains(response.StatusCode)
+                : await RefusesTheKeyAsync(response, deadline.Token)
                     ? new KeyProbeOutcome.Rejected($"{Provider} refused it ({(int)response.StatusCode})")
                     : new KeyProbeOutcome.Unreachable($"{Provider} answered {(int)response.StatusCode}");
         }
@@ -87,6 +89,10 @@ public abstract class HttpKeyProbe<TKey>(IHttpClientFactory http, AccountsSettin
     }
 
     protected abstract HttpRequestMessage Request(TKey key);
+
+    // Whether this failed answer is the key's. By status alone, for a provider whose status says so.
+    protected virtual Task<bool> RefusesTheKeyAsync(HttpResponseMessage response, CancellationToken ct) =>
+        Task.FromResult(Refusals.Contains(response.StatusCode));
 
     // Joined as text: a bot's token has a colon in it, which a relative URI's first segment would
     // read as a scheme.
@@ -124,6 +130,61 @@ public sealed class OpenRouterKeyProbe(IHttpClientFactory http, AccountsSettings
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key.ApiKey);
         return request;
     }
+}
+
+// One search of one result: Brave has no route that checks a key for free, so a save or a check costs
+// the household one query. A refused key is answered with the 422 Brave gives any bad request, and only
+// its body says it was the key: an invalid token by its code, a missing one as an error on its header.
+public sealed class BraveSearchKeyProbe(IHttpClientFactory http, AccountsSettings settings)
+    : HttpKeyProbe<BraveSearchKey>(http, settings)
+{
+    private const string TokenHeader = "X-Subscription-Token";
+
+    public override string Provider => "Brave Search";
+
+    protected override HttpRequestMessage Request(BraveSearchKey key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, Under(Settings.BraveSearchUrl, "web/search?q=weather&count=1"));
+        request.Headers.TryAddWithoutValidation(TokenHeader, key.ApiKey);
+        request.Headers.Accept.ParseAdd("application/json");
+        return request;
+    }
+
+    protected override async Task<bool> RefusesTheKeyAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.StatusCode != HttpStatusCode.UnprocessableEntity)
+        {
+            return await base.RefusesTheKeyAsync(response, ct);
+        }
+
+        try
+        {
+            using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            return body.RootElement.ValueKind == JsonValueKind.Object
+                   && body.RootElement.TryGetProperty("error", out var error)
+                   && error.ValueKind == JsonValueKind.Object
+                   && (IsInvalidToken(error) || NamesTheTokenHeader(error));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsInvalidToken(JsonElement error) =>
+        error.TryGetProperty("code", out var code)
+        && code.ValueKind == JsonValueKind.String
+        && code.GetString() == "SUBSCRIPTION_TOKEN_INVALID";
+
+    private static bool NamesTheTokenHeader(JsonElement error) =>
+        error.TryGetProperty("meta", out var meta) && meta.ValueKind == JsonValueKind.Object
+        && meta.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array
+        && errors.EnumerateArray().Any(field =>
+            field.ValueKind == JsonValueKind.Object
+            && field.TryGetProperty("loc", out var location) && location.ValueKind == JsonValueKind.Array
+            && location.EnumerateArray().Any(part =>
+                part.ValueKind == JsonValueKind.String
+                && string.Equals(part.GetString(), TokenHeader, StringComparison.OrdinalIgnoreCase)));
 }
 
 // The token exchange Idealista's search starts with. A well-formed exchange it answers 400 is the
