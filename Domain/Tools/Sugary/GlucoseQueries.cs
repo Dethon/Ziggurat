@@ -10,7 +10,7 @@ namespace Domain.Tools.Sugary;
 // time not covered, an hourly mean's included. One weight serves every figure: time in each range,
 // the mean, the spread and the coverage. The app's GlucoseStatistics computes the same figures the
 // same way (its Cap), so what the agent says and what the app shows agree. Both read the smoothed
-// values (GlucoseSmoothing), the app's default view, so a one-minute misread is no low in either.
+// values (GlucoseSmoothing), the app's default view, so a brief misread is no low in either.
 public static class GlucoseQueries
 {
     // The longest a reading stands for; a longer gap is time with no reading. LibreLinkUp backfills a
