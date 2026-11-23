@@ -295,6 +295,102 @@ public class SugaryGlucoseApiTests
         figures["inRange"].ShouldBeNull();
     }
 
+    private static GlucoseReading[] Minutes(DateTimeOffset start, params double[] values) =>
+        [.. values.Select((value, minute) => Reading(start.AddMinutes(minute), value))];
+
+    private static double[] CurveValues(JsonNode curve) =>
+        [.. curve["points"]!.AsArray().Select(p => Number(p, "mgPerDl"))];
+
+    [Fact]
+    public async Task TheCurve_IsSmoothed_UnlessAskedForTheRawReadings()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await SeedAsync(server, SugaryServer.Her, Minutes(_morning, 85, 85, 90, 60, 80, 85, 85));
+        var window = $"from={Q(_morning)}&to={Q(_morning.AddHours(1))}";
+
+        var unnamed = await GetAsync(server, $"/api/glucose/readings?{window}");
+        var smoothed = await GetAsync(server, $"/api/glucose/readings?{window}&view=smoothed");
+        var raw = await GetAsync(server, $"/api/glucose/readings?{window}&view=raw");
+
+        CurveValues(unnamed).ShouldNotContain(60);
+        CurveValues(smoothed).ShouldBe(CurveValues(unnamed));
+        CurveValues(raw).ShouldBe([85, 85, 90, 60, 80, 85, 85]);
+    }
+
+    [Fact]
+    public async Task AReadingAtTheWindowsEdge_IsSmoothedWithTheReadingsBeyondIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await SeedAsync(server, SugaryServer.Her, Minutes(_morning, 85, 85, 90, 60, 80, 85, 85));
+
+        var curve = await GetAsync(server,
+            $"/api/glucose/readings?from={Q(_morning.AddMinutes(3))}&to={Q(_morning.AddMinutes(4))}");
+
+        CurveValues(curve).ShouldBe([85]);
+    }
+
+    [Fact]
+    public async Task ALongWindow_AveragesTheSmoothedReadings()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await SeedAsync(server, SugaryServer.Her, Minutes(_morning, 100, 100, 100, 40, 100, 100, 100));
+        var window = $"from={Q(_morning.AddDays(-7))}&to={Q(_morning.AddDays(7))}";
+
+        CurveValues(await GetAsync(server, $"/api/glucose/readings?{window}")).ShouldBe([100]);
+        CurveValues(await GetAsync(server, $"/api/glucose/readings?{window}&view=raw")).ShouldBe([91.4]);
+    }
+
+    [Fact]
+    public async Task TheFigures_AreSmoothed_UnlessAskedForTheRawReadings()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await SeedAsync(server, SugaryServer.Her,
+            MinutesAgo(8, 85), MinutesAgo(7, 85), MinutesAgo(6, 90), MinutesAgo(5, 60), MinutesAgo(4, 80),
+            MinutesAgo(3, 85), MinutesAgo(2, 85));
+
+        var smoothed = await GetAsync(server, "/api/glucose/statistics?days=1");
+        var raw = await GetAsync(server, "/api/glucose/statistics?days=1&view=raw");
+
+        Number(smoothed, "low").ShouldBe(0);
+        Number(raw, "low").ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task HerCyclePhases_DoNotCountAMisread()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+            new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 1), End = new DateOnly(2026, 9, 5) },
+            new Period { Id = Guid.NewGuid(), Start = new DateOnly(2026, 9, 29), End = null });
+        var start = new DateTimeOffset(2026, 9, 16, 0, 0, 0, TimeSpan.Zero);
+        var misreadAt = start.AddDays(5);
+        var sparse = Enumerable.Range(0, 12 * 96)
+            .Select(n => start.AddMinutes(15 * n))
+            .Where(at => at != misreadAt)
+            .Select(at => Reading(at, 100));
+        await SeedAsync(server, SugaryServer.Her,
+        [
+            .. sparse,
+            .. Minutes(misreadAt.AddMinutes(-2), 100, 100, 40, 100, 100)
+        ]);
+
+        var phases = await GetAsync(server, "/api/glucose/cycle");
+
+        Number(phases["luteal"]!, "low").ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("readings")]
+    [InlineData("statistics?days=1")]
+    public async Task AViewNotOffered_IsRefused(string route)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var separator = route.Contains('?') ? '&' : '?';
+
+        (await RefusalAsync(server, $"/api/glucose/{route}{separator}view=wobbly"))
+            .ShouldBe((HttpStatusCode.BadRequest, "bad-view"));
+    }
+
     [Theory]
     [InlineData("days=3")]
     [InlineData("days=0")]

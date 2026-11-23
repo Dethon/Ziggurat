@@ -1,4 +1,5 @@
 using Domain.DTOs.Sugary;
+using Domain.Tools.Sugary;
 using McpServerSugary.Glucose;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
@@ -77,7 +78,7 @@ public record GlucoseSettingsRequest(
 // language: linking-off, missing-credentials, unknown-region, credentials-refused, step-required (with
 // `component`), no-connections, rate-limited (with `retryAfterSeconds` where LibreLinkUp said),
 // unavailable, not-linked, unknown-connection, unknown-unit, bad-range; and for what she reads,
-// bad-window, window-too-long, bad-period.
+// bad-window, window-too-long, bad-period, bad-view.
 public static class GlucoseEndpoints
 {
     public static void MapGlucoseEndpoints(this IEndpointRouteBuilder api)
@@ -118,8 +119,13 @@ public static class GlucoseEndpoints
 
     // The last day's with no window named.
     private static async Task<IResult> ReadingsAsync(
-        DateTimeOffset? from, DateTimeOffset? to, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
+        DateTimeOffset? from, DateTimeOffset? to, string? view, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
     {
+        if (GlucoseViews.Of(view) is not { } shown)
+        {
+            return BadView();
+        }
+
         var end = to ?? clock.GetUtcNow();
         var start = from ?? end.AddDays(-1);
         if (start >= end)
@@ -133,13 +139,19 @@ public static class GlucoseEndpoints
         }
 
         var bucket = GlucoseCurve.BucketFor(end - start);
-        var readings = await ReadingsIn(db, start, end, ct);
+        var readings = await ReadingsIn(db, start, end, shown, ct);
         return Results.Ok(new GlucoseCurveDto(
             start, end, bucket is { } size ? (int)size.TotalMinutes : null, GlucoseCurve.Of(readings, bucket)));
     }
 
-    private static async Task<IResult> StatisticsAsync(int? days, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
+    private static async Task<IResult> StatisticsAsync(
+        int? days, string? view, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
     {
+        if (GlucoseViews.Of(view) is not { } shown)
+        {
+            return BadView();
+        }
+
         var period = days ?? 14;
         if (!_periods.Contains(period))
         {
@@ -150,7 +162,7 @@ public static class GlucoseEndpoints
         var from = to.AddDays(-period);
         var link = await LinkOf(db, ct);
         var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
-        var figures = GlucoseStatistics.Of(await ReadingsIn(db, from, to, ct), from, to, low, high);
+        var figures = GlucoseStatistics.Of(await ReadingsIn(db, from, to, shown, ct), from, to, low, high);
         return Results.Ok(new GlucoseStatisticsDto(
             period, from, to, low, high, figures.Count, figures.Coverage, figures.Mean, figures.Gmi, figures.Cv,
             figures.VeryLow, figures.Low, figures.InRange, figures.High, figures.VeryHigh));
@@ -170,22 +182,33 @@ public static class GlucoseEndpoints
             ? []
             : await ReadingsIn(db,
                 new DateTimeOffset(cycles[0].Start.AddDays(-1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-                new DateTimeOffset(cycles[^1].Luteal.Last.AddDays(2).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero), ct);
+                new DateTimeOffset(cycles[^1].Luteal.Last.AddDays(2).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+                GlucoseView.Smoothed, ct);
         var figures = CyclePhases.Of(periods, readings, calendar.Zone, calendar.Today, low, high);
         var hasReadings = await db.GlucoseReadings.AnyAsync(ct);
         return Results.Ok(new CyclePhasesDto(
             figures.Cycles, hasReadings, link?.Unit ?? GlucoseUnit.Mgdl, low, high, figures.Menstrual, figures.Follicular, figures.Luteal));
     }
 
+    // Smoothed values are read with the minutes just outside the window, so a reading at its edge has
+    // the neighbours it has in any other window and the same instant never reads two ways.
     private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(
-        SugaryDbContext db, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+        SugaryDbContext db, DateTimeOffset from, DateTimeOffset to, GlucoseView view, CancellationToken ct)
     {
+        var margin = view == GlucoseView.Smoothed ? GlucoseSmoothing.Reach : TimeSpan.Zero;
+        var (first, last) = (from - margin, to + margin);
         var rows = await db.GlucoseReadings.AsNoTracking()
-            .Where(r => r.At >= from && r.At < to)
+            .Where(r => r.At >= first && r.At < last)
             .Select(r => new { r.At, r.MgPerDl })
             .ToListAsync(ct);
-        return [.. rows.Select(r => new SensorReading(r.At, r.MgPerDl, GlucoseTrend.Unknown))];
+        var readings = rows.Select(r => new SensorReading(r.At, r.MgPerDl, GlucoseTrend.Unknown));
+        return view == GlucoseView.Smoothed
+            ? [.. GlucoseSmoothing.Of(readings).Where(r => r.At >= from && r.At < to)]
+            : [.. readings];
     }
+
+    private static IResult BadView() =>
+        Refuse(StatusCodes.Status400BadRequest, "bad-view", "A view is smoothed or raw.");
 
     private static async Task<IResult> ReadAsync(
         SugaryDbContext db, Person person, GlucoseCredentials credentials, CancellationToken ct) =>
