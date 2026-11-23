@@ -67,7 +67,7 @@ public static class SugaryTables
     private static readonly TableColumn[] _glucoseColumns =
     [
         new("read_at", ColumnType.Instant), new("mg_dl", ColumnType.Decimal), new("mmol_l", ColumnType.Decimal),
-        new("trend", ColumnType.Text), new("source", ColumnType.Text)
+        new("trend", ColumnType.Text), new("source", ColumnType.Text), new("smoothed_mg_dl", ColumnType.Decimal)
     ];
 
     private static readonly TableColumn[] _sensorColumns =
@@ -163,12 +163,20 @@ public static class SugaryTables
             note.Symptoms is { Count: > 0 } said ? string.Join(", ", said) : null))]);
 
     // Oldest first. mmol/L is worked out on every read, to one decimal as a meter shows it, so the two
-    // columns never disagree.
-    public static Table Glucose(IEnumerable<LoggedGlucose> readings, TimeZoneInfo zone) =>
-        new("glucose", _glucoseColumns, [.. readings.OrderBy(reading => reading.At).Select(reading => Row(
-            On(reading.At, zone), reading.MgPerDl,
-            Math.Round(reading.MgPerDl / MgDlPerMmolL, 1, MidpointRounding.AwayFromZero),
-            TrendWord(reading.Trend), SourceWord(reading.Source)))]);
+    // columns never disagree. `shown` picks the rows of a slice (a month's file) after smoothing, so a
+    // reading at the slice's edge still has the neighbours beyond it and reads as it does in the whole table.
+    public static Table Glucose(
+        IEnumerable<LoggedGlucose> readings, TimeZoneInfo zone, Func<LoggedGlucose, bool>? shown = null)
+    {
+        var ordered = readings.OrderBy(reading => reading.At).ToList();
+        var smoothed = GlucoseSmoothing.Of(ordered.Select(reading => new SensorReading(reading.At, reading.MgPerDl, reading.Trend)));
+        return new("glucose", _glucoseColumns, [.. ordered.Zip(smoothed)
+            .Where(pair => shown?.Invoke(pair.First) ?? true)
+            .Select(pair => Row(
+                On(pair.First.At, zone), pair.First.MgPerDl,
+                Math.Round(pair.First.MgPerDl / MgDlPerMmolL, 1, MidpointRounding.AwayFromZero),
+                TrendWord(pair.First.Trend), SourceWord(pair.First.Source), pair.Second.MgPerDl))]);
+    }
 
     // In the order they were put on.
     public static Table Sensors(IEnumerable<LoggedSensor> sensors, TimeZoneInfo zone) =>

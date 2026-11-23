@@ -64,7 +64,7 @@ public class SugaryGlucoseMountTests
 
         (await server.GlobAsync("glucose/*")).ShouldBe(
             ["/glucose/2026-07.parquet", "/glucose/2026-09.parquet", "/glucose/2026-10.parquet"]);
-        (await server.TableRowsAsync("/glucose/2026-09.parquet")).ShouldBe([["2026-08-31 23:30:00+00", "2026-09-01 01:30:00", "110.0", "6.1", "unknown", "graph"]]);
+        (await server.TableRowsAsync("/glucose/2026-09.parquet")).ShouldBe([["2026-08-31 23:30:00+00", "2026-09-01 01:30:00", "110.0", "6.1", "unknown", "graph", "110.0"]]);
         (await server.TableRowsAsync("/sensors.parquet")).ShouldBe([
             ["SN-1", "2026-09-25 08:00:00+00", "2026-09-25 10:00:00", "2026-10-09 08:00:00+00", "2026-10-09 10:00:00",
                 "2026-09-30 22:00:00+00", "2026-10-01 00:00:00"]

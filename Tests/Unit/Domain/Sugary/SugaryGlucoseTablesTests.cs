@@ -108,6 +108,58 @@ public class SugaryGlucoseTablesTests
         row["coverage_pct"]!.GetValue<double>().ShouldBe(50.0);
     }
 
+    private void SeedMinutes(DateTimeOffset start, params double[] values) =>
+        _log.Glucose.AddRange(values.Select((value, minute) =>
+            new LoggedGlucose(start.AddMinutes(minute), value, GlucoseTrend.Unknown, GlucoseSource.Current)));
+
+    [Fact]
+    public async Task TheTable_KeepsTheSensorsValue_BesideTheSmoothedOne()
+    {
+        SeedMinutes(DateTimeOffset.Parse("2026-10-05T10:00:00Z"), 85, 85, 90, 60, 80, 85, 85);
+
+        var row = Row(await Query(
+            "select mg_dl, smoothed_mg_dl from glucose where read_at = TIMESTAMPTZ '2026-10-05 12:03:00'"));
+
+        row["mg_dl"]!.GetValue<double>().ShouldBe(60);
+        row["smoothed_mg_dl"]!.GetValue<double>().ShouldBe(85);
+    }
+
+    [Fact]
+    public async Task TheReadmesStatistics_DoNotCountAMisread()
+    {
+        SeedMinutes(DateTimeOffset.Parse("2026-10-05T10:00:00Z"), 85, 85, 90, 60, 80, 85, 85);
+
+        var row = Row(await Query(GlucoseQueries.Statistics(
+            "TIMESTAMPTZ '2026-10-05 12:00:00'", "TIMESTAMPTZ '2026-10-05 12:07:00'", 70, 180)));
+
+        row["below_70_pct"]!.GetValue<double>().ShouldBe(0);
+        row["in_70_180_pct"]!.GetValue<double>().ShouldBe(100);
+    }
+
+    [Fact]
+    public async Task AMealsPeak_IsNoMisread()
+    {
+        _log.Glucose.Clear();
+        SeedMinutes(_since + TimeSpan.FromMinutes(6), 100, 100, 100, 300, 100, 100, 100);
+
+        var row = Row(await Query(GlucoseQueries.AfterMeals));
+
+        row["peak_mg_dl"]!.GetValue<double>().ShouldBe(100);
+    }
+
+    // The last minute of October in Madrid has its neighbours in November's file, and must read the same
+    // whether the agent asks the month's file or the whole table.
+    [Fact]
+    public async Task AMonthsFile_SmoothsAcrossTheMonthsEdge_AndHoldsOnlyItsMonth()
+    {
+        SeedMinutes(DateTimeOffset.Parse("2026-10-31T22:55:00Z"), 85, 85, 85, 85, 60, 85, 85, 85);
+
+        var last = await ReadParquetAsync(await BytesAsync("/glucose/2026-10.parquet"),
+            "select read_at_local::varchar, mg_dl, smoothed_mg_dl from t order by read_at desc limit 1");
+
+        last.ShouldBe([["2026-10-31 23:59:00", 60d, 85d]]);
+    }
+
     [Fact]
     public async Task APeriodWithNoReadings_AnswersNoRow()
     {
@@ -189,7 +241,7 @@ public class SugaryGlucoseTablesTests
 
         string[] columns =
         [
-            "read_at", "mg_dl", "mmol_l", "trend", "source", "serial", "activated_at", "ends_at", "last_seen_at",
+            "read_at", "mg_dl", "smoothed_mg_dl", "mmol_l", "trend", "source", "serial", "activated_at", "ends_at", "last_seen_at",
             "falling_fast", "rising_fast", "unknown", "current", "graph", "import", "import-hourly"
         ];
         columns.Where(column => !readme.Contains($"`{column}`")).ShouldBeEmpty();

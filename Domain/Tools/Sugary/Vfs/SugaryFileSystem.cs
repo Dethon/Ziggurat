@@ -531,13 +531,18 @@ public sealed partial class SugaryFileSystem(
             is { Count: > 0 } sessions
             ? SugaryTables.Exercise(sessions, zone)
             : null,
-        SugaryNodeKind.GlucoseMonth => await InMonthAsync(
-                node.Month!, zone, (from, to, c) => log.GlucoseAsync(reader, from, to, c), reading => reading.At, ct)
-            is { Count: > 0 } readings
-            ? SugaryTables.Glucose(readings, zone)
-            : null,
+        SugaryNodeKind.GlucoseMonth => await GlucoseMonthAsync(reader, node.Month!, zone, ct),
         _ => null
     };
+
+    // Smoothed with the day either side still in hand, so the month's first and last minutes read as they
+    // do in the whole table.
+    private async Task<Table?> GlucoseMonthAsync(Account reader, string month, TimeZoneInfo zone, CancellationToken ct)
+    {
+        var around = await AroundMonthAsync(month, (from, to, c) => log.GlucoseAsync(reader, from, to, c), ct);
+        var table = SugaryTables.Glucose(around, zone, reading => SugaryTables.Month(reading.At, zone) == month);
+        return table.Rows.Count > 0 ? table : null;
+    }
 
     // A month on the home's calendar starts and ends at an offset that can differ from UTC's by up
     // to a day either way, so the store is asked for a day more each side and the home's calendar
@@ -553,6 +558,15 @@ public sealed partial class SugaryFileSystem(
         Func<T, DateTimeOffset> when,
         CancellationToken ct)
     {
+        var rows = await AroundMonthAsync(month, between, ct);
+        return rows.Where(row => SugaryTables.Month(when(row), zone) == month).ToList();
+    }
+
+    private static async Task<IReadOnlyList<T>> AroundMonthAsync<T>(
+        string month,
+        Func<DateTimeOffset, DateTimeOffset, CancellationToken, Task<IReadOnlyList<T>>> between,
+        CancellationToken ct)
+    {
         var first = DateTimeOffset.ParseExact(
             month + "-01T00:00:00Z", "yyyy-MM-dd'T'HH:mm:ssK", CultureInfo.InvariantCulture);
         if (first.Year == DateTimeOffset.MinValue.Year && first.Month == 1
@@ -561,8 +575,7 @@ public sealed partial class SugaryFileSystem(
             return [];
         }
 
-        var rows = await between(first.AddDays(-1), first.AddMonths(1).AddDays(1), ct);
-        return rows.Where(row => SugaryTables.Month(when(row), zone) == month).ToList();
+        return await between(first.AddDays(-1), first.AddMonths(1).AddDays(1), ct);
     }
 
     private static FsReadResult Window(string path, string text, int? offset, int? limit)
