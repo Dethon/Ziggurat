@@ -6,8 +6,9 @@ namespace McpServerSugary.Glucose;
 // The figures a clinic reads off a sensor over a period. Shares are of the time with readings, not of
 // the period, and the bands are cumulative as the international consensus reports them: under 54 is
 // also under 70, over 250 also over 180. In range is her own range; the bands below and above are the
-// consensus thresholds whatever her range. Every figure but the count and the coverage is null with no
-// readings, since there is nothing to say and NaN is no answer.
+// consensus thresholds whatever her range. Lowest and Highest are single readings with their instant.
+// Every figure but the count and the coverage is null with no readings, since there is nothing to say and
+// NaN is no answer.
 public sealed record GlucoseFigures(
     int Count,
     double Coverage,
@@ -18,7 +19,9 @@ public sealed record GlucoseFigures(
     double? Low,
     double? InRange,
     double? High,
-    double? VeryHigh);
+    double? VeryHigh,
+    GlucosePoint? Lowest,
+    GlucosePoint? Highest);
 
 // One implementation for the app's statistics. Each reading stands for the minutes until the next, at
 // most Cap, and the last for what is left of the period: readings are kept unevenly (the current one
@@ -53,7 +56,7 @@ public static class GlucoseStatistics
         var coverage = to > from ? covered / (to - from).TotalMinutes : 0;
         if (covered <= 0)
         {
-            return new GlucoseFigures(inPeriod.Count, coverage, null, null, null, null, null, null, null, null);
+            return new GlucoseFigures(inPeriod.Count, coverage, null, null, null, null, null, null, null, null, null, null);
         }
 
         double Share(Func<double, bool> holds) => weighed.Where(w => holds(w.Value)).Sum(w => w.Minutes) / covered;
@@ -70,8 +73,14 @@ public static class GlucoseStatistics
             Share(v => v < LowBelow),
             Share(v => v >= targetLow && v <= targetHigh),
             Share(v => v > HighAbove),
-            Share(v => v > VeryHighAbove));
+            Share(v => v > VeryHighAbove),
+            Extreme(inPeriod.MinBy(r => r.MgPerDl)),
+            Extreme(inPeriod.MaxBy(r => r.MgPerDl)));
     }
+
+    // Of readings oldest first, so a value held for a while is dated when it was first reached.
+    private static GlucosePoint? Extreme(SensorReading? reading) =>
+        reading is null ? null : new GlucosePoint(reading.At, reading.MgPerDl);
 
     // Glucose management indicator, in percent: the HbA1c the mean would usually go with.
     public static double Gmi(double meanMgPerDl) => 3.31 + 0.02392 * meanMgPerDl;

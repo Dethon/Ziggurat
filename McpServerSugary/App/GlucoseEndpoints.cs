@@ -49,7 +49,7 @@ public record CyclePhasesDto(
 
 // Shares are fractions of the time with readings, cumulative bands (GlucoseStatistics); null with none.
 public record GlucoseStatisticsDto(
-    int Days,
+    double Days,
     DateTimeOffset From,
     DateTimeOffset To,
     int TargetLow,
@@ -63,7 +63,9 @@ public record GlucoseStatisticsDto(
     double? Low,
     double? InRange,
     double? High,
-    double? VeryHigh);
+    double? VeryHigh,
+    GlucosePoint? Lowest,
+    GlucosePoint? Highest);
 
 public record LinkGlucoseRequest(string? Email, string? Password, string? Region);
 
@@ -96,8 +98,8 @@ public static class GlucoseEndpoints
         glucose.MapGet("/cycle", CycleAsync);
     }
 
-    // The periods the tab offers; the clinic's report is fourteen days, ninety the longest kept view.
-    private static readonly int[] _periods = [1, 7, 14, 90];
+    // The periods the tab offers, in days; the clinic's report is fourteen, ninety the longest kept view.
+    private static readonly double[] _periods = [0.5, 1, 7, 14, 90];
 
     private static async Task<GlucoseNowDto> CurrentAsync(
         SugaryDbContext db, Person person, GlucoseCredentials credentials, TimeProvider clock, CancellationToken ct)
@@ -145,7 +147,7 @@ public static class GlucoseEndpoints
     }
 
     private static async Task<IResult> StatisticsAsync(
-        int? days, string? view, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
+        double? days, string? view, SugaryDbContext db, TimeProvider clock, CancellationToken ct)
     {
         if (GlucoseViews.Of(view) is not { } shown)
         {
@@ -155,7 +157,7 @@ public static class GlucoseEndpoints
         var period = days ?? 14;
         if (!_periods.Contains(period))
         {
-            return Refuse(StatusCodes.Status400BadRequest, "bad-period", "Figures are over 1, 7, 14 or 90 days.");
+            return Refuse(StatusCodes.Status400BadRequest, "bad-period", "Figures are over 12 hours, or 1, 7, 14 or 90 days.");
         }
 
         var to = clock.GetUtcNow();
@@ -165,7 +167,7 @@ public static class GlucoseEndpoints
         var figures = GlucoseStatistics.Of(await ReadingsIn(db, from, to, shown, ct), from, to, low, high);
         return Results.Ok(new GlucoseStatisticsDto(
             period, from, to, low, high, figures.Count, figures.Coverage, figures.Mean, figures.Gmi, figures.Cv,
-            figures.VeryLow, figures.Low, figures.InRange, figures.High, figures.VeryHigh));
+            figures.VeryLow, figures.Low, figures.InRange, figures.High, figures.VeryHigh, figures.Lowest, figures.Highest));
     }
 
     // Her glucose in each part of her finished cycles (CyclePhases), against her range, mg/dL.

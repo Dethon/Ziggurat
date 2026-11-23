@@ -397,6 +397,41 @@ public class SugaryGlucoseApiTests
         Number(phases["luteal"]!, "low").ShouldBe(0);
     }
 
+    [Fact]
+    public async Task TwelveHours_AreFiguredOnTheirOwn_WithTheirLowestAndHighest()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var (lowAt, highAt) = (DateTimeOffset.UtcNow.AddHours(-5), DateTimeOffset.UtcNow.AddHours(-6));
+        await SeedAsync(server, SugaryServer.Her,
+            MinutesAgo(13 * 60, 40), Reading(highAt, 150), Reading(lowAt, 90));
+
+        var figures = await GetAsync(server, "/api/glucose/statistics?days=0.5");
+
+        Number(figures, "days").ShouldBe(0.5);
+        figures["count"]!.GetValue<int>().ShouldBe(2);
+        Number(figures["lowest"]!, "mgPerDl").ShouldBe(90);
+        figures["lowest"]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(lowAt, TimeSpan.FromMilliseconds(1));
+        Number(figures["highest"]!, "mgPerDl").ShouldBe(150);
+        figures["highest"]!["at"]!.GetValue<DateTimeOffset>().ShouldBe(highAt, TimeSpan.FromMilliseconds(1));
+    }
+
+    [Fact]
+    public async Task TheLowestAndHighest_FollowTheView()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await SeedAsync(server, SugaryServer.Her,
+            MinutesAgo(8, 85), MinutesAgo(7, 85), MinutesAgo(6, 90), MinutesAgo(5, 60), MinutesAgo(4, 80),
+            MinutesAgo(3, 85), MinutesAgo(2, 85));
+
+        var smoothed = await GetAsync(server, "/api/glucose/statistics?days=1");
+        var raw = await GetAsync(server, "/api/glucose/statistics?days=1&view=raw");
+
+        Number(smoothed["lowest"]!, "mgPerDl").ShouldBe(85);
+        Number(smoothed["highest"]!, "mgPerDl").ShouldBe(85);
+        Number(raw["lowest"]!, "mgPerDl").ShouldBe(60);
+        Number(raw["highest"]!, "mgPerDl").ShouldBe(90);
+    }
+
     [Theory]
     [InlineData("readings")]
     [InlineData("statistics?days=1")]
@@ -413,6 +448,7 @@ public class SugaryGlucoseApiTests
     [InlineData("days=3")]
     [InlineData("days=0")]
     [InlineData("days=-7")]
+    [InlineData("days=0.25")]
     public async Task APeriodNotOffered_IsRefused(string query)
     {
         await using var server = await SugaryServer.StartAsync();
