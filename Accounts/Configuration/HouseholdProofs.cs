@@ -1,6 +1,7 @@
 using Accounts.Internal;
 using Accounts.Settings;
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
 
@@ -98,6 +99,26 @@ public sealed class HouseholdProofs
             null => Unproven(refusal ?? "the proof does not verify"),
             { IsNobody: true } or { TenantId.Length: 0 } => Unproven("the proof names nobody, so no household"),
             _ => new HouseholdProven.Household(claims.TenantId)
+        };
+    }
+
+    // A household's own web search, whose tunnel credential already named its household: the call token
+    // it was handed must be signed for that very server and act for that household, so a credential
+    // alone reads no key, and one household's credential opens no other's with a token of theirs.
+    public async Task<HouseholdProven> OwnWebSearchAsync(HouseholdConfigQuery query, string household, CancellationToken ct)
+    {
+        if (query is not { HouseholdId: null, Assertion: null, Delegation: null, CallToken.Length: > 0 })
+        {
+            return BadQuery("a household's web search presents the call token it was handed, and nothing else");
+        }
+
+        var verified = await _agent.VerifyAsync(
+            query.CallToken, TokenAudiences.CallTo(ServerAddress.Tunnelled(household, HouseholdServerNames.WebSearch)), ct);
+        return verified switch
+        {
+            { IsVerified: false } => Unproven($"the call token is {verified.Refusal}"),
+            { Claims: { IsNobody: false } claims } when claims.TenantId == household => new HouseholdProven.Household(household),
+            _ => Unproven("the call token acts for another household than the server's")
         };
     }
 

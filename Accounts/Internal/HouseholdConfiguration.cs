@@ -59,6 +59,23 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
             HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
 
+        // A household's own web search, on its tunnel's credential: the key it asks Brave with, of the
+        // household that credential was minted for and no other.
+        routes.MapPost(Path + HouseholdConfigProtocol.BraveSearchView, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store,
+            ILogger<HouseholdConfigStore> logger, CancellationToken ct) =>
+        {
+            if (InternalCallers.Reading(http, HouseholdConfigProtocol.BraveSearchView).Count == 0
+                || InternalCallers.Household(http) is not { } own)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            return await AnswerAsync(await proofs.OwnWebSearchAsync(query, own, ct), store, logger, async household =>
+                new HouseholdConfigAnswer<BraveSearchKey?>(
+                    household.Id, (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).BraveSearch), ct);
+        });
+
         // Sugary's: the household's people, who an owner let read everyone's log and who uses Sugary. A person, not a
         // section, so the members are read rather than the configuration; nobody disabled is in it,
         // neither as a reader nor as a log to read.

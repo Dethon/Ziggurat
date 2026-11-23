@@ -39,6 +39,10 @@ public static class InternalCallers
     // household credential mints that household's voice people and nobody else's.
     public const string HouseholdServer = "household-server";
 
+    // A household's own web search server, on the same back-call and the same kind of credential. It
+    // is no channel and mints nobody: it reads the one key it searches with, of its own household.
+    public const string HouseholdWebSearch = "household-websearch";
+
     // Shared servers that ask for their own view of a household's configuration and nothing else
     // (.claude/rules/household-config.md). Compose gives each an entry only once it asks.
     public const string Idealista = "mcp-idealista";
@@ -73,6 +77,7 @@ public static class InternalCallers
             HouseholdConfigProtocol.LemonadeBoxesView
         ],
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
+        [HouseholdWebSearch] = [HouseholdConfigProtocol.BraveSearchView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
         [Sugary] =
         [
@@ -105,9 +110,9 @@ public static class InternalCallers
     }
 
     // A caller none of the entries name may still be a household's server, by the live tunnel
-    // credential it presented; it is then that server and nothing else. Only the household's voice
-    // server is one: the relay lets no other server's accounts back-call through, and this does not
-    // lean on that — a printer's, vault's or outpost's live credential is known and refused.
+    // credential it presented; it is then that server and nothing else. Only the household's voice and
+    // web search servers are one: the relay lets no other server's accounts back-call through, and
+    // this does not lean on that — a printer's, vault's or outpost's live credential is known and refused.
     public static async Task<HouseholdServerPresented> PresentingHouseholdServerAsync(
         HttpContext http, TunnelCredentialStore credentials, CancellationToken ct)
     {
@@ -117,14 +122,20 @@ public static class InternalCallers
             return HouseholdServerPresented.None;
         }
 
-        if (credential.ServerName != HouseholdServerNames.Voice)
+        var (caller, server) = credential.ServerName switch
         {
-            return HouseholdServerPresented.AnotherServer;
+            HouseholdServerNames.Voice => (HouseholdServer, HouseholdServerPresented.Voice),
+            HouseholdServerNames.WebSearch => (HouseholdWebSearch, HouseholdServerPresented.WebSearch),
+            _ => (null, HouseholdServerPresented.AnotherServer)
+        };
+        if (caller is null)
+        {
+            return server;
         }
 
-        http.Items[ItemKey] = (IReadOnlyList<string>)[HouseholdServer];
+        http.Items[ItemKey] = (IReadOnlyList<string>)[caller];
         http.Items[HouseholdKey] = credential.TenantId;
-        return HouseholdServerPresented.Voice;
+        return server;
     }
 
     // The one household a household's server may ask about; null for a deployment caller, which asks
@@ -150,11 +161,12 @@ public static class InternalCallers
     public static IResult NotYours => Results.StatusCode(StatusCodes.Status403Forbidden);
 }
 
-// What a presented tunnel credential is to the internal API: nobody's (401), the household's voice
-// server, or another of the household's servers, which asks about nothing (403).
+// What a presented tunnel credential is to the internal API: nobody's (401), the household's voice or
+// web search server, or another of the household's servers, which asks about nothing (403).
 public enum HouseholdServerPresented
 {
     None,
     Voice,
+    WebSearch,
     AnotherServer
 }
