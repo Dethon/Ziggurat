@@ -425,6 +425,78 @@ public class SugaryWidgetApiTests
     }
 
     [Fact]
+    public async Task TheCard_IsAnImageOfTheSizeAsked_WhateverElseItsAddressCarries()
+    {
+        var sessions = new Sessions();
+        await using var server = await StartAsync(sessions);
+        await SeedAsync(server, SugaryServer.Her, MinutesAgo(2, 142));
+        var token = await MintAsync(server);
+
+        var response = await server.Browser()
+            .GetAsync($"/widget/{token}/card.png?hours=3&width=400&height=160&t=2611232253");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.ShouldBe("image/png");
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        var png = await response.Content.ReadAsByteArrayAsync();
+        BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4)).ShouldBe(400);
+        BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4)).ShouldBe(160);
+    }
+
+    [Fact]
+    public async Task TheCard_ChangesWhenANewReadingArrives()
+    {
+        var sessions = new Sessions();
+        await using var server = await StartAsync(sessions);
+        await SeedAsync(server, SugaryServer.Her, MinutesAgo(10, 142));
+        var token = await MintAsync(server);
+        var before = await server.Browser().GetByteArrayAsync($"/widget/{token}/card.png?hours=3");
+
+        await SeedAsync(server, SugaryServer.Her, MinutesAgo(1, 65, GlucoseTrend.FallingFast));
+        var after = await server.Browser().GetByteArrayAsync($"/widget/{token}/card.png?hours=3");
+
+        after.ShouldNotBe(before);
+    }
+
+    [Fact]
+    public async Task TheCard_WithNoReadings_IsStillAnImage()
+    {
+        var sessions = new Sessions();
+        await using var server = await StartAsync(sessions);
+        var token = await MintAsync(server);
+
+        var response = await server.Browser().GetAsync($"/widget/{token}/card.png");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Content.Headers.ContentType!.MediaType.ShouldBe("image/png");
+    }
+
+    [Theory]
+    [InlineData("hours=5")]
+    [InlineData("width=10")]
+    [InlineData("height=90000")]
+    [InlineData("theme=neon")]
+    public async Task ACardNobodyOffers_IsRefused(string query)
+    {
+        var sessions = new Sessions();
+        await using var server = await StartAsync(sessions);
+        var token = await MintAsync(server);
+
+        (await server.Browser().GetAsync($"/widget/{token}/card.png?{query}")).StatusCode
+            .ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task AnUnknownToken_GetsNoCard()
+    {
+        var sessions = new Sessions();
+        await using var server = await StartAsync(sessions);
+
+        (await server.Browser().GetAsync("/widget/not-a-token/card.png")).StatusCode
+            .ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task TheTokenOpensNothingOfTheApi()
     {
         var sessions = new Sessions();

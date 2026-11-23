@@ -49,7 +49,8 @@ A KWGT widget can hold no session and send no header, so `/widget/<token>/now.js
 
 - `WidgetAccess` stands in for the check on every request: the token's SHA-256 finds its `WidgetToken`, `ISessionAccounts` vouches afresh for the session that made it, `HouseholdSuspended` refuses, and `SugaryAccess` decides on the log **the row names, never the address**. A session that ended deletes the token; an outage (503) and a suspension (403) keep it.
 - `/api/widget` (GET state, PUT makes or replaces, DELETE) writes the signer's own row, so it alone takes a non-GET with `?person=`, still only for somebody they may read. The token is answered once.
-- `now.json` is the raw newest reading in her unit, `at` in whole UTC seconds so the widget works out the age itself; `curve.png` is smoothed, drawn by `GlucoseCurvePng`, breaking at `GlucoseStatistics.Cap`.
+- **The app hands over one address, `card.png`** (`GlucoseCardPng`): the raw newest reading in her unit, its arrow and its clock time on the household's zone, over the smoothed curve. Measured on a phone: KWGT re-fetches an image whose address changes, but never re-ran a text's `wg()` even with a changing URL, so nothing a person acts on may depend on a `wg()` text. The address ends `&t=$df(yyMMddHHmm)$`, a value that never comes round again; the picture shows a clock time, never an age, because a frozen image would keep a frozen age.
+- `now.json` is the raw newest reading, `at` in whole UTC seconds; `curve.png` is the curve alone, smoothed, drawn by `GlucoseCurvePng`, breaking at `GlucoseStatistics.Cap`. The app no longer generates either.
 
 ## Who she is
 

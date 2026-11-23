@@ -4,19 +4,9 @@ import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { errorMessage } from "../errors";
 import { formatDayTime } from "../format";
-import type { StringKey } from "../i18n";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import { widgetFormulas, type WidgetFormulas } from "../widget";
-
-const FIELDS: { field: keyof WidgetFormulas; label: StringKey }[] = [
-  { field: "reading", label: "widgetReading" },
-  { field: "unit", label: "widgetUnit" },
-  { field: "arrow", label: "widgetArrow" },
-  { field: "age", label: "widgetAge" },
-  { field: "color", label: "widgetColor" },
-  { field: "curve", label: "widgetCurve" },
-];
+import { widgetImageAddress } from "../widget";
 
 // The address a KWGT widget reads this log's glucose by. It is answered once, when made, and held here
 // only until Done: the server keeps its hash. It is the signer's own, so it is offered on a log they are
@@ -26,7 +16,7 @@ export function WidgetCard() {
   const toast = useToast();
   const [confirm, confirming] = useConfirm();
   const [createdAt, setCreatedAt] = useState<string | null | undefined>(undefined);
-  const [formulas, setFormulas] = useState<WidgetFormulas | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,7 +31,7 @@ export function WidgetCard() {
     try {
       const minted = await api.mintWidget();
       setCreatedAt(minted.createdAt);
-      setFormulas(widgetFormulas(window.location.origin, minted.token));
+      setAddress(widgetImageAddress(window.location.origin, minted.token));
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
     }
@@ -61,7 +51,7 @@ export function WidgetCard() {
     try {
       await api.removeWidget();
       setCreatedAt(null);
-      setFormulas(null);
+      setAddress(null);
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
     }
@@ -87,31 +77,27 @@ export function WidgetCard() {
           <Icon name="alert" size={18} /> <span>{error}</span>
         </p>
       )}
-      {formulas ? (
+      {address ? (
         <>
           <p className="notice" role="status">
             <Icon name="alert" size={18} /> <span>{t("widgetWarning")}</span>
           </p>
           <p className="muted small">{t("widgetSteps")}</p>
-          <ul className="rows">
-            {FIELDS.map(({ field, label }) => (
-              <li key={field} className="widget-formula">
-                <div>
-                  <strong className="small">{t(label)}</strong>
-                  <code className="small">{formulas[field]}</code>
-                </div>
-                <button
-                  type="button"
-                  className="button button-quiet"
-                  aria-label={t("widgetCopy", { what: t(label) })}
-                  onClick={() => void copy(formulas[field])}
-                >
-                  <Icon name="copy" size={20} />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button type="button" className="button button-secondary" onClick={() => setFormulas(null)}>
+          <div className="widget-formula">
+            <div>
+              <strong className="small">{t("widgetImage")}</strong>
+              <code className="small">{address}</code>
+            </div>
+            <button
+              type="button"
+              className="button button-quiet"
+              aria-label={t("widgetCopy", { what: t("widgetImage") })}
+              onClick={() => void copy(address)}
+            >
+              <Icon name="copy" size={20} />
+            </button>
+          </div>
+          <button type="button" className="button button-secondary" onClick={() => setAddress(null)}>
             {t("widgetDone")}
           </button>
         </>

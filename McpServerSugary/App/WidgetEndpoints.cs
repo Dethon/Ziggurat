@@ -46,6 +46,7 @@ public static class WidgetEndpoints
         var widget = app.MapGroup("/widget");
         widget.MapGet("/{token}/now.json", NowAsync);
         widget.MapGet("/{token}/curve.png", CurveAsync);
+        widget.MapGet("/{token}/card.png", CardAsync);
         widget.MapFallback(() => Results.NotFound());
     }
 
@@ -103,7 +104,7 @@ public static class WidgetEndpoints
         var unit = link?.Unit ?? GlucoseUnit.Mgdl;
         var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
         var newest = await db.GlucoseReadings.AsNoTracking().OrderByDescending(r => r.At).FirstOrDefaultAsync(ct);
-        var unitName = unit == GlucoseUnit.Mmol ? "mmol/L" : "mg/dL";
+        var unitName = UnitName(unit);
         return Results.Ok(newest is null
             ? new WidgetNowDto(null, null, "--", unitName, GlucoseTrend.Unknown, "", "none", "#8a8a8a", low, high)
             : new WidgetNowDto(
@@ -117,19 +118,9 @@ public static class WidgetEndpoints
         CancellationToken ct)
     {
         var (span, wide, tall) = (hours ?? 6, width ?? 600, height ?? 240);
-        if (!_curveHours.Contains(span))
+        if (BadPicture(span, wide, tall, theme) is { } refused)
         {
-            return BadCurve("A curve is over 3, 6, 12 or 24 hours.");
-        }
-
-        if (wide is < NarrowestCurve or > WidestCurve || tall is < LowestCurve or > TallestCurve)
-        {
-            return BadCurve($"A curve is {NarrowestCurve}-{WidestCurve} wide and {LowestCurve}-{TallestCurve} high.");
-        }
-
-        if (PaletteOf(theme) is not { } palette)
-        {
-            return BadCurve("A theme is dark or light.");
+            return refused;
         }
 
         var to = clock.GetUtcNow();
@@ -138,9 +129,47 @@ public static class WidgetEndpoints
         var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
         var readings = await GlucoseEndpoints.ReadingsIn(db, from, to, GlucoseView.Smoothed, ct);
         var png = GlucoseCurvePng.Draw(
-            readings.Select(r => new GlucosePoint(r.At, r.MgPerDl)), from, to, low, high, wide, tall, palette);
+            readings.Select(r => new GlucosePoint(r.At, r.MgPerDl)), from, to, low, high, wide, tall, PaletteOf(theme)!);
         return Results.File(png, "image/png");
     }
+
+    // The number is the sensor's own newest reading, as now.json's, over the smoothed curve: a low never
+    // waits on a filter. Its time is on the household's clock, the one the person reads the app by.
+    private static async Task<IResult> CardAsync(
+        int? hours, int? width, int? height, string? theme, SugaryDbContext db, TimeProvider clock, HomeCalendar calendar,
+        CancellationToken ct)
+    {
+        var (span, wide, tall) = (hours ?? 6, width ?? 800, height ?? 320);
+        if (BadPicture(span, wide, tall, theme) is { } refused)
+        {
+            return refused;
+        }
+
+        var to = clock.GetUtcNow();
+        var from = to.AddHours(-span);
+        var link = await GlucoseEndpoints.LinkOf(db, ct);
+        var unit = link?.Unit ?? GlucoseUnit.Mgdl;
+        var (low, high) = (link?.TargetLow ?? GlucoseRange.DefaultLow, link?.TargetHigh ?? GlucoseRange.DefaultHigh);
+        var newest = await db.GlucoseReadings.AsNoTracking().OrderByDescending(r => r.At).FirstOrDefaultAsync(ct);
+        var readings = await GlucoseEndpoints.ReadingsIn(db, from, to, GlucoseView.Smoothed, ct);
+        var card = newest is null
+            ? new GlucoseCard("--", UnitName(unit), GlucoseTrend.Unknown, "--:--", null)
+            : new GlucoseCard(
+                Shown(newest.MgPerDl, unit), UnitName(unit), newest.Trend,
+                calendar.AtHome(newest.At).ToString("HH:mm", CultureInfo.InvariantCulture), newest.MgPerDl);
+        var png = GlucoseCardPng.Draw(
+            card, readings.Select(r => new GlucosePoint(r.At, r.MgPerDl)), from, to, low, high, wide, tall, PaletteOf(theme)!);
+        return Results.File(png, "image/png");
+    }
+
+    private static IResult? BadPicture(int span, int wide, int tall, string? theme) =>
+        !_curveHours.Contains(span) ? BadCurve("A curve is over 3, 6, 12 or 24 hours.")
+        : wide is < NarrowestCurve or > WidestCurve || tall is < LowestCurve or > TallestCurve
+            ? BadCurve($"A curve is {NarrowestCurve}-{WidestCurve} wide and {LowestCurve}-{TallestCurve} high.")
+        : PaletteOf(theme) is null ? BadCurve("A theme is dark or light.")
+        : null;
+
+    private static string UnitName(GlucoseUnit unit) => unit == GlucoseUnit.Mmol ? "mmol/L" : "mg/dL";
 
     private static GlucosePalette? PaletteOf(string? theme) => theme switch
     {
