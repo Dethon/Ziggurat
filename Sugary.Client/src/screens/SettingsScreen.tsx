@@ -8,6 +8,7 @@ import { THEMES } from "../theme";
 import type { Profile } from "../types";
 import { PensCard } from "./PensCard";
 import { ProfileCard } from "./ProfileCard";
+import { WidgetCard } from "./WidgetCard";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -54,6 +55,8 @@ export function SettingsScreen({
         <ProfileCard profile={profile} onChange={onProfile} readOnly={readOnly} />
 
         <PensCard readOnly={readOnly} />
+
+        <WidgetCard />
 
         <section className="card setting" aria-labelledby="ration-title">
           <h2 id="ration-title">{t("rationSize")}</h2>

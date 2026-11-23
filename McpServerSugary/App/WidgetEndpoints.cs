@@ -17,9 +17,10 @@ public record WidgetMintedDto(string Token, DateTimeOffset CreatedAt);
 
 // What a widget shows, ready to show: it has no way to convert a unit or pick a colour. `At` is the
 // reading's instant, so the widget works out its age when it draws rather than showing the age it had
-// when last fetched. The newest reading is the sensor's own, as /current's: a low never waits on a filter.
+// when last fetched, spelled in whole UTC seconds as KWGT's date parser documents. The newest reading is
+// the sensor's own, as /current's: a low never waits on a filter.
 public record WidgetNowDto(
-    DateTimeOffset? At, double? MgPerDl, string Value, string Unit, GlucoseTrend Trend, string Arrow, string Band, string Color,
+    string? At, double? MgPerDl, string Value, string Unit, GlucoseTrend Trend, string Arrow, string Band, string Color,
     int TargetLow, int TargetHigh);
 
 public static class WidgetEndpoints
@@ -106,7 +107,8 @@ public static class WidgetEndpoints
         return Results.Ok(newest is null
             ? new WidgetNowDto(null, null, "--", unitName, GlucoseTrend.Unknown, "", "none", "#8a8a8a", low, high)
             : new WidgetNowDto(
-                newest.At, newest.MgPerDl, Shown(newest.MgPerDl, unit), unitName, newest.Trend, ArrowOf(newest.Trend),
+                newest.At.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture), newest.MgPerDl,
+                Shown(newest.MgPerDl, unit), unitName, newest.Trend, ArrowOf(newest.Trend),
                 BandOf(newest.MgPerDl, low, high), Css(palette.Of(newest.MgPerDl, low, high)), low, high));
     }
 

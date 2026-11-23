@@ -251,6 +251,16 @@ export interface DraftItem extends MealItem {
   note: string | null;
 }
 
+// Whether this log has a home screen widget address. Its token is answered once, when made.
+export interface WidgetState {
+  createdAt: string | null;
+}
+
+export interface WidgetMinted {
+  token: string;
+  createdAt: string;
+}
+
 export interface SessionState {
   // Which of the model-backed actions the server answers. Off until the sugary agent answers them;
   // the app then shows them as not available rather than letting them fail.

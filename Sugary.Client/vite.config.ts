@@ -91,7 +91,7 @@ export default defineConfig(({ mode }) => {
           // Sign-in and the account page are the accounts service's, on this host through the proxy:
           // answered with the app's own index.html they would send a signed-out person back to the
           // app, which sends them to sign in, for ever.
-          navigateFallbackDenylist: [/^\/api\//, /^\/mcp/, /^\/accounts\//],
+          navigateFallbackDenylist: [/^\/api\//, /^\/mcp/, /^\/accounts\//, /^\/widget\//],
           // The pen reminders' push and click handlers, kept beside the generated worker in public/.
           importScripts: ["push-handler.js"],
         },

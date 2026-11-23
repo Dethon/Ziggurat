@@ -3,11 +3,15 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
+using Accounts.Sessions;
+using Accounts.Store;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Infrastructure.Clients.Accounts;
 using McpServerSugary.Channel;
 using McpServerSugary.Store;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shouldly;
@@ -107,7 +111,11 @@ public class SugaryWidgetApiTests
         now["unit"]!.GetValue<string>().ShouldBe("mg/dL");
         now["arrow"]!.GetValue<string>().ShouldBe("↑");
         now["band"]!.GetValue<string>().ShouldBe("high");
-        now["at"]!.GetValue<DateTimeOffset>().ShouldBe(newest.At, TimeSpan.FromMilliseconds(1));
+        // Whole seconds in UTC, the ISO shape KWGT's date parser documents: it works out the age itself.
+        var at = now["at"]!.GetValue<string>();
+        at.ShouldMatch(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$");
+        DateTimeOffset.Parse(at, System.Globalization.CultureInfo.InvariantCulture)
+            .ShouldBe(newest.At, TimeSpan.FromSeconds(1));
     }
 
     [Fact]
@@ -338,6 +346,47 @@ public class SugaryWidgetApiTests
         var now = await NowBodyAsync(server, token, $"?person={SugaryServer.Him.UserId}");
 
         now["value"]!.GetValue<string>().ShouldBe("99");
+    }
+
+    // The same stops, asked of the accounts service itself over its wire on Sugary's own credential.
+    [Fact]
+    public async Task AgainstTheAccountsService_ATokenLivesWithItsSession_AndWaitsOutASuspension()
+    {
+        const string credential = "sugary-credential";
+        await using var accounts = await AccountsServer.StartAsync(s => s with
+        {
+            Callers = new Dictionary<string, string> { ["mcp-sugary"] = credential }
+        });
+        var fran = await accounts.MintOperatorAsync("Fran");
+        var sessions = accounts.Service<SessionStore>();
+        var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None)).ShouldNotBeNull();
+        var client = new AccountsResolverClient(new HttpClient { BaseAddress = accounts.Address }, credential);
+        await using var server = await SugaryServer.StartAsync(
+            services: s => s.Replace(ServiceDescriptor.Singleton<ISessionAccounts>(client)));
+        var person = new Account(fran.TenantId, fran.UserId);
+        var minted = await server.As(person, sessionId: phone.Id).PutAsync("/api/widget", null);
+        minted.StatusCode.ShouldBe(HttpStatusCode.OK, await minted.Content.ReadAsStringAsync());
+        var token = (await minted.Content.ReadFromJsonAsync<JsonNode>())!["token"]!.GetValue<string>();
+
+        var live = await NowAsync(server, token);
+        await SuspendAsync(accounts, suspended: true);
+        var suspended = await NowAsync(server, token);
+        await SuspendAsync(accounts, suspended: false);
+        var resumed = await NowAsync(server, token);
+        await sessions.RevokeAsync(fran.UserId, phone.Id, CancellationToken.None);
+        var revoked = await NowAsync(server, token);
+
+        live.StatusCode.ShouldBe(HttpStatusCode.OK);
+        suspended.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        resumed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        revoked.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private static async Task SuspendAsync(AccountsServer accounts, bool suspended)
+    {
+        await using var db = await accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        await db.Tenants.ExecuteUpdateAsync(t => t.SetProperty(
+            x => x.SuspendedAt, suspended ? accounts.Clock.GetUtcNow() : (DateTimeOffset?)null));
     }
 
     [Fact]
