@@ -2744,7 +2744,7 @@ h1.marked .icon {
   touch-action: pan-y;
 }
 
-.glucose-chart-head {
+.glucose-curve-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2752,7 +2752,6 @@ h1.marked .icon {
 }
 
 .glucose-readout {
-  min-width: 0;
   min-height: 1.4em;
   margin: 0;
   font-size: var(--text-meta);
@@ -2769,6 +2768,8 @@ h1.marked .icon {
   align-items: center;
   gap: var(--space-2);
   min-height: var(--target);
+  /* A full tap target that adds no height, so this title lines up with the Statistics title beside it. */
+  margin-block: calc((1.5rem - var(--target)) / 2);
   padding: 0;
   border: 0;
   background: none;

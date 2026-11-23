@@ -4,7 +4,7 @@ import { useWide } from "../wide";
 import { chartTop, curveSegments, formatGlucose, LOWEST, UNIT_LABEL } from "../glucose";
 import { formatShortDay, formatTime, locale } from "../format";
 import { useSettings } from "../settings";
-import type { GlucoseCurve, GlucoseUnit, GlucoseView } from "../types";
+import type { GlucoseCurve, GlucoseUnit } from "../types";
 
 // Drawn by hand, as every picture in the app is: one line, her target band behind it, the band's edges
 // and the ends of the time named. A touch or a pointer along it reads the nearest point. Drawn for a
@@ -19,18 +19,14 @@ export function GlucoseChart({
   targetLow,
   targetHigh,
   label,
-  view,
-  onView,
 }: {
   curve: GlucoseCurve;
   unit: GlucoseUnit;
   targetLow: number;
   targetHigh: number;
   label: string;
-  view: GlucoseView;
-  onView: (view: GlucoseView) => void;
 }) {
-  const { language, t } = useSettings();
+  const { language } = useSettings();
   const [hovered, setHovered] = useState<number | null>(null);
   const card = useRef<HTMLDivElement>(null);
   // A wide window gives the curve the room the glucose screen has under it, so its swings read.
@@ -64,29 +60,14 @@ export function GlucoseChart({
   const shown = hovered === null ? null : curve.points[hovered];
   return (
     <div ref={card} className="glucose-chart">
-      <div className="glucose-chart-head">
-        <p className="glucose-readout" aria-hidden="true">
-          {shown && (
-            <>
-              <strong>{formatGlucose(shown.mgPerDl, unit, language)}</strong> {UNIT_LABEL[unit]} ·{" "}
-              {days <= 2 ? formatTime(shown.at, language) : `${formatShortDay(shown.at, language)} ${formatTime(shown.at, language)}`}
-            </>
-          )}
-        </p>
-        <button
-          type="button"
-          role="switch"
-          className="glucose-view"
-          aria-checked={view === "smoothed"}
-          title={t("curveSmoothedHint")}
-          onClick={() => onView(view === "smoothed" ? "raw" : "smoothed")}
-        >
-          <span>{t("curveSmoothed")}</span>
-          <span className="glucose-view-track" aria-hidden="true">
-            <span className="glucose-view-thumb" />
-          </span>
-        </button>
-      </div>
+      <p className="glucose-readout" aria-hidden="true">
+        {shown && (
+          <>
+            <strong>{formatGlucose(shown.mgPerDl, unit, language)}</strong> {UNIT_LABEL[unit]} ·{" "}
+            {days <= 2 ? formatTime(shown.at, language) : `${formatShortDay(shown.at, language)} ${formatTime(shown.at, language)}`}
+          </>
+        )}
+      </p>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"

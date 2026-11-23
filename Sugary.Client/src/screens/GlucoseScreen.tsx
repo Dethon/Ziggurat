@@ -135,17 +135,18 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                 </div>
               </div>
               <section className="card" aria-labelledby="curve-title">
-                <h2 id="curve-title" className="section-title">
-                  {t("curveTitle")}
-                </h2>
+                <div className="glucose-curve-head">
+                  <h2 id="curve-title" className="section-title">
+                    {t("curveTitle")}
+                  </h2>
+                  <ViewSwitch view={view} onView={setView} />
+                </div>
                 {curve && curve.points.length > 0 ? (
                   <GlucoseChart
                     curve={curve}
                     unit={now.unit}
                     targetLow={now.targetLow}
                     targetHigh={now.targetHigh}
-                    view={view}
-                    onView={setView}
                     label={t("curveSpoken", {
                       period: periodLabel(period, t),
                       low: formatGlucose(now.targetLow, now.unit, language),
@@ -167,6 +168,26 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Whether the curve and the figures read smoothed values or the sensor's own.
+function ViewSwitch({ view, onView }: { view: GlucoseView; onView: (view: GlucoseView) => void }) {
+  const { t } = useSettings();
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="glucose-view"
+      aria-checked={view === "smoothed"}
+      title={t("curveSmoothedHint")}
+      onClick={() => onView(view === "smoothed" ? "raw" : "smoothed")}
+    >
+      <span>{t("curveSmoothed")}</span>
+      <span className="glucose-view-track" aria-hidden="true">
+        <span className="glucose-view-thumb" />
+      </span>
+    </button>
   );
 }
 
