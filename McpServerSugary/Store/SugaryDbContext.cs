@@ -43,6 +43,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
     public DbSet<CycleReminder> CycleReminders => Set<CycleReminder>();
     public DbSet<BodyMeasurement> BodyMeasurements => Set<BodyMeasurement>();
     public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
+    public DbSet<WidgetToken> WidgetTokens => Set<WidgetToken>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
@@ -114,6 +115,14 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         pen.Property(p => p.Kind).HasConversion<string>();
         pen.HasIndex(p => p.Kind);
         modelBuilder.Entity<PushSubscription>().HasKey(s => s.Endpoint);
+
+        // One widget address per signer and log: making another ends the one before.
+        var widgetToken = modelBuilder.Entity<WidgetToken>();
+        widgetToken.HasKey(t => t.Hash);
+        widgetToken.Property(t => t.Hash).HasMaxLength(64);
+        widgetToken.Property(t => t.LogUserId).HasMaxLength(OwnerIdLength);
+        widgetToken.Property(t => t.SessionId).HasMaxLength(OwnerIdLength);
+        widgetToken.HasIndex(t => new { t.TenantId, t.UserId, t.LogUserId }).IsUnique();
 
         // One profile per person, as one glucose link is. A measurement's day is stored as yyyy-MM-dd text.
         var profile = modelBuilder.Entity<Profile>();
@@ -213,6 +222,7 @@ public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) 
         Personal(profile);
         Personal(measurement);
         Personal(modelBuilder.Entity<PushSubscription>());
+        Personal(widgetToken);
         Personal(exercise);
         Personal(modelBuilder.Entity<Period>());
         Personal(modelBuilder.Entity<DayNote>());

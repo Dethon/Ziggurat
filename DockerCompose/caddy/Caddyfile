@@ -277,6 +277,13 @@ sugary.herfluffness.com {
         reverse_proxy accounts:8080
     }
 
+    # A home screen widget's two read-only answers. A widget can send no cookie or header, so its
+    # address carries a token the server holds to everything the session check would have asked
+    # (WidgetAccess). The address is a credential: this host must never write an access log.
+    handle /widget/* {
+        reverse_proxy mcp-sugary:8080
+    }
+
     # Each person's own log, behind the same sign-in as the chat client: the app and its API act
     # for the person the check names in the headers it copies, over any the client sent. A
     # signed-out page is sent to sign-in and back here, a signed-out call to the API is answered 401.

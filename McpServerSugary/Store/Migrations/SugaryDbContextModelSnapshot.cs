@@ -15,7 +15,7 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120110705_CycleReminders";
+    public override string LastMigrationId => "20261123200131_WidgetTokens";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -674,6 +674,45 @@ partial class SugaryDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("TenantId");
 
                 b.ToTable("Recipes");
+            });
+
+        modelBuilder.Entity("McpServerSugary.Store.WidgetToken", b =>
+            {
+                b.Property<string>("Hash")
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("LogUserId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("SessionId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("TenantId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("UserId")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Hash");
+
+                b.HasIndex("UserId");
+
+                b.HasIndex("TenantId", "UserId", "LogUserId")
+                    .IsUnique();
+
+                b.ToTable("WidgetTokens");
             });
 
         modelBuilder.Entity("McpServerSugary.Store.GlucoseLink", b =>

@@ -34,7 +34,16 @@ internal static class SugaryAccess
     // The household's, not a person's log: the pantry and what fills it.
     private static readonly string[] _household = ["/api/foods", "/api/recipes", "/api/products", "/api/labels"];
 
-    public static async Task<IResult?> AdmitAsync(HttpContext http, Person person, CancellationToken ct)
+    // A request of the app names whose log it reads in its address.
+    public static Task<IResult?> AdmitAsync(HttpContext http, Person person, CancellationToken ct) =>
+        AdmitAsync(http, person, http.Request.Query[PersonParameter].ToString(), ct);
+
+    // A widget's address is the signer's own row whichever log it reads, so making or removing one for
+    // somebody they may read changes nothing of that person's.
+    private static bool WritesOnlyTheirOwn(HttpContext http) =>
+        http.Request.Path.Equals("/api/widget", StringComparison.OrdinalIgnoreCase);
+
+    public static async Task<IResult?> AdmitAsync(HttpContext http, Person person, string named, CancellationToken ct)
     {
         IReadOnlyList<SugaryPerson> people;
         try
@@ -63,7 +72,6 @@ internal static class SugaryAccess
             return null;
         }
 
-        var named = http.Request.Query[PersonParameter].ToString();
         if (named.Length == 0 || named == person.Account.UserId)
         {
             if (!usesSugary && !http.Request.Path.Equals("/api/session", StringComparison.OrdinalIgnoreCase))
@@ -75,7 +83,7 @@ internal static class SugaryAccess
             return null;
         }
 
-        if (!HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method))
+        if (!HttpMethods.IsGet(http.Request.Method) && !HttpMethods.IsHead(http.Request.Method) && !WritesOnlyTheirOwn(http))
         {
             return Refuse(StatusCodes.Status403Forbidden, ReadOnly, "Somebody else's log is read, never written, from here.");
         }

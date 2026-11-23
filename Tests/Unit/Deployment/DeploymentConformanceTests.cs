@@ -659,6 +659,21 @@ public class DeploymentConformanceTests
         checks.ShouldAllBe(c => c.Check.Uri != null && c.Check.Uri.Contains("channel="));
     }
 
+    // A home screen widget can send no cookie, so its address carries its token and skips the session
+    // check, which the server stands in for (WidgetAccess). That route alone, and since the address is
+    // the credential, the host writes no access log it could end up in.
+    [Fact]
+    public void SugarysWidget_IsRoutedWithoutTheSessionCheck_OnAHostThatLogsNoAddresses()
+    {
+        var host = DeploymentFiles.Caddyfile().Host(SugaryHost);
+
+        var widget = host.Routes.Single(r => r.Matcher == "/widget/*");
+        widget.Upstream.ShouldBe("mcp-sugary:8080");
+        widget.ForwardAuth.ShouldBeNull();
+        host.Body.Split('\n').Select(l => l.Trim())
+            .ShouldNotContain(l => l == "log" || l.StartsWith("log ", StringComparison.Ordinal));
+    }
+
     // The admin API believes only the assertion the session check signs for the admin channel, so it
     // is reached on the main host — and the operator's routes on the dashboard's, for the household
     // list — through that check alone, and on no host past it: a host that does not serve the admin
