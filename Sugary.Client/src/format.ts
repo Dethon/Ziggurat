@@ -20,6 +20,12 @@ export function formatShortDay(iso: string, language: Language): string {
   return new Date(iso).toLocaleDateString(locale(language), { weekday: "short", day: "numeric" });
 }
 
+// "15 Oct, 14:25": when something happened, in a span long enough that a weekday would not place it.
+export function formatDayTime(iso: string, language: Language): string {
+  const day = new Date(iso).toLocaleDateString(locale(language), { day: "numeric", month: "short" });
+  return `${day}, ${formatTime(iso, language)}`;
+}
+
 // Units of insulin as she typed them, in her language's decimals: "4,5" in Spanish.
 export function formatUnits(units: number, language: Language): string {
   return units.toLocaleString(locale(language), { maximumFractionDigits: 2 });

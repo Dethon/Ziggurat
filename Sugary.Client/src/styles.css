@@ -2927,6 +2927,12 @@ h1.marked .icon {
   font-variant-numeric: tabular-nums;
 }
 
+/* The unit beside a figure is smaller, so "10.4 mmol/L" stays on one line in a laptop's narrow column. */
+.glucose-figures dd .muted {
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
 .glucose-figure-note {
   display: block;
   font-size: var(--text-label);

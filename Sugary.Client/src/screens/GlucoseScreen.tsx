@@ -20,6 +20,7 @@ import {
   LOWEST,
   linkFailureText,
   PERIODS,
+  periodLabel,
   rangeDraft,
   rangeProblem,
   REGIONS,
@@ -34,16 +35,14 @@ import {
   type Period,
 } from "../glucose";
 import { errorMessage } from "../errors";
-import { formatShortDay, formatTime, locale } from "../format";
-import type { Language, Translate } from "../i18n";
+import { formatDayTime, formatShortDay, formatTime, locale } from "../format";
+import type { Language } from "../i18n";
 import { overRecord, useShown } from "../stale";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucoseSettings, GlucoseStatistics, GlucoseUnit, GlucoseView } from "../types";
+import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucosePoint, GlucoseSettings, GlucoseStatistics, GlucoseUnit, GlucoseView } from "../types";
 
 const UNITS: GlucoseUnit[] = ["mgdl", "mmol"];
-
-const periodLabel = (days: Period, t: Translate) => (days === 1 ? t("glucosePeriodHours", { n: 24 }) : t("glucosePeriodDays", { n: days }));
 
 // Her glucose: where she is now, how her days went, what a clinic would read off them, and the
 // LibreLinkUp account it all comes from. `readOnly` is somebody else's: her readings and figures, but
@@ -266,6 +265,8 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
           </ul>
           <p className="muted small">{t("statsCumulative")}</p>
           <dl className="glucose-figures">
+            {figures.highest && <Extreme label={t("statsHighest")} point={figures.highest} unit={unit} />}
+            {figures.lowest && <Extreme label={t("statsLowest")} point={figures.lowest} unit={unit} />}
             <div>
               <dt>{t("statsMean")}</dt>
               <dd>
@@ -297,6 +298,19 @@ function Statistics({ figures, unit }: { figures: GlucoseStatistics; unit: Gluco
         </>
       )}
     </section>
+  );
+}
+
+function Extreme({ label, point, unit }: { label: string; point: GlucosePoint; unit: GlucoseUnit }) {
+  const { language } = useSettings();
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>
+        {formatGlucose(point.mgPerDl, unit, language)} <span className="muted">{UNIT_LABEL[unit]}</span>
+        <span className="glucose-figure-note">{formatDayTime(point.at, language)}</span>
+      </dd>
+    </div>
   );
 }
 

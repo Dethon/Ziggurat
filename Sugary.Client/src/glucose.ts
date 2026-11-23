@@ -25,7 +25,8 @@ export const LOW = 70;
 export const HIGH = 180;
 export const VERY_HIGH = 250;
 
-export const PERIODS = [1, 7, 14, 90] as const;
+// In days; the two shortest are named in hours.
+export const PERIODS = [0.5, 1, 7, 14, 90] as const;
 
 // What the tab opens on each time: the sensor's own values are a look she asks for.
 export const DEFAULT_VIEW: GlucoseView = "smoothed";
@@ -33,6 +34,9 @@ export const DEFAULT_VIEW: GlucoseView = "smoothed";
 // LibreLinkUp's regions, for an account the global address does not place by itself.
 export const REGIONS = ["ae", "ap", "au", "ca", "de", "eu", "eu2", "fr", "jp", "la", "ru", "us"] as const;
 export type Period = (typeof PERIODS)[number];
+
+export const periodLabel = (days: Period, t: Translate) =>
+  days <= 1 ? t("glucosePeriodHours", { n: days * 24 }) : t("glucosePeriodDays", { n: days });
 
 export const toUnit = (mgPerDl: number, unit: GlucoseUnit) => (unit === "mmol" ? mgPerDl / MMOL_FACTOR : mgPerDl);
 

@@ -12,6 +12,8 @@ import {
   glucoseErrorMessage,
   isStale,
   linkFailureText,
+  PERIODS,
+  periodLabel,
   rangeDraft,
   rangeProblem,
   retypeRange,
@@ -157,6 +159,7 @@ describe("the window a period reads", () => {
     const now = Date.UTC(2026, 10, 18, 12, 0);
     expect(windowOf(1, now)).toEqual({ from: "2026-11-17T12:00:00.000Z", to: "2026-11-18T12:00:00.000Z" });
     expect(windowOf(90, now).from).toBe("2026-08-20T12:00:00.000Z");
+    expect(windowOf(0.5, now).from).toBe("2026-11-18T00:00:00.000Z");
   });
 });
 
@@ -302,6 +305,12 @@ describe("a problem's code", () => {
 
     expect(failure).toBeInstanceOf(ApiError);
     expect((failure as ApiError).code).toBe("step-required");
+  });
+});
+
+describe("the periods", () => {
+  it("run from twelve hours to ninety days, the short ones named in hours", () => {
+    expect(PERIODS.map((days) => periodLabel(days, en))).toEqual(["12 h", "24 h", "7 d", "14 d", "90 d"]);
   });
 });
 

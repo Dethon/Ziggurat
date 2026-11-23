@@ -352,6 +352,9 @@ export interface GlucoseStatistics {
   inRange: number | null;
   high: number | null;
   veryHigh: number | null;
+  // Single readings of the view asked for, with when they happened.
+  lowest: GlucosePoint | null;
+  highest: GlucosePoint | null;
 }
 
 export interface LinkGlucose {
