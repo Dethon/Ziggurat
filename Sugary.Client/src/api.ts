@@ -11,6 +11,7 @@ import type {
   GlucoseNow,
   GlucoseSettings,
   GlucoseStatistics,
+  GlucoseView,
   LinkGlucose,
   Meal,
   MealEstimate,
@@ -234,9 +235,10 @@ export const api = {
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
   // Her newest reading with her link's state; then her curve over a window and a clinic's figures.
   glucoseNow: () => request<GlucoseNow>("/glucose/current"),
-  glucoseCurve: (from: string, to: string) =>
-    request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
-  glucoseStatistics: (days: number) => request<GlucoseStatistics>(`/glucose/statistics?days=${days}`),
+  glucoseCurve: (from: string, to: string, view: GlucoseView) =>
+    request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&view=${view}`),
+  glucoseStatistics: (days: number, view: GlucoseView) =>
+    request<GlucoseStatistics>(`/glucose/statistics?days=${days}&view=${view}`),
   cyclePhases: () => request<CyclePhases>("/glucose/cycle"),
   cycleReminder: () => request<{ on: boolean }>("/cycle/reminder"),
   setCycleReminder: (on: boolean) => request<{ on: boolean }>("/cycle/reminder", json("PUT", { on })),

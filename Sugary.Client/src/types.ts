@@ -323,6 +323,9 @@ export interface GlucosePoint {
   mgPerDl: number;
 }
 
+// Which values the curve and the figures read: one-minute misreads taken out, or the sensor's own.
+export type GlucoseView = "smoothed" | "raw";
+
 // Points as read, or bucket means where bucketMinutes is set; a silent stretch has none.
 export interface GlucoseCurve {
   from: string;

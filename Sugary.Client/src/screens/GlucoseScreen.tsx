@@ -9,6 +9,7 @@ import {
   ageMinutes,
   ageText,
   band,
+  DEFAULT_VIEW,
   formatGlucose,
   formatShare,
   glucoseErrorMessage,
@@ -38,7 +39,7 @@ import type { Language, Translate } from "../i18n";
 import { overRecord, useShown } from "../stale";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucoseSettings, GlucoseStatistics, GlucoseUnit } from "../types";
+import type { GlucoseCurve, GlucoseLink, GlucoseNow, GlucoseSettings, GlucoseStatistics, GlucoseUnit, GlucoseView } from "../types";
 
 const UNITS: GlucoseUnit[] = ["mgdl", "mmol"];
 
@@ -53,6 +54,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   const [state, setState] = useState<{ now: GlucoseNow; fetchedAt: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>(1);
+  const [view, setView] = useState<GlucoseView>(DEFAULT_VIEW);
   const [curve, setCurve] = useState<GlucoseCurve | null>(null);
   const [statistics, setStatistics] = useState<GlucoseStatistics | null>(null);
 
@@ -72,14 +74,14 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
   }, [load, minute]);
 
   const newest = state?.now.reading?.at ?? null;
-  // The curve and the figures move only when a reading arrives, or she picks another period.
+  // The curve and the figures move only when a reading arrives, or she picks another period or view.
   useEffect(() => {
     if (newest === null) {
       return;
     }
     const window = windowOf(period, Date.now());
     let current = true;
-    Promise.all([api.glucoseCurve(window.from, window.to), api.glucoseStatistics(period)]).then(
+    Promise.all([api.glucoseCurve(window.from, window.to, view), api.glucoseStatistics(period, view)]).then(
       ([points, figures]) => {
         if (current) {
           setCurve(points);
@@ -91,7 +93,7 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
     return () => {
       current = false;
     };
-  }, [newest, period, t]);
+  }, [newest, period, view, t]);
 
   const now = state?.now;
   return (
@@ -143,6 +145,8 @@ export function GlucoseScreen({ readOnly = false }: { readOnly?: boolean }) {
                     unit={now.unit}
                     targetLow={now.targetLow}
                     targetHigh={now.targetHigh}
+                    view={view}
+                    onView={setView}
                     label={t("curveSpoken", {
                       period: periodLabel(period, t),
                       low: formatGlucose(now.targetLow, now.unit, language),
