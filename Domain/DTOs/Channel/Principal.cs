@@ -29,9 +29,11 @@ public record Account(string TenantId, string UserId);
 // An account as a channel server learns it from the accounts service: the account, the name the
 // person goes by, which is what a turn's sender shows and never what anything is keyed by, and the
 // service's signed assertion of that person on the channel asked about, which the channel carries on
-// the person's turn untouched (it lives ten minutes, so it is carried, not kept).
+// the person's turn untouched (it lives ten minutes, so it is carried, not kept). HouseholdSuspended is
+// said only by a session lookup, which answers for a suspended household on purpose: a caller with no
+// session check in front of it refuses on it.
 [PublicAPI]
-public record ResolvedAccount(Account Account, string DisplayName, string Assertion);
+public record ResolvedAccount(Account Account, string DisplayName, string Assertion, bool HouseholdSuspended = false);
 
 // The household's guest as a satellite's channel learns it: whose house it is, and the accounts
 // service's signed assertion of the guest — somebody the house works for, as no person.

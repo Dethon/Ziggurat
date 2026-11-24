@@ -49,7 +49,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
         }
 
         var answer = await ReadAsync<Answer>(response, ct);
-        return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion);
+        return new ResolvedAccount(
+            new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion, answer.HouseholdSuspended);
     }
 
     public async Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct)
@@ -153,7 +154,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
 
     private sealed record SessionQuery(string UserId, string SessionId);
 
-    private sealed record Answer(string TenantId, string UserId, string DisplayName, string Assertion);
+    private sealed record Answer(
+        string TenantId, string UserId, string DisplayName, string Assertion, bool HouseholdSuspended = false);
 
     private sealed record GuestQuery(string Channel);
 

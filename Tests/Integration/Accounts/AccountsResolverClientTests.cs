@@ -59,6 +59,29 @@ public class AccountsResolverClientTests
             () => ClientFor(server, "wrong").SessionAsync(fran.UserId, phone.Id, CancellationToken.None));
     }
 
+    // The session lookup still answers for a suspended household (the agent words that refusal), so
+    // whoever acts on the answer with no session check in front of it has to be told.
+    [Fact]
+    public async Task ALiveSession_SaysWhetherItsHouseholdIsSuspended()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var sessions = server.Service<SessionStore>();
+        var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+        var client = ClientFor(server, Credential);
+
+        var running = await client.SessionAsync(fran.UserId, phone.Id, CancellationToken.None);
+        await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            await db.Tenants.ExecuteUpdateAsync(t => t.SetProperty(x => x.SuspendedAt, server.Clock.GetUtcNow()));
+        }
+
+        var suspended = await client.SessionAsync(fran.UserId, phone.Id, CancellationToken.None);
+
+        running.ShouldNotBeNull().HouseholdSuspended.ShouldBeFalse();
+        suspended.ShouldNotBeNull().HouseholdSuspended.ShouldBeTrue();
+    }
+
     // A satellite's speaker nobody recognised is still somebody: the household's guest, signed.
     [Fact]
     public async Task TheHouseholdsGuest_IsSignedForASatellite()

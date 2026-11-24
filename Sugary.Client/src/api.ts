@@ -31,6 +31,8 @@ import type {
   SavePushSubscription,
   SaveRecipe,
   SessionState,
+  WidgetMinted,
+  WidgetState,
 } from "./types";
 
 export class ApiError extends Error {
@@ -234,6 +236,9 @@ export const api = {
     request<Period>(`/periods/${id}`, json("PUT", { ...period, loaded })),
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
   // Her newest reading with her link's state; then her curve over a window and a clinic's figures.
+  widget: () => request<WidgetState>("/widget"),
+  mintWidget: () => request<WidgetMinted>("/widget", { method: "PUT" }),
+  removeWidget: () => request<void>("/widget", { method: "DELETE" }),
   glucoseNow: () => request<GlucoseNow>("/glucose/current"),
   glucoseCurve: (from: string, to: string, view: GlucoseView) =>
     request<GlucoseCurve>(`/glucose/readings?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&view=${view}`),

@@ -194,7 +194,7 @@ public static class GlucoseEndpoints
 
     // Smoothed values are read with the minutes just outside the window, so a reading at its edge has
     // the neighbours it has in any other window and the same instant never reads two ways.
-    private static async Task<IReadOnlyList<SensorReading>> ReadingsIn(
+    internal static async Task<IReadOnlyList<SensorReading>> ReadingsIn(
         SugaryDbContext db, DateTimeOffset from, DateTimeOffset to, GlucoseView view, CancellationToken ct)
     {
         var margin = view == GlucoseView.Smoothed ? GlucoseSmoothing.Margin : TimeSpan.Zero;
@@ -355,7 +355,7 @@ public static class GlucoseEndpoints
         return Results.NoContent();
     }
 
-    private static Task<GlucoseLink?> LinkOf(SugaryDbContext db, CancellationToken ct) =>
+    internal static Task<GlucoseLink?> LinkOf(SugaryDbContext db, CancellationToken ct) =>
         db.GlucoseLinks.Include(l => l.Connections).SingleOrDefaultAsync(ct);
 
     // The account's password is never logged: LibreLinkUpAccount is a record and would print it.

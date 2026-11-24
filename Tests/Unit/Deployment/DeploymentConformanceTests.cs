@@ -39,6 +39,18 @@ public class DeploymentConformanceTests
         DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
     }
 
+    // A deploy copies the Caddyfile in by writing a new file and renaming it over the old one (rsync, git),
+    // and a bind mount of the file itself keeps the old one, so `caddy reload` re-read stale routes on
+    // prod for eleven days. A mount of its folder sees the rename.
+    [Fact]
+    public void Caddy_MountsItsConfigurationFolder_NotTheFile()
+    {
+        var volumes = DeploymentFiles.Compose().Service("caddy").Volumes;
+
+        volumes.ShouldContain("./caddy:/etc/caddy:ro");
+        volumes.ShouldNotContain(v => v.Contains("/etc/caddy/Caddyfile", StringComparison.Ordinal));
+    }
+
     // Every section's words are a markdown document embedded into Domain, and the build context
     // drops markdown: a context that lost them builds images whose agents have no prompt.
     [Fact]
@@ -657,6 +669,21 @@ public class DeploymentConformanceTests
         checks.ShouldNotBeEmpty();
         checks.ShouldAllBe(c => c.Check.CopiedHeaders.Order().SequenceEqual(ForwardedAccount.Headers.Order()));
         checks.ShouldAllBe(c => c.Check.Uri != null && c.Check.Uri.Contains("channel="));
+    }
+
+    // A home screen widget can send no cookie, so its address carries its token and skips the session
+    // check, which the server stands in for (WidgetAccess). That route alone, and since the address is
+    // the credential, the host writes no access log it could end up in.
+    [Fact]
+    public void SugarysWidget_IsRoutedWithoutTheSessionCheck_OnAHostThatLogsNoAddresses()
+    {
+        var host = DeploymentFiles.Caddyfile().Host(SugaryHost);
+
+        var widget = host.Routes.Single(r => r.Matcher == "/widget/*");
+        widget.Upstream.ShouldBe("mcp-sugary:8080");
+        widget.ForwardAuth.ShouldBeNull();
+        host.Body.Split('\n').Select(l => l.Trim())
+            .ShouldNotContain(l => l == "log" || l.StartsWith("log ", StringComparison.Ordinal));
     }
 
     // The admin API believes only the assertion the session check signs for the admin channel, so it

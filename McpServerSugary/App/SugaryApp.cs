@@ -47,6 +47,19 @@ public static class SugaryApp
         // Then who may use Sugary and whose log the request reads (SugaryAccess), once, for every route.
         app.Use(async (context, next) =>
         {
+            // A widget's address: no session check stands in front of it, so its token is held to
+            // everything one would have asked. Nothing it answers is for a cache to keep.
+            if (context.Request.Path.StartsWithSegments("/widget", out var afterWidget))
+            {
+                context.Response.Headers.CacheControl = "no-store";
+                context.Response.Headers["Referrer-Policy"] = "no-referrer";
+                if (await WidgetAccess.AdmitAsync(context, WidgetAccess.TokenIn(afterWidget), context.RequestAborted) is { } shut)
+                {
+                    await shut.ExecuteAsync(context);
+                    return;
+                }
+            }
+
             if (context.Request.Path.StartsWithSegments("/api"))
             {
                 if (await Person.SignedInAsync(context, context.RequestAborted) is not { } person)
@@ -85,8 +98,10 @@ public static class SugaryApp
         api.MapExportEndpoints();
         api.MapEstimateEndpoints();
         api.MapLabelEndpoints();
+        api.MapWidgetTokenEndpoints();
 
         api.MapFallback(() => Results.NotFound());
+        app.MapWidgetEndpoints();
         // Any other path without a file name is one of the app's own screens.
         app.MapFallbackToFile("index.html", files);
         return app;

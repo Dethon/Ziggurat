@@ -40,7 +40,7 @@ public sealed class SuspensionCoverageTests
         ["/accounts/internal/resolve"] = "refuses: SuspendedHouseholdAnswer (423), IdentityResolution",
         ["/accounts/internal/guest"] = "refuses: SuspendedHouseholdAnswer (423), IdentityResolution",
         ["/accounts/internal/session"] =
-            "exempt: answers deliberately, so the agent refuses the turn with SuspendedAnswer rather than 'signed out'",
+            "exempt: answers deliberately and says the household is suspended, so the agent refuses the turn with SuspendedAnswer rather than 'signed out', and a Sugary widget token stops",
         ["/accounts/internal/telegram/start"] = "refuses: TelegramStartOutcome.Suspended (423), nothing spent",
         ["/accounts/internal/telegram/web-link"] = "refuses: TelegramWebLinkOutcome.Suspended (423)",
         ["/accounts/internal/telegram/bind"] =
