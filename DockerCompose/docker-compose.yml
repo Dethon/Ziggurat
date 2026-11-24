@@ -665,7 +665,9 @@ services:
     ports:
       - "443:443"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      # The folder, never the file: a deploy that replaces the Caddyfile by rename leaves a file mount
+      # on the old one, and `caddy reload` would keep serving stale routes.
+      - ./caddy:/etc/caddy:ro
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
     environment:

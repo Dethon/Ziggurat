@@ -39,6 +39,18 @@ public class DeploymentConformanceTests
         DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
     }
 
+    // A deploy copies the Caddyfile in by writing a new file and renaming it over the old one (rsync, git),
+    // and a bind mount of the file itself keeps the old one, so `caddy reload` re-read stale routes on
+    // prod for eleven days. A mount of its folder sees the rename.
+    [Fact]
+    public void Caddy_MountsItsConfigurationFolder_NotTheFile()
+    {
+        var volumes = DeploymentFiles.Compose().Service("caddy").Volumes;
+
+        volumes.ShouldContain("./caddy:/etc/caddy:ro");
+        volumes.ShouldNotContain(v => v.Contains("/etc/caddy/Caddyfile", StringComparison.Ordinal));
+    }
+
     // Every section's words are a markdown document embedded into Domain, and the build context
     // drops markdown: a context that lost them builds images whose agents have no prompt.
     [Fact]
