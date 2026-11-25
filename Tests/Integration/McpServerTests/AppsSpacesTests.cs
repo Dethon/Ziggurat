@@ -183,6 +183,36 @@ public class AppsSpacesTests
         Directive(approved.Headers.GetValues("Content-Security-Policy").Single(), "connect-src").ShouldContain("https://tracker.example.com");
     }
 
+    // Publishing a shared app that asks for more than an owner approved serves it, granted only the approved
+    // part, and the answer names what waits on an owner, so the agent can tell its person; a publish within
+    // the approval, or of an app nobody shares, says nothing of owners. Spaces that cannot be read publish
+    // all the same, the answer saying the check could not be made.
+    [Fact]
+    public async Task PublishingASharedAppThatAsksForMore_NamesWhatWaitsOnAnOwner()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var within = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        server.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"] });
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"]}""",
+            overwrite: true);
+
+        var widened = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        server.Spaces.Down = true;
+        var unchecked_ = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+
+        within["stdout"]!.GetValue<string>().ShouldNotContain("owner");
+        widened["exitCode"]!.GetValue<int>().ShouldBe(0);
+        var said = widened["stdout"]!.GetValue<string>();
+        said.ShouldContain("/notes");
+        said.ShouldContain("https://tracker.example.com");
+        said.ShouldContain("owner");
+        said.ShouldNotContain("/sugary");
+        unchecked_["exitCode"]!.GetValue<int>().ShouldBe(0);
+        unchecked_["stdout"]!.GetValue<string>().ShouldContain("could not be checked");
+    }
+
     private static string Directive(string policy, string name) =>
         policy.Split(';', StringSplitOptions.TrimEntries).Single(d => d.StartsWith(name + " ", StringComparison.Ordinal));
 }

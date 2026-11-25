@@ -688,36 +688,87 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         };
     }
 
-    private async Task<FsResult<FsExecResult>> PublishAsync(BuiltApp app, string cwd, CancellationToken ct) =>
-        await store.OneAtATimeAsync(app.HouseholdId, async () =>
+    // The publish itself runs one at a time per household; what of it waits on an owner is asked after, of
+    // the household's spaces, so no other publish waits on the accounts service.
+    private async Task<FsResult<FsExecResult>> PublishAsync(BuiltApp app, string cwd, CancellationToken ct)
+    {
+        var (result, served) = await store.OneAtATimeAsync(app.HouseholdId, async () =>
         {
             var repository = store.Repository(app);
             var manifestPath = Path.Combine(repository.WorkTree, AppManifest.FileName);
             if (!File.Exists(manifestPath))
             {
-                return Exec(cwd, "", $"nothing published: {AppManifest.FileName} is missing.", 1);
+                return (Exec(cwd, "", $"nothing published: {AppManifest.FileName} is missing.", 1), null);
             }
 
+            AppManifest manifest;
             switch (AppManifest.Parse(await File.ReadAllTextAsync(manifestPath, ct)))
             {
                 case AppManifestParse.Refused { Problems: var problems }:
-                    return Exec(cwd, "", $"nothing published: {AppManifest.FileName} breaks its rules:\n- {string.Join("\n- ", problems)}", 1);
-                case AppManifestParse.Valid { Manifest: var manifest } when !Directory.Exists(Path.Combine(repository.WorkTree, manifest.Root)):
-                    return Exec(cwd, "", $"nothing published: the root '{manifest.Root}' the manifest serves is not a directory of the app.", 1);
-                case AppManifestParse.Valid { Manifest: var manifest }
-                    when await UnpinnedAsync(Path.Combine(repository.WorkTree, manifest.Root), ct) is { Count: > 0 } unpinned:
-                    return Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", unpinned)}", 1);
+                    return (Exec(cwd, "", $"nothing published: {AppManifest.FileName} breaks its rules:\n- {string.Join("\n- ", problems)}", 1), null);
+                case AppManifestParse.Valid { Manifest: var valid } when !Directory.Exists(Path.Combine(repository.WorkTree, valid.Root)):
+                    return (Exec(cwd, "", $"nothing published: the root '{valid.Root}' the manifest serves is not a directory of the app.", 1), null);
+                case AppManifestParse.Valid { Manifest: var valid }
+                    when await UnpinnedAsync(Path.Combine(repository.WorkTree, valid.Root), ct) is { Count: > 0 } unpinned:
+                    return (Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", unpinned)}", 1), null);
+                case AppManifestParse.Valid { Manifest: var valid }:
+                    manifest = valid;
+                    break;
+                default:
+                    throw new InvalidOperationException("A manifest is either valid or refused.");
             }
 
             var committed = await repository.CommitAllAsync($"Publish from a turn of {_agentId ?? app.BuildingAgent}", ct);
             var head = (await repository.HeadAsync(ct))!;
-            var served = await repository.ResolveAsync(head, ct);
+            var commit = await repository.ResolveAsync(head, ct);
             await store.SaveAsync(app with { PublishedCommit = head }, ct);
             var link = BuiltAppId.Link(app.Slug, app.Id, appsDomain);
-            return Exec(cwd, committed is null
-                ? $"nothing changed since {served!.Short}; serving it at {link}\n"
-                : $"published {served!.Short}; the app is served at {link}\n", "", 0);
+            return (Exec(cwd, committed is null
+                ? $"nothing changed since {commit!.Short}; serving it at {link}\n"
+                : $"published {commit!.Short}; the app is served at {link}\n", "", 0), (AppManifest?)manifest);
         }, ct);
+
+        return served is not null && result is FsResult<FsExecResult>.Ok { Value: var answer }
+            ? new FsResult<FsExecResult>.Ok(answer with { Stdout = answer.Stdout + await WaitingOnAnOwnerAsync(app, served, ct) })
+            : result;
+    }
+
+    // While the household shares the app as a space, its published origin is granted no more than an owner
+    // approved: what the served manifest asks beyond that is named, for the agent to tell its person, since
+    // nothing else tells the author it is not granted. Nothing is said of an app nobody shares, or one asking
+    // no more; spaces that cannot be read say the check could not be made, and the publish stands.
+    private async Task<string> WaitingOnAnOwnerAsync(BuiltApp app, AppManifest served, CancellationToken ct)
+    {
+        if (_household is null)
+        {
+            return "";
+        }
+
+        SpacesSection spaces;
+        try
+        {
+            spaces = await _household.SpacesAsync(ct);
+        }
+        // An outage, the reader's own timeout (a cancellation this call did not ask for), or a refusal.
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            return "whether the household's owners approved what it reads and talks to could not be checked just now: while the "
+                   + "household shares the app as a space, it is granted no more than they approved\n";
+        }
+
+        if (spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id) is not { } space
+            || AppReach.Of(served).Beyond(space.Approved) is not { IsEmpty: false } beyond)
+        {
+            return "";
+        }
+
+        var asked = beyond.Reads.Select(read => $"reading {read}")
+            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"));
+        return $"the household shares it as the space '{space.Name}', and an owner has not approved all it now asks: until one "
+               + $"approves it on the spaces page, it is not granted {string.Join(", ", asked)} — for anyone, you included. "
+               + "Tell the person, so they can ask an owner\n";
+    }
 
     // Every page under the served root, by its path from there: a page outside it is the agent's
     // source, never loaded by a person.
