@@ -71,43 +71,24 @@ public sealed class AppPages(
             return;
         }
 
-        // Who is asking is settled before whether the app is there, so a page opened by nobody is sent
-        // to sign in whether or not its app exists, and learns nothing by it.
-        var viewer = await viewers.ViewerAsync(request, origin, ct);
-        if (viewer == AppViewer.Unchecked)
+        ServedFiles served;
+        switch (await SettleAsync(request, origin, ct))
         {
-            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
-            return;
-        }
-
-        if (viewer is not AppViewer.Person { Session: var session })
-        {
-            if (IsNavigation(request) && await viewers.SendToSignInAsync(context))
-            {
+            case Settled.ViewerUnchecked:
+                await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
                 return;
-            }
-
-            await NotFoundAsync(context);
-            return;
-        }
-
-        if (await store.FindAsync(origin.Id, ct) is not { } app)
-        {
-            await NotFoundAsync(context);
-            return;
-        }
-
-        var access = await AccessAsync(session, app, origin, ct);
-        if (access is Access.Unchecked)
-        {
-            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AccessUnchecked);
-            return;
-        }
-
-        if (access is not Access.Open { SharedAs: var sharedAs } || await ServedAsync(app, origin, sharedAs, ct) is not { } served)
-        {
-            await NotFoundAsync(context);
-            return;
+            // A page opened by nobody is sent to sign in whether or not its app exists, and learns nothing by it.
+            case Settled.Nobody when IsNavigation(request) && await viewers.SendToSignInAsync(context):
+                return;
+            case Settled.AccessUnchecked:
+                await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AccessUnchecked);
+                return;
+            case Settled.Open open:
+                served = open.Served;
+                break;
+            default:
+                await NotFoundAsync(context);
+                return;
         }
 
         var pinned = await served.PinnedAsync(ct);
@@ -188,34 +169,19 @@ public sealed class AppPages(
             return;
         }
 
-        var viewer = await viewers.ViewerAsync(context.Request, origin, ct);
-        if (viewer == AppViewer.Unchecked)
+        var settled = await SettleAsync(context.Request, origin, ct);
+        if (settled is Settled.ViewerUnchecked or Settled.AccessUnchecked)
         {
             await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
                 StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
-                    "Who is reading could not be checked just now, so nothing was read.", "Read again in a moment.")));
-            return;
-        }
-
-        if (viewer is not AppViewer.Person { Session: var session }
-            || await store.FindAsync(origin.Id, ct) is not { } app)
-        {
-            await NotFoundAsync(context);
-            return;
-        }
-
-        var access = await AccessAsync(session, app, origin, ct);
-        if (access is Access.Unchecked)
-        {
-            await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
-                StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
-                    "Whether this app is shared with the reader could not be checked just now, so nothing was read.",
+                    settled is Settled.ViewerUnchecked
+                        ? "Who is reading could not be checked just now, so nothing was read."
+                        : "Whether this app is shared with the reader could not be checked just now, so nothing was read.",
                     "Read again in a moment.")));
             return;
         }
 
-        if (access is not Access.Open { SharedAs: var sharedAs }
-            || await ServedAsync(app, origin, sharedAs, ct) is not { } served
+        if (settled is not Settled.Open { Session: var session, App: var app, Served: var served }
             || operation.Length == 0 || operation.Contains('/'))
         {
             await NotFoundAsync(context);
@@ -247,31 +213,82 @@ public sealed class AppPages(
             return;
         }
 
-        var viewer = await viewers.ViewerAsync(context.Request, origin, ct);
-        if (viewer == AppViewer.Unchecked)
+        switch (await SettleAsync(context.Request, origin, ct))
         {
-            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
-            return;
-        }
-
-        if (viewer is not AppViewer.Person { Session: var session }
-            || await store.FindAsync(origin.Id, ct) is not { } app)
-        {
-            await NotFoundAsync(context);
-            return;
-        }
-
-        switch (await AccessAsync(session, app, origin, ct))
-        {
-            case Access.Unchecked:
+            case Settled.ViewerUnchecked:
+                await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
+                return;
+            case Settled.AccessUnchecked:
                 await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable);
                 return;
-            case Access.Open { SharedAs: var sharedAs } when await ServedAsync(app, origin, sharedAs, ct) is { } served:
+            case Settled.Open { Session: var session, App: var app, Served: var served }:
                 await reports.ReportAsync(context, app, session, served, ct);
                 return;
             default:
                 await NotFoundAsync(context);
                 return;
+        }
+    }
+
+    // Who is asking and what of the origin they may have, settled the one way for a page, a read and a
+    // report: the viewer before whether the app is there, so nobody learns whether an app exists by asking;
+    // then whether this viewer may open it (AccessAsync), and what the origin serves them. Each caller says
+    // how it answers each outcome.
+    private async Task<Settled> SettleAsync(HttpRequest request, AppOrigin origin, CancellationToken ct)
+    {
+        var viewer = await viewers.ViewerAsync(request, origin, ct);
+        if (viewer == AppViewer.Unchecked)
+        {
+            return Settled.ViewerUnchecked.Instance;
+        }
+
+        if (viewer is not AppViewer.Person { Session: var session })
+        {
+            return Settled.Nobody.Instance;
+        }
+
+        if (await store.FindAsync(origin.Id, ct) is not { } app)
+        {
+            return Settled.Closed.Instance;
+        }
+
+        switch (await AccessAsync(session, app, origin, ct))
+        {
+            case Access.Unchecked:
+                return Settled.AccessUnchecked.Instance;
+            case Access.Open { SharedAs: var sharedAs } when await ServedAsync(app, origin, sharedAs, ct) is { } served:
+                return new Settled.Open(session, app, served);
+            default:
+                return Settled.Closed.Instance;
+        }
+    }
+
+    private abstract record Settled
+    {
+        public sealed record Open(AppSession Session, BuiltApp App, ServedFiles Served) : Settled;
+
+        // Who is asking could not be checked just now.
+        public sealed record ViewerUnchecked : Settled
+        {
+            public static readonly ViewerUnchecked Instance = new();
+        }
+
+        // No app session on this origin.
+        public sealed record Nobody : Settled
+        {
+            public static readonly Nobody Instance = new();
+        }
+
+        // No such app, one this viewer may not open, or nothing served there yet: the one 404.
+        public sealed record Closed : Settled
+        {
+            public static readonly Closed Instance = new();
+        }
+
+        // Whether the app is shared with this viewer could not be read just now.
+        public sealed record AccessUnchecked : Settled
+        {
+            public static readonly AccessUnchecked Instance = new();
         }
     }
 
