@@ -69,7 +69,7 @@ public sealed class AppReadsAgent : IAsyncDisposable
                 .AddSingleton<IAgentDefinitionProvider>(definitions)
                 .AddSingleton<IAccountStanding>(new HouseholdAccountStanding(households))
                 .AddSingleton(new AgentReadRegistries(
-                    definitions, McpTestSecret.Credentials,
+                    definitions, McpTestSecret.Credentials, TimeProvider.System,
                     new InProcessOwnServers(online ?? new Dictionary<string, string>()), McpTestSecret.CallTokens))
                 .AddAppReads(new VfsBridgeSettings { MaxFileBytes = maxFileBytes }, new AppReadSettings());
             var built = builder.Build();

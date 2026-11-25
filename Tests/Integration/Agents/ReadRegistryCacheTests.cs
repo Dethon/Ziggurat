@@ -140,7 +140,7 @@ public sealed class ReadRegistryCacheTests
     {
         var definitions = new AgentDefinitionProvider(new HouseholdAgentSource(households, new SharedServers()), new CustomAgentRegistry());
         return new ReadRegistryCache(
-            new AgentReadRegistries(definitions, McpTestSecret.Credentials, new InProcessOwnServers(online), McpTestSecret.CallTokens),
+            new AgentReadRegistries(definitions, McpTestSecret.Credentials, clock, new InProcessOwnServers(online), McpTestSecret.CallTokens),
             clock, new AppReadSettings());
     }
 }

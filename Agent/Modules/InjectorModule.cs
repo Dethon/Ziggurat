@@ -182,6 +182,7 @@ public static class InjectorModule
                 .AddSingleton(sp => new AgentReadRegistries(
                     sp.GetRequiredService<IAgentDefinitionProvider>(),
                     sp.GetRequiredService<McpCredentials>(),
+                    sp.GetRequiredService<TimeProvider>(),
                     sp.GetService<IOwnServers>(),
                     sp.GetService<CallTokens>(),
                     sp.GetService<ILoggerFactory>()))

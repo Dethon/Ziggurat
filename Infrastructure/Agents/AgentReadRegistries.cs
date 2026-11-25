@@ -23,11 +23,12 @@ namespace Infrastructure.Agents;
 public sealed class AgentReadRegistries(
     IAgentDefinitionProvider definitions,
     McpCredentials credentials,
+    TimeProvider clock,
     IOwnServers? ownServers = null,
     CallTokens? callTokens = null,
     ILoggerFactory? loggerFactory = null)
 {
-    private readonly McpPromptCache _promptCache = new(TimeProvider.System, TimeSpan.FromSeconds(60));
+    private readonly McpPromptCache _promptCache = new(clock, TimeSpan.FromSeconds(60));
 
     // `viewer` is the identity the agent verified, as a turn's is (AssertionVerifier.VerifyTurnAsync's
     // admission), never one read off a request: its household is the household read, and its person
@@ -38,6 +39,8 @@ public sealed class AgentReadRegistries(
                       ?? throw new ArgumentException("a registry is read by a person of a household", nameof(viewer));
         var household = await definitions.ForHouseholdAsync(account.TenantId, ct);
         var definition = household.Find(agentId) ?? throw new AgentNotFoundException(agentId, account.TenantId);
+
+        var filesystemTools = AgentSpecProjection.ExtractFilesystemEnabledTools(definition.EnabledFeatures);
 
         Task<HouseholdAgents> HouseholdNow(CancellationToken ct) => definitions.ForHouseholdAsync(account.TenantId, ct);
         var reach = new SessionReach(
@@ -54,7 +57,7 @@ public sealed class AgentReadRegistries(
             account.UserId,
             definition.Description ?? "",
             DomainTools: [],
-            AgentSpecProjection.ExtractFilesystemEnabledTools(definition.EnabledFeatures),
+            filesystemTools,
             loggerFactory,
             _promptCache,
             ReadImages: null,
@@ -67,7 +70,7 @@ public sealed class AgentReadRegistries(
         return new ReadRegistry(
             session, reach, reached, HouseholdNow, household.AsBuilt(definition.Id), ReadRegistry.CallerFor(viewer, definition.Id),
             new ToolPermission(new ToolPatternMatcher(definition.WhitelistPatterns).IsMatch),
-            FileSystemToolFeature.Offers(AgentSpecProjection.ExtractFilesystemEnabledTools(definition.EnabledFeatures)));
+            FileSystemToolFeature.Offers(filesystemTools));
     }
 }
 

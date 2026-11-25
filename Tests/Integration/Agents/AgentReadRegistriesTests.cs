@@ -163,7 +163,7 @@ public sealed class AgentReadRegistriesTests
         await custom.AddAsync(Fran, Jonas() with { Id = "custom-1" });
         var registries = new AgentReadRegistries(
             new AgentDefinitionProvider(new HouseholdAgentSource(households, new SharedServers()), custom),
-            McpTestSecret.Credentials, callTokens: McpTestSecret.CallTokens);
+            McpTestSecret.Credentials, TimeProvider.System, callTokens: McpTestSecret.CallTokens);
 
         foreach (var agent in new[] { "nabu", "custom-1" })
         {
@@ -269,6 +269,7 @@ public sealed class AgentReadRegistriesTests
         new(
             Definitions(households, shared),
             McpTestSecret.Credentials,
+            TimeProvider.System,
             new InProcessOwnServers(online ?? new Dictionary<string, string>()),
             McpTestSecret.CallTokens);
 
