@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Domain.Apps;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.WebChat;
 using JetBrains.Annotations;
@@ -193,11 +194,36 @@ public static partial class HouseholdSections
             {
                 yield return $"space {space.Slug}'s default agent '{agent}' is no agent id";
             }
+
+            if (space.AppId is not { } app)
+            {
+                continue;
+            }
+
+            if (!BuiltAppId.IsValid(app))
+            {
+                yield return $"space {space.Slug}'s app '{app}' is no built app's id";
+            }
+
+            if (space.Slug == SpaceConfig.DefaultSlug)
+            {
+                yield return "the default space holds the conversations of removed spaces, so it shares no app";
+            }
+
+            if (space.DefaultAgent is not null)
+            {
+                yield return $"space {space.Slug} shares an app, so it opens on no agent";
+            }
         }
 
         foreach (var slug in section.Spaces.GroupBy(s => s.Slug).Where(g => g.Count() > 1).Select(g => g.Key))
         {
             yield return $"space slug {slug} is used more than once";
+        }
+
+        foreach (var app in section.Spaces.Where(s => s.IsApp).GroupBy(s => s.AppId).Where(g => g.Count() > 1).Select(g => g.Key))
+        {
+            yield return $"app {app} is shared by more than one space";
         }
     }
 

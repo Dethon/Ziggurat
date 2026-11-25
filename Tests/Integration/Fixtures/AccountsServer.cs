@@ -95,7 +95,9 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return new AccountsServer(app, settings, clock, port, directory, ownsDirectory);
     }
 
-    private static readonly DateTimeOffset StartedAt = new(2026, 10, 29, 9, 0, 0, TimeSpan.Zero);
+    // Where every service's clock starts, so a server the test starts beside it (the apps server, which
+    // verifies its assertions) can be handed a clock that agrees before the two can be told of each other.
+    public static readonly DateTimeOffset StartedAt = new(2026, 10, 29, 9, 0, 0, TimeSpan.Zero);
 
     // A store migrated and seeded once per run, as the service prepares one at its first start, copied
     // for each server whose file does not exist yet: migrating a fresh SQLite file per test was the

@@ -74,6 +74,16 @@ public record AccountsSettings
     // be read: a month's read walks thirty-one days of roll-ups.
     public TimeSpan UsageTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
+    // Where the apps server answers on the deployment's network: the spaces page lists the household's
+    // published apps from its listing (PublishedApps.Path on its MCP listener), asked with an assertion
+    // this service signs for the owner, so no secret exists for this. Per deployment (APPSURL in compose);
+    // the default is compose's value.
+    public string AppsUrl { get; init; } = DefaultAppsUrl;
+
+    // How long the spaces page waits on the apps server before it says the household's apps could not be
+    // read: a listing reads one manifest out of git per published app.
+    public TimeSpan AppsTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
     // What the admin API holds an owner's changes to beyond the sections' own rules.
     public AdminSettings Admin { get; init; } = new();
 
@@ -98,6 +108,8 @@ public record AccountsSettings
     public const string DefaultAgentUrl = "http://agent:8080";
 
     public const string DefaultObservabilityUrl = "http://observability:8080";
+
+    public const string DefaultAppsUrl = "http://mcp-apps:8080";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 

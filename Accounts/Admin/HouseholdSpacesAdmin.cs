@@ -1,7 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Accounts.Configuration;
+using Accounts.Members;
 using Domain.Agents;
+using Domain.Apps;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
@@ -15,18 +17,28 @@ namespace Accounts.Admin;
 // connection. Beyond the section's rules: the default space stays (a removed space's topics are
 // listed there, an alarm's push lands there, the chat's own address opens it), a name is held to
 // AdminSpaces.NameLength, and a space opens on one of the household's agents or on none.
+//
+// An app space shares one of the household's published apps (HouseholdSpace.AppId) with every member.
+// The apps server is asked which those are (HouseholdAppsClient) only for a household the operator gave
+// the apps feature, and its not answering costs only a new app space: the page still loads and saves. An
+// app space's name and colour are its app's, stamped from the apps server's answer and never the page's
+// word; what a space is — the app it shares, or that it shares none — is set when it is added.
 public static class HouseholdSpacesAdmin
 {
     public static void Map(RouteGroupBuilder household)
     {
         var path = AdminApi.Under(AdminProtocol.Household, AdminProtocol.Spaces);
 
-        household.MapGet(path, async (AdminCaller caller, HouseholdConfigStore store, CancellationToken ct) =>
-            await AnswerAsync(store, caller, ct) is { } spaces ? Results.Ok(spaces) : Results.NotFound());
+        household.MapGet(path, async (
+                AdminCaller caller, HouseholdConfigStore store, MemberStore members, HouseholdAppsClient apps, CancellationToken ct) =>
+            await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct) is { } spaces
+            && await AgentsAsync(store, caller, ct) is { } agents
+                ? Results.Ok(await AnswerAsync(spaces, agents, await PublishedAsync(store, apps, caller, ct), members, caller, ct))
+                : Results.NotFound());
 
         household.MapPut(path, async (
-            AdminCaller caller, [FromBody] JsonObject? document, HttpContext http, HouseholdConfigStore store, AdminLog log,
-            CancellationToken ct) =>
+            AdminCaller caller, [FromBody] JsonObject? document, HttpContext http, HouseholdConfigStore store, MemberStore members,
+            HouseholdAppsClient apps, AdminLog log, CancellationToken ct) =>
         {
             if (document is null)
             {
@@ -63,11 +75,29 @@ public static class HouseholdSpacesAdmin
                     []));
             }
 
-            var problems = sent.Spaces.SelectMany(space => Problems(space, agents)).ToList();
+            var problems = sent.Spaces.SelectMany(space => Problems(space, agents))
+                .Concat(sent.Spaces.SelectMany(space => KindProblems(space, before))).ToList();
             if (problems.Count > 0)
             {
                 return Results.BadRequest(new AdminRefusal("The spaces were not saved.", problems));
             }
+
+            var added = sent.Spaces.Where(s => s.IsApp && before.Spaces.All(b => b.Slug != s.Slug)).ToList();
+            var published = sent.Spaces.Any(s => s.IsApp) ? await PublishedAsync(store, apps, caller, ct) : [];
+            if (added.Count > 0 && published is null)
+            {
+                return Results.Json(new AdminRefusal(AdminSpaces.AppsUnavailableMessage, []),
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            problems = [.. added.Where(s => published!.All(app => app.Id != s.AppId))
+                .Select(s => $"space {s.Slug} shares app {s.AppId}, which is none of the household's published apps")];
+            if (problems.Count > 0)
+            {
+                return Results.BadRequest(new AdminRefusal("The spaces were not saved.", problems));
+            }
+
+            sent = sent with { Spaces = [.. sent.Spaces.Select(space => Stamped(space, before, published))] };
 
             return await AdminSections.AnswerAsync(
                 await store.SaveAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(sent), ct),
@@ -76,7 +106,8 @@ public static class HouseholdSpacesAdmin
                 {
                     var after = (await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct))!;
                     await log.RecordAsync(http, caller, Summary(before, after), ct);
-                    return Results.Ok(new AdminSaved<AdminSpaces>(Answer(after, agents), AdminSections.Warning(saved)));
+                    return Results.Ok(new AdminSaved<AdminSpaces>(
+                        await AnswerAsync(after, agents, published, members, caller, ct), AdminSections.Warning(saved)));
                 });
         });
     }
@@ -111,14 +142,56 @@ public static class HouseholdSpacesAdmin
         }
     }
 
-    private static async Task<AdminSpaces?> AnswerAsync(HouseholdConfigStore store, AdminCaller caller, CancellationToken ct) =>
-        await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct) is { } spaces
-        && await AgentsAsync(store, caller, ct) is { } agents
-            ? Answer(spaces, agents)
-            : null;
+    // What a space is stays what it was added as: an app space shares the app it was added with, and a
+    // chat space never becomes one, which would leave its conversations in a space nobody joins.
+    private static IEnumerable<string> KindProblems(HouseholdSpace space, SpacesSection before)
+    {
+        if (before.Spaces.FirstOrDefault(b => b.Slug == space.Slug) is not { } was || was.AppId == space.AppId)
+        {
+            yield break;
+        }
 
-    private static AdminSpaces Answer(SpacesSection spaces, IReadOnlyList<AdminSpaceAgent> agents) =>
-        new(SpaceListing.Ordered(spaces.Spaces), agents);
+        yield return was.IsApp
+            ? $"space {space.Slug} shares app {was.AppId}, which is set when the space is added: add another space for another app"
+            : $"space {space.Slug} holds conversations, so it shares no app: add another space for the app";
+    }
+
+    // An app space's name and colour are its app's as the apps server answers now, else as last saved.
+    private static HouseholdSpace Stamped(HouseholdSpace space, SpacesSection before, IReadOnlyList<PublishedApp>? published) =>
+        space.IsApp && published?.FirstOrDefault(app => app.Id == space.AppId) is { } app
+            ? space with { Name = app.Name, AccentColor = app.AccentColor }
+            : space.IsApp && before.Spaces.FirstOrDefault(b => b.Slug == space.Slug) is { } was
+                ? space with { Name = was.Name, AccentColor = was.AccentColor }
+                : space;
+
+    // The household's published apps, none for a household without the apps feature (the apps server is
+    // not asked), null when the apps server could not be.
+    private static async Task<IReadOnlyList<PublishedApp>?> PublishedAsync(
+        HouseholdConfigStore store, HouseholdAppsClient apps, AdminCaller caller, CancellationToken ct) =>
+        await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct) is { Apps: true }
+            ? await apps.PublishedAsync(caller.Person, ct)
+            : [];
+
+    private static async Task<AdminSpaces> AnswerAsync(
+        SpacesSection spaces, IReadOnlyList<AdminSpaceAgent> agents, IReadOnlyList<PublishedApp>? published, MemberStore members,
+        AdminCaller caller, CancellationToken ct)
+    {
+        if (published is null)
+        {
+            return new AdminSpaces(SpaceListing.Ordered(spaces.Spaces), agents);
+        }
+
+        var names = published.Count == 0
+            ? new Dictionary<string, string>()
+            : (await members.ListAsync(caller.HouseholdId, ct)).ToDictionary(m => m.Id, m => m.DisplayName);
+        return new AdminSpaces(
+            SpaceListing.Ordered(spaces.Spaces.Select(space => Stamped(space, spaces, published))),
+            agents,
+            [
+                .. published.Select(app => new AdminSpaceApp(app.Id, app.Slug, app.Name, app.AccentColor, app.Description, app.AuthorId,
+                    names.GetValueOrDefault(app.AuthorId, ""), app.Reads, app.Connect, app.Url))
+            ]);
+    }
 
     // The agents the household's turns run, under their names: what a space may open on.
     private static async Task<IReadOnlyList<AdminSpaceAgent>?> AgentsAsync(
@@ -133,7 +206,8 @@ public static class HouseholdSpacesAdmin
     {
         var was = before.Spaces.ToDictionary(s => s.Slug);
         var clauses = new List<string>();
-        clauses.AddRange(after.Spaces.Where(s => !was.ContainsKey(s.Slug)).Select(s => $"added space {s.Slug}"));
+        clauses.AddRange(after.Spaces.Where(s => !was.ContainsKey(s.Slug))
+            .Select(s => s.AppId is { } app ? $"added space {s.Slug}, sharing app {app}" : $"added space {s.Slug}"));
         clauses.AddRange(before.Spaces.Where(s => after.Spaces.All(a => a.Slug != s.Slug)).Select(s => $"removed space {s.Slug}"));
         clauses.AddRange(after.Spaces.Where(s => was.ContainsKey(s.Slug)).Select(s => (s.Slug, Fields: Changed(was[s.Slug], s)))
             .Where(c => c.Fields.Count > 0)
