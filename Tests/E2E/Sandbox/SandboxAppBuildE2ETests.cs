@@ -254,8 +254,9 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
     }
 
     // The Node the image pins (McpServerSandbox/Dockerfile's NODE_VERSION), with its npm and corepack, as
-    // the command's user sees them: a version bump is a decision, so drift reddens here. The install is
-    // root's, so the command user cannot change what every later command runs.
+    // the command's user sees them: a version bump is a decision, so drift reddens here. Corepack's pnpm
+    // and yarn shims are enabled already (enabling writes beside node, which the user cannot). The install
+    // is root's, so the command user cannot change what every later command runs.
     [SkippableFact]
     public async Task TheImage_CarriesThePinnedNodeWithNpmAndCorepack_WhichTheCommandUserCannotChange()
     {
@@ -264,12 +265,12 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
         var call = await MintAsync(cts.Token);
 
         var result = await ExecAsync(
-            "node --version; npm --version; corepack --version; "
+            "node --version; npm --version; corepack --version; command -v pnpm yarn; "
             + "for path in $(dirname \"$(command -v node)\") /usr/local/lib/node_modules /usr/local/lib/node_modules/npm; do "
             + "test -w \"$path\" && echo \"writable: $path\"; done; echo checked",
             call, cts.Token);
 
-        Stdout(result).ShouldBe("v24.22.3\n11.19.1\n0.36.0\nchecked\n", result.ToString());
+        Stdout(result).ShouldBe("v24.22.3\n11.19.1\n0.36.0\n/usr/local/bin/pnpm\n/usr/local/bin/yarn\nchecked\n", result.ToString());
     }
 
     // The build as it stands in the home when the command that copies it runs.

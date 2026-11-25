@@ -56,8 +56,10 @@ RUN pip install --no-cache-dir --break-system-packages "duckdb==${DUCKDB_VERSION
 # A built app (McpServerApps) is an npm project with a bundler where the household has a sandbox, so
 # a command runs npm here and copies the build's dist/ into /apps. Node's official build, pinned to an
 # LTS line that still bundles corepack (Node 25 dropped it), into /usr/local so node, npm, npx and
-# corepack are on a command's minimal PATH. --no-same-owner because the tarball's files belong to uid
-# 1000, which is commonly PUID: kept, the command user would own what every later command runs.
+# corepack are on a command's minimal PATH, with corepack's pnpm and yarn shims enabled here because
+# enabling writes beside node, where a command cannot (each fetches its pinned manager into the home on
+# first use). --no-same-owner because the tarball's files belong to uid 1000, which is commonly PUID:
+# kept, the command user would own what every later command runs.
 # The checksums are nodejs.org's SHASUMS256.txt for that release (its signature checked against the
 # release keys when pinned); a version bump changes all three.
 ARG NODE_VERSION=24.22.3
@@ -72,7 +74,8 @@ RUN arch="${TARGETARCH:-amd64}" \
         --exclude="node-v${NODE_VERSION}-linux-${node_arch}/CHANGELOG.md" \
         --exclude="node-v${NODE_VERSION}-linux-${node_arch}/LICENSE" \
         --exclude="node-v${NODE_VERSION}-linux-${node_arch}/README.md" \
- && rm /tmp/node.tar.gz
+ && rm /tmp/node.tar.gz \
+ && corepack enable
 
 # npm's cache is ~/.npm already, but its global prefix is the root-owned /usr/local, where a command's
 # `npm install -g` is refused. npm's own builtin config moves it to the home (npm expands ${HOME}, the

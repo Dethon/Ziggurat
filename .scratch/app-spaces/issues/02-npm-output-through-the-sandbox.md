@@ -57,7 +57,8 @@ server refuses nobody). No production code changed: every case passed on arrival
 Node **24.22.3** (Krypton, LTS) from the nodejs.org tarball, pinned by `ARG` with per-arch SHA-256s from that
 release's `SHASUMS256.txt` (its signature checked against the Node release keys), checked by `sha256sum -c` as
 DuckDB's are, unpacked into `/usr/local` with `--no-same-owner`: `node`, `npm` (11.19.1), `npx` and `corepack`
-(0.36.0) are on a command's minimal PATH and owned by root. Node 26 (the active LTS) was passed over because Node
+(0.36.0) are on a command's minimal PATH and owned by root, corepack's `pnpm`/`yarn` shims enabled at build (as the
+command user `corepack enable` cannot write beside node). Node 26 (the active LTS) was passed over because Node
 25 stopped bundling corepack. npm's cache is `~/.npm` and its builtin npmrc moves the global prefix to
 `~/.npm-global` (on a login shell's PATH through `/etc/profile.d/npm-global.sh`), so nothing npm writes needs a
 root path; the command allowlist is unchanged. Image size +277 MB (1.871 GB → 2.148 GB).
