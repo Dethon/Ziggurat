@@ -169,6 +169,15 @@ public static class InjectorModule
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
                         sp.GetService<ILoggerFactory>()))
+                // A household agent's mounts read outside any conversation (a built app's reads), over
+                // what its turns are built from. Optional parts as the factory's: a host with no relay
+                // reaches no household server, and one with no call tokens signs nothing.
+                .AddSingleton(sp => new AgentReadRegistries(
+                    sp.GetRequiredService<IAgentDefinitionProvider>(),
+                    sp.GetRequiredService<McpCredentials>(),
+                    sp.GetService<IOwnServers>(),
+                    sp.GetService<CallTokens>(),
+                    sp.GetService<ILoggerFactory>()))
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
                 // Registered as a plain IHostedService singleton, not through AddHostedService:

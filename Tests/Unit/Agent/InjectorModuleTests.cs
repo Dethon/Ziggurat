@@ -15,6 +15,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Agent;
@@ -173,6 +174,24 @@ public class InjectorModuleTests
 
         provider.GetRequiredService<IOutposts>().ShouldBeOfType<TunnelledOutposts>()
             .ShouldBeSameAs(provider.GetRequiredService<TunnelledOutposts>());
+    }
+
+    // A registry read outside any conversation is built by the deployment's composition, over the same
+    // household agents, credentials, own servers and call tokens a turn's session is. The households'
+    // agents are read through Redis, which a unit test has none of.
+    [Fact]
+    public void ConfigureAgents_BuildsReadRegistries()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        services.RemoveAll<IAgentDefinitionProvider>();
+        services.AddSingleton(Mock.Of<IAgentDefinitionProvider>());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<AgentReadRegistries>().ShouldBeSameAs(provider.GetRequiredService<AgentReadRegistries>());
     }
 
     // One set of credentials for the host: the one startup checked is the one every agent, worker
