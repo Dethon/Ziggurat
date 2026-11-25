@@ -4,6 +4,9 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using McpServerSugary.Store;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -146,6 +149,35 @@ public sealed class AppChecksTests
         var viewport = (await ReportAsync(server, "meals", AppsServer.Him))["viewports"]![0]!;
         viewport["accessibility"]!.GetValue<string>().ShouldContain("paragraph: his paella", Case.Sensitive, viewport.ToJsonString());
         viewport["failedRequests"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // The check's browser sits on the deployment's network, and what it shows comes back to the agent as a
+    // screenshot: a page reaches only its own origin, the CDNs and its manifest's connect origins. A
+    // navigation anywhere else — an internal service here — is aborted and reported, never shown.
+    [Fact]
+    public async Task ACheck_NeverShowsAPageOutsideWhatTheAppMayReach()
+    {
+        var (port, inside) = await TestPort.StartWebAsync(port =>
+        {
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, port));
+            var built = builder.Build();
+            built.MapGet("/", () => Results.Content("<h1>the deployment's secrets</h1>", "text/html"));
+            return built;
+        });
+        await using var _ = inside;
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1>Glucose</h1></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", $"location.href = 'http://127.0.0.1:{port}/';");
+
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
+        viewport["accessibility"]!.GetValue<string>().ShouldNotContain("secrets");
+        viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"http://127.0.0.1:{port}/"
+                                                                 && r["error"]!.GetValue<string>().StartsWith("blocked"));
     }
 
     private static async Task<JsonNode> ReportAsync(AppsServer server, string slug, Account? person = null) =>
