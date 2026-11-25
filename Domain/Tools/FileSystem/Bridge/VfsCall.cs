@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Outposts;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem.Bridge;
 
@@ -100,6 +102,23 @@ public sealed class VfsCall
                 { Executable: true } => new BridgeAttr(BridgeKinds.Action, null),
                 _ => new BridgeAttr(BridgeKinds.File, value.Size)
             });
+    }
+
+    // A file tool's own call, answered as the tool answers it, for a caller that wants the tool's result
+    // rather than a syscall's: a built app's reads. The same mounts as every operation here, and the
+    // tool resolves its paths as this call's caller, as a turn's call does.
+    public async Task<JsonNode> ToolAsync(
+        string path, string toolName, Func<IVirtualFileSystemRegistry, AIFunctionArguments, Task<JsonNode>> run)
+    {
+        if (!Served(path))
+        {
+            return NotFoundError(path).ToNode();
+        }
+
+        return await run(_registry, new AIFunctionArguments
+        {
+            Context = new Dictionary<object, object?> { [ConversationContext.ContextKey] = _caller }
+        });
     }
 
     // A mount with no info answers by its listing, where the entry's kind is all there is to know.
@@ -538,10 +557,11 @@ public sealed class VfsCall
                       + "through a mount. The file tools are not bound by this."
         });
 
-    private static BridgeAnswer<T> NotFound<T>(string path) =>
-        new BridgeAnswer<T>.Refused(Errnos.NotFound, new ToolErrorResult
-        {
-            ErrorCode = ToolError.Codes.NotFound,
-            Message = $"Path not found: {path}"
-        });
+    private static BridgeAnswer<T> NotFound<T>(string path) => new BridgeAnswer<T>.Refused(Errnos.NotFound, NotFoundError(path));
+
+    private static ToolErrorResult NotFoundError(string path) => new()
+    {
+        ErrorCode = ToolError.Codes.NotFound,
+        Message = $"Path not found: {path}"
+    };
 }

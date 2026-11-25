@@ -4,7 +4,9 @@ using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Security.Signing;
 using Domain.Tools.FileSystem;
+using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -63,7 +65,8 @@ public sealed class AgentReadRegistries(
             TimeZones.Named(household.TimeZone) ?? TimeZoneInfo.Local), ct);
 
         return new ReadRegistry(
-            session, reach, reached, HouseholdNow, household.AsBuilt(definition.Id), ReadRegistry.CallerFor(viewer, definition.Id));
+            session, reach, reached, HouseholdNow, household.AsBuilt(definition.Id), ReadRegistry.CallerFor(viewer, definition.Id),
+            new ToolPermission(new ToolPatternMatcher(definition.WhitelistPatterns).IsMatch));
     }
 }
 
@@ -84,8 +87,10 @@ public sealed class ReadRegistry : IAsyncDisposable
 
     internal ReadRegistry(
         ThreadSession session, SessionReach reach, ServerReach reached,
-        Func<CancellationToken, Task<HouseholdAgents>> household, AgentAsBuilt? builtFrom, ConversationContext caller)
+        Func<CancellationToken, Task<HouseholdAgents>> household, AgentAsBuilt? builtFrom, ConversationContext caller,
+        ToolPermission permission)
     {
+        Permission = permission;
         _session = session;
         _reach = reach;
         _reached = reached;
@@ -98,6 +103,15 @@ public sealed class ReadRegistry : IAsyncDisposable
     public IVirtualFileSystemRegistry Registry => _session.FileSystemRegistry ?? new VirtualFileSystemRegistry();
 
     public ConversationContext Caller { get; }
+
+    // What the agent's file tools would run with nobody asked: its whitelist, as its approval client
+    // decides it. Nothing is remembered outside a conversation, so the whitelist is all there is.
+    public ToolPermission Permission { get; }
+
+    // One read's bridge call over these mounts, for this person, at the bridge's per-file ceiling. No
+    // token: nothing finds it again, and it lives as long as the read.
+    public VfsCall Call(long maxFileBytes) =>
+        new("", Registry, Permission, null, [.. Registry.GetMounts().Where(VfsCall.IsServed)], Caller, maxFileBytes);
 
     // The household's own servers named by the agent and not reached by this build.
     public IReadOnlyList<string> Offline => _reached.OwnServers.Offline;
