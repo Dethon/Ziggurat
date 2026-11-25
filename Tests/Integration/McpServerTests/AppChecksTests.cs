@@ -80,12 +80,20 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
             throw new Error('nothing to show');
             """);
 
-        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
 
         var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
         var console = viewport["console"]!.AsArray();
         console.ShouldContain(c => c!["type"]!.GetValue<string>() == "error"
                                    && c["text"]!.GetValue<string>() == "the glucose curve did not draw");
+        // What went wrong is in the check's own output, so a fix needs no read of the report.
+        var stdout = ran["stdout"]!.GetValue<string>();
+        stdout.ShouldContain("console error: the glucose curve did not draw");
+        stdout.ShouldContain("uncaught: ");
+        stdout.ShouldContain("nothing to show");
+        stdout.ShouldContain("failed request: GET ");
+        stdout.ShouldContain("/data/missing.json: 404");
+        stdout.ShouldContain("policy violation: img-src https://charts.example.org/today.png");
         console.ShouldContain(c => c!["type"]!.GetValue<string>() == "uncaught"
                                    && c["text"]!.GetValue<string>().Contains("nothing to show"));
         viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>().EndsWith("/data/missing.json")
@@ -132,6 +140,27 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         assertions[0]!["message"]!.GetValue<string>().ShouldBe("2 meals listed");
         assertions[1]!["message"]!.GetValue<string>().ShouldBe("the title is \"Glucose\"");
         assertions[2]!["message"]!.GetValue<string>().ShouldContain("SyntaxError");
+        var stdout = ran["stdout"]!.GetValue<string>();
+        stdout.ShouldContain("failed: checks/title.js: the title is \"Glucose\"");
+        stdout.ShouldContain("failed: checks/typo.js: ");
+        stdout.ShouldNotContain("2 meals listed");
+    }
+
+    // Two viewports that saw the same go wrong say it once: the second names the first instead.
+    [Fact]
+    public async Task ViewportsThatSawTheSame_AreDetailedOnce()
+    {
+        await using var server = await StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            "<!doctype html><html lang=\"en\"><head><title>Glucose</title></head><body><h1>Glucose</h1></body></html>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/title.js", "throw new Error('no chart drawn');");
+
+        var stdout = (await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600 --viewport 390x844"))["stdout"]!
+            .GetValue<string>();
+
+        stdout.Split("failed: checks/title.js: no chart drawn").Length.ShouldBe(2, stdout);
+        stdout.ShouldContain("the same as 800x600", Case.Sensitive, stdout);
     }
 
     // A check's page reads the household as the person whose turn ran it, through /_vfs/* as an installed
@@ -169,6 +198,53 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         var viewport = (await ReportAsync(server, "meals", AppsServer.Him))["viewports"]![0]!;
         viewport["accessibility"]!.GetValue<string>().ShouldContain("paragraph: his paella", Case.Sensitive, viewport.ToJsonString());
         viewport["failedRequests"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // A read the household refused (the tools' envelope, 422) is the page's to handle, and one that handles
+    // it is working: it is reported as a refused read naming what was asked and why, never as a console
+    // error or a failed request. One the page leaves unhandled is still its uncaught error; an
+    // unanswered read (no session, nobody answering) is still a failed request.
+    [Fact]
+    public async Task ARefusedRead_IsReportedAsARefusedRead_NotAsAConsoleErrorOrAFailedRequest()
+    {
+        await using var agent = await StubAgent.StartAsync(() => Results.Json(new
+        {
+            ok = false,
+            errorCode = "permission_denied",
+            message = "Sugary is not on for this turn's person.",
+            retryable = false
+        }, statusCode: StatusCodes.Status422UnprocessableEntity));
+        await using var server = await StartAsync(s => s with { AgentUrl = agent.Address });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script><script type="module" src="/unhandled.js"></script></head><body><p id="state">loading</p></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            try {
+              await apps.query('/sugary', 'select count(*) from glucose');
+            } catch (e) {
+              document.getElementById('state').textContent = e.errorCode;
+            }
+            """);
+        await server.CreateAsync(AppsServer.Her, "/glucose/unhandled.js", "await apps.glob('/sugary/people', '*');");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/state.js",
+            "const state = document.getElementById('state').textContent; if (state !== 'permission_denied') throw new Error(state); return state;");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
+        viewport["failedRequests"]!.AsArray().ShouldBeEmpty(viewport.ToJsonString());
+        var console = viewport["console"]!.AsArray();
+        console.ShouldNotContain(c => c!["type"]!.GetValue<string>() == "error", viewport.ToJsonString());
+        console.ShouldContain(c => c!["type"]!.GetValue<string>() == "uncaught", viewport.ToJsonString());
+        viewport["refusedReads"]!.AsArray()
+            .Select(r => (r!["operation"]!.GetValue<string>(), r["path"]!.GetValue<string>(), r["errorCode"]!.GetValue<string>()))
+            .OrderBy(r => r.Item1)
+            .ShouldBe([("glob", "/sugary/people", "permission_denied"), ("query", "/sugary", "permission_denied")]);
+        viewport["assertions"]!.AsArray().ShouldHaveSingleItem()!["passed"]!.GetValue<bool>().ShouldBeTrue();
+        var stdout = ran["stdout"]!.GetValue<string>();
+        stdout.ShouldContain("2 refused reads");
+        stdout.ShouldContain("refused read: query /sugary: permission_denied");
     }
 
     // The check's browser sits on the deployment's network, and what it shows comes back to the agent as a
@@ -486,6 +562,39 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         public async ValueTask DisposeAsync()
         {
             Release();
+            await _app.StopAsync();
+            await _app.DisposeAsync();
+        }
+    }
+
+    // The agent's read route answering every read the same.
+    private sealed class StubAgent : IAsyncDisposable
+    {
+        private readonly WebApplication _app;
+
+        private StubAgent(WebApplication app, int port)
+        {
+            _app = app;
+            Address = $"http://127.0.0.1:{port}";
+        }
+
+        public string Address { get; }
+
+        public static async Task<StubAgent> StartAsync(Func<IResult> answer)
+        {
+            var (port, app) = await TestPort.StartWebAsync(port =>
+            {
+                var builder = WebApplication.CreateBuilder();
+                builder.WebHost.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, port));
+                var built = builder.Build();
+                built.MapPost($"{AppReads.AgentPath}/{{operation}}", answer);
+                return built;
+            });
+            return new StubAgent(app, port);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
             await _app.StopAsync();
             await _app.DisposeAsync();
         }

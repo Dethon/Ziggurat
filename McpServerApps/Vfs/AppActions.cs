@@ -213,16 +213,52 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         return viewports.Count > MaxViewports ? null : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route);
     }
 
+    // Counts per viewport, then what went wrong, so a fix needs no read of the report: a viewport that saw
+    // exactly what one before it saw names that one instead of saying it all again.
     private static string CheckSummary(BuiltApp app, CheckReport report)
     {
-        var lines = report.Viewports.Select(v =>
-            $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
-            + $"{v.PolicyViolations.Count} policy violations, assertions {v.Assertions.Count(a => a.Passed)} passed and "
-            + $"{v.Assertions.Count(a => !a.Passed)} failed{(v.Settled ? "" : " (the page never went quiet)")}");
+        var detailed = new List<(string Viewport, IReadOnlyList<string> Lines)>();
+        var lines = report.Viewports.SelectMany(v =>
+        {
+            var counts = $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
+                         + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, assertions "
+                         + $"{v.Assertions.Count(a => a.Passed)} passed and {v.Assertions.Count(a => !a.Passed)} failed"
+                         + (v.Settled ? "" : " (the page never went quiet)");
+            var details = CheckDetails(v);
+            var same = details.Count == 0 ? null : detailed.FirstOrDefault(d => d.Lines.SequenceEqual(details)).Viewport;
+            detailed.Add((v.Name, details));
+            return same is not null ? [counts, $"  the same as {same}"] : (IEnumerable<string>)[counts, .. details];
+        }).ToList();
         var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
         return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
                + $"screenshots and {AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ "
                + "(file_read shows a screenshot)\n";
+    }
+
+    private const int MaxDetailLines = 12;
+    private const int MaxDetailLength = 240;
+
+    private static IReadOnlyList<string> CheckDetails(ViewportReport v)
+    {
+        var all = v.Assertions.Where(a => !a.Passed).Select(a => $"failed: {a.File}: {a.Message}")
+            .Concat(v.Console.Where(c => c.Type is "error" or "uncaught")
+                .Select(c => c.Type == "uncaught" ? $"uncaught: {c.Text}" : $"console error: {c.Text}"))
+            .Concat(v.FailedRequests.Select(r => $"failed request: {r.Method} {r.Url}: {(r.Status is { } status ? status : r.Error)}"))
+            .Concat(v.PolicyViolations.Select(p => $"policy violation: {p.Directive} {p.BlockedUri ?? p.SourceFile ?? "inline"}"))
+            .Concat(v.RefusedReads.Select(r => $"refused read: {r.Operation} {r.Path}: {r.ErrorCode ?? "unknown"}"
+                                               + (r.Message is { } why ? $": {why}" : "")))
+            .Select(line => $"  {Clip(line)}")
+            .ToList();
+        return all.Count <= MaxDetailLines
+            ? all
+            : [.. all.Take(MaxDetailLines), $"  and {all.Count - MaxDetailLines} more in {AppChecks.ReportFile}"];
+    }
+
+    // One line of a detail: its first line only (an uncaught error's stack stays in the report), clipped.
+    private static string Clip(string line)
+    {
+        var first = line.Split('\n')[0].TrimEnd();
+        return first.Length <= MaxDetailLength ? first : $"{first[..MaxDetailLength]}…";
     }
 
     private async Task<FsResult<FsExecResult>> HistoryAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)

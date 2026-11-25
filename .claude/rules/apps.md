@@ -213,6 +213,15 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 `./check` (`AppChecks`) opens the preview in a headless Chromium of its own as the turn's person, in the
 `apps-browser` container, never in `mcp-apps` (whose image has the Playwright driver alone).
 
+- **What went wrong is in its output** (`AppActions.CheckSummary`): per viewport, the counts, then failed
+  assertions, console errors, failed requests, policy violations and refused reads, a line each (first line,
+  clipped, capped); a viewport that saw exactly what an earlier one saw names it instead. The agent reads
+  `report.json` for the rest, never to learn what failed.
+- **A refused read is not a failure**: a `/_vfs/*` read on the preview answered 422 (the tools' envelope)
+  is a `refusedReads` entry (operation, path, code, message), and Chromium's console line for that address
+  is dropped, since the page may well have shown it as it should. Any other answer of 400 or worse there
+  (no session, nobody answering) stays a failed request.
+
 - **It reads as the call's own token** (`FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps
   every other reader out), on an app session of its own (`AppSessions.OpenCheck`): the preview only, never
   renewed, ended with the check. The agent believes the token as **its own signature for the apps server,

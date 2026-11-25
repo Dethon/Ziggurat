@@ -5,6 +5,7 @@ using Domain.Apps;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
 
@@ -218,7 +219,12 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
                 : failed.Failure));
         page.Response += (_, response) =>
         {
-            if (response.Status >= 400)
+            if (response.Status == StatusCodes.Status422UnprocessableEntity && IsRead(response.Url, preview))
+            {
+                seen.RefusedUrls.Enqueue(response.Url);
+                seen.Refusals.Enqueue(RefusedAsync(response));
+            }
+            else if (response.Status >= 400)
             {
                 seen.Failed.Enqueue(new FailedRequest(response.Request.Method, response.Url, response.Status, null));
             }
@@ -281,7 +287,51 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         {
             seen.Error = $"{LeftThePreview}; nothing it showed after that is kept";
         }
+
+        await Task.WhenAll(seen.Refusals);
     }
+
+    // A read of the household the preview's library made (POST /_vfs/<operation>), on the preview itself.
+    private static bool IsRead(string url, string preview) =>
+        string.Equals(OriginOf(url), preview, StringComparison.OrdinalIgnoreCase)
+        && new Uri(url).AbsolutePath.StartsWith($"{AppReads.OriginPath}/", StringComparison.Ordinal);
+
+    // What a refused read asked (its operation, and the path its arguments name) and why it was refused,
+    // off the tools' envelope; a page gone before the body was read leaves the why unsaid.
+    private static async Task<RefusedRead> RefusedAsync(IResponse response)
+    {
+        var operation = new Uri(response.Url).AbsolutePath[(AppReads.OriginPath.Length + 1)..];
+        var path = PathOf(response.Request.PostData);
+        try
+        {
+            using var envelope = JsonDocument.Parse(await response.TextAsync());
+            return new RefusedRead(operation, path, Text(envelope.RootElement, "errorCode"), Text(envelope.RootElement, "message"));
+        }
+        catch (Exception ex) when (ex is PlaywrightException or JsonException)
+        {
+            return new RefusedRead(operation, path, null, null);
+        }
+    }
+
+    private static readonly string[] _pathArguments = ["filePath", "basePath", "path", "directoryPath"];
+
+    private static string? PathOf(string? arguments)
+    {
+        try
+        {
+            using var read = JsonDocument.Parse(arguments ?? "");
+            return _pathArguments.Select(name => Text(read.RootElement, name)).FirstOrDefault(path => path is not null);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? Text(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     // An assertion file is the body of an async function run in the page: it passes when it returns (what
     // it returns is its message) and fails with what it throws. One that does not parse fails with why; one
@@ -370,11 +420,19 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public ConcurrentQueue<ConsoleEntry> Console { get; } = new();
         public ConcurrentQueue<FailedRequest> Failed { get; } = new();
         public ConcurrentQueue<PolicyViolation> Violations { get; } = new();
+        public ConcurrentQueue<Task<RefusedRead>> Refusals { get; } = new();
+        public ConcurrentQueue<string> RefusedUrls { get; } = new();
         public List<AssertionOutcome> Assertions { get; } = [];
         public string? Screenshot { get; set; }
         public string? Accessibility { get; set; }
         public bool Settled { get; set; }
         public string? Error { get; set; }
+
+        // Chromium logs every answer of 400 or worse as an error, at the address asked ("<url>:0:0"); for a
+        // refused read the page may well have handled, that line says nothing the refused read does not.
+        private bool IsRefusalsOwn(ConsoleEntry entry) =>
+            entry is { Type: "error", Location: { } at }
+            && RefusedUrls.Any(url => at.StartsWith(url + ":", StringComparison.Ordinal));
 
         public ViewportReport Report() => new()
         {
@@ -384,9 +442,10 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             Screenshot = Screenshot,
             Settled = Settled,
             Error = Error,
-            Console = [.. Console.Take(MaxEntries)],
+            Console = [.. Console.Where(entry => !IsRefusalsOwn(entry)).Take(MaxEntries)],
             FailedRequests = [.. Failed.Take(MaxEntries)],
             PolicyViolations = [.. Violations.Take(MaxEntries)],
+            RefusedReads = [.. Refusals.Where(refusal => refusal.IsCompletedSuccessfully).Select(refusal => refusal.Result).Take(MaxEntries)],
             Accessibility = Accessibility,
             Assertions = [.. Assertions]
         };
@@ -445,14 +504,19 @@ public sealed record ViewportReport
     public required IReadOnlyList<ConsoleEntry> Console { get; init; }
     public required IReadOnlyList<FailedRequest> FailedRequests { get; init; }
     public required IReadOnlyList<PolicyViolation> PolicyViolations { get; init; }
+
+    // Reads of the household refused with the tools' envelope: the page's to handle, so not a failure.
+    public required IReadOnlyList<RefusedRead> RefusedReads { get; init; }
     public string? Accessibility { get; init; }
     public required IReadOnlyList<AssertionOutcome> Assertions { get; init; }
 }
 
 public sealed record ConsoleEntry(string Type, string Text, string? Location);
 
-// A request that failed outright (Error) or was answered 400 or worse (Status).
+// A request that failed outright (Error) or was answered 400 or worse (Status), but for a refused read.
 public sealed record FailedRequest(string Method, string Url, int? Status, string? Error);
+
+public sealed record RefusedRead(string Operation, string? Path, string? ErrorCode, string? Message);
 
 public sealed record PolicyViolation(string Directive, string? BlockedUri, string? SourceFile, int? Line, string? Sample);
 
