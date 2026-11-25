@@ -69,6 +69,14 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
         ["package.json"] = """{"name":"glucose","private":true,"scripts":{"build":"vite build"}}"""u8.ToArray()
     };
 
+    // What the npm build case's build script writes: a page, and an image whose bytes hold a NUL and a
+    // byte past ASCII, so the binary write is what carries it.
+    private static readonly IReadOnlyDictionary<string, byte[]> _built = new Dictionary<string, byte[]>
+    {
+        ["index.html"] = "<!doctype html>\n<h1>Glucosa de hoy</h1>\n"u8.ToArray(),
+        ["assets/logo.png"] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF, 0x7F, 0x00]
+    };
+
     private readonly string _build = $"build-{Guid.NewGuid():N}";
 
     // Where the command finds the build: the home, which is the mount's workspace and not its root.
@@ -102,10 +110,11 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
             await _apps.DisposeAsync();
         }
 
-        var build = Path.Combine(fixture.WorkspaceOnHost, _build);
-        if (Directory.Exists(build))
+        // The build, and what npm keeps in the home beside it.
+        foreach (var left in new[] { _build, ".npm" }.Select(name => Path.Combine(fixture.WorkspaceOnHost, name))
+                     .Where(Directory.Exists))
         {
-            Directory.Delete(build, recursive: true);
+            Directory.Delete(left, recursive: true);
         }
     }
 
@@ -183,6 +192,39 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
         var page = await _apps.GetAsync(host, "/", session, navigate: true);
         page.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await page.Content.ReadAsStringAsync(cts.Token)).ShouldContain("<h1>Glucosa de hoy</h1>");
+    }
+
+    // An npm project built in the home by the command's user, with what the image ships and nothing from
+    // the registry: install writes the lockfile, ci installs from it, the build script (plain node, as a
+    // bundler is) writes dist/, and the same command copies dist/ into the app. npm keeps its cache in
+    // the home, so nothing here needs a path the user cannot write.
+    [SkippableFact]
+    public async Task BuildingAnNpmProjectInTheHomeAndCopyingItsDist_LandsWhatTheBuildWrote()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        LeaveInTheHome(new Dictionary<string, byte[]>
+        {
+            ["package.json"] = """{"name":"glucose","version":"1.0.0","private":true,"scripts":{"build":"node build.js"}}"""u8.ToArray(),
+            ["build.js"] = Encoding.UTF8.GetBytes(
+                "const fs = require('node:fs');\n"
+                + "fs.mkdirSync('dist/assets', { recursive: true });\n"
+                + $"fs.writeFileSync('dist/index.html', {JsonSerializer.Serialize(Encoding.UTF8.GetString(_built["index.html"]))});\n"
+                + $"fs.writeFileSync('dist/assets/logo.png', Buffer.from('{Convert.ToHexStringLower(_built["assets/logo.png"])}', 'hex'));\n")
+        });
+        var call = await MintAsync(cts.Token);
+
+        var result = await ExecAsync(
+            $"cd {InTheContainer} && npm install --no-audit --no-fund --loglevel=error && npm ci --no-audit --no-fund --loglevel=error "
+            + $"&& npm run build --silent && test -f package-lock.json && cp -r dist /apps/{Slug}/ && echo built",
+            call, cts.Token);
+
+        Stdout(result).ShouldEndWith("built\n", Case.Sensitive, result.ToString());
+        Changes(call).ShouldBe(
+            _built.Keys.Select(path => ($"/apps/{Slug}/dist/{path}", "create", "applied")),
+            ignoreOrder: true, customMessage: Described(call));
+        _built.Where(f => !File.ReadAllBytes(Path.Combine(WorkTree(), "dist", f.Key)).SequenceEqual(f.Value)).Select(f => f.Key)
+            .ShouldBeEmpty("every file in the app's working tree is the one the build wrote");
     }
 
     // The Node the image pins (McpServerSandbox/Dockerfile's NODE_VERSION), with its npm and corepack, as
