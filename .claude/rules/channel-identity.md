@@ -39,7 +39,8 @@ project — so a route's shape and status codes are changed on both sides togeth
   revoked, gone or not that person's (`SessionStore.LiveAsync`); never an account by its id alone. The
   channel is the one named, which the caller must be allowed (else 403), or with none the first of
   `signalr`, `sugary`, `apps` it is; the apps server always names `apps`, since a host run's one shared
-  credential is the hub's too. The hub asks for every turn (`ISessionAccounts`), so revoking a session
+  credential is the hub's too. The hub also names `persons-apps` (`AppChannels.PersonsApps`, its alone),
+  for the apps server's listing of a person's apps behind WebChat's space switcher (`PersonsAppsClient`). The hub asks for every turn (`ISessionAccounts`), so revoking a session
   stops its open chat client's next turn.
 - **`app-sign-in`** `{ code, origin }`: the apps server's redemption of an app sign-in code
   (`IAppSignIns`, `accounts.md`, "The app sign-in").

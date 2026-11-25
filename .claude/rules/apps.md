@@ -25,6 +25,8 @@ paths:
   - "Domain/Apps/PublishedApps.cs"
   - "Accounts/Admin/HouseholdAppsClient.cs"
   - "Tests/Integration/McpServerTests/AppSpacesOverTheWireTests.cs"
+  - "Infrastructure/Clients/Apps/**"
+  - "Tests/E2E/WebChat/AppSpacesE2ETests.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -172,6 +174,16 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   slug, the commit's name, colour, description, `reads`, `connect`, the author's user id, the link;
   `no-store`. `apps-browser` reaches this listener, but holds no such assertion; no Caddy route names it
   (`DeploymentConformanceTests`), and the pages listener never answers it.
+- **A person's apps** `GET PersonsApps.Path` (`/internal/persons-apps?shared=<id>…`,
+  `Serving/PersonsAppsListing`), for WebChat's space switcher, on the same MCP listener under the same terms:
+  believed on an assertion for **`AppChannels.PersonsApps`** naming a person, which the accounts service
+  signs only for the chat hub's session refresh (`InternalCallers`: `mcp-channel-signalr` alone may name it).
+  It answers the assertion household's apps with a served commit that the person wrote (`Own`), and of the
+  ids `shared` names — the app spaces the hub read in the household's spaces — those the household has
+  published: id, the commit's name and colour, the link; `no-store`. A named id gives no more than its link
+  and name, which every member opens anyway while it is shared; the listing reads no spaces itself. The
+  hub's client is `PersonsAppsClient` (`APPSURL` on `mcp-channel-signalr`, conformance-checked with the route
+  off the proxy); `.claude/rules/chat-hub.md`, "Spaces".
 - **Outage vs refusal**: a reader's outage or its own timeout is unchecked (503 / `transient_dependency`), a
   refusal closed.
 - **The owner's approval holds** (`HouseholdSpace.Approved`, an `AppReach`: `reads` and `connect`, in the
@@ -405,7 +417,13 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `.claude/rules/sandbox.md`) and a build's output copied in by a real sandbox command over the bridge, `node_modules` refused, published from `dist`; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
 `AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsSpacesTests`
-who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing, `AppsSpacesTests`/`AppsReadsTests` a publish widening a shared app
+who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing,
+`AppsPersonsAppsTests` a person's apps and `PersonsAppsClientTests` the hub's client of it against a real
+accounts service, `AppSpacesE2ETests` (its own E2E collection: the WebChat stack runs `mcp-apps` and
+answers `*.apps.localhost` on https with Caddy's local certificate, which the collection's own Chromium maps
+to by a host-resolver rule; the app and its vault note are built over `/mcp` as the second household's
+`WebChatStack.AppReaderAgent`) a member opening a shared app from the switcher through the app sign-in,
+reading through `/_vfs/*`, and another household's 404, `AppsSpacesTests`/`AppsReadsTests` a publish widening a shared app
 (policy, read refused, the publish answer),
 `AppSpacesOverTheWireTests` an app space end to end on a real accounts service and Redis; `AppsRuntimeErrorsTests`
 `/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
