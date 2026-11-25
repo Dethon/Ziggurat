@@ -11,6 +11,8 @@ TenantKit/volumes
 TenantKit/satellites.env
 # The agent's signing key on a host run (Agent/appsettings.Local.json).
 Agent/.signing
+# The apps server's volume on a host run (scripts/run-local.sh).
+/McpServerApps/.data/
 .idea
 .playwright-mcp
 temp

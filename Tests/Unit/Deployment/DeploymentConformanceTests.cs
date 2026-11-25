@@ -513,6 +513,7 @@ public class DeploymentConformanceTests
     [InlineData("mcp-idealista")]
     [InlineData("mcp-scheduling")]
     [InlineData("mcp-sugary")]
+    [InlineData("mcp-apps")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
@@ -548,7 +549,8 @@ public class DeploymentConformanceTests
             .ShouldBe(
                 [
                     InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent,
-                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary, InternalCallers.Timers
+                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary, InternalCallers.Timers,
+                    InternalCallers.Apps
                 ],
                 ignoreOrder: true);
     }

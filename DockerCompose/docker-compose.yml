@@ -298,6 +298,59 @@ services:
       base-sdk:
         condition: service_started
 
+  # Docker creates a missing bind-mount folder as root, and mcp-apps runs as PUID, so this one-shot
+  # step, from the same image, hands ./volumes/apps to PUID:PGID before the server starts, as
+  # mcp-sugary-volume does for Sugary's.
+  mcp-apps-volume:
+    image: mcp-apps:latest
+    container_name: mcp-apps-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerApps/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/apps:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # The apps server: every household's built apps, one git repository each under a directory per
+  # household in ./volumes/apps (backed up with the volume), written by its agents through the /apps
+  # mount. Offered to a household's agents only once the operator turns its `apps` feature on.
+  mcp-apps:
+    image: mcp-apps:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-apps
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerApps/Dockerfile
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/apps:/data
+    environment:
+      <<: *timezone
+      MCP__SHAREDSECRET: ${MCP_SECRET_APPS}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-apps
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # Per deployment: the registrable domain built apps are served under, <slug>-<id>.<domain> — a
+      # second domain, never a subdomain of this deployment's, so no cookie of its reaches app code.
+      # Set it to the domain bought for the purpose.
+      APPSDOMAIN: changeme
+    networks:
+      - jackbot
+    depends_on:
+      mcp-apps-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+
   lemonade:
     image: lemonade:latest
     logging:
@@ -423,6 +476,7 @@ services:
       MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
       MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
+      MCP__SECRETS__mcp-apps: ${MCP_SECRET_APPS}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
       # Where the accounts service publishes the keys its assertions verify with: the registration
       # API acts for the person the X-Ziggurat-Assertion SexyTime's server forwards names.
@@ -439,6 +493,8 @@ services:
       mcp-scheduling:
         condition: service_started
       mcp-sugary:
+        condition: service_started
+      mcp-apps:
         condition: service_started
       redis:
         condition: service_healthy
@@ -573,6 +629,9 @@ services:
       CALLERS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
       CALLERS__mcp-timers: ${MCP_SECRET_TIMERS}
+      # The apps server asks the calling household's agent names on the call's token: only the
+      # household's own agents build apps.
+      CALLERS__mcp-apps: ${MCP_SECRET_APPS}
       # The household migration below, and only its household import: it can make the operator and
       # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
       CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}

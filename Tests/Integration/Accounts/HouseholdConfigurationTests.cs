@@ -39,6 +39,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     private const string Telegram = "telegram-credential";
     private const string Sugary = "sugary-credential";
     private const string Timers = "timers-credential";
+    private const string Apps = "apps-credential";
 
     private const string OpenRouterKey = "sk-or-v1-household-openrouter-key";
     private const string IdealistaKey = "idealista-api-key-of-the-household";
@@ -65,7 +66,8 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
                 ["mcp-channel-signalr"] = SignalR,
                 ["mcp-channel-telegram"] = Telegram,
                 ["mcp-sugary"] = Sugary,
-                ["mcp-timers"] = Timers
+                ["mcp-timers"] = Timers,
+                ["mcp-apps"] = Apps
             },
             Redis = new() { ConnectionString = redis.ConnectionString },
             HouseholdConfig = new() { MasterKey = masterKey ?? AccountsServer.MasterKey }
@@ -311,6 +313,23 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
+    // Only a household's own agents build apps, so the apps server reads the household's agent names on
+    // the call's token, and the token's household is the one answered.
+    [Fact]
+    public async Task TheAppsServer_ReadsTheHouseholdsAgentNames_OnTheCallToken()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+
+        var agents = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Apps, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-apps", household, person)));
+        var anotherServers = await PostAsync(server, Apps, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, person)));
+
+        agents.Section.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
+        (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
     // Sugary opens another person's log to a reader an owner granted it, so on the agent's call token it
     // reads the household's people — each one's id, name, whether they read everyone's log and whether
     // Sugary is on for them, nobody disabled — and decides itself. The same for everybody in the household, since the reader keeps it
@@ -511,7 +530,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Agent, HouseholdConfigProtocol.SugaryPeopleView },
         { Scheduling, HouseholdConfigProtocol.SugaryOffView },
         { Telegram, HouseholdConfigProtocol.SugaryOffView },
-        { Agent, HouseholdConfigProtocol.SugaryOffView }
+        { Agent, HouseholdConfigProtocol.SugaryOffView },
+        { Apps, HouseholdConfigProtocol.SettingsView },
+        { Apps, HouseholdConfigProtocol.IdealistaView }
     };
 
     [Theory]

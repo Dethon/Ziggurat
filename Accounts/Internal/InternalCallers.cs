@@ -49,6 +49,7 @@ public static class InternalCallers
     public const string Scheduling = "mcp-scheduling";
     public const string Sugary = "mcp-sugary";
     public const string Timers = "mcp-timers";
+    public const string Apps = "mcp-apps";
 
     // Sugary's channel, which its server serves people on.
     public const string SugaryChannel = ChannelIds.Sugary;
@@ -85,6 +86,8 @@ public static class InternalCallers
             HouseholdConfigProtocol.SugaryOffView
         ],
         [Timers] = [HouseholdConfigProtocol.SettingsView],
+        // Only the household's own agents build apps: the apps server checks a turn's agent against them.
+        [Apps] = [HouseholdConfigProtocol.AgentNamesView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.MemberNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };

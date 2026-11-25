@@ -49,6 +49,7 @@ SERVICES=(
   "printer|McpServerPrinter|6014|no|no|SPOOLPATH=$ROOT/McpServerPrinter/.spool|"
   "voice|McpChannelVoice|6015|yes|yes|RedisConnectionString=localhost:6379,password=local-redis-password;Satellites__kitchen-01__Identity=household;Satellites__kitchen-01__Room=Kitchen;Satellites__kitchen-01__WakeWord=hey_jarvis;Satellites__kitchen-01__Address=tcp://127.0.0.1:10800|"
   "timers|McpServerTimers|6016|no|yes|VoiceHub__BaseUrl=http://localhost:6015|"
+  "apps|McpServerApps|6018|no|no|StoragePath=$ROOT/McpServerApps/.data;AppsDomain=apps.localhost|"
 )
 
 # Reads the kernel socket table rather than dialling the port. A connect probe
