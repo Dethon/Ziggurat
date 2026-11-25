@@ -93,12 +93,10 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         var violation = viewport["policyViolations"]!.AsArray().ShouldHaveSingleItem()!;
         violation["directive"]!.GetValue<string>().ShouldBe("img-src");
         violation["blockedUri"]!.GetValue<string>().ShouldBe("https://charts.example.org/today.png");
-        // The page's library reported its throw too, on the check's own session: kept marked as the check's
-        // (and so never the operator's), and nothing the check saw failed for it.
+        // The page's library reported its throw too, on the check's own session: answered, and kept nowhere
+        // but in this report.
         viewport["failedRequests"]!.AsArray().ShouldNotContain(r => r!["url"]!.GetValue<string>().EndsWith("/_errors"));
-        var errors = await server.ReadAsync(AppsServer.Her, "/glucose/errors");
-        errors.ShouldContain("nothing to show");
-        errors.ShouldContain("\"check\":true");
+        (await server.GlobAsync(AppsServer.Her, "**/errors")).ShouldBeEmpty();
     }
 
     // An app's own assertions run in the page, against what it rendered: one that returns passes with

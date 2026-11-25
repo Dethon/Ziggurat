@@ -150,8 +150,11 @@ public sealed class AppsServer : IAsyncDisposable
     }
 
     // A built app's page reading the household through the client library: a POST to the origin's
-    // /_vfs/<operation> with the tool's own arguments, the app session's cookie sent as the browser sends it.
-    public async Task<HttpResponseMessage> ReadAsync(string host, string operation, JsonObject arguments, string? session)
+    // /_vfs/<operation> with the tool's own arguments, the app session's cookie and the page's Origin sent
+    // as the browser sends them.
+    // origin: another page's, as a sibling app's would send it.
+    public async Task<HttpResponseMessage> ReadAsync(
+        string host, string operation, JsonObject arguments, string? session, string? origin = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{PagesAddress}{AppReads.OriginPath}/{operation}")
         {
@@ -159,6 +162,7 @@ public sealed class AppsServer : IAsyncDisposable
         };
         request.Headers.Host = host;
         request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("Origin", origin ?? $"https://{host}");
         if (session is not null)
         {
             request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");

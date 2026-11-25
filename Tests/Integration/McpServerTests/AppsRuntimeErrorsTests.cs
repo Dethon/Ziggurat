@@ -260,25 +260,46 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         error.Message.ShouldNotContain("draw@/main.js");
     }
 
-    // A check's page reports through its own session too, and its errors are kept marked as the check's:
-    // the check's report already shows them to the agent, and nobody met them, so the operator is not told.
+    // A check's page reports through its own session too, and is answered as kept, but nothing is: the
+    // check's report already shows the agent those page errors, a check is a new page per viewport and run,
+    // so keeping them would push people's reports out of the newest Errors:Kept, and nobody met them, so
+    // the operator is not told. Nor does a check spend its session's minute.
     [Fact]
-    public async Task AChecksReport_IsKeptMarkedAsTheChecks_AndNeverReachesTheOperator()
+    public async Task AChecksReport_IsAnsweredButKeptNowhere_AndNeverReachesTheOperator()
     {
         var metrics = new Tests.Unit.RecordingMetricsPublisher();
-        await using var apps = await AppsServer.StartAsync(services: services => services.AddSingleton<IMetricsPublisher>(metrics));
+        await using var apps = await AppsServer.StartAsync(
+            s => s with { Errors = s.Errors with { PerSessionPerMinute = 1 } },
+            services => services.AddSingleton<IMetricsPublisher>(metrics));
         var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
         var host = apps.Preview("glucose", id);
         var check = apps.Sessions.OpenCheck(AppsServer.Her, AppOrigin.Parse(host, AppsServer.AppsDomain)!, "call-token",
             apps.Clock.GetUtcNow().AddSeconds(30));
 
-        using var reported = await apps.ReportAsync(host, Uncaught, check);
+        using var first = await apps.ReportAsync(host, Uncaught, check);
+        using var second = await apps.ReportAsync(host, """{"kind":"error","message":"again","route":"/"}""", check);
+
+        first.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        second.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await apps.GlobAsync(AppsServer.Her, "**/errors")).ShouldBeEmpty();
+        metrics.Published.OfType<ErrorEvent>().ShouldBeEmpty();
+    }
+
+    // What a browser says is kept as it said it: quotes, markup and accents read back as written, never as
+    // \u escapes the agent would have to decode.
+    [Fact]
+    public async Task AReportsText_IsKeptAsWritten()
+    {
+        var host = _apps.Published("glucose", _id);
+        const string message = "TypeError: Cannot read properties of undefined (reading 'rows') <canvas> + glucemia baja";
+
+        using var reported = await _apps.ReportAsync(host, new JsonObject { ["kind"] = "error", ["message"] = message, ["route"] = "/día" }.ToJsonString(),
+            _apps.SessionFor(AppsServer.Her, host));
 
         reported.StatusCode.ShouldBe(HttpStatusCode.NoContent);
-        var entry = (await EntriesAsync(apps)).ShouldHaveSingleItem();
-        entry["check"]!.GetValue<bool>().ShouldBeTrue();
-        entry["viewer"]!.GetValue<string>().ShouldBe(AppsServer.Her.UserId);
-        metrics.Published.OfType<ErrorEvent>().ShouldBeEmpty();
+        var raw = await _apps.ReadAsync(AppsServer.Her, "/glucose/errors");
+        raw.ShouldContain(message);
+        raw.ShouldContain("/día");
     }
 
     // The errors as the agent reads them: one JSON object a line, newest first.

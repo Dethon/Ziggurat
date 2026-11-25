@@ -90,6 +90,8 @@ public record AppErrorSettings
     // The newest this many per app are kept; an older one drops as a new one arrives.
     public int Kept { get; init; } = 100;
 
+    // One broken loop is one session: past this many in its minute a report is answered 429 and dropped.
+    // The client library sends at most ten a minute a page, so a person reloading stays under it.
     public int PerSessionPerMinute { get; init; } = 30;
 }
 

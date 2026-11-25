@@ -6,7 +6,7 @@ Spec: `.scratch/app-spaces/spec.md` ("Runtime errors").
 
 **Blocked by:** 06
 
-**Status:** done
+**Status:** ready-for-agent
 
 - [x] Each entry carries message, stack, route, user agent, time and the viewer's person id. A read failure also carries its virtual path and envelope. No entry ever carries data that was read.
 - [x] Only a signed-in viewer of that app can report, and entries land on that app alone.
@@ -32,20 +32,22 @@ Tests:
   - the per-session minute on a fake clock;
   - the mount's file: listed, read, refused to create, edit, delete and move, never served, not counted;
   - the operator's `ErrorEvent` under the household;
-  - a check's report.
+  - a check's report, answered but kept nowhere and outside the minute;
+  - text kept unescaped.
 - A Chromium case in `AppsServingInABrowserTests`: a published app throwing fifty times, a rejection, a
   non-Error rejection holding "her lentils", and a caught and an uncaught failed read. That gives exactly
   five entries, no data, no policy violation.
-- An assertion in `AppChecksTests` (a check's throw lands marked `check: true`, and `/_errors` never shows
-  as a failed request).
+- An assertion in `AppChecksTests`: a check's throw is kept nowhere but the check's report, and `/_errors`
+  never shows as a failed request.
+- `AppsReadsTests.AReadFromAnotherOriginsPage_IsTheOne404` (below).
 - An `mcp-apps` row in `MetricsRegistrationContractTests`.
 
 **Red first:** the endpoint, cross-origin, shape, caps, read envelope, rate-limit, quota (`SizeOf` counted
 the file), operator, check-tag, registration-contract and Chromium cases were each seen failing before the
 code. Two cases passed on arrival and were proven by breaking the code: dropping `Take(Kept)` failed the
-retention case, and dropping the author check failed the 404 case. The `AppChecksTests` assertion was proven
-by making the server refuse a check's session. The mount's write refusals rode ticket 01's reserved name and
-passed on arrival; they were not broken on purpose.
+retention case, and dropping the author check failed the 404 case. The mount's write refusals rode ticket
+01's reserved name and passed on arrival; taking `errors` out of the reserved names failed that case. The
+check-session, unescaped-text and foreign-origin-read cases were red first too.
 
 **Choices the spec left open:**
 - *Path:* the spec's `/_errors`, kept. It is a POST, dispatched before anything else, and app files are
@@ -56,7 +58,7 @@ passed on arrival; they were not broken on purpose.
   is therefore taken only when the `Origin` header's authority is the Host; anything else gets the one 404.
   This was not tested in a browser; the in-process case sends a foreign `Origin`.
 - *Server-stamped fields:* time (the server's clock), user agent (the header, cut at 500), viewer (the
-  session's user id; the household is the app's), `origin` (published or preview), `check`. The page sends
+  session's user id; the household is the app's), `origin` (published or preview). The page sends
   only `kind`, `message`, `stack`, `route` and, for a read, `read {operation, path, envelope {errorCode,
   message, hint}}`. The envelope's `retryable` is derived from the taxonomy here, never taken from the page.
 - *Shape:* strict deserialization (unknown members refused), a 16 KiB body, message 1 to 1000, stack up to
@@ -64,21 +66,26 @@ passed on arrival; they were not broken on purpose.
   and `read` present for a read and only for a read. Any of these broken is a 400.
 - *Never data that was read:* the shape has nowhere to put a row. The library describes a thrown or rejected
   non-Error by its type alone, never by its value, and reports a read as its operation, path and envelope.
-  **Not enforceable:** an app that writes what it read into an Error's own message sends it. That message is
-  bounded only by the caps, and the server cannot tell it apart from any other message.
+  **Not enforceable:** an Error's own message is sent, bounded only by the caps, and the server cannot tell
+  one carrying data from any other. That covers an app writing what it read into an error, and also an
+  engine message quoting its input: Chromium's `JSON.parse` names the text it could not parse. The second was
+  reasoned from Chromium's message format, not reproduced here.
 - *Limits:*
   - Client: the same report once per page, at most ten a minute.
   - Server: `Errors:PerSessionPerMinute` (30), a fixed minute counted from a session's first report, then
     429 and dropped.
   - `Errors:Kept` (100) per app.
-  - All appsettings only; they are generic tunables.
-- *Format:* one JSON object a line, newest first by arrival (never sorted on time), rewritten whole one
+  - Both ship in `appsettings.json` alone; they are generic tunables.
+- *Format:* one JSON object a line, unescaped (the relaxed encoder: the agent reads it as text and no browser
+  is served it), newest first by arrival (never sorted on time), rewritten whole one
   report at a time per app. Stored at `<app>/errors`, extensionless, so the text read opens it through the
   shared list's `""` entry. A report for an app deleted meanwhile is dropped without making its directory
   again.
-- *Checks:* a check's page reports through its own session too. The report is kept with `check: true` and
-  sent to the operator only for a person's session. `report.json` already shows the agent those console
-  errors, and no person met them, so the Errors page counts each real breakage once.
+- *Checks:* a check's page reports through its own session too. It is answered 204 and kept nowhere, before
+  its minute is counted. `report.json` already shows the agent those console errors, and no person met them.
+  Kept, every viewport of every check would be a new page, so its reports would push people's out of the
+  newest `Errors:Kept`, and four viewports could run past the per-session minute into the check's
+  `failedRequests`. So each real breakage is counted once, in one place.
 - *The operator's side:* `AppRuntimeError` `ErrorEvent`, `Service` `mcp-apps`, message
   `<slug>-<id>[-preview]: <kind>: <message>` and never the stack, under `ForHousehold(app.HouseholdId)`.
   This needed the apps server to become a metrics publisher, `AddMetricsPublishing("mcp-apps")`, inside its
@@ -87,13 +94,16 @@ passed on arrival; they were not broken on purpose.
   - The shared `CallToolErrorFilter`'s failed tool calls, and `CallTokenGate`'s refusals, on this server now
     reach the feed too, as the rule for every publishing host says.
 - *Refactor on the way:* `AppPages.BodyAsync` (the capped body read) is shared by reads and reports.
+  `AppPages.MayOpen` is the one "who may open this app" rule that pages, reads and reports ask, so ticket
+  09's members widen all three at once.
   `AppOriginFiles.Library`/`Module` became `static readonly`, so the library's caps and path are interpolated
   from Domain rather than retyped.
 
-**Seen, not fixed (outside this ticket):** `/_vfs/*` has the same same-site exposure. A sibling app's page
-can make a viewer's browser POST a read to another app's origin with that origin's cookie. The response is
-unreadable cross-origin and a read changes nothing, so it was left alone. The same `Origin` check would
-close it.
+**Fixed on the way:** `/_vfs/*` had the same same-site exposure. A sibling app's page could make a viewer's
+browser POST a read to another app's origin with that origin's cookie. The response was unreadable
+cross-origin and a read changes nothing, but it was still a read spent as that viewer. Reads now pass the
+same `Origin` check, answering the one 404 otherwise (`AppsReadsTests`). The fixture's `ReadAsync` sends its
+page's `Origin`, as a browser does. A check's reads and the Chromium read case still pass.
 
 **Not verified:** the smoke tier, E2E, the eval and the full suite were not run. The `mcp-apps` image was not
 built. No dashboard was opened to see an `AppRuntimeError` row: the event was pinned in process with a

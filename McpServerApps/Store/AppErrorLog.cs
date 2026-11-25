@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Domain.Apps;
 using McpServerApps.Settings;
@@ -12,7 +13,12 @@ namespace McpServerApps.Store;
 // so concurrent reports never interleave.
 public sealed class AppErrorLog(BuiltAppStore store, AppsSettings settings)
 {
-    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
+    // Read by the agent as text, so a quote, a tag or an accent is kept as the browser wrote it rather than
+    // as a \u escape; the file is never served to a browser.
+    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _apps = new(StringComparer.Ordinal);
 
     public async Task RecordAsync(BuiltApp app, AppErrorEntry entry, CancellationToken ct)

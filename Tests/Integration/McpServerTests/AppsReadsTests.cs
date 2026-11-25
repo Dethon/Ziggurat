@@ -110,6 +110,22 @@ public sealed class AppsReadsTests : IAsyncLifetime
         }
     }
 
+    // Sibling apps share the apps domain, so another app's page could make the viewer's browser post a read
+    // here with this origin's cookie: a read is taken only from a page of this very origin, and nothing is
+    // forwarded for another's.
+    [Fact]
+    public async Task AReadFromAnotherOriginsPage_IsTheOne404()
+    {
+        var host = _apps.Published("glucose", _id);
+        var page = await _apps.GetAsync(host, "/missing.css", _apps.SessionFor(AppsServer.Him, host));
+
+        using var foreign = await _apps.ReadAsync(host, AppReads.Operations.Query, _notes, _apps.SessionFor(AppsServer.Her, host),
+            origin: $"https://other-abc123.{AppsServer.AppsDomain}");
+
+        foreign.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await foreign.Content.ReadAsStringAsync()).ShouldBe(await page.Content.ReadAsStringAsync());
+    }
+
     // An agent that cannot be reached answers the unavailable envelope, which the client library hands the
     // app as an error worth trying again.
     [Fact]

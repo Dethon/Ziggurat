@@ -85,7 +85,7 @@ public sealed class AppPages(
         }
 
         if (await store.FindAsync(origin.Id, ct) is not { } app
-            || person != app.Author
+            || !MayOpen(person, app)
             || await ServedAsync(app, origin, ct) is not { } served)
         {
             await NotFoundAsync(context);
@@ -156,6 +156,12 @@ public sealed class AppPages(
     private async Task ReadAsync(HttpContext context, AppOrigin origin, string operation)
     {
         var ct = context.RequestAborted;
+        if (!FromThisOrigin(context.Request))
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
         var viewer = await viewers.ViewerAsync(context.Request, origin, ct);
         if (viewer == AppViewer.Unchecked)
         {
@@ -167,7 +173,7 @@ public sealed class AppPages(
 
         if (viewer is not AppViewer.Person { Session: var session }
             || await store.FindAsync(origin.Id, ct) is not { } app
-            || session.Person != app.Author
+            || !MayOpen(session.Person, app)
             || await ServedAsync(app, origin, ct) is not { } served
             || operation.Length == 0 || operation.Contains('/'))
         {
@@ -194,7 +200,7 @@ public sealed class AppPages(
     private async Task ReportAsync(HttpContext context, AppOrigin origin)
     {
         var ct = context.RequestAborted;
-        if (!AppErrorReports.FromThisOrigin(context.Request))
+        if (!FromThisOrigin(context.Request))
         {
             await NotFoundAsync(context);
             return;
@@ -209,7 +215,7 @@ public sealed class AppPages(
 
         if (viewer is not AppViewer.Person { Session: var session }
             || await store.FindAsync(origin.Id, ct) is not { } app
-            || session.Person != app.Author)
+            || !MayOpen(session.Person, app))
         {
             await NotFoundAsync(context);
             return;
@@ -217,6 +223,16 @@ public sealed class AppPages(
 
         await reports.ReportAsync(context, app, session, ct);
     }
+
+    // Who may open an app's origins, its pages, reads and reports alike: its author.
+    private static bool MayOpen(Account person, BuiltApp app) => person == app.Author;
+
+    // Every app shares the apps domain, so a sibling app's page is same-site: its POST here carries this
+    // origin's cookie, and only its Origin header says it is not this origin's own page. A read or a report
+    // is taken from this origin's pages alone.
+    private static bool FromThisOrigin(HttpRequest request) =>
+        Uri.TryCreate(request.Headers.Origin.ToString(), UriKind.Absolute, out var origin)
+        && string.Equals(origin.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase);
 
     // A read's arguments are a path, a pattern or a statement: small. A body larger is never held.
     private const int MaxArgumentBytes = 64 * 1024;

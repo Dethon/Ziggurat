@@ -12,12 +12,11 @@ namespace McpServerApps.Serving;
 // A runtime error reported by a page of an app its viewer may open (AppPages settled who and which app):
 // the page's word for what went wrong, held to AppErrorReport's shape; the server's for everything else.
 //
-// - Only a page of this very origin reports here. Every app shares the apps domain, so a sibling app's
-//   page is same-site and this origin's cookie rides its POST; its Origin header still names it.
 // - A person's report is also a household error the operator sees (an ErrorEvent under the app's own
-//   household, on the deployment's metrics feed): its app's label and message, never its stack. A check's
-//   is kept marked as the check's and told to nobody else: its report.json shows the agent the same page
-//   errors, and no person met them.
+//   household, on the deployment's metrics feed): its app's label and message, never its stack.
+// - A check's page reports too, and is answered as kept, but nothing is: its report.json already shows the
+//   agent those page errors, every viewport of every check is a new page whose reports would push people's
+//   out of the newest Errors:Kept, and no person met them.
 // - At most Errors:PerSessionPerMinute reports a session a minute: one broken loop is one session, and
 //   past it a report is answered 429 and kept nowhere until the minute is out. The client library holds
 //   itself well under that.
@@ -33,14 +32,15 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
     private readonly Lock _gate = new();
     private readonly Dictionary<string, (DateTimeOffset Start, int Count)> _minutes = new(StringComparer.Ordinal);
 
-    // False for a request no page of this origin sent; the caller answers it the one 404.
-    public static bool FromThisOrigin(HttpRequest request) =>
-        Uri.TryCreate(request.Headers.Origin.ToString(), UriKind.Absolute, out var origin)
-        && string.Equals(origin.Authority, request.Host.Value, StringComparison.OrdinalIgnoreCase);
-
     public async Task ReportAsync(HttpContext context, BuiltApp app, AppSession session, CancellationToken ct)
     {
         var request = context.Request;
+        if (session.Proof is ViewerProof.CheckCall)
+        {
+            context.Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
+        }
+
         if (!Admitted(request.Cookies[AppSessions.CookieName] ?? ""))
         {
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
@@ -55,7 +55,6 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
         }
 
         var userAgent = request.Headers.UserAgent.ToString();
-        var check = session.Proof is ViewerProof.CheckCall;
         await log.RecordAsync(app, new AppErrorEntry
         {
             Time = clock.GetUtcNow(),
@@ -66,18 +65,14 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
             UserAgent = userAgent.Length > MaxUserAgent ? userAgent[..MaxUserAgent] : userAgent,
             Viewer = session.Person.UserId,
             Origin = session.Origin.Preview ? "preview" : "published",
-            Check = check,
             Read = report.Read
         }, ct);
-        if (!check)
+        _metrics.ForHousehold(app.HouseholdId).Publish(new ErrorEvent
         {
-            _metrics.ForHousehold(app.HouseholdId).Publish(new ErrorEvent
-            {
-                Service = ServiceName,
-                ErrorType = AppErrors.ErrorType,
-                Message = $"{app.Slug}-{app.Id}{(session.Origin.Preview ? AppOrigin.PreviewSuffix : "")}: {report.Kind}: {report.Message}"
-            });
-        }
+            Service = ServiceName,
+            ErrorType = AppErrors.ErrorType,
+            Message = $"{app.Slug}-{app.Id}{(session.Origin.Preview ? AppOrigin.PreviewSuffix : "")}: {report.Kind}: {report.Message}"
+        });
 
         context.Response.StatusCode = StatusCodes.Status204NoContent;
     }

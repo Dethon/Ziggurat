@@ -178,8 +178,10 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
   (`errorCode`, `message`, `retryable`, `hint`, `envelope`) and the `path`; the origin's 404 is
   `authentication`, anything else unanswered `transient_dependency`. Dependency-free, one expression.
 - **`POST /_vfs/<operation>` on the origin** (`AppPages.ReadAsync`), the body the tool's arguments (one
-  JSON object, at most 64 KiB): the viewer and app settled exactly as for a page — nobody, or a viewer
-  who may not open the app, is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
+  JSON object, at most 64 KiB), **from a page of that origin alone** (the `Origin` header's authority is
+  the Host: every app shares the apps domain, so a sibling app's page is same-site and its POST carries
+  this origin's cookie): the viewer and app settled exactly as for a page — nobody, a viewer
+  who may not open the app (`AppPages.MayOpen`), or another origin's page is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
   the origin's own manifest** (the served commit's on the published origin, so a tree edit widens
   nothing until published; the tree's on the preview), the building agent from `app.meta.json`, and the
   assertion the app session holds, renewed first if it was due. The answer goes back as it came, under the
@@ -306,21 +308,20 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   Error is named by its type alone, so what the app held never leaves the page. The same report goes once
   a page, at most ten a minute.
 - **`POST /_errors`** (`AppPages.ReportAsync`, then `AppErrorReports`): a POST, so no app file shadows it,
-  and outside the worker. **Only from a page of that origin** — the `Origin` header's authority must be the
-  Host, since every app shares the apps domain and a sibling app's page is same-site, its POST carrying
-  this origin's cookie — then the viewer and app settled exactly as for a read: nobody, a viewer who may
-  not open it, another origin's session or a foreign page is the one 404. **The body is the page's word
+  and outside the worker. From a page of that origin alone, the viewer and app settled exactly as for a
+  read: nobody, a viewer who may not open it, another origin's session or a foreign page is the one 404. **The body is the page's word
   only for what went wrong**, held strictly (`AppErrorReport.Parse`, 16 KiB, unknown fields refused):
   `kind` (`error`, `rejection`, `read`), `message` (1–1000), `stack` (≤ 8000), `route` (the path alone,
   no query or fragment, ≤ 1000), and for a read alone `read` (`operation` of `AppReads.Operations`, `path`,
   `envelope` with a known `errorCode`, message, hint). Anything else is 400. **The server stamps the
   rest**: `time` (its clock), `userAgent` (the header, cut at 500), `viewer` (the session's user id),
-  `origin` (`published`/`preview`), `check`, and the envelope's `retryable` from this side's taxonomy.
+  `origin` (`published`/`preview`), and the envelope's `retryable` from this side's taxonomy.
   **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
   dropped. 204 when kept.
 - **Kept** (`Store/AppErrorLog`): `<app>/errors` (`BuiltAppStore.ErrorsFile`, beside `git/` and `tree/`,
   never committed, served or counted in `SizeOf`), one JSON object a line, **newest first by arrival**,
-  the newest `Errors:Kept` (100), rewritten whole one report at a time per app; a deleted app's report is
+  written unescaped (`UnsafeRelaxedJsonEscaping`: read by the agent, never served), the newest
+  `Errors:Kept` (100), rewritten whole one report at a time per app; a deleted app's report is
   dropped, its directory never made again. The mount shows it read-only at **`/<slug>/errors`** once one
   was reported (listed, read and searched as text; every write refused as a reserved name's).
 - **The operator sees a person's report** as an `ErrorEvent` (`Service` `mcp-apps`, `ErrorType`
@@ -328,10 +329,12 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   stack) under **the app's own household** (`ForHousehold(app.HouseholdId)`), on the metrics feed the
   apps server publishes to when it has Redis (`AddMetricsPublishing`, its heartbeat the health tile, so it
   is no `HttpProbes` target; the shared filter's failed tool calls reach the feed too). **A check's
-  session reports too**: kept with `check: true` and told to nobody else, since `report.json` already
-  shows the agent those page errors and no person met them.
-- A message is the app's own text: an app that puts what it read into an error's message sends it, capped;
-  nothing but the shape and the caps holds that back.
+  session's report is answered 204 and kept nowhere**, before its minute is counted: `report.json` already
+  shows the agent those page errors, every viewport of every check is a new page whose reports would push
+  people's out of `Errors:Kept`, and no person met them.
+- A message is an Error's own text, and nothing but the shape and the caps holds it back: an app that
+  writes what it read into one sends it, and so does an engine message quoting its input (Chromium's
+  `JSON.parse` names the text it could not parse).
 
 ## Tests
 
@@ -346,8 +349,9 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
 `AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsRuntimeErrorsTests`
-`/_errors` by Host (kept and stamped, the one 404, a foreign page, the shape and caps, a read's envelope,
-`Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's report), a
+`/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
+envelope, `Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's
+report kept nowhere), a
 Chromium case the library's reporting; `AppChecksTests` the check
 in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
