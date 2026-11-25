@@ -289,6 +289,8 @@ public class AppsServingInABrowserTests
         await WorkerActiveAsync(page);
         await page.ReloadAsync();
         await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "1");
+        // The worker stores what it fetched after the page has it: wait for the store, not the page.
+        await Eventually.Until(async () => (await KeptAsync(page)).Contains("/main.js"), "the worker keeps the app's file");
         var first = await CachesAsync(page);
         var fetched = fromNetwork;
 
@@ -305,19 +307,21 @@ public class AppsServingInABrowserTests
             "the new version's worker drops the old version's cache");
         await page.ReloadAsync();
         await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "2");
-        await Eventually.Until(async () => await CachesAsync(page) is [var only] && only != first.Single(),
-            "the new version's worker keeps its own cache alone");
+        await Eventually.Until(async () => await CachesAsync(page) is [var only] && only != first.Single()
+                                           && await KeptAsync(page) is var kept && kept.Contains("/") && kept.Contains("/main.js"),
+            "the new version's worker keeps the shell and its file in its own cache alone");
 
         offline = true;
         await page.GotoAsync(origin + "/week");
 
         await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "2");
         refused.ShouldContain(origin + "/week", "the page was asked of the network, which was gone");
-        var kept = await page.EvaluateAsync<string[]>(
-            "() => caches.keys().then(names => Promise.all(names.map(n => caches.open(n).then(c => c.keys())))).then(all => all.flat().map(r => new URL(r.url).pathname))");
-        kept.ShouldNotBeEmpty();
-        kept.ShouldAllBe(path => !path.StartsWith("/_vfs/") && path != "/_errors" && path != "/_app/sign-in");
+        (await KeptAsync(page)).ShouldAllBe(path => !path.StartsWith("/_vfs/") && path != "/_errors" && path != "/_app/sign-in");
     }
+
+    // Every path the origin's caches hold.
+    private static Task<string[]> KeptAsync(IPage page) => page.EvaluateAsync<string[]>(
+        "() => caches.keys().then(names => Promise.all(names.map(n => caches.open(n).then(c => c.keys())))).then(all => all.flat().map(r => new URL(r.url).pathname))");
 
     // A kept shell never stands in for the sign-in: once the app session has ended, a reload reaches the
     // server and is sent to sign in again, as the client library tells the person a reload does.
