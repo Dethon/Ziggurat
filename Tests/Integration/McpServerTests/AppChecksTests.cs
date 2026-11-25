@@ -4,6 +4,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
+using McpServerApps.Settings;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -22,10 +23,21 @@ public sealed class AppChecksTests
 {
     private static readonly string[] _defaultShots = ["1280x800.png", "390x844.png"];
 
+    // Far past what a check takes, so a loaded machine never reads as a check stopped at its deadline:
+    // only the deadline's own case runs to one.
+    private static readonly TimeSpan _generous = TimeSpan.FromMinutes(2);
+
+    private static Task<AppsServer> StartAsync(Func<AppsSettings, AppsSettings>? configure = null) =>
+        AppsServer.StartAsync(s =>
+        {
+            var generous = s with { Checks = s.Checks with { Deadline = _generous } };
+            return configure?.Invoke(generous) ?? generous;
+        });
+
     [Fact]
     public async Task ACheck_ShowsThePreviewAtAPhoneAndADesktop_AndReportsEach()
     {
-        await using var server = await AppsServer.StartAsync();
+        await using var server = await StartAsync();
         await server.AppAsync(AppsServer.Her, "glucose");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
             "<!doctype html><html lang=\"en\"><head><title>Glucose</title></head><body><h1>Glucose today</h1></body></html>");
@@ -54,7 +66,7 @@ public sealed class AppChecksTests
     [Fact]
     public async Task ACheck_ReportsConsoleErrors_FailedRequests_AndPolicyViolations()
     {
-        await using var server = await AppsServer.StartAsync();
+        await using var server = await StartAsync();
         await server.AppAsync(AppsServer.Her, "glucose");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
             """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1>Glucose</h1><img alt="chart" src="https://charts.example.org/today.png"></body></html>""");
@@ -86,7 +98,7 @@ public sealed class AppChecksTests
     [Fact]
     public async Task EachAssertionFile_RunsInThePage_AndReportsPassOrFailWithItsMessage()
     {
-        await using var server = await AppsServer.StartAsync();
+        await using var server = await StartAsync();
         await server.AppAsync(AppsServer.Her, "glucose");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
             """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><ul id="meals"></ul></body></html>""");
@@ -134,7 +146,7 @@ public sealed class AppChecksTests
             WhitelistPatterns = ["domain__filesystem__*"]
         });
         await using var agent = await AppReadsAgent.StartAsync(households, new SharedServers { Sugary = sugary.Endpoint });
-        await using var server = await AppsServer.StartAsync(s => s with { AgentUrl = agent.Address });
+        await using var server = await StartAsync(s => s with { AgentUrl = agent.Address });
         await server.AppAsync(AppsServer.Him, "meals");
         await server.CreateAsync(AppsServer.Him, "/meals/index.html",
             """<!doctype html><html lang="en"><head><title>Meals</title><script type="module" src="/main.js"></script></head><body><p id="meal">loading</p></body></html>""");
@@ -167,7 +179,7 @@ public sealed class AppChecksTests
             return built;
         });
         await using var _ = inside;
-        await using var server = await AppsServer.StartAsync();
+        await using var server = await StartAsync();
         await server.AppAsync(AppsServer.Her, "glucose");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
             """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1>Glucose</h1></body></html>""");
@@ -176,9 +188,49 @@ public sealed class AppChecksTests
         await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
 
         var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
-        viewport["accessibility"]!.GetValue<string>().ShouldNotContain("secrets");
+        viewport["accessibility"]?.GetValue<string>().ShouldNotContain("secrets");
         viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"http://127.0.0.1:{port}/"
                                                                  && r["error"]!.GetValue<string>().StartsWith("blocked"));
+    }
+
+    // An origin the app may reach can still send the browser on: a redirect from one (a CDN here) to an
+    // internal service is followed past the request's own check, so what the check captured is kept only
+    // while the page is still the preview, and otherwise dropped and said.
+    [Fact]
+    public async Task ACheck_NeverShowsWhereAnAllowedOriginRedirectsTo()
+    {
+        var (insidePort, inside) = await TestPort.StartWebAsync(port =>
+        {
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, port));
+            var built = builder.Build();
+            built.MapGet("/", () => Results.Content("<h1>the deployment's secrets</h1>", "text/html"));
+            return built;
+        });
+        await using var _ = inside;
+        var (cdnPort, cdn) = await TestPort.StartWebAsync(port =>
+        {
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, port));
+            var built = builder.Build();
+            built.MapGet("/", () => Results.Redirect($"http://127.0.0.1:{insidePort}/"));
+            return built;
+        });
+        await using var __ = cdn;
+        var cdnOrigin = $"http://localhost:{cdnPort}";
+        await using var server = await StartAsync(s => s with { Cdns = [.. s.Cdns, cdnOrigin] });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1>Glucose</h1></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", $"location.href = '{cdnOrigin}/';");
+
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
+        viewport["accessibility"]?.GetValue<string>().ShouldNotContain("secrets");
+        viewport["screenshot"].ShouldBeNull(viewport.ToJsonString());
+        viewport["error"]!.GetValue<string>().ShouldContain("left the preview");
+        (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest")).ShouldBe(["/glucose/.checks/latest/report.json"]);
     }
 
     // Each check runs a browser of its own, so a household runs one at a time and the server a few: one
@@ -189,7 +241,7 @@ public sealed class AppChecksTests
     {
         var third = new Account("household-third", "user-third");
         await using var agent = await HeldAgent.StartAsync();
-        await using var server = await AppsServer.StartAsync(s => s with
+        await using var server = await StartAsync(s => s with
         {
             AgentUrl = agent.Address,
             Checks = s.Checks with { PerHousehold = 1, Total = 2 }
@@ -244,7 +296,7 @@ public sealed class AppChecksTests
     [Fact]
     public async Task ACheck_OpensTheRouteAtTheViewportsNamed_AndItsOutputIsTheServersAlone()
     {
-        await using var server = await AppsServer.StartAsync();
+        await using var server = await StartAsync();
         await server.AppAsync(AppsServer.Her, "glucose");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
             """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1 id="route"></h1></body></html>""");

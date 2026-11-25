@@ -319,7 +319,9 @@ until an owner removes the space.
   secret, which SexyTime's server also holds) **and** the
   viewer's current `apps` assertion (who it acts for). The app's id, building agent and `reads` travel
   with the secret's authority; the person and household only with the assertion's. The agent believes
-  no other header.
+  no other header, except that a check's reads carry instead the agent's own call token for the call that
+  ran `./check` (ticket 07: nothing is minted for a check; the agent believes its own signature for the
+  apps server, naming the turn's person).
 - The agent builds a session-less read registry for (household, building agent, viewer): the agent
   definition's servers, withheld by features and own-server state as a turn's are, each call signed as
   the viewer of that household. It is cached briefly and rebuilt when the household's servers change,

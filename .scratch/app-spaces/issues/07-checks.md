@@ -21,9 +21,10 @@ Spec: `.scratch/app-spaces/spec.md` ("Checks").
 shown read-only at `/<slug>/.checks/latest/` (`<W>x<H>.png`, `report.json`). Contracts in
 `.claude/rules/apps.md` ("Checks"), with pointers in `service-identity.md`, `person-assertions.md` and
 `mcp-hosting.md`.
-Tests: `AppChecksTests` (8, real Chromium on `apps.test`: two default screenshots and a report; console
+Tests: `AppChecksTests` (9, real Chromium on `apps.test`: two default screenshots and a report; console
 error, uncaught throw, 404 and an `img-src` violation; assertions pass, throw and fail to parse; reads as
-the turn's person through `AppReadsAgent` and Sugary; a navigation onto an internal address blocked; both
+the turn's person through `AppReadsAgent` and Sugary; a navigation onto an internal address blocked, and an
+allowed origin's redirect there never shown; both
 quotas, held open by a stub agent; the deadline; viewports, route and read-only output), two cases in
 `AppReadsApiTests` (the check's token believed; six refusals), `CallHouseholdConformanceTests` (a new rule),
 `DeploymentConformanceTests.TheAppsServersCheckDeadline_EndsBeforeTheCallsTokenDoes`, and updates to
@@ -64,9 +65,13 @@ call token goes back to the agent, which believes it as its own signature:
   error's message. A file that does not parse fails. They run once per viewport, after the screenshot and
   the aria snapshot. The CSP is never bypassed.
 - *Reach.* A context route lets through only the preview origin, `Cdns` and the tree manifest's `connect`.
-  Anything else is aborted and reported `blocked`, so agent-written JS cannot navigate the browser onto the
-  compose network and screenshot it. The service worker stays allowed; its fetches are the page's own,
-  already held to the same policy.
+  A request anywhere else is aborted and reported `blocked`. The route sees only a request's first URL,
+  though, so an allowed origin can still redirect the browser anywhere, and the redirected request does go
+  out. So nothing is kept unless the main frame is on the preview's origin: the screenshot, the snapshot,
+  the console entries and the assertions. A viewport that left says so in its `error`. The test for this
+  was red before the fix: a CDN's 302 to an internal server was screenshotted. Agent-written JS therefore
+  cannot show the agent a page from the compose network. It can still make the browser send a GET there,
+  blind. The service worker stays allowed; its fetches are the page's own, held to the same policy.
 - *Exit code* is 1 when an assertion failed, the deadline was hit or the browser would not run. Console
   errors alone exit 0, with a count per viewport in the answer.
 - *Limits*: `Checks:PerHousehold` 1, `Total` 2, `Deadline` 30 s, `Settle` 5 s (the longest wait for a quiet
@@ -91,9 +96,10 @@ call token goes back to the agent, which believes it as its own signature:
 - `./check` holds its exec call for up to the deadline (30 s).
 
 **Not verified:** the smoke tier, E2E and the full suite were not run. The `mcp-apps` image was built
-(`base-sdk` rebuilt first). Inside it, as uid 1654, a probe with the bundled driver and the production
-flags launched full Chromium: a secure context, a registered worker and an aria snapshot. The .NET server
-itself was not started in the container.
+(`base-sdk` rebuilt first). Inside it, a probe with the bundled driver and the production flags launched
+full Chromium as uid 1654 and as an arbitrary uid with no home: a secure context, a registered worker and
+an aria snapshot. The arbitrary uid failed at first ("chrome_crashpad_handler: --database is required"),
+which is why the image now sets `HOME=/tmp`. The .NET server itself was not started in the container.
 
 **Deploying this needs:** no new secret or setting. Rebuild `base-sdk` first, since Domain, Infrastructure
 and Mcp.Hosting changed. Then rebuild `agent` (it now believes a check's token) and `mcp-apps` (Chromium,

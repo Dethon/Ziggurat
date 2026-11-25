@@ -27,6 +27,9 @@ COPY --from=publish /app/publish .
 # Installed by the package's own driver with the system libraries it needs, somewhere the server's
 # user can read.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Compose runs the server as PUID:PGID, which may have no home in the image; Chromium will not start
+# without one it can write (its crash handler keeps a database there). Git sets a HOME of its own.
+ENV HOME=/tmp
 RUN chmod -R +x .playwright/ \
  && .playwright/node/linux-x64/node .playwright/package/cli.js install --with-deps --no-shell chromium \
  && rm -rf /var/lib/apt/lists/* \

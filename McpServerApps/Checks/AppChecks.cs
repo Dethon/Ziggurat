@@ -119,6 +119,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         var host = $"{app.Slug}-{app.Id}{AppOrigin.PreviewSuffix}.{settings.AppsDomain}";
         var address = $"http://{host}";
         var checks = store.ChecksDirectory(app);
+        Sweep(checks);
         var run = Path.Combine(checks, $"run-{Guid.NewGuid():N}");
         Directory.CreateDirectory(run);
         var session = sessions.OpenCheck(app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, started + limits.Deadline);
@@ -187,7 +188,9 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     }
 
     // One viewport in a context of its own: the session's cookie, the page opened and let settle, then
-    // shown, read for structure, and asked its assertions.
+    // shown, read for structure, and asked its assertions — each only while the page is still the
+    // preview. The route sees a navigation's first request alone, so an origin the app may reach can
+    // redirect the browser anywhere; what was captured of anything but the preview is dropped, never kept.
     private async Task ViewAsync(
         IBrowser browser, ViewportRun seen, string url, string session, IReadOnlySet<string> reachable,
         IReadOnlyList<CheckAssertion> assertions, string run, CancellationToken stopped)
@@ -210,8 +213,22 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         });
         await context.AddInitScriptAsync(ViolationListener);
         var page = await context.NewPageAsync();
-        page.Console += (_, message) => seen.Console.Enqueue(new ConsoleEntry(message.Type, message.Text, message.Location));
-        page.PageError += (_, error) => seen.Console.Enqueue(new ConsoleEntry("uncaught", error, null));
+        var preview = OriginOf(url);
+        bool OnPreview() => string.Equals(OriginOf(page.Url), preview, StringComparison.OrdinalIgnoreCase);
+        page.Console += (_, message) =>
+        {
+            if (OnPreview())
+            {
+                seen.Console.Enqueue(new ConsoleEntry(message.Type, message.Text, message.Location));
+            }
+        };
+        page.PageError += (_, error) =>
+        {
+            if (OnPreview())
+            {
+                seen.Console.Enqueue(new ConsoleEntry("uncaught", error, null));
+            }
+        };
         page.RequestFailed += (_, failed) => seen.Failed.Enqueue(new FailedRequest(failed.Method, failed.Url, null,
             failed.Failure is { } why && why.Contains("ERR_BLOCKED_BY_CLIENT", StringComparison.Ordinal)
                 ? "blocked: a check's page reaches only its own origin, the CDNs and its manifest's connect origins"
@@ -255,12 +272,31 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             seen.Settled = false;
         }
 
-        await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(run, viewport.Screenshot), Timeout = 0 });
-        seen.Screenshot = viewport.Screenshot;
-        seen.Accessibility = await page.Locator("body").AriaSnapshotAsync(new LocatorAriaSnapshotOptions { Timeout = 0 });
-        foreach (var assertion in assertions)
+        var shot = Path.Combine(run, viewport.Screenshot);
+        if (OnPreview())
         {
-            seen.Assertions.Add(await AssertAsync(page, assertion, stopped));
+            await page.ScreenshotAsync(new PageScreenshotOptions { Path = shot, Timeout = 0 });
+            var accessibility = await page.Locator("body").AriaSnapshotAsync(new LocatorAriaSnapshotOptions { Timeout = 0 });
+            if (OnPreview())
+            {
+                seen.Screenshot = viewport.Screenshot;
+                seen.Accessibility = accessibility;
+            }
+            else
+            {
+                File.Delete(shot);
+            }
+        }
+
+        foreach (var assertion in assertions.TakeWhile(_ => OnPreview()))
+        {
+            var outcome = await AssertAsync(page, assertion, stopped);
+            seen.Assertions.Add(OnPreview() ? outcome : outcome with { Passed = false, Message = LeftThePreview });
+        }
+
+        if (!OnPreview())
+        {
+            seen.Error = $"{LeftThePreview}; nothing it showed after that is kept";
         }
     }
 
@@ -293,6 +329,22 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
     }
 
+    // What an earlier check left half done (a crash, a server stopped mid-check). A household runs one
+    // check at a time, so nothing else is writing here.
+    private static void Sweep(string checks)
+    {
+        if (!Directory.Exists(checks))
+        {
+            return;
+        }
+
+        foreach (var stale in Directory.EnumerateDirectories(checks)
+                     .Where(d => Path.GetFileName(d) is var name && (name.StartsWith("run-") || name.StartsWith("retired-"))))
+        {
+            Directory.Delete(stale, recursive: true);
+        }
+    }
+
     // The finished run becomes what the mount shows, whole: the last run's files never mix with this one's.
     private static void Publish(string checks, string run)
     {
@@ -314,6 +366,8 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
             ? uri.GetLeftPart(UriPartial.Authority)
             : "";
+
+    private const string LeftThePreview = "the page left the preview for an origin the check does not show";
 
     private const string ViolationBinding = "__zigguratCheckPolicyViolation";
 

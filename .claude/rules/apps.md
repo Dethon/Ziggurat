@@ -236,17 +236,23 @@ headless Chromium as the person whose turn ran it.
   need a secure context; the flag is per process, hence one browser each, and closing it is the deadline).
   The session cookie is set host-only over CDP, as the tests set theirs. Playwright's own default is
   `--no-sandbox`. The image installs it with the bundled driver (`cli.js install --with-deps --no-shell
-  chromium`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`); compose runs the container with `init: true` so
+  chromium`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, `HOME=/tmp`: compose's `PUID` may have no home,
+  and Chromium will not start without a writable one); compose runs the container with `init: true` so
   its children are reaped.
 - **What the page reaches**: a context route lets through only the preview's origin, `Cdns` and the tree
-  manifest's `connect`; anything else (a navigation onto the deployment's network included) is aborted
-  and reported `blocked`. The policy is never bypassed, so its violations are what the app would meet.
+  manifest's `connect`; a request anywhere else (a navigation onto the deployment's network included) is
+  aborted and reported `blocked`. The route sees only a request's first URL, so an allowed origin can
+  still redirect the browser anywhere: **nothing is kept of a page that is not the preview** — the
+  screenshot and snapshot are taken and kept only while the main frame is on the preview's origin, an
+  assertion runs only then (one that ends elsewhere fails "left the preview"), console entries are
+  recorded only then, and the viewport's `error` says it left. The policy is never bypassed, so its
+  violations are what the app would meet.
 - **Per viewport**, a context of its own: load, then up to `Checks:Settle` (5 s) for the network to go
   quiet (`settled`), then the screenshot (the viewport, scale 1), the aria snapshot of `body`, then each
   **assertion file** — `checks/*.js` at the tree's root, sorted, read here as text and evaluated in the
   page as the body of an async function: returning passes (its value is the message), throwing fails
   (the error's message), not parsing fails. Nothing of the app runs outside the page.
-- **Output**: a run directory under `BuiltAppStore.ChecksDirectory` (`<app>/checks/`, beside `git/` and
+- **Output**: a run directory (stale ones swept as the next check starts) under `BuiltAppStore.ChecksDirectory` (`<app>/checks/`, beside `git/` and
   `tree/`, never committed or served, not counted in the repository's bytes), swapped in whole as
   `latest/` when done. The mount shows it read-only at `/<slug>/.checks/latest/` (`<W>x<H>.png` per
   viewport, `report.json`); the PNGs come through the byte read, so `file_read` shows them. `report.json`:
