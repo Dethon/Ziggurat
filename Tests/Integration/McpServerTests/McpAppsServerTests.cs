@@ -260,6 +260,41 @@ public class McpAppsServerTests
         server.StoredDirectories(AppsServer.Her).ShouldBeEmpty();
     }
 
+    // An app the household shares as an app space is not its author's alone to delete: refused, naming the
+    // space an owner removes first, and nothing of it goes. Once unshared it deletes as any other.
+    [Fact]
+    public async Task AnAppThatIsAnAppSpace_IsNotDeleted_AndTheRefusalNamesTheSpace()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        server.Spaces.Share(AppsServer.Her.TenantId, id, "Our glucose");
+
+        var refused = await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" },
+            AppsServer.TurnOf(AppsServer.Her));
+
+        refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied, refused.ToJsonString());
+        refused["message"]!.GetValue<string>().ShouldContain("Our glucose");
+        (await server.GlobAsync(AppsServer.Her, "*")).ShouldContain("/glucose/");
+        server.Spaces.Unshare(AppsServer.Her.TenantId);
+        (await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" },
+            AppsServer.TurnOf(AppsServer.Her)))["status"]!.GetValue<string>().ShouldBe("deleted");
+    }
+
+    // Whether it is shared cannot be told just now: nothing is deleted, and the agent hears to try again.
+    [Fact]
+    public async Task AnAppWhoseSpacesCannotBeRead_IsNotDeleted()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        server.Spaces.Down = true;
+
+        var refused = await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" },
+            AppsServer.TurnOf(AppsServer.Her));
+
+        refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.TransientDependency, refused.ToJsonString());
+        server.StoredDirectories(AppsServer.Her).ShouldNotBeEmpty();
+    }
+
     [Fact]
     public async Task TheAppsPerHousehold_AreLimited_AndTheRefusalNamesTheLimit()
     {

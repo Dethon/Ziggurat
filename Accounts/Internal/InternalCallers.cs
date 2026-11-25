@@ -89,7 +89,9 @@ public static class InternalCallers
         ],
         [Timers] = [HouseholdConfigProtocol.SettingsView],
         // Only the household's own agents build apps: the apps server checks a turn's agent against them.
-        [Apps] = [HouseholdConfigProtocol.AgentNamesView],
+        // The spaces say which of its apps the household shares (app spaces), so every member may open one
+        // and none is deleted while shared.
+        [Apps] = [HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SpacesView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.MemberNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };
@@ -100,7 +102,9 @@ public static class InternalCallers
     {
         [SignalR] = ChannelIds.SignalR,
         [Telegram] = ChannelIds.Telegram,
-        [Sugary] = SugaryChannel
+        [Sugary] = SugaryChannel,
+        // The viewer of a built app's origin, as the app sign-in and the session refresh vouch for them.
+        [Apps] = AppChannels.Apps
     };
 
     // The entries whose credential this request presented; none is a caller this service does not know.

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -41,12 +42,17 @@ public sealed class AppsServer : IAsyncDisposable
     private readonly McpClient _client;
     private readonly HttpClient _browser = new(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false });
 
-    private AppsServer(WebApplication app, McpClient client, AppsSettings settings)
+    private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces)
     {
         _app = app;
         _client = client;
         Settings = settings;
+        Spaces = spaces;
     }
+
+    // The households' spaces as the accounts service's spaces view would answer them: which apps each
+    // shares as an app space. A test sets them, or makes them unreadable.
+    public StandInSpaces Spaces { get; }
 
     public AppsSettings Settings { get; }
 
@@ -73,6 +79,7 @@ public sealed class AppsServer : IAsyncDisposable
         Func<AppsSettings, AppsSettings>? configure = null, Action<IServiceCollection>? services = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
+        var spaces = new StandInSpaces();
         Directory.CreateDirectory(directory);
         AppsSettings? settings = null;
         // Both listeners are taken together, and a bind lost to either is retried on two fresh ports.
@@ -98,7 +105,7 @@ public sealed class AppsServer : IAsyncDisposable
             });
             builder.Services.ConfigureApps(settings);
             builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents)));
+                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents, spaces: spaces.Read)));
             // The accounts service's test key, which a test's own accounts service signs with too.
             builder.Services.Replace(ServiceDescriptor.Singleton(sp => TestAssertions.Verifier(sp.GetRequiredService<TimeProvider>())));
             services?.Invoke(builder.Services);
@@ -108,7 +115,7 @@ public sealed class AppsServer : IAsyncDisposable
         });
 
         var client = await McpClient.CreateAsync(McpTestSecret.Transport($"http://localhost:{settings!.Listeners.Mcp}/mcp"));
-        return new AppsServer(app, client, settings);
+        return new AppsServer(app, client, settings, spaces);
     }
 
     // The id a created app's note names, and the label its published origin and preview answer to.
@@ -278,4 +285,25 @@ public sealed class AppsServer : IAsyncDisposable
         TestPort.Release(Settings.Listeners.Pages);
         Directory.Delete(Settings.StoragePath, recursive: true);
     }
+}
+
+// Each household's spaces section, the one default space until a test says otherwise; Down makes every
+// read fail as an accounts service that cannot be asked does.
+public sealed class StandInSpaces
+{
+    private readonly ConcurrentDictionary<string, SpacesSection> _saved = new(StringComparer.Ordinal);
+
+    public volatile bool Down;
+
+    // The household shares this app as an app space (beside its default space), named so.
+    public void Share(string householdId, string appId, string name = "Glucose") =>
+        _saved[householdId] = new SpacesSection
+        {
+            Spaces = [HouseholdSpace.Default, new HouseholdSpace { Slug = "shared", Name = name, AppId = appId, Order = 1 }]
+        };
+
+    public void Unshare(string householdId) => _saved.TryRemove(householdId, out _);
+
+    public SpacesSection Read(string householdId) =>
+        Down ? throw new HttpRequestException("the accounts service is down") : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
 }

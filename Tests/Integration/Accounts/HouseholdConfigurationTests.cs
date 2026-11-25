@@ -330,6 +330,32 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
+    // Which of the household's built apps are app spaces is the spaces section's word, which the apps
+    // server reads as the hub does: on a call's token (deleting an app is refused while it is one) and on
+    // the `apps` assertion of the person viewing an app's origin (every member may open one). An assertion
+    // for another channel proves nothing to it.
+    [Fact]
+    public async Task TheAppsServer_ReadsTheHouseholdsSpaces_OnTheCallTokenAndItsOwnAssertion()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Spaces, """
+            { "spaces": [ { "slug": "default", "name": "Main" }, { "slug": "glucose", "name": "Glucose", "appId": "a1b2c3", "order": 1 } ] }
+            """);
+        var assertions = server.Service<Assertions>();
+
+        var onTheCall = await AskAsync<HouseholdConfigAnswer<SpacesSection>>(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-apps", household, person)));
+        var onTheApp = await AskAsync<HouseholdConfigAnswer<SpacesSection>>(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, AppChannels.Apps)));
+        var onTheHub = await PostAsync(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        onTheCall.Section.Spaces.Select(s => s.AppId).ShouldBe([null, "a1b2c3"]);
+        onTheApp.Section.Spaces.ShouldBe(onTheCall.Section.Spaces);
+        (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
     // Sugary opens another person's log to a reader an owner granted it, so on the agent's call token it
     // reads the household's people — each one's id, name, whether they read everyone's log and whether
     // Sugary is on for them, nobody disabled — and decides itself. The same for everybody in the household, since the reader keeps it

@@ -28,6 +28,10 @@ public interface ICallHousehold
     // The household's people and who an owner let read everyone's Sugary log: the /sugary mount opens
     // another person's log to a reader it lists as granted.
     Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct);
+
+    // The household's spaces: the apps server reads which of its built apps the household shares as app
+    // spaces (HouseholdSpace.AppId).
+    Task<SpacesSection> SpacesAsync(CancellationToken ct);
 }
 
 public static class CallHouseholds

@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
 using Domain.Tools;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
@@ -91,7 +92,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         + "whole before the edit is kept.";
 
     public override string DescribeDelete =>
-        "Delete a file or directory of an app's working tree; deleting /<slug> deletes the whole app.";
+        "Delete a file or directory of an app's working tree; deleting /<slug> deletes the whole app, refused while "
+        + "the household shares it as a space.";
 
     public override string DescribeMove =>
         "Move or rename within one app's working tree; moving /<slug> to /<new-slug> renames the app, "
@@ -353,6 +355,11 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         switch (await ResolveAsync(path, ct))
         {
             case AppNode.AppDirectory { App: var app }:
+                if (await SharedRefusalAsync<FsRemoveResult>(app, ct) is { } shared)
+                {
+                    return shared;
+                }
+
                 await store.OneAtATimeAsync(app.HouseholdId, async () =>
                 {
                     await store.DeleteAsync(app);
@@ -932,6 +939,35 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
         return AppManifest.Parse(manifest) is AppManifestParse.Refused { Problems: var problems }
             ? Invalid<T>($"{AppManifest.FileName} was not kept; it breaks these rules:\n- {string.Join("\n- ", problems)}")
+            : null;
+    }
+
+    // An app the household shares as an app space is the household's to stop sharing before it is anyone's
+    // to delete: the spaces section, as the call's household proves it, names the space an owner removes
+    // first. Whether it is shared that cannot be told just now deletes nothing.
+    private async Task<FsResult<T>?> SharedRefusalAsync<T>(BuiltApp app, CancellationToken ct) where T : class
+    {
+        if (_household is null)
+        {
+            return Nobody<T>();
+        }
+
+        SpacesSection spaces;
+        try
+        {
+            spaces = await _household.SpacesAsync(ct);
+        }
+        catch (HttpRequestException)
+        {
+            return Fail<T>(ToolError.Codes.TransientDependency,
+                $"Whether the household shares the app {app.Slug} as a space could not be checked just now, so it was not deleted.",
+                "Try again in a moment.");
+        }
+
+        return spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id) is { } space
+            ? Fail<T>(ToolError.Codes.PermissionDenied,
+                $"The app {app.Slug} is the household's space '{space.Name}', so it is not deleted while it is shared.",
+                $"Ask an owner of the household to remove the space '{space.Name}' on the spaces page first; then it can be deleted.")
             : null;
     }
 
