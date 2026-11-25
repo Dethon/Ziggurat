@@ -874,9 +874,8 @@ public class DeploymentConformanceTests
             .ShouldNotContain(h => h.Name.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
     }
 
-    // A stack on somebody's own machine serves apps under .localhost, which resolves to loopback and is
-    // a secure context in Chromium (the `__Host-` cookie and the service worker need one) whatever
-    // certificate Caddy's own CA presents.
+    // A stack on somebody's own machine serves apps under .localhost, which resolves to loopback and is a
+    // secure context in Chromium even on plain http (the `__Host-` cookie and the service worker need one).
     [Fact]
     public void TheSmokeStack_ServesAppsUnderALocalWildcardName()
     {

@@ -58,8 +58,13 @@ a refusal case in `AppsPublishingTests`, three cases in `DeploymentConformanceTe
   JS modules are not read.
 - *The local name is `apps.localhost`*: loopback by name, and a secure context in Chromium on plain http
   (verified in `AppsServingInABrowserTests`: `isSecureContext`, a `__Host-` cookie set via CDP, the
-  worker controlling the page) as well as behind Caddy's local CA. The smoke override sets it on `caddy` and
+  worker controlling the page). Only plain http was verified: through the smoke stack's Caddy, whose
+  local CA no browser trusts, Chromium may refuse the worker script, so ticket 10's E2E collection should
+  reach the pages listener over http or trust that CA. The smoke override sets the name on `caddy` and
   `mcp-apps`; `scripts/run-local.sh` serves it on 6019.
+- *Inline import maps* are inline script to the policy (Chromium refused one; the browser test shows
+  it), so each page's own `<script type="importmap">` runs by its `'sha256-…'`, computed per response
+  (`InlineImportMaps`). No other inline script runs.
 - *The apps domain* is one compose anchor (`x-apps-domain`) merged into `mcp-apps` and `caddy`. A
   conformance test holds it outside the session cookie's domain.
 - *Fixed on the way:* the shipped `appsettings.json` lacked the required `AppsDomain` (ticket 01), which

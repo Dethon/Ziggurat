@@ -216,6 +216,18 @@ public class AppsServingTests
         (await server.GetAsync(host, "/", session)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    [Fact]
+    public async Task AnExpiredSession_OpensNothing()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var host = server.Published("glucose", id);
+        var expired = server.Sessions.Open(AppsServer.Her, "accounts-session-1", AppOrigin.Parse(host, AppsServer.AppsDomain)!,
+            DateTimeOffset.UtcNow.AddSeconds(-1));
+
+        (await server.GetAsync(host, "/", expired)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     // The pages listener answers app origins and nothing else: never the deployment's /mcp.
     [Fact]
     public async Task ThePagesListener_ServesNoMcp()

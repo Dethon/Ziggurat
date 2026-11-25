@@ -98,7 +98,8 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   to a missing path is the root `index.html` (client routes); `.`/`..`/`.git` segments are 404.
 - **Every answer** carries `AppContentPolicy.For(manifest, Cdns)` (the origin's own manifest: commit or
   tree) — `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the
-  generated files load — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
+  generated files load; a page's own inline import maps by their hashes (`InlineImportMaps`), the one inline
+  script that runs — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
 - **The server's own files under `/_app/`** (`AppOriginFiles`), which no app file can shadow: the web
   manifest (name, short name, colour, `id`/`start_url`/`scope` `/`), the icon (`SpaceIcon`, the
   space icon's drawing, shared with WebChat's `/icon.svg`), the worker (network first, the cache only
@@ -112,8 +113,9 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   served root whose outside script, module preload or stylesheet lacks an exact version or `integrity`,
   or whose import map names an outside module (or prefix) without an integrity entry, refuses the
   publish naming each. Imports inside JS modules are not read.
-- **Local name**: `apps.localhost` (smoke override, `scripts/run-local.sh` on 6019): loopback by name and a
-  secure context in Chromium on http or Caddy's local CA, which the `__Host-` cookie and the worker need.
+- **Local name**: `apps.localhost` (smoke override, `scripts/run-local.sh` on 6019): loopback by name, and on
+  plain http a secure context in Chromium, which the `__Host-` cookie and the worker need (verified on http
+  only; through the smoke stack's Caddy on its untrusted local CA a browser may refuse the worker).
 
 ## Tests
 
@@ -121,6 +123,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 (`AppsServer`, after `SugaryServer`, both listeners open); `AppsServingTests` its pages listener by Host
 with sessions the test opens (`SessionFor`), `AppsServingInABrowserTests` the same in Chromium on
 `apps.localhost` (secure context, worker, manifest, no policy violation, removed worker);
-`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppContentPolicyTests`, `OutsideCodePinningTests` the pure rules;
+`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
+`InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
