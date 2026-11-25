@@ -81,7 +81,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   through the ranged blob write a copy streams through.
 - **Refused writes**: anything under a `node_modules/` segment (its own hint: build in the sandbox, copy
   the output), any `.git` segment (also hidden from listings), and the names the server keeps at an
-  app's root — the action files (`check` among them), `errors`, `.checks`.
+  app's root — the action files (`check` among them), `errors` (the runtime errors, below), `.checks`.
 - **Action files run on the mount** (a catalog, as `/timers`): `publish` (validates the manifest and its
   `root`, commits the working tree if it changed, records `HEAD` as served, answers the link), `history
   [--limit N]` (newest first, the served one marked `*`/`(served)`), `rollback <rev>` (moves the served
@@ -102,7 +102,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 - **Who opens what** (`AppPages`): the published origin, its author (ticket 09 adds an app space's
   members); the preview, its author alone. **The viewer is settled before the app is looked up**: a page
   opened with no app session is sent to sign in whether or not its app exists; a signed-in viewer who
-  may not open it, an unknown label, a non-GET (but a read's POST to `/_vfs/*`, below), anything but a page opened with no session, an app never
+  may not open it, an unknown label, a non-GET (but a read's POST to `/_vfs/*` and a report's to `/_errors`, below), anything but a page opened with no session, an app never
   published (on its published origin) gets **one 404, byte for byte**, under `AppContentPolicy.Closed`.
 - **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie names one, which opens one
   `AppOrigin` (published or preview, never both) until it expires (`Sessions:Lifetime`, 12 h), keeping
@@ -293,6 +293,46 @@ container, never in `mcp-apps`.
   `permission_denied` naming the limit and value, never queued; `Deadline` (30 s) stops the check, closing
   its browser, and the report and answer say so.
 
+## Runtime errors
+
+What a page met in somebody's browser, for the agent to read when a person says the app is broken (the
+wire and shape spelled once in `Domain/Apps/AppErrors`):
+
+- **The client library reports** (`AppOriginFiles.Reader`, its listeners installed once with the library):
+  every uncaught error (`ErrorEvent`; a resource load failure is not one), unhandled rejection and failed
+  or refused read, as `POST /_errors` on the origin, `keepalive`, swallowing its own failures. A failed
+  read is reported as the read (operation, path, envelope) and its `ReadError` never again as the
+  rejection it becomes; an Error is its `name: message` and stack; a thrown or rejected value that is no
+  Error is named by its type alone, so what the app held never leaves the page. The same report goes once
+  a page, at most ten a minute.
+- **`POST /_errors`** (`AppPages.ReportAsync`, then `AppErrorReports`): a POST, so no app file shadows it,
+  and outside the worker. **Only from a page of that origin** — the `Origin` header's authority must be the
+  Host, since every app shares the apps domain and a sibling app's page is same-site, its POST carrying
+  this origin's cookie — then the viewer and app settled exactly as for a read: nobody, a viewer who may
+  not open it, another origin's session or a foreign page is the one 404. **The body is the page's word
+  only for what went wrong**, held strictly (`AppErrorReport.Parse`, 16 KiB, unknown fields refused):
+  `kind` (`error`, `rejection`, `read`), `message` (1–1000), `stack` (≤ 8000), `route` (the path alone,
+  no query or fragment, ≤ 1000), and for a read alone `read` (`operation` of `AppReads.Operations`, `path`,
+  `envelope` with a known `errorCode`, message, hint). Anything else is 400. **The server stamps the
+  rest**: `time` (its clock), `userAgent` (the header, cut at 500), `viewer` (the session's user id),
+  `origin` (`published`/`preview`), `check`, and the envelope's `retryable` from this side's taxonomy.
+  **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
+  dropped. 204 when kept.
+- **Kept** (`Store/AppErrorLog`): `<app>/errors` (`BuiltAppStore.ErrorsFile`, beside `git/` and `tree/`,
+  never committed, served or counted in `SizeOf`), one JSON object a line, **newest first by arrival**,
+  the newest `Errors:Kept` (100), rewritten whole one report at a time per app; a deleted app's report is
+  dropped, its directory never made again. The mount shows it read-only at **`/<slug>/errors`** once one
+  was reported (listed, read and searched as text; every write refused as a reserved name's).
+- **The operator sees a person's report** as an `ErrorEvent` (`Service` `mcp-apps`, `ErrorType`
+  `AppErrors.ErrorType` = `AppRuntimeError`, message `<slug>-<id>[-preview]: <kind>: <message>`, never the
+  stack) under **the app's own household** (`ForHousehold(app.HouseholdId)`), on the metrics feed the
+  apps server publishes to when it has Redis (`AddMetricsPublishing`, its heartbeat the health tile, so it
+  is no `HttpProbes` target; the shared filter's failed tool calls reach the feed too). **A check's
+  session reports too**: kept with `check: true` and told to nobody else, since `report.json` already
+  shows the agent those page errors and no person met them.
+- A message is the app's own text: an app that puts what it read into an error's message sends it, capped;
+  nothing but the shape and the caps holds that back.
+
 ## Tests
 
 `McpAppsServerTests` and `AppsPublishingTests` drive the server in process through its MCP tools
@@ -305,7 +345,10 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
-`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppChecksTests` the check
+`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsRuntimeErrorsTests`
+`/_errors` by Host (kept and stamped, the one 404, a foreign page, the shape and caps, a read's envelope,
+`Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's report), a
+Chromium case the library's reporting; `AppChecksTests` the check
 in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
 deadline), launched in process and once on a local `run-server --unsafe` from the bundled driver
