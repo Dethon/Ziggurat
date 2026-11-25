@@ -52,3 +52,20 @@ server refuses nobody). No production code changed: every case passed on arrival
 - A bridge write carries the whole file as one chunk (`VfsCall.WriteBytesAsync`), so a sandbox command's
   binary is one `fs_blob_write` call whatever its size, up to `vfsBridge:maxFileBytes`. Only a copy tool
   call streams in ranged chunks.
+
+**Gap closed: the sandbox image carries Node (branch `app-spaces`).** `McpServerSandbox/Dockerfile` installs
+Node **24.22.3** (Krypton, LTS) from the nodejs.org tarball, pinned by `ARG` with per-arch SHA-256s from that
+release's `SHASUMS256.txt` (its signature checked against the Node release keys), checked by `sha256sum -c` as
+DuckDB's are, unpacked into `/usr/local` with `--no-same-owner`: `node`, `npm` (11.19.1), `npx` and `corepack`
+(0.36.0) are on a command's minimal PATH and owned by root. Node 26 (the active LTS) was passed over because Node
+25 stopped bundling corepack. npm's cache is `~/.npm` and its builtin npmrc moves the global prefix to
+`~/.npm-global` (on a login shell's PATH through `/etc/profile.d/npm-global.sh`), so nothing npm writes needs a
+root path; the command allowlist is unchanged. Image size +277 MB (1.871 GB → 2.148 GB).
+
+New cases in `SandboxAppBuildE2ETests`: the pinned versions (and that the command user cannot write the
+install), a real npm project built in the home as the command user (`npm install`, `npm ci`, `npm run build`
+whose script is plain node writing `dist/index.html` and a binary, no registry dependency) and its `dist/`
+copied into `/apps/glucose/dist/` byte for byte, and `npm install -g` landing in the home and running by name in
+the next command. Red first: the version and build cases against the image without Node (`node`/`npm: command
+not found`), the global case before the npmrc (`EACCES` symlinking into `/usr/local/lib/node_modules`). The
+sandbox skill and the mount's description name node and npm. Run: `Tests.E2E.Sandbox|~Conformance` 408/408.
