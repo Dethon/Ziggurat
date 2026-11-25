@@ -41,8 +41,9 @@ public class AppSpacesE2ETests(AppSpacesE2EFixture fixture)
         var slug = $"pantry-{tag}";
         var name = $"Pantry {tag}";
         var (ownerId, ownerSession) = await fixture.PersonElsewhereAsync($"Owner {tag}", "owner");
-        var (_, memberSession) = await fixture.PersonElsewhereAsync($"Member {tag}", "member");
+        var (memberId, memberSession) = await fixture.PersonElsewhereAsync($"Member {tag}", "member");
         var owner = new Account(fixture.ElsewhereHousehold, ownerId);
+        var member = new Account(fixture.ElsewhereHousehold, memberId);
 
         await CallAsync(fixture.VaultMcpEndpoint, "mcp-vault", owner, "fs_create", new()
         {
@@ -50,6 +51,8 @@ public class AppSpacesE2ETests(AppSpacesE2EFixture fixture)
         });
         var link = await PublishedAppAsync(owner, slug, name, tag);
         await ShareAsync(ownerSession, slug, name, link);
+        // The member's own app, which no space shares: theirs alone, marked so.
+        await PublishedAppAsync(member, $"diary-{tag}", $"Diary {tag}", tag);
         try
         {
             var page = await fixture.CreatePageSignedInAsync(memberSession);
@@ -57,6 +60,9 @@ public class AppSpacesE2ETests(AppSpacesE2EFixture fixture)
             await WebChatE2ETests.SelectAgentAsync(page);
 
             await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Spaces", Exact = true }).ClickAsync();
+            // The household's spaces in its order, the app space among them, then their own app, private.
+            await Assertions.Expect(page.Locator(".space-switcher-item"))
+                .ToHaveTextAsync([new Regex("^Main$"), new Regex($"^{name}$"), new Regex($"^Diary {tag}\\s*Private$")]);
             var app = page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = name });
             await Assertions.Expect(app).ToHaveAttributeAsync("href", link);
             await app.ClickAsync();
