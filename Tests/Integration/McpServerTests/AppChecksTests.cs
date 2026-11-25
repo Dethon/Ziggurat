@@ -70,6 +70,41 @@ public sealed class AppChecksTests
         violation["blockedUri"]!.GetValue<string>().ShouldBe("https://charts.example.org/today.png");
     }
 
+    // An app's own assertions run in the page, against what it rendered: one that returns passes with
+    // what it returned, one that throws fails with what it threw, and one that does not parse fails too.
+    // Their outcome is the exit code.
+    [Fact]
+    public async Task EachAssertionFile_RunsInThePage_AndReportsPassOrFailWithItsMessage()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><ul id="meals"></ul></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            "document.getElementById('meals').innerHTML = '<li>lentils</li><li>paella</li>';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/meals.js",
+            """
+            const meals = document.querySelectorAll('#meals li').length;
+            if (meals !== 2) throw new Error(`expected 2 meals, saw ${meals}`);
+            return `${meals} meals listed`;
+            """);
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/title.js",
+            """
+            if (document.title !== 'Glucose today') throw new Error(`the title is "${document.title}"`);
+            """);
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/typo.js", "if (");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(1, ran.ToJsonString());
+        var assertions = (await ReportAsync(server, "glucose"))["viewports"]![0]!["assertions"]!.AsArray();
+        assertions.Select(a => (a!["file"]!.GetValue<string>(), a["passed"]!.GetValue<bool>())).ShouldBe(
+            [("checks/meals.js", true), ("checks/title.js", false), ("checks/typo.js", false)]);
+        assertions[0]!["message"]!.GetValue<string>().ShouldBe("2 meals listed");
+        assertions[1]!["message"]!.GetValue<string>().ShouldBe("the title is \"Glucose\"");
+        assertions[2]!["message"]!.GetValue<string>().ShouldContain("SyntaxError");
+    }
+
     private static async Task<JsonNode> ReportAsync(AppsServer server, string slug) =>
         JsonNode.Parse(await BytesAsync(server, $"/{slug}/.checks/latest/report.json"))!;
 
