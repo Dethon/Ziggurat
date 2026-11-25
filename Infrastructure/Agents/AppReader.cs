@@ -9,25 +9,34 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
-// A built app's read, for the viewer the accounts service vouches for and the app the apps server
+// A built app's read, for the viewer the accounts service vouches for — or, for a check, the person the
+// agent's own token for the call that ran it names (CheckCallVerifier) — and the app the apps server
 // names: through the building agent's mounts as a turn of it would see them, every call signed as the
 // viewer (ReadRegistryCache over AgentReadRegistries), each operation the file tool's own (AppRead).
 //
 // The household decides on every read whether the agent acts for the viewer at all, as for a turn
 // (HouseholdStanding): the assertion an app session holds may be five minutes old.
 public sealed class AppReader(
-    AssertionVerifier assertions, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge,
+    AssertionVerifier assertions, CheckCallVerifier checks, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge,
     ILogger<AppReader> logger)
 {
-    // Null where the assertion is not believed: none, a forgery, out of date, another channel's, the
-    // guest's or nobody's. Who reads is its person, of its household, and nothing else the request says.
+    // Null where who reads is not believed: an assertion that is none, a forgery, out of date, another
+    // channel's, the guest's or nobody's; a check's call token that is not this agent's for the apps
+    // server, naming a person; or both at once, which would leave two answers. Who reads is that person,
+    // of their household, and nothing else the request says.
     public async Task<AppReadAnswer?> ReadAsync(
-        string? assertion, string operation, AppReadRequest request, CancellationToken ct)
+        string? assertion, string? checkCallToken, string operation, AppReadRequest request, CancellationToken ct)
     {
-        var admission = await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct);
+        var admission = (assertion, checkCallToken) switch
+        {
+            ({ }, { }) => new TurnAdmission.Refused("BothAnAssertionAndACheck"),
+            (null, { } token) => await checks.VerifyAsync(token, ct),
+            _ => await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct)
+        };
         if (admission is not TurnAdmission.Admitted { Identity: { Account: not null } viewer })
         {
-            logger.LogWarning("Refused a read of app {AppId}: its assertion is {Reason}", request.App.Id,
+            logger.LogWarning("Refused a read of app {AppId}: its {Proof} is {Reason}", request.App.Id,
+                checkCallToken is null ? "assertion" : "check's call token",
                 admission is TurnAdmission.Refused { Reason: var reason } ? reason : "the guest's");
             return null;
         }

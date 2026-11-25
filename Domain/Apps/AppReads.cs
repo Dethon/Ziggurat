@@ -15,6 +15,10 @@ public static class AppReads
     public const string AgentPath = "/internal/app-reads";
     public const string OriginPath = "/_vfs";
 
+    // A check's reads carry, in place of an `apps` assertion, the token the agent signed for the tool call
+    // that ran `./check` (to the apps server, naming that call's person), handed back as it came.
+    public const string CheckCallTokenHeader = "X-Ziggurat-Check-Call-Token";
+
     public static string AgentRoute(string operation) => $"{AgentPath}/{operation}";
 
     // Every operation is a read; nothing reachable here changes anything.

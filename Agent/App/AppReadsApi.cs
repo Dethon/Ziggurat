@@ -11,7 +11,8 @@ namespace Agent.App;
 // the proxy routes nothing under /internal (DeploymentConformanceTests). Two things are believed and
 // nothing else: the apps server's own credential, the one the agent already holds for the apps server
 // it dials (sharedServers.apps), which carries the app — its id, building agent and reads; and the
-// viewer's `apps` assertion, which alone says who reads, of which household.
+// viewer's `apps` assertion, which alone says who reads, of which household — or, for a check, the call
+// token this agent signed for the tool call that ran it, naming the person whose turn that was.
 //
 // A value answers 200 (the tool's JSON, or a blob's bytes); the tools' envelope answers 422; a caller
 // not believed, 401.
@@ -46,7 +47,8 @@ public static class AppReadsApi
                 return Results.BadRequest();
             }
 
-            return await reader.ReadAsync(AssertionVerifier.AssertionOf(http.Request.Headers), operation, request, ct) switch
+            var checkCall = http.Request.Headers[AppReads.CheckCallTokenHeader] is [{ Length: > 0 } token] ? token : null;
+            return await reader.ReadAsync(AssertionVerifier.AssertionOf(http.Request.Headers), checkCall, operation, request, ct) switch
             {
                 null => Results.Unauthorized(),
                 AppReadAnswer.Bytes bytes => Results.Bytes(bytes.Content, "application/octet-stream"),

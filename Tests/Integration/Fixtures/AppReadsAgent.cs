@@ -62,6 +62,8 @@ public sealed class AppReadsAgent : IAsyncDisposable
             builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
             builder.Services
                 .AddSingleton(TestAssertions.Verifier())
+                .AddSingleton(new CheckCallVerifier(
+                    TestSigningKeys.Store(TestSigningKeys.Agent), ServerAddress.FromUrl(AppsServer), TimeProvider.System))
                 .AddSingleton(McpTestSecret.Credentials)
                 .AddSingleton(shared)
                 .AddSingleton<IAgentDefinitionProvider>(definitions)
@@ -77,10 +79,11 @@ public sealed class AppReadsAgent : IAsyncDisposable
         return new AppReadsAgent(app, port, households);
     }
 
-    // A read as the apps server forwards it: its own credential and the viewer's `apps` assertion.
+    // A read as the apps server forwards it: its own credential and the viewer's `apps` assertion, or a
+    // check's call token in its place.
     public Task<HttpResponseMessage> ReadAsync(
         string operation, AppReadScope app, JsonObject arguments, string? assertion,
-        string? credential = McpTestSecret.Value, IReadOnlyDictionary<string, string>? headers = null)
+        string? credential = McpTestSecret.Value, IReadOnlyDictionary<string, string>? headers = null, string? callToken = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, Address + AppReads.AgentRoute(operation))
         {
@@ -94,6 +97,11 @@ public sealed class AppReadsAgent : IAsyncDisposable
         if (assertion is not null)
         {
             request.Headers.Add(ForwardedAccount.AssertionHeader, assertion);
+        }
+
+        if (callToken is not null)
+        {
+            request.Headers.Add(AppReads.CheckCallTokenHeader, callToken);
         }
 
         foreach (var (name, value) in headers ?? new Dictionary<string, string>())

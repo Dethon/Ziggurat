@@ -8,6 +8,7 @@ using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Tools;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -364,6 +365,65 @@ public sealed class AppReadsApiTests
             [ForwardedAccount.RolesHeader] = "owner"
         })).ShouldBe(["her lentils"]);
     }
+
+    // A check reads as the person whose turn ran it, on that call's own token: the agent's signature, for
+    // the apps server it dials, handed back by the apps server in place of an `apps` assertion. Nobody
+    // mints anything for it.
+    [Fact]
+    public async Task ACheck_ReadsAsThePersonTheCallsTokenNames()
+    {
+        await using var sugary = await SugaryServer.StartAsync(sugaryPeople: _people);
+        await SaveMealAsync(sugary, SugaryServer.Her, "her lentils");
+        await SaveMealAsync(sugary, SugaryServer.Him, "his paella");
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(sugary.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households, new SharedServers { Sugary = sugary.Endpoint });
+
+        using var response = await agent.ReadAsync(
+            AppReads.Operations.Query, _glucoseApp, new JsonObject { ["path"] = "/sugary", ["sql"] = "select notes from meals" },
+            assertion: null, callToken: CallTokenOf(SugaryServer.Him));
+
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
+        body["rows"]!.AsArray().Select(row => row![0]!.GetValue<string>()).ShouldBe(["his paella"]);
+    }
+
+    // The call token is believed as the agent signed it and for nothing else: its own key, in date, for the
+    // apps server it dials, naming a person; and never beside an assertion, which would leave two answers
+    // to who reads.
+    public static TheoryData<string, string?, string?> UnbelievedChecks => new()
+    {
+        { "another issuer's key", null, CallTokenOf(SugaryServer.Her, key: TestSigningKeys.Accounts) },
+        { "out of date", null, CallTokenOf(SugaryServer.Her, now: DateTimeOffset.UtcNow.AddMinutes(-10)) },
+        { "another server's", null, CallTokenOf(SugaryServer.Her, audience: "mcp-vault") },
+        { "the guest's", null, CallTokenOf(IdentityClaims.Guest(SugaryServer.Her.TenantId, "signalr")) },
+        { "nobody's", null, CallTokenOf(IdentityClaims.Nobody("signalr")) },
+        { "beside an assertion", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps), CallTokenOf(SugaryServer.Her) }
+    };
+
+    [Theory]
+    [MemberData(nameof(UnbelievedChecks))]
+    public async Task ACheckWithoutABelievableCallToken_IsRefused(string what, string? assertion, string? callToken)
+    {
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas());
+        await using var agent = await AppReadsAgent.StartAsync(households);
+
+        using var response = await agent.ReadAsync(
+            AppReads.Operations.Info, _glucoseApp, new JsonObject { ["path"] = "/sugary" }, assertion, callToken: callToken);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized, what);
+    }
+
+    // A call token as the agent signs one for a tool call to the apps server (AppReadsAgent.AppsServer).
+    private static string CallTokenOf(
+        Account person, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
+        CallTokenOf(IdentityClaims.Person(person.UserId, person.TenantId, "signalr", ["member"]), audience, key, now);
+
+    private static string CallTokenOf(
+        IdentityClaims identity, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
+        new TokenSigner(TestSigningKeys.Store(key ?? TestSigningKeys.Agent)).Sign(
+            identity.Stamped(TokenIssuers.Agent, audience, now ?? DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2)));
 
     private static async Task<IReadOnlyList<string?>> NotesAsync(
         AppReadsAgent agent, Account viewer, IReadOnlyDictionary<string, string>? headers = null)

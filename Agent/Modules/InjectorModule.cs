@@ -122,6 +122,12 @@ public static class InjectorModule
                 .AddSingleton(sp => new DelegationVerifier(
                     sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery,
                     settings.Mcp.TokenVerification))
+                // A check's reads (AppReadsApi): the call token this agent signed for the apps server,
+                // handed back by it, checked against the same keys and wall clock.
+                .AddSingleton(sp => new CheckCallVerifier(
+                    sp.GetRequiredService<SigningKeyStore>(),
+                    settings.SharedServers.Apps is { } apps ? ServerAddress.FromUrl(apps) : null,
+                    TimeProvider.System, settings.Mcp.TokenVerification))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
