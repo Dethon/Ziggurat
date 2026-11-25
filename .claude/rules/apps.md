@@ -364,9 +364,10 @@ container, never in `mcp-apps`.
   which `compose run` does not give).
 - **The egress proxy is the browser's one way out** (`Checks/CheckEgress`, a hosted service only when
   `Checks:Browser:Proxy` is set; `DeploymentConformanceTests` pins the internal network and the value).
-  The browser is launched with `--proxy-server=http://<Proxy>` and `--proxy-bypass-list=*.<AppsDomain>;<-loopback>`
+  The browser is launched with `--proxy-server=http://<Proxy>` and `--proxy-bypass-list=<-loopback>;*.<AppsDomain>`
   (app origins direct to the pages listener by the `MAP` rule; loopback through the proxy, which Chromium
-  would otherwise send direct). The proxy: **CONNECT alone** (everything a check page reaches outside is
+  would otherwise send direct; the later rule wins, so a `.localhost` apps domain, loopback too, still goes
+  direct: `AppChecksTests` runs on `apps.localhost` as well). The proxy: **CONNECT alone** (everything a check page reaches outside is
   https; anything else 405), the target resolved **once**, refused 403 unless **every** address it
   answers is public (`EgressAddresses.IsPublic`: default deny, global unicast minus private, loopback,
   link-local, CGNAT, benchmarking, documentation, multicast, reserved, Teredo/6to4/NAT64 judged by their

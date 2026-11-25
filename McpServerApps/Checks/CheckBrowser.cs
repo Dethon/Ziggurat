@@ -34,10 +34,11 @@ internal static class CheckBrowser
         var browser = settings.Checks.Browser;
         var pages = browser.Pages is "" ? $"127.0.0.1:{settings.Listeners.Pages}" : browser.Pages;
         // Everything but the app origins through the egress proxy, loopback included (Chromium sends
-        // loopback direct unless told), when there is one.
+        // loopback direct unless told), when there is one. The later rule wins, so the apps domain comes
+        // after `<-loopback>`: a local apps name under .localhost is loopback too, and still goes direct.
         string[] egress = browser.Proxy is ""
             ? []
-            : [$"--proxy-server=http://{browser.Proxy}", $"--proxy-bypass-list=*.{settings.AppsDomain};<-loopback>"];
+            : [$"--proxy-server=http://{browser.Proxy}", $"--proxy-bypass-list=<-loopback>;*.{settings.AppsDomain}"];
         return new BrowserTypeLaunchOptions
         {
             Channel = "chromium",

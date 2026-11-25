@@ -183,7 +183,7 @@ with method and body. Now the fix is the network's:
   (`EgressAddresses`: default deny, global unicast minus private, loopback, link-local, CGNAT, documentation,
   multicast and reserved ranges, IPv4-in-IPv6 forms judged as IPv4), and dials one of those addresses, never
   the name again. A redirect's next hop is a fresh CONNECT, judged the same.
-- The browser gets `--proxy-server=http://mcp-apps:8082` and `--proxy-bypass-list=*.<AppsDomain>;<-loopback>`
+- The browser gets `--proxy-server=http://mcp-apps:8082` and `--proxy-bypass-list=<-loopback>;*.<AppsDomain>`
   (`CHECKS__BROWSER__PROXY`); app origins still go direct to the pages listener by the `MAP` rule.
 - *Choice:* this proxy over squid's `dst` ACLs, because squid judges a name on its DNS cache and may resolve
   again to connect (a zero-TTL rebinding window), and it would be a fourth image to pin.

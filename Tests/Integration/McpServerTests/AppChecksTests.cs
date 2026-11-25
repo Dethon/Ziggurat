@@ -245,8 +245,12 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
     // reach can redirect the browser onto the LAN or the host, and only the proxy, judging each address the
     // browser dials, stops it. Here a request the route lets through (an image from an origin it allows) is
     // to a private address, as a redirect's next hop would be: refused, and nothing there is ever dialled.
-    [Fact]
-    public async Task ACheckBehindTheEgressProxy_DialsNoPrivateAddress_EvenOneTheRouteAllows()
+    // On a local apps name under .localhost too (the smoke stack's), which is loopback to Chromium: the app
+    // origins still go straight to the pages listener, never to the proxy.
+    [Theory]
+    [InlineData(AppsServer.AppsDomain)]
+    [InlineData("apps.localhost")]
+    public async Task ACheckBehindTheEgressProxy_DialsNoPrivateAddress_EvenOneTheRouteAllows(string appsDomain)
     {
         using var inside = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
         inside.Start();
@@ -263,6 +267,7 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         var egress = TestPort.GetAvailable();
         await using var server = await StartAsync(s => s with
         {
+            AppsDomain = appsDomain,
             Cdns = [.. s.Cdns, allowed],
             Listeners = s.Listeners with { Egress = egress },
             Checks = s.Checks with { Browser = s.Checks.Browser with { Proxy = $"127.0.0.1:{egress}" } }
@@ -276,7 +281,7 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
         var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
         viewport["screenshot"]!.GetValue<string>().ShouldBe("800x600.png", viewport.ToJsonString());
-        viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"{allowed}/pixel.png");
+        viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"{allowed}/pixel.png", viewport.ToJsonString());
         dialled.ShouldBe(0);
     }
 

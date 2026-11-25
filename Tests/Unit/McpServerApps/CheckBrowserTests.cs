@@ -53,6 +53,6 @@ public class CheckBrowserTests
         var args = CheckBrowser.Options(settings, Preview).Args!;
 
         args.ShouldContain("--proxy-server=http://mcp-apps:8082");
-        args.ShouldContain("--proxy-bypass-list=*.apps.test;<-loopback>");
+        args.ShouldContain("--proxy-bypass-list=<-loopback>;*.apps.test");
     }
 }
