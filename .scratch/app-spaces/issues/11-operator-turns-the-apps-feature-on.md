@@ -22,8 +22,9 @@ announced and the household's agents are offered `/apps` (or lose it) from their
 the operator gate like every `/operator` route, answers `AdminSaved<HouseholdAppsFeature>` (with
 `AdminSections.NotToldWarning` when the agent could not be told), is 404 for no such household and 400 for
 no body, and is recorded on the target household only when the value changed ("Turned the apps feature
-on/off"). `HouseholdListEntry` gained `Apps` (a household with no features row, or one saved before the
-key existed, reads off). The dashboard's `/households` has an Apps column with "Turn on"/"Turn off"
+on/off"). `HouseholdListEntry` gained `Apps` (a household with no features row, or whose owners saved
+theirs, reads off; a stored document lacking the key reads off by `FeaturesSection`'s default, not
+tested separately). The dashboard's `/households` has an Apps column with "Turn on"/"Turn off"
 (`HouseholdsEffect.SetAppsFeatureAsync`), re-reading the list after either. The owners' features page
 shows `apps` as a disabled toggle (`FeatureHints.Apps`: only the deployment's operator turns it on or
 off) and sends it back as loaded; the server still strips it (ticket 01).
@@ -42,7 +43,9 @@ owner's key probe), `HouseholdsEffectTests` (dashboard switch, warning, refusal)
 row. The owner side is ticket 01's `HouseholdFeaturesAdminTests` rows; the withhold rule is
 `HouseholdAgentsTests.TheAppsServer_IsWithheldUntilTheAppsFeatureIsOn`.
 
-**Not done:** no E2E for the dashboard column or the owners' read-only row (not run here); the page
-markup was built, not seen in a browser. The home's seeded definition agents still reach `/apps` only once
+**Not done:** no E2E for the dashboard column; `HouseholdSpacesE2ETests.AnOwner_IsShownTheHouseholdsFeatures`
+was updated (seven checkboxes, Apps disabled) but not run. Neither page was seen in a browser, so the first
+criterion is ticked on the API and effect tests alone. With `apps` off, an existing app space still saves
+as last saved (nothing listed, nothing refused); only a new one is refused. The home's seeded definition agents still reach `/apps` only once
 the operator adds `http://mcp-apps:8080/mcp` to their definitions (ticket 01's note): turning the feature
 on for the home offers it to the jonas template alone.
