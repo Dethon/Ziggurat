@@ -3,9 +3,11 @@ using System.Web;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Security.Signing;
+using Infrastructure.Clients.Accounts;
 using McpServerApps.Serving;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -234,18 +236,21 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
     [Fact]
     public async Task AnAccountsServiceThatCannotBeAsked_ServesNothing_AndEndsNothing()
     {
-        var accounts = await AccountsAsync();
+        await using var accounts = await AccountsAsync();
         var fran = await accounts.MintOperatorAsync("Fran");
-        await using var apps = await AppsFor(accounts);
+        var outage = new Interruptible();
+        await using var apps = await AppsFor(accounts, configure: services => services.Replace(ServiceDescriptor.Singleton<IAppSignIns>(
+            sp => outage.Over(sp.GetRequiredService<AccountsResolverClient>()))));
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
         var cookie = await SignInAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
-        var clock = accounts.Clock;
-        await accounts.DisposeAsync();
+        outage.Down = true;
 
-        clock.Advance(apps.Settings.Sessions.AssertionKept);
+        accounts.Clock.Advance(apps.Settings.Sessions.AssertionKept);
 
         (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
         apps.Sessions.Find(cookie.Token, AppOrigin.Parse(host, AppsServer.AppsDomain)!).ShouldNotBeNull();
+        outage.Down = false;
+        (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     private static Task<AccountsServer> AccountsAsync(string? redisConnection = null) =>
@@ -260,7 +265,8 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
 
     // The apps server pointed at that accounts service, for its browser route and its internal API,
     // on its clock.
-    private static Task<AppsServer> AppsFor(AccountsServer accounts, string? redisConnection = null) =>
+    private static Task<AppsServer> AppsFor(
+        AccountsServer accounts, string? redisConnection = null, Action<IServiceCollection>? configure = null) =>
         AppsServer.StartAsync(
             s => s with
             {
@@ -268,7 +274,29 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
                 Accounts = s.Accounts with { BaseUrl = accounts.Address.ToString() },
                 RedisConnectionString = redisConnection ?? ""
             },
-            services => services.Replace(ServiceDescriptor.Singleton<TimeProvider>(accounts.Clock)));
+            services =>
+            {
+                services.Replace(ServiceDescriptor.Singleton<TimeProvider>(accounts.Clock));
+                configure?.Invoke(services);
+            });
+
+    // The accounts service as the apps server reaches it, failing as an outage does (a throw, never an
+    // answer) while Down: a stopped service's port could be anybody's by the time it is dialled.
+    private sealed class Interruptible
+    {
+        public volatile bool Down;
+
+        public IAppSignIns Over(IAppSignIns inner) => new Calls(this, inner);
+
+        private sealed class Calls(Interruptible outage, IAppSignIns inner) : IAppSignIns
+        {
+            public Task<ResolvedAccount?> RedeemAsync(string code, string origin, CancellationToken ct) =>
+                outage.Down ? throw new HttpRequestException("the accounts service is down") : inner.RedeemAsync(code, origin, ct);
+
+            public Task<ResolvedAccount?> RenewAsync(string userId, string sessionId, CancellationToken ct) =>
+                outage.Down ? throw new HttpRequestException("the accounts service is down") : inner.RenewAsync(userId, sessionId, ct);
+        }
+    }
 
     private static async Task<string> PublishedAsync(AppsServer apps, Account author)
     {
