@@ -388,6 +388,8 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   `envelope` with a known `errorCode`, message, hint). Anything else is 400. **The server stamps the
   rest**: `time` (its clock), `userAgent` (the header, cut at 500), `viewer` (the session's user id),
   `origin` (`published`/`preview`), and the envelope's `retryable` from this side's taxonomy.
+  **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
+  dropped. 204 when kept.
 - **Only the author's own report keeps the page's text.** Every word of a report is the page's (it may
   POST `/_errors` itself, `pushState` its route, set a User-Agent in Firefox), and the author reads the
   file, so another member's is kept **reduced** (`AppErrorReduction`, checked against what that origin
@@ -399,8 +401,6 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   agent to ask the person or `./check`). No message, stack, user agent, hint or envelope message. What
   remains is a numeric channel (which frames, lines, columns, type, kind and served route), bounded by the
   frame cap and the per-session minute.
-  **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
-  dropped. 204 when kept.
 - **Kept** (`Store/AppErrorLog`): `<app>/errors` (`BuiltAppStore.ErrorsFile`, beside `git/` and `tree/`,
   never committed, served or counted in `SizeOf`), one JSON object a line, **newest first by arrival**,
   written unescaped (`UnsafeRelaxedJsonEscaping`: read by the agent, never served), the newest
