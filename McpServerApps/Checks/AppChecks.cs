@@ -206,17 +206,17 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         await context.AddInitScriptAsync(ViolationListener);
         var page = await context.NewPageAsync();
         var preview = OriginOf(url);
-        bool OnPreview() => string.Equals(OriginOf(page.Url), preview, StringComparison.OrdinalIgnoreCase);
+        bool onPreview() => string.Equals(OriginOf(page.Url), preview, StringComparison.OrdinalIgnoreCase);
         page.Console += (_, message) =>
         {
-            if (OnPreview())
+            if (onPreview())
             {
                 seen.Console.Enqueue(new ConsoleEntry(message.Type, message.Text, message.Location));
             }
         };
         page.PageError += (_, error) =>
         {
-            if (OnPreview())
+            if (onPreview())
             {
                 seen.Console.Enqueue(new ConsoleEntry("uncaught", error, null));
             }
@@ -270,11 +270,11 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
 
         var shot = Path.Combine(run, viewport.Screenshot);
-        if (OnPreview())
+        if (onPreview())
         {
             await page.ScreenshotAsync(new PageScreenshotOptions { Path = shot, Timeout = 0 });
             var accessibility = await page.Locator("body").AriaSnapshotAsync(new LocatorAriaSnapshotOptions { Timeout = 0 });
-            if (OnPreview())
+            if (onPreview())
             {
                 seen.Screenshot = viewport.Screenshot;
                 seen.Accessibility = accessibility;
@@ -285,13 +285,13 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             }
         }
 
-        foreach (var assertion in assertions.TakeWhile(_ => OnPreview()))
+        foreach (var assertion in assertions.TakeWhile(_ => onPreview()))
         {
             var outcome = await AssertAsync(page, assertion, stopped);
-            seen.Assertions.Add(OnPreview() ? outcome : outcome with { Passed = false, Message = LeftThePreview });
+            seen.Assertions.Add(onPreview() ? outcome : outcome with { Passed = false, Message = LeftThePreview });
         }
 
-        if (!OnPreview())
+        if (!onPreview())
         {
             seen.Error = $"{LeftThePreview}; nothing it showed after that is kept";
         }

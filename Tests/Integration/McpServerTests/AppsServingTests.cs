@@ -282,23 +282,23 @@ public class AppsServingTests
     public async Task AnOriginsPolicy_LoadsTheCodeItsOwnPagesPinned_AndARollbackServesItsCommitsOwn()
     {
         const string hash = "sha384-oqVuAfXRKap7fdgcCY5uykM6+R9GqQ8K/uxy9rx7HNQlGYl1kPzQho1wx4JwY8wC";
-        static string Page(string package) => $"""<script src="https://cdn.jsdelivr.net/npm/{package}/dist/x.js" integrity="{hash}"></script>""";
+        static string page(string package) => $"""<script src="https://cdn.jsdelivr.net/npm/{package}/dist/x.js" integrity="{hash}"></script>""";
         await using var server = await AppsServer.StartAsync();
         var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
-        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", Page("chart.js@4.4.1"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", page("chart.js@4.4.1"));
         await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
-        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", Page("d3@7.8.5"), overwrite: true);
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", page("d3@7.8.5"), overwrite: true);
         await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
-        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", Page("preact@10.19.3"), overwrite: true);
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", page("preact@10.19.3"), overwrite: true);
         var published = server.Published("glucose", id);
         var preview = server.Preview("glucose", id);
-        async Task<string> ScriptsAsync(string host) =>
+        async Task<string> scriptsAsync(string host) =>
             Policy(await server.GetAsync(host, "/", server.SessionFor(AppsServer.Her, host))).Split("; ").Single(d => d.StartsWith("script-src "));
 
-        (await ScriptsAsync(published)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/d3@7.8.5/");
-        (await ScriptsAsync(preview)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/preact@10.19.3/");
+        (await scriptsAsync(published)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/d3@7.8.5/");
+        (await scriptsAsync(preview)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/preact@10.19.3/");
         await server.ExecAsync(AppsServer.Her, "/glucose", "./rollback HEAD~1");
-        (await ScriptsAsync(published)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/");
+        (await scriptsAsync(published)).ShouldBe("script-src 'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/");
     }
 
     // A page gets the app's web manifest, its service worker and the client library, whatever the
