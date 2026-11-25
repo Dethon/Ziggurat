@@ -1,3 +1,5 @@
+using Domain.DTOs.WebChat;
+
 namespace WebChat.Client.State.Space;
 
 public record SelectSpace(string Slug) : IAction;
@@ -5,6 +7,11 @@ public record SelectSpace(string Slug) : IAction;
 public record SpaceValidated(string Slug, string Name, string AccentColor, string? DefaultAgent = null) : IAction;
 
 public record InvalidSpace : IAction;
+
+// Ask the hub again what the space switcher offers (it is opened, or a space was joined).
+public record LoadSwitcher : IAction;
+
+public record SwitcherLoaded(IReadOnlyList<SwitcherEntry> Entries) : IAction;
 
 public sealed class SpaceStore : IDisposable
 {
@@ -29,9 +36,10 @@ public sealed class SpaceStore : IDisposable
         SpaceValidated a => new SpaceState
         {
             CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor, DefaultAgent = a.DefaultAgent,
-            Named = true
+            Named = true, Switcher = state.Switcher
         },
-        InvalidSpace => SpaceState.Initial,
+        InvalidSpace => SpaceState.Initial with { Switcher = state.Switcher },
+        SwitcherLoaded a => state with { Switcher = a.Entries },
         _ => state
     };
 }

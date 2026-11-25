@@ -27,6 +27,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnGetSpaces { get; set; }
 
+    // What the hub tells the space switcher: every place the person may go.
+    public IReadOnlyList<SwitcherEntry> SwitcherEntries { get; set; } = [];
+
     public void SetHistory(long chatId, long threadId, params ChatHistoryMessage[] messages)
     {
         _history[(chatId, threadId)] = messages.ToList();
@@ -287,6 +290,14 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     private static double Score(TopicMetadata topic) =>
         topic.LastWriteAt.ToUnixTimeMilliseconds();
+
+    public Task<HubResult<IReadOnlyList<SwitcherEntry>>> GetSpacesAndAppsAsync()
+    {
+        recorder?.Record("spaces and apps");
+        return Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<SwitcherEntry>>.NotLive
+            : HubResult<IReadOnlyList<SwitcherEntry>>.Answered(SwitcherEntries));
+    }
 
     public Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync()
     {

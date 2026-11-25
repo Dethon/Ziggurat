@@ -27,6 +27,11 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public string SugaryMcpEndpoint => _stack?.SugaryMcpEndpoint ?? "";
 
+    // The apps server's /mcp and the vault's, and the port the stack's Caddy answers the apps domain on.
+    public string AppsMcpEndpoint => _stack?.AppsMcpEndpoint ?? "";
+    public string VaultMcpEndpoint => _stack?.VaultMcpEndpoint ?? "";
+    public int AppsPort => Stack.AppsPort;
+
     // The account a user index signs in as, which a test reaching the Sugary server past the proxy
     // names in the session check's headers.
     public Task<Account> AccountForAsync(int userIndex) => Stack.AccountForAsync(userIndex);
@@ -222,6 +227,18 @@ public class WebChatE2ERewritesCollection : ICollectionFixture<WebChatE2EFixture
 [CollectionDefinition(WebChatE2ECollections.Queue)]
 public class WebChatE2EQueueCollection : ICollectionFixture<WebChatE2EFixture>;
 
+// An app space opened from WebChat's space switcher, its origin on the apps domain: a browser of its own,
+// which maps that domain to the stack's Caddy (an app's link names no port, and Chromium takes the rule per
+// process). The twenty-fifth slice.
+[CollectionDefinition(WebChatE2ECollections.AppSpaces)]
+public class WebChatE2EAppSpacesCollection : ICollectionFixture<AppSpacesE2EFixture>;
+
+public sealed class AppSpacesE2EFixture : WebChatE2EFixture
+{
+    protected override IReadOnlyList<string>? OwnBrowserArgs =>
+        [$"--host-resolver-rules=MAP *.{WebChatStack.AppsDomain} 127.0.0.1:{AppsPort}"];
+}
+
 public static class WebChatE2ECollections
 {
     public const string Chat = "WebChatE2E.Chat";
@@ -248,4 +265,5 @@ public static class WebChatE2ECollections
     public const string DictationLong = "WebChatE2E.DictationLong";
     public const string Rewrites = "WebChatE2E.Rewrites";
     public const string Queue = "WebChatE2E.Queue";
+    public const string AppSpaces = "WebChatE2E.AppSpaces";
 }

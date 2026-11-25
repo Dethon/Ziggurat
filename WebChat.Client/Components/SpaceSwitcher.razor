@@ -1,0 +1,111 @@
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.WebChat
+@using Microsoft.JSInterop
+@using WebChat.Client.Helpers
+@using WebChat.Client.State.Space
+@inject SpaceStore SpaceStore
+@inject IDispatcher Dispatcher
+@inject IJSRuntime Js
+
+@* Where a person finds their spaces and apps: the header's mark opens a list of every place the hub
+   says they may go. A chat space opens in the chat (its address, an in-app navigation); an app opens its
+   own origin, a top-level navigation the chat client does not route; a private app is marked so. One
+   place to go is no choice, so the mark stays a mark. *@
+@if (Places.Count > 1)
+{
+    <div class="space-switcher @(_open ? "open" : "")" @ref="_root">
+        <button class="space-switcher-toggle" @onclick="Toggle" @onclick:stopPropagation="true"
+                aria-label="Spaces" title="Spaces" aria-haspopup="true" aria-expanded="@_open">
+            <img src="/icon.svg?color=@(Uri.EscapeDataString(AccentColor))" alt="" class="header-logo" />
+            <Icon Glyph="Icons.CaretDown" Size="12" Class="space-switcher-caret" />
+        </button>
+
+        @if (_open)
+        {
+            <nav class="space-switcher-menu" aria-label="Spaces and apps">
+                @foreach (var (entry, href) in Places)
+                {
+                    var current = entry is { IsApp: false } && entry.Slug == _currentSlug;
+                    <a class="space-switcher-item @(current ? "on" : "")" href="@href"
+                       aria-current="@(current ? "page" : null)" @onclick="Close">
+                        @if (entry.IsApp)
+                        {
+                            <span class="space-switcher-app" style="color:@entry.AccentColor"><Icon Glyph="Icons.Apps" Size="16" /></span>
+                        }
+                        else
+                        {
+                            <span class="space-switcher-dot" style="background:@entry.AccentColor"></span>
+                        }
+                        <span class="space-switcher-name">@entry.Name</span>
+                        @if (entry.Private)
+                        {
+                            <span class="space-switcher-private" title="Only you see this app"><Icon Glyph="Icons.Lock" Size="12" />Private</span>
+                        }
+                    </a>
+                }
+            </nav>
+        }
+    </div>
+}
+else
+{
+    <img src="/icon.svg?color=@(Uri.EscapeDataString(AccentColor))" alt="Agent" class="header-logo" />
+}
+
+@code {
+    [Parameter] public string AccentColor { get; set; } = SpaceConfig.DefaultAccentColor;
+
+    private IReadOnlyList<SwitcherEntry> _entries = [];
+    private string _currentSlug = SpaceConfig.DefaultSlug;
+    private bool _open;
+    private ElementReference _root;
+    private OutsidePressWatcher? _watcher;
+
+    private OutsidePressWatcher Watcher => _watcher ??= new OutsidePressWatcher(Js, () =>
+    {
+        _open = false;
+        StateHasChanged();
+    });
+
+    // Each place with where it goes: a chat space its address in the chat, an app its own origin, which
+    // is taken only as an http(s) address — anything else is no place to send a person.
+    private IReadOnlyList<(SwitcherEntry Entry, string Href)> Places =>
+    [
+        .. _entries.Select(entry => (Entry: entry, Href: HrefOf(entry)))
+            .Where(place => place.Href is not null)
+            .Select(place => (place.Entry, place.Href!))
+    ];
+
+    private static string? HrefOf(SwitcherEntry entry) => entry switch
+    {
+        { Url: { } url } => Uri.TryCreate(url, UriKind.Absolute, out var origin) && origin.Scheme is "https" or "http" ? origin.AbsoluteUri : null,
+        { Slug: { } slug } => slug == SpaceConfig.DefaultSlug ? "/" : $"/{Uri.EscapeDataString(slug)}",
+        _ => null
+    };
+
+    protected override void OnInitialized()
+    {
+        Subscribe(SpaceStore.StateObservable, s => s.Switcher, entries => _entries = entries);
+        Subscribe(SpaceStore.StateObservable, s => s.CurrentSlug, slug => _currentSlug = slug);
+    }
+
+    protected override Task OnAfterRenderAsync(bool firstRender) => Watcher.SyncAsync(_open, _root);
+
+    // Opening asks the hub again, so an app shared or published since is there the next time.
+    private void Toggle()
+    {
+        _open = !_open;
+        if (_open)
+        {
+            Dispatcher.Dispatch(new LoadSwitcher());
+        }
+    }
+
+    private void Close() => _open = false;
+
+    public override void Dispose()
+    {
+        _watcher?.Dispose();
+        base.Dispose();
+    }
+}

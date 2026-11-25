@@ -90,6 +90,10 @@ public static class Icons
         + "22Zm6-5q.825 0 1.413-.587Q14 15.825 14 15t-.587-1.413Q12.825 13 12 13t-1.412.587Q10 14.175 10 15t.588 "
         + "1.413Q11.175 17 12 17ZM9 8h6V6q0-1.25-.875-2.125T12 3q-1.25 0-2.125.875T9 6Z");
 
+    // A grid of nine: a built app in the space switcher, beside a chat space's colour dot.
+    public static readonly IconGlyph Apps = Filled(
+        "M4 8h4V4H4Zm6 12h4v-4h-4Zm-6 0h4v-4H4Zm0-6h4v-4H4Zm6 0h4v-4h-4Zm6-10v4h4V4Zm-6 4h4V4h-4Zm6 6h4v-4h-4Zm0 6h4v-4h-4Z");
+
     // Two people: a conversation the household shares, beside Lock for one that is its owner's alone.
     public static readonly IconGlyph People = Filled(
         "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 "

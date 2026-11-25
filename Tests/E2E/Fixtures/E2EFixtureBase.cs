@@ -16,7 +16,13 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     private static int _browserRefs;
 
     private IBrowser? _browser;
+    private IBrowser? _ownBrowser;
     private readonly List<IBrowserContext> _mine = [];
+
+    // Flags a fixture's pages need that the shared browser cannot carry, since Chromium takes them per
+    // process (a host-resolver rule naming a port the stack picked): such a fixture launches a browser of
+    // its own, once its containers are up, with the shared one's flags and these.
+    protected virtual IReadOnlyList<string>? OwnBrowserArgs => null;
 
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
 
@@ -44,6 +50,10 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         });
 
         await Task.WhenAll(LaunchBrowserAsync(), containers);
+        if (OwnBrowserArgs is { } own)
+        {
+            _ownBrowser = await _sharedPlaywright!.Chromium.LaunchAsync(LaunchOptions([.. own]));
+        }
     }
 
     private async Task LaunchBrowserAsync()
@@ -63,10 +73,14 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
     private static async Task<IBrowser> StartSharedBrowserAsync()
     {
-        var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
-
         _sharedPlaywright = await Playwright.CreateAsync();
-        return await _sharedPlaywright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        return await _sharedPlaywright.Chromium.LaunchAsync(LaunchOptions([]));
+    }
+
+    private static BrowserTypeLaunchOptions LaunchOptions(IReadOnlyList<string> extra)
+    {
+        var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
+        return new BrowserTypeLaunchOptions
         {
             Headless = headless,
             // A dictation needs a microphone. The fake device answers getUserMedia and the fake UI
@@ -86,9 +100,10 @@ public abstract class E2EFixtureBase : IAsyncLifetime
                 // browser froze at once — samples stuck, the context still "running", both suites
                 // of a double run losing every dictation case from the same second. A fake output
                 // stream is clocked by Chromium's own timer instead.
-                "--disable-audio-output"
+                "--disable-audio-output",
+                .. extra
             ]
-        });
+        };
     }
 
     // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation — the
@@ -116,7 +131,7 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             _mine.Remove(ctx);
         }
 
-        var context = await _browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await (_ownBrowser ?? _browser).NewContextAsync(new BrowserNewContextOptions
         {
             IgnoreHTTPSErrors = true,
             HasTouch = hasTouch || isMobile,
@@ -225,6 +240,11 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         }
 
         _mine.Clear();
+        if (_ownBrowser is not null)
+        {
+            await _ownBrowser.DisposeAsync();
+        }
+
         await StopContainersAsync();
 
         // The last fixture out turns the browser off. Anything else would close it under a

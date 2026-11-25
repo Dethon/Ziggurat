@@ -20,6 +20,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly ILogger<SpaceEffect> _logger;
     private readonly IDisposable _handlerRegistration;
     private readonly IDisposable _validatedRegistration;
+    private readonly IDisposable _switcherRegistration;
     private string _previousSlug = "default";
 
     public SpaceEffect(
@@ -39,7 +40,13 @@ public sealed class SpaceEffect : IDisposable
 
         _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(
             action => HandleSelectSpaceAsync(action.Slug).LogFaults(_logger, nameof(SelectSpace)));
-        _validatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(action => FollowTheSpace(action.Slug));
+        _validatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(action =>
+        {
+            FollowTheSpace(action.Slug);
+            LoadSwitcherAsync().LogFaults(_logger, nameof(LoadSwitcher));
+        });
+        _switcherRegistration = dispatcher.RegisterHandler<LoadSwitcher>(
+            _ => LoadSwitcherAsync().LogFaults(_logger, nameof(LoadSwitcher)));
     }
 
     // First load opens the household's first space when the address names none of them (a space
@@ -115,9 +122,22 @@ public sealed class SpaceEffect : IDisposable
         _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor, space.DefaultAgent));
     }
 
+    // What the space switcher offers, asked of the hub once a space is joined and whenever the switcher is
+    // opened, so an app space shared or an app published since is there the next time the person looks. Not
+    // live, it keeps what it last listed and says nothing: the person asked nothing that failed.
+    public async Task LoadSwitcherAsync()
+    {
+        var listed = await _topicService.GetSpacesAndAppsAsync();
+        if (listed is { IsLive: true, Value: { } entries })
+        {
+            _dispatcher.Dispatch(new SwitcherLoaded(entries));
+        }
+    }
+
     public void Dispose()
     {
         _handlerRegistration.Dispose();
         _validatedRegistration.Dispose();
+        _switcherRegistration.Dispose();
     }
 }

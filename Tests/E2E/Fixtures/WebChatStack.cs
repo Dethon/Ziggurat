@@ -67,6 +67,7 @@ internal sealed partial class WebChatStack
     private IContainer? _caddy;
     private IContainer? _mcpSugary;
     private IContainer? _accounts;
+    private IContainer? _mcpApps;
     private WebApplication? _whisper;
     private FakeKeyProviders? _keyProviders;
     private FakeOpenRouter? _model;
@@ -82,7 +83,7 @@ internal sealed partial class WebChatStack
     // takes one. They must be spaces of the household's configuration, which the stack saves as it
     // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
-        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee"];
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu"];
 
     // A space no collection works in, with a name, colour and agent of its own: what a person sees of
     // a space is its configuration's.
@@ -100,7 +101,7 @@ internal sealed partial class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 24;
+    public const int CollectionSlices = 25;
 
     public string WebChatUrl { get; private set; } = "";
 
@@ -111,6 +112,23 @@ internal sealed partial class WebChatStack
 
     // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
     public string SugaryMcpEndpoint { get; private set; } = "";
+
+    // The apps server's /mcp and the vault's, published here so a test builds an app and the data it
+    // reads as the agent would, with no model turn: a call token signed with the agent's key.
+    public string AppsMcpEndpoint { get; private set; } = "";
+    public string VaultMcpEndpoint { get; private set; } = "";
+
+    // The apps domain, as the smoke stack names it: a name under localhost, so an app origin is a secure
+    // context in Chromium. Its one Caddy site answers https on a local certificate at AppsPort, which a
+    // browser of the app spaces collection reaches by a host-resolver rule (an app's link names no port).
+    public const string AppsDomain = "apps.localhost";
+    public int AppsPort { get; private set; }
+
+    // The stack's second household's agent that reads what a built app reads: the vault, unasked
+    // (`.claude/rules/apps.md`, "The app read API": an app reads only where its building agent's call
+    // would run unasked). Its own agent in the second household, so the home's picker, which every
+    // collection reads, is unchanged; that household also has the apps feature on.
+    public const string AppReaderAgent = "app-reader";
 
     // How long the Sugary server waits on the agent's estimate before answering 504: the chat E2E's
     // reply cap (three minutes) rather than the shipped two minutes meant for her phone, so a turn
@@ -325,16 +343,22 @@ internal sealed partial class WebChatStack
                     return new Seeded(session.Token, new Account(elsewhere, id));
                 }
 
-                // Its agents are the home's, and it pays for its turns with a key of its own (the same
-                // one), since a household that is not the home has no deployment key to fall back on.
+                // Its agents are the home's and the app reader, and it pays for its turns with a key of its
+                // own (the same one), since a household that is not the home has no deployment key to fall
+                // back on. Its apps feature is on, as the operator turns it on: the app spaces collection
+                // builds and shares its apps here.
                 var elsewhereAgents = await config.SaveAsync(
-                    elsewhere, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(Agents), ct);
+                    elsewhere, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(ElsewhereAgents), ct);
                 var elsewhereKeys = await config.SaveAsync(
                     elsewhere, HouseholdSections.KeysSchema,
                     HouseholdSections.KeysSchema.Write(new KeysSection { OpenRouter = new OpenRouterKey(ElsewhereModelKey) }), ct);
-                if (elsewhereAgents is not SectionSave.Saved || elsewhereKeys is not SectionSave.Saved)
+                var elsewhereFeatures = await config.SaveAsync(
+                    elsewhere, HouseholdSections.FeaturesSchema, new System.Text.Json.Nodes.JsonObject { ["apps"] = true }, ct);
+                if (elsewhereAgents is not SectionSave.Saved || elsewhereKeys is not SectionSave.Saved
+                                                             || elsewhereFeatures is not SectionSave.Saved)
                 {
-                    throw new InvalidOperationException($"the seeded store refused a section: {elsewhereAgents}, {elsewhereKeys}");
+                    throw new InvalidOperationException(
+                        $"the seeded store refused a section: {elsewhereAgents}, {elsewhereKeys}, {elsewhereFeatures}");
                 }
 
                 foreach (var role in new[] { Role.Owner, Role.Member })
@@ -611,6 +635,7 @@ internal sealed partial class WebChatStack
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSugary, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpApps, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Accounts, ct));
     }
 
@@ -652,6 +677,8 @@ internal sealed partial class WebChatStack
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
             .WithEnvironment("VAULTPATH", "/vault")
+            // A tmpfs, world-writable as Docker makes one, so a test can write the note an app reads.
+            .WithTmpfsMount("/vault")
             // The credential this server's /mcp asks for and the agent presents to it alone,
             // exactly as compose wires it.
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-vault"))
@@ -725,6 +752,8 @@ internal sealed partial class WebChatStack
             .WithEnvironment("AGENTS__0__NAME", "Test Agent")
             .WithEnvironment("AGENTS__1__ID", "vision-agent")
             .WithEnvironment("AGENTS__1__NAME", "Vision Agent")
+            // WebChat's space switcher asks a person's apps here, as compose wires it.
+            .WithEnvironment("APPSURL", "http://mcp-apps:8080")
             // POST negotiate succeeds only after Kestrel has fully bound routes; TCP-only
             // checks return before the app is actually serving requests.
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -742,6 +771,7 @@ internal sealed partial class WebChatStack
         // sign-in returns only to the origins it was given. The session cookie is host-only, so the
         // pages and sign-in share this one host exactly.
         _caddyPort = TestPort.GetAvailable();
+        AppsPort = TestPort.GetAvailable();
         var baseUrl = $"http://localhost:{_caddyPort}";
 
         // The accounts service, as compose wires it but for this host: its store in a tmpfs that
@@ -794,6 +824,12 @@ internal sealed partial class WebChatStack
             // The agent reads its households' configuration with the credential it holds for its own
             // API, as compose wires it, beside a token it signs for the configuration.
             .WithEnvironment("CALLERS__agent", AgentCredential)
+            // The apps server: its agent-names and spaces views, the app sign-in's codes and renewals, with
+            // its own MCP credential; the apps domain the app sign-in returns to; the published-apps listing
+            // the spaces page asks, as compose wires them.
+            .WithEnvironment("CALLERS__mcp-apps", McpTestSecret.For("mcp-apps"))
+            .WithEnvironment("APPSDOMAIN", AppsDomain)
+            .WithEnvironment("APPSURL", "http://mcp-apps:8080")
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -810,6 +846,29 @@ internal sealed partial class WebChatStack
         // accounts service, so it follows the services it fronts. Stages of whole sets made the stack
         // the E2E run's first sixteen seconds.
         var accountsStarted = E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct));
+
+        // The apps server, as compose wires it but for this host: its volume a tmpfs that starts empty, the
+        // app sign-in sending a browser to this stack's main host, no check browser (no check runs here).
+        // Ready once its listing answers a request naming nobody, 401.
+        _mcpApps = TestContainers.Container(E2EImages.McpApps.ImageName)
+            .WithNetwork(_network)
+            .WithNetworkAliases("mcp-apps")
+            .WithTmpfsMount("/data")
+            .WithEnvironment("APPSDOMAIN", AppsDomain)
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-apps"))
+            .WithEnvironment("MCP__AUDIENCE", "mcp-apps")
+            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
+            .WithEnvironment("PUBLICBASEURL", baseUrl)
+            .WithEnvironment("ACCOUNTS__JWKSURL", "http://accounts:8080/accounts/internal/jwks")
+            .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
+            .WithEnvironment("AGENTURL", "http://agent:8080")
+            .WithPortBinding(8080, true)
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath(global::Domain.Apps.PersonsApps.Path)
+                    .ForStatusCode(HttpStatusCode.Unauthorized)))
+            .Build();
+        // It subscribes to the accounts service's announcements on redis as it starts.
+        var appsStarted = StartAfterAsync(redisStarted, "start:apps", _mcpApps, ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
@@ -831,6 +890,8 @@ internal sealed partial class WebChatStack
               ],
               // The app's messages name no agent; the deployment routes the channel to sugary.
               "agentDefaults": { "byChannel": { "sugary": "sugary" } },
+              // The apps server it dials, and whose built apps' reads it answers on that server's credential.
+              "sharedServers": { "apps": "http://mcp-apps:8080/mcp" },
               "channelEndpoints": [
                 // WebChat hosts the review copy of every estimate, as it does in the deployment.
                 // Under the id the deployment gives it: the hub's assertions name `signalr`, and the agent
@@ -852,6 +913,7 @@ internal sealed partial class WebChatStack
             .WithEnvironment("MCP__SECRETS__mcp-vault", McpTestSecret.For("mcp-vault"))
             .WithEnvironment("MCP__SECRETS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
             .WithEnvironment("MCP__SECRETS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            .WithEnvironment("MCP__SECRETS__mcp-apps", McpTestSecret.For("mcp-apps"))
             // The home's agents are its configuration's, read from the accounts service with this.
             .WithEnvironment("AGENTAPI__SHAREDSECRET", AgentCredential)
             // The suite's fixed key instead of one generated into a volume, so the tests' own
@@ -879,7 +941,19 @@ internal sealed partial class WebChatStack
             $"        reverse_proxy {upstream}\n" +
             "    }\n";
 
+        // The apps domain's one site, mirroring DockerCompose/caddy/Caddyfile's: every app origin to the
+        // apps server's pages listener with no session check, on https with Caddy's own local certificate
+        // (an app's link is https and names no port; a browser of the app spaces collection maps the domain
+        // here and takes the certificate). No redirects: the main host stays plain http on :80.
         var testCaddyfile =
+            "{\n" +
+            "    skip_install_trust\n" +
+            "    auto_https disable_redirects\n" +
+            "}\n" +
+            $"*.{AppsDomain} {{\n" +
+            "    tls internal\n" +
+            "    reverse_proxy mcp-apps:8081\n" +
+            "}\n" +
             ":80 {\n" +
             @checked("/hubs/* ", "mcp-channel-signalr:8080") +
             // The upload store lives beside the hub; without this route an upload POST lands on
@@ -925,6 +999,7 @@ internal sealed partial class WebChatStack
             .WithNetwork(_network)
             .WithNetworkAliases("caddy")
             .WithPortBinding(_caddyPort, 80)
+            .WithPortBinding(AppsPort, 443)
             .WithResourceMapping(caddyfileBytes, "/etc/caddy/Caddyfile")
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/accounts/sign-in")))
@@ -941,7 +1016,7 @@ internal sealed partial class WebChatStack
             // itself: each is asked.
             throw new TimeoutException($"Caddy never answered sign-in through port {_caddyPort}. {await CaddyDiagnosisAsync()}", e);
         }
-        await Task.WhenAll(agentStarted, vaultStarted, sugaryStarted);
+        await Task.WhenAll(agentStarted, vaultStarted, sugaryStarted, appsStarted);
 
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
         // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
@@ -972,6 +1047,8 @@ internal sealed partial class WebChatStack
         E2ETrace.Write("start:total", stackElapsed.Elapsed.TotalSeconds);
         SugaryUrl = $"http://{_mcpSugary.Hostname}:{_mcpSugary.GetMappedPublicPort(8080)}";
         SugaryMcpEndpoint = $"{SugaryUrl}/mcp";
+        AppsMcpEndpoint = $"http://{_mcpApps.Hostname}:{_mcpApps.GetMappedPublicPort(8080)}/mcp";
+        VaultMcpEndpoint = $"http://{_mcpVault.Hostname}:{_mcpVault.GetMappedPublicPort(8080)}/mcp";
         WebChatUrl = $"{baseUrl}/";
     }
 
@@ -1020,6 +1097,29 @@ internal sealed partial class WebChatStack
             // read from the tests' copies of the agents (TestAgents) rather than restated, so the
             // Sugary E2E estimates with the agent she uses.
             new HouseholdAgent { Id = "sugary", Definition = TestAgents.Repository.Agents.Single(a => a.Id == "sugary") }
+        ]
+    };
+
+    // The second household's agents: the home's, and one whose vault reads run unasked, which a built app
+    // of that household reads through.
+    private static AgentsSection ElsewhereAgents => Agents with
+    {
+        Agents =
+        [
+            .. Agents.Agents,
+            new HouseholdAgent
+            {
+                Id = AppReaderAgent,
+                Definition = new AgentDefinition
+                {
+                    Id = AppReaderAgent,
+                    Name = "App Reader",
+                    Model = "~deepseek/deepseek-v4-flash-latest:nitro",
+                    McpServerEndpoints = ["http://mcp-vault:8080/mcp"],
+                    EnabledFeatures = ["filesystem"],
+                    WhitelistPatterns = ["domain__filesystem__file_read", "domain__filesystem__glob", "domain__filesystem__file_info"]
+                }
+            }
         ]
     };
 
@@ -1097,6 +1197,7 @@ internal sealed partial class WebChatStack
             _model is null ? Task.CompletedTask : _model.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
             _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
+            _mcpApps is null ? Task.CompletedTask : _mcpApps.DisposeAsync().AsTask(),
             _accounts is null ? Task.CompletedTask : _accounts.DisposeAsync().AsTask(),
             _webui is null ? Task.CompletedTask : _webui.DisposeAsync().AsTask(),
             _agent is null ? Task.CompletedTask : _agent.DisposeAsync().AsTask(),
@@ -1112,6 +1213,11 @@ internal sealed partial class WebChatStack
         if (_caddyPort != 0)
         {
             TestPort.Release(_caddyPort);
+        }
+
+        if (AppsPort != 0)
+        {
+            TestPort.Release(AppsPort);
         }
     }
 }

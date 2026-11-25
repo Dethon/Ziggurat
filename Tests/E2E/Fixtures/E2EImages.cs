@@ -45,10 +45,15 @@ internal static class E2EImages
         "McpServerSugary/Dockerfile", "mcp-sugary:latest",
         ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerSugary", "Sugary.Client"]);
 
+    // The apps server, which WebChat's space switcher lists a person's apps from and whose origins the
+    // app spaces collection opens.
+    internal static E2EImageSpec McpApps { get; } = new(
+        "McpServerApps/Dockerfile", "mcp-apps:latest", ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerApps"]);
+
     // Built FROM base-sdk for the SDK band alone: it compiles none of base-sdk's projects.
     internal static E2EImageSpec Accounts { get; } = new(
         "Accounts/Dockerfile", "accounts:latest", ["Accounts"]);
 
     internal static IReadOnlyList<E2EImageSpec> All { get; } =
-        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability, McpSugary, Accounts];
+        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability, McpSugary, McpApps, Accounts];
 }

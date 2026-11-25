@@ -73,4 +73,7 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
 
     public Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync() =>
         liveConnection.InvokeAsync<IReadOnlyList<HouseholdSpace>>("GetSpaces");
+
+    public Task<HubResult<IReadOnlyList<SwitcherEntry>>> GetSpacesAndAppsAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<SwitcherEntry>>("GetSpacesAndApps");
 }
