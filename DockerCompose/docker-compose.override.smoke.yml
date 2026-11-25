@@ -35,6 +35,7 @@ services:
   accounts:
     volumes: ["./volumes/smoke/accounts:/data"]
     environment:
+      APPSDOMAIN: apps.localhost
       KEYPROBES__OPENROUTERURL: http://smoke-keys:8080/
       KEYPROBES__IDEALISTAURL: http://smoke-keys:8080/
       KEYPROBES__BRAVESEARCHURL: http://smoke-keys:8080/

@@ -20,7 +20,8 @@ x-cors-origins: &cors-origins
   CORS__ALLOWEDORIGINS__1: https://sexy.herfluffness.com
 
 # The registrable domain built apps are served under (<slug>-<id>.<domain>), per deployment: the proxy
-# serves its wildcard site and the apps server parses its labels, so the two read one value. A second
+# serves its wildcard site, the apps server parses its labels and the accounts service's app sign-in
+# returns a code only to an origin under it, so the three read one value. A second
 # domain, never a subdomain of this deployment's, so no cookie of its reaches app code. Set it to the
 # domain bought for the purpose; Caddy's Cloudflare token must be able to answer its DNS challenge.
 x-apps-domain: &apps-domain
@@ -347,6 +348,14 @@ services:
       # A tool call's token: the agent's, for this name, checked against the keys it publishes.
       MCP__AUDIENCE: mcp-apps
       MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # The app sign-in: a page opened on an app origin with no app session is sent to the accounts
+      # service on the main host (the accounts service's own PUBLICBASEURL); the code it brings back is
+      # redeemed with MCP__SHAREDSECRET above (CALLERS__mcp-apps there), for an assertion checked
+      # against these keys.
+      PUBLICBASEURL: https://assistants.herfluffness.com
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
+      # Where the accounts service announces that a person's sessions ended, which ends their app sessions.
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
     networks:
       - jackbot
     depends_on:
@@ -354,6 +363,8 @@ services:
         condition: service_completed_successfully
       base-sdk:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   lemonade:
     image: lemonade:latest
@@ -603,7 +614,8 @@ services:
     volumes:
       - ./volumes/accounts:/data
     environment:
-      <<: *timezone
+      # The apps domain: the app sign-in sends a code back only to a built app's origin under it.
+      <<: [ *timezone, *apps-domain ]
       # Per deployment, not secrets. A passkey belongs to the parent domain, so one signs in on every
       # host under it; the session cookie is set there for the same reason. The origins are the
       # hosts the Caddyfile serves people on: a ceremony's page must be on one, and sign-in returns
@@ -633,8 +645,8 @@ services:
       CALLERS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
       CALLERS__mcp-timers: ${MCP_SECRET_TIMERS}
-      # The apps server asks the calling household's agent names on the call's token: only the
-      # household's own agents build apps.
+      # The apps server asks the calling household's agent names on the call's token (only the
+      # household's own agents build apps), redeems the app sign-in's codes and renews app sessions.
       CALLERS__mcp-apps: ${MCP_SECRET_APPS}
       # The household migration below, and only its household import: it can make the operator and
       # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.

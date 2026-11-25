@@ -32,12 +32,13 @@ MCP_SECRET="${MCP__SHAREDSECRET:-local-mcp-secret}"
 # name|project directory|port|set ASPNETCORE_ENVIRONMENT|load DockerCompose/.env|extra env (; separated)|program args (space separated)
 # websearch names its own two listeners (/mcp on 6003, its /browse pages on 6007, in its
 # appsettings.Local.json), so it is handed no URL to override; so does apps (/mcp on 6018, app
-# origins on 6019, opened as http://<slug>-<id>.apps.localhost:6019/).
+# origins on 6019, opened as http://<slug>-<id>.apps.localhost:6019/, signed in through the accounts
+# service here on 5004, which admits it by the shared local credential).
 SERVICES=(
   "agent|Agent|5000|yes|no||--chat Web --reasoning"
   "webui|WebChat|5001|yes|no||"
   "observability|Observability|5003|yes|no||"
-  "accounts|Accounts|5004|yes|no||"
+  "accounts|Accounts|5004|yes|no|CALLERS__mcp-apps=$MCP_SECRET|"
   "library|McpServerLibrary|6001|no|no||"
   "vault|McpServerVault|6002|no|no||"
   "websearch|McpServerWebSearch|6003|no|no|ASPNETCORE_URLS=|"

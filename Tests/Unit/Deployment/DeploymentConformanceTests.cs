@@ -485,6 +485,7 @@ public class DeploymentConformanceTests
     [InlineData("mcp-sugary")]
     [InlineData("observability")]
     [InlineData("agent")]
+    [InlineData("mcp-apps")]
     public void TheAppsThatBelieveTheAssertion_FetchTheAccountsServicesKeys(string service)
     {
         var expected = $"http://accounts:8080{InternalApi.JwksPath}";
@@ -856,11 +857,12 @@ public class DeploymentConformanceTests
             .ShouldNotContain(r => r.Upstream != null && r.Upstream.StartsWith("mcp-apps", StringComparison.Ordinal));
     }
 
-    // The proxy and the apps server name one apps domain, set once per deployment; it is no secret.
+    // The proxy, the apps server and the accounts service's app sign-in name one apps domain, set once
+    // per deployment; it is no secret.
     // It is never under the deployment's own domain: the accounts session cookie is sent to every host
     // under that, and app code must never be sent it.
     [Fact]
-    public void TheAppsDomain_IsOneValueTheProxyAndTheAppsServerShare_OutsideTheSessionCookiesDomain()
+    public void TheAppsDomain_IsOneValueTheProxyTheAppsServerAndTheAccountsServiceShare_OutsideTheSessionCookiesDomain()
     {
         var compose = DeploymentFiles.Compose();
         var domain = compose.Service("mcp-apps").Environment["APPSDOMAIN"];
@@ -868,6 +870,8 @@ public class DeploymentConformanceTests
 
         domain.ShouldNotBeNullOrWhiteSpace();
         compose.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+        compose.Service("accounts").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain,
+            "the app sign-in returns a code only to an origin under it");
         DeploymentFiles.Placeholders().Keys.ShouldNotContain("APPSDOMAIN");
         ("." + domain).EndsWith(cookieDomain, StringComparison.OrdinalIgnoreCase).ShouldBeFalse();
         DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(') && !h.Name.StartsWith('*'))
@@ -884,6 +888,50 @@ public class DeploymentConformanceTests
 
         domain.ShouldEndWith(".localhost");
         smoke.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+        smoke.Service("accounts").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+    }
+
+    // A page opened on an app origin with no app session is sent to the app sign-in on the main host,
+    // which the browser reaches as any accounts page: the accounts route, no session check in front.
+    [Fact]
+    public void TheAppSignIn_IsReachedOnTheMainHost_PastNoSessionCheck()
+    {
+        var compose = DeploymentFiles.Compose();
+        var publicBase = compose.Service("accounts").Environment["PUBLICBASEURL"];
+        var host = DeploymentFiles.Caddyfile().Host(MainHost);
+
+        compose.Service("mcp-apps").Environment.GetValueOrDefault("PUBLICBASEURL").ShouldBe(publicBase);
+        var route = RouteFor(host, global::Domain.Apps.AppSignIn.Path).ShouldNotBeNull();
+        route.Upstream.ShouldBe("accounts:8080");
+        route.ForwardAuth.ShouldBeNull();
+        host.ForwardAuth.ShouldBeNull();
+    }
+
+    // Every way a person's sessions end is announced on the deployment's Redis, which the apps server
+    // hears to end their app sessions at once.
+    [Fact]
+    public void TheAppsServer_HearsSessionsEnd_OnTheAccountsServicesRedis()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps");
+
+        apps.Environment.GetValueOrDefault("REDISCONNECTIONSTRING")
+            .ShouldBe(compose.Service("accounts").Environment["REDIS__CONNECTIONSTRING"]);
+        apps.DependsOn.ShouldContain("redis");
+    }
+
+    // An app session hands its assertion to the agent with each read (ticket 06), and the agent refuses
+    // one that has run out, so it is renewed while most of its life is left: held at most half of it.
+    [Fact]
+    public void TheAppsServersKeptAssertion_LeavesItHalfItsLifetime()
+    {
+        var kept = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Sessions", "AssertionKept").GetString()!, CultureInfo.InvariantCulture);
+        var lifetime = TimeSpan.Parse(
+            ShippedSetting("Accounts", "AssertionLifetime").GetString()!, CultureInfo.InvariantCulture);
+
+        kept.ShouldBeLessThanOrEqualTo(lifetime / 2);
+        new global::McpServerApps.Settings.AppSessionSettings().AssertionKept.ShouldBe(kept);
     }
 
     // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
