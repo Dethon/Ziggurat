@@ -73,6 +73,17 @@ public class AppContentPolicyTests
         policy["img-src"].ShouldBe("'self' data: blob: https://cdn.jsdelivr.net https://unpkg.com");
     }
 
+    [Fact]
+    public void PinnedGitHubCode_LoadsItsCommitsDirectory()
+    {
+        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, new PinnedCode
+        {
+            Scripts = ["https://cdn.jsdelivr.net/gh/someone/lib@0123456789abcdef0123456789abcdef01234567/dist/lib.js"]
+        }));
+
+        policy["script-src"].ShouldBe("'self' https://cdn.jsdelivr.net/gh/someone/lib@0123456789abcdef0123456789abcdef01234567/");
+    }
+
     // The addresses are the agent's text: one off the CDN list, or one a policy could not carry whole (a
     // `;` or `,` ending the directive or the source, a quote, a space), lets nothing load.
     [Theory]

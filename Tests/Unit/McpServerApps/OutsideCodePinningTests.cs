@@ -18,6 +18,7 @@ public class OutsideCodePinningTests
     [InlineData($"""<link rel="stylesheet" href="https://unpkg.com/pico.css@2.0.6/css/pico.min.css" integrity="{Hash}">""")]
     [InlineData($"""<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js" integrity="{Hash}"></script>""")]
     [InlineData($"""<script src="https://cdn.jsdelivr.net/npm/lit@3.1.0-next.1/index.js" integrity="{Hash}"></script>""")]
+    [InlineData($"""<script src="https://cdn.jsdelivr.net/gh/someone/lib@0123456789abcdef0123456789abcdef01234567/dist/lib.js" integrity="{Hash}"></script>""")]
     [InlineData("""<script src="app.js"></script><script src="/vendor/chart.js"></script><link rel="stylesheet" href="./style.css">""")]
     [InlineData("""<link rel="icon" href="https://example.org/favicon.ico"><a href="https://example.org/">a link</a>""")]
     [InlineData("""<script>console.log("inline")</script>""")]
@@ -34,6 +35,12 @@ public class OutsideCodePinningTests
     [InlineData("""<link rel="stylesheet" href="https://unpkg.com/pico.css@2.0.6/css/pico.min.css">""", "integrity")]
     [InlineData("""<link rel="modulepreload" href="https://esm.sh/preact@10.19.3">""", "integrity")]
     [InlineData("""<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity=""></script>""", "integrity")]
+    // A GitHub address names a git ref, and a tag or branch moves: only a whole commit pins it, so the
+    // package-version directory the policy opens holds the bytes the check ran.
+    [InlineData($"""<script src="https://cdn.jsdelivr.net/gh/someone/lib@v1.2.3/dist/lib.js" integrity="{Hash}"></script>""", "commit")]
+    [InlineData($"""<script src="https://cdn.jsdelivr.net/gh/someone/lib@1.2.3/dist/lib.js" integrity="{Hash}"></script>""", "commit")]
+    [InlineData($"""<script src="https://cdn.jsdelivr.net/gh/someone/lib@0123456/dist/lib.js" integrity="{Hash}"></script>""", "commit")]
+    [InlineData($"""<script type="module" src="https://esm.sh/gh/someone/lib@v1.2.3" integrity="{Hash}"></script>""", "commit")]
     public void UnpinnedOutsideCode_IsRefused_SayingWhatIsMissing(string body, string missing)
     {
         var problems = Check(Page(body));
@@ -80,6 +87,25 @@ public class OutsideCodePinningTests
         problems.ShouldHaveSingleItem();
         problems[0].ShouldContain(module);
         problems[0].ShouldContain("import map");
+    }
+
+    // An integrity entry pins the bytes at an address, not the address's meaning: a module named with no
+    // exact version (or a GitHub ref that is no commit) is refused as a script tag's is.
+    [Theory]
+    [InlineData("https://esm.sh/preact", "exact version")]
+    [InlineData("https://esm.sh/preact@10", "exact version")]
+    [InlineData("https://esm.sh/gh/someone/lib@v1.2.3", "commit")]
+    public void AnImportMap_NamingAnOutsideModuleWithoutAnExactVersion_IsRefused(string module, string missing)
+    {
+        var problems = Check(Page($$"""
+            <script type="importmap">
+            { "imports": { "lib": "{{module}}" }, "integrity": { "{{module}}": "{{Hash}}" } }
+            </script>
+            """));
+
+        problems.ShouldHaveSingleItem();
+        problems[0].ShouldContain(module);
+        problems[0].ShouldContain(missing);
     }
 
     [Fact]

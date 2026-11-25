@@ -35,7 +35,7 @@ public static class OutsideCodePinning
         [
             PinnedCode.HasExactVersion(load.Address)
                 ? null
-                : $"{file}: the {load.Kind} {load.Address} names no exact version: pin one in the address (name@1.2.3).",
+                : NoExactVersion(file, load.Kind, load.Address),
             string.IsNullOrWhiteSpace(load.Integrity)
                 ? $"{file}: the {load.Kind} {load.Address} has no integrity attribute: add integrity=\"sha384-…\" for those exact bytes."
                 : null
@@ -106,10 +106,13 @@ public static class OutsideCodePinning
                 .. outside.Where(m => m.Specifier.EndsWith('/'))
                     .Select(m => $"{file}: the import map maps the prefix {m.Specifier} to the outside {m.Module}, which no "
                                  + "integrity entry can cover: map each module by its full address instead."),
+                .. outside.Where(m => !m.Specifier.EndsWith('/') && !PinnedCode.HasExactVersion(m.Module))
+                    .Select(m => NoExactVersion(file, "import map's module", m.Module)),
                 .. outside.Where(m => !m.Specifier.EndsWith('/') && !integrity.Contains(m.Module))
                     .Select(m => $"{file}: the import map names the outside module {m.Module} with no integrity entry: "
                                  + "map each module by its full address and add its hash under \"integrity\".")
-            ], [.. outside.Where(m => !m.Specifier.EndsWith('/') && integrity.Contains(m.Module)).Select(m => m.Module)]);
+            ], [.. outside.Where(m => !m.Specifier.EndsWith('/') && integrity.Contains(m.Module) && PinnedCode.HasExactVersion(m.Module))
+                .Select(m => m.Module)]);
         }
     }
 
@@ -120,6 +123,12 @@ public static class OutsideCodePinning
 
     private static IEnumerable<JsonProperty> Members(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Object ? value.EnumerateObject() : [];
+
+    private static string NoExactVersion(string file, string kind, string address) =>
+        PinnedCode.IsGitHub(address)
+            ? $"{file}: the {kind} {address} names a GitHub ref that is no commit, and a tag or branch can move: pin the "
+              + "whole 40-character commit in the address (owner/repo@<commit>)."
+            : $"{file}: the {kind} {address} names no exact version: pin one in the address (name@1.2.3).";
 
     private static HashSet<string> Rels(string? rel) =>
         new((rel ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);

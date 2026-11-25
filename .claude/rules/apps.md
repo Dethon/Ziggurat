@@ -110,10 +110,11 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   version is refused. Published uses the commit's `BuiltApp.Pinned[commit]`, recorded at publish (none
   recorded loads no outside code); the preview finds it per answer, so a check sees a refused import.
   `img-src` keeps `Cdns` whole (an image runs nothing). Inline import maps by hash (`InlineImportMaps`) are
-  the one inline script; every answer also carries `nosniff` and `no-referrer`. Residuals: a pinned address
-  that redirects lands anywhere on that CDN host (integrity still holds); a jsdelivr `/gh/` tag can move.
+  the one inline script; every answer also carries `nosniff` and `no-referrer`. Residual: a pinned address
+  that redirects lands anywhere on that CDN host (integrity still holds).
 - **`./publish` pins outside code** (`OutsideCodePinning`): an outside script, module preload, stylesheet or
-  import-map entry without an exact version and `integrity` refuses the publish, naming each. Imports inside
+  import-map entry without an exact version and `integrity` refuses the publish, naming each; a GitHub
+  (`/gh/`) address pins a whole commit, never a tag (`PinnedCode.HasExactVersion`). Imports inside
   JS modules are not read, since the policy refuses any outside the pinned set.
 - **`/_app/` is the server's** (`AppOriginFiles`: manifest, icon, worker with `Service-Worker-Allowed: /`,
   registration, client library), never shadowed by an app file; every `.html` gets its tags first in

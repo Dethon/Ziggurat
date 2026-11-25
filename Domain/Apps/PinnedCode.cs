@@ -16,8 +16,13 @@ public sealed partial record PinnedCode
     public IReadOnlyList<string> Styles { get; init; } = [];
 
     // A whole version in an address, major.minor.patch with an optional pre-release or build, as a path
-    // segment or after the package's @: never a range, a tag or a major alone.
-    public static bool HasExactVersion(string address) => ExactVersion().IsMatch(address);
+    // segment or after the package's @: never a range, a tag or a major alone. A GitHub address (`/gh/`)
+    // names a git ref, where even a version-shaped tag can move, so only a whole commit pins it.
+    public static bool HasExactVersion(string address) => Version(address).Success;
+
+    public static bool IsGitHub(string address) => address.Contains("/gh/", StringComparison.Ordinal);
+
+    private static Match Version(string address) => IsGitHub(address) ? GitCommit().Match(address) : ExactVersion().Match(address);
 
     // What of a CDN a pinned address lets a page load, as policy source expressions: its package's version
     // directory (`https://cdn/npm/name@1.2.3/`), so a bundle's own chunks, a stylesheet's fonts and an esm.sh
@@ -42,7 +47,7 @@ public sealed partial record PinnedCode
         }
 
         var path = uri.AbsolutePath;
-        var version = ExactVersion().Match(path);
+        var version = Version(path);
         if (!version.Success)
         {
             return [origin + path];
@@ -54,6 +59,9 @@ public sealed partial record PinnedCode
 
     [GeneratedRegex(@"[@/]v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?(?=[/?#]|$)", RegexOptions.CultureInvariant)]
     private static partial Regex ExactVersion();
+
+    [GeneratedRegex(@"@[0-9a-f]{40}(?=[/?#]|$)", RegexOptions.CultureInvariant)]
+    private static partial Regex GitCommit();
 
     // A path a source expression can carry whole: no `;` or `,` (which end a directive or a source list), no
     // quote, no whitespace.
