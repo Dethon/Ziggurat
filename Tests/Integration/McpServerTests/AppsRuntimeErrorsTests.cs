@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Apps;
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shouldly;
@@ -234,6 +236,49 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         await _apps.CreateAsync(AppsServer.Her, "/glucose/index.html", "<h1>Glucose, again</h1>", overwrite: true);
         await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
         (await _apps.GetAsync(host, "/errors", _apps.SessionFor(AppsServer.Her, host))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // The operator sees a household's broken app where every household error is seen: an ErrorEvent under
+    // the app's own household, never one the page named.
+    [Fact]
+    public async Task AReport_IsAHouseholdErrorTheOperatorSees()
+    {
+        var metrics = new Tests.Unit.RecordingMetricsPublisher();
+        await using var apps = await AppsServer.StartAsync(services: services => services.AddSingleton<IMetricsPublisher>(metrics));
+        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
+        var host = apps.Preview("glucose", id);
+
+        using var reported = await apps.ReportAsync(host, Uncaught, apps.SessionFor(AppsServer.Her, host));
+
+        reported.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var error = metrics.Published.OfType<ErrorEvent>().ShouldHaveSingleItem();
+        error.TenantId.ShouldBe(AppsServer.Her.TenantId);
+        error.Service.ShouldBe("mcp-apps");
+        error.ErrorType.ShouldBe(AppErrors.ErrorType);
+        error.Message.ShouldContain($"glucose-{id}-preview");
+        error.Message.ShouldContain("TypeError: rows is undefined");
+        error.Message.ShouldNotContain("draw@/main.js");
+    }
+
+    // A check's page reports through its own session too, and its errors are kept marked as the check's:
+    // the check's report already shows them to the agent, and nobody met them, so the operator is not told.
+    [Fact]
+    public async Task AChecksReport_IsKeptMarkedAsTheChecks_AndNeverReachesTheOperator()
+    {
+        var metrics = new Tests.Unit.RecordingMetricsPublisher();
+        await using var apps = await AppsServer.StartAsync(services: services => services.AddSingleton<IMetricsPublisher>(metrics));
+        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
+        var host = apps.Preview("glucose", id);
+        var check = apps.Sessions.OpenCheck(AppsServer.Her, AppOrigin.Parse(host, AppsServer.AppsDomain)!, "call-token",
+            apps.Clock.GetUtcNow().AddSeconds(30));
+
+        using var reported = await apps.ReportAsync(host, Uncaught, check);
+
+        reported.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var entry = (await EntriesAsync(apps)).ShouldHaveSingleItem();
+        entry["check"]!.GetValue<bool>().ShouldBeTrue();
+        entry["viewer"]!.GetValue<string>().ShouldBe(AppsServer.Her.UserId);
+        metrics.Published.OfType<ErrorEvent>().ShouldBeEmpty();
     }
 
     // The errors as the agent reads them: one JSON object a line, newest first.

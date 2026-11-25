@@ -11,6 +11,9 @@ public static class AppErrors
 {
     public const string OriginPath = "/_errors";
 
+    // What the operator's errors call a household's app that broke in somebody's browser.
+    public const string ErrorType = "AppRuntimeError";
+
     public static class Kinds
     {
         public const string Error = "error";
@@ -181,6 +184,10 @@ public sealed record AppErrorEntry
 
     // "published" or "preview": which of the app's origins the page was on.
     public required string Origin { get; init; }
+
+    // Reported by a check's page (`./check`), whose report.json already shows it; absent for a person's.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Check { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AppErrorRead? Read { get; init; }

@@ -71,6 +71,15 @@ public class MetricsRegistrationContractTests
                 RedisConnectionString = UnreachableRedis
             })
         },
+        // The apps server publishes the runtime errors its apps' pages report, as household errors.
+        {
+            "mcp-apps",
+            services => McpServerApps.Modules.ConfigModule.ConfigureApps(services, new McpServerApps.Settings.AppsSettings
+            {
+                AppsDomain = "apps.test",
+                RedisConnectionString = UnreachableRedis
+            })
+        },
         // A household's own servers post their events on their metrics back-call instead.
         {
             "mcp-channel-voice on a tunnel",

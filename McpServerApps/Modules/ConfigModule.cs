@@ -1,4 +1,5 @@
 using Infrastructure.Clients.Accounts;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerApps.Checks;
@@ -39,13 +40,16 @@ public static class ConfigModule
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
 
-        // Where every way a person's sessions end is announced, which ends their app sessions at once.
-        // Connected when first asked, so a host run or a test without Redis connects to nothing.
+        // Where every way a person's sessions end is announced, which ends their app sessions at once, and
+        // the deployment's metrics feed, where a broken app is a household error the operator sees (and a
+        // failed tool call too, by the shared filter). Connected when first asked, so a host run or a test
+        // without Redis connects to nothing and publishes nothing.
         if (settings.RedisConnectionString.Length > 0)
         {
             services
                 .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
-                .AddHostedService<EndedAppSessionsListener>();
+                .AddHostedService<EndedAppSessionsListener>()
+                .AddMetricsPublishing(AppErrorReports.ServiceName);
         }
 
         services

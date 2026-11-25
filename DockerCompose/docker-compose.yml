@@ -354,7 +354,8 @@ services:
       # against these keys.
       PUBLICBASEURL: https://assistants.herfluffness.com
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
-      # Where the accounts service announces that a person's sessions ended, which ends their app sessions.
+      # Where the accounts service announces that a person's sessions ended, which ends their app sessions, and
+      # the metrics feed a broken app's errors reach the operator on.
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       # Where a built app's reads go: the agent's internal route, which believes MCP__SHAREDSECRET above,
       # the credential the agent holds for this server (MCP__SECRETS__mcp-apps there). No dependency: the

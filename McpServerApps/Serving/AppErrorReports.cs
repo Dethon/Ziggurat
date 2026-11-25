@@ -1,4 +1,8 @@
 using Domain.Apps;
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.Metrics;
+using Infrastructure.Metrics;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using Microsoft.AspNetCore.Http;
@@ -10,11 +14,19 @@ namespace McpServerApps.Serving;
 //
 // - Only a page of this very origin reports here. Every app shares the apps domain, so a sibling app's
 //   page is same-site and this origin's cookie rides its POST; its Origin header still names it.
+// - A person's report is also a household error the operator sees (an ErrorEvent under the app's own
+//   household, on the deployment's metrics feed): its app's label and message, never its stack. A check's
+//   is kept marked as the check's and told to nobody else: its report.json shows the agent the same page
+//   errors, and no person met them.
 // - At most Errors:PerSessionPerMinute reports a session a minute: one broken loop is one session, and
 //   past it a report is answered 429 and kept nowhere until the minute is out. The client library holds
 //   itself well under that.
-public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, TimeProvider clock)
+public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, TimeProvider clock, IMetricsPublisher? metrics = null)
 {
+    public const string ServiceName = "mcp-apps";
+
+    private readonly IMetricsPublisher _metrics = metrics ?? NoOpMetricsPublisher.Instance;
+
     private const int MaxBodyBytes = 16 * 1024;
     private const int MaxUserAgent = 500;
 
@@ -43,6 +55,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
         }
 
         var userAgent = request.Headers.UserAgent.ToString();
+        var check = session.Proof is ViewerProof.CheckCall;
         await log.RecordAsync(app, new AppErrorEntry
         {
             Time = clock.GetUtcNow(),
@@ -53,8 +66,19 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
             UserAgent = userAgent.Length > MaxUserAgent ? userAgent[..MaxUserAgent] : userAgent,
             Viewer = session.Person.UserId,
             Origin = session.Origin.Preview ? "preview" : "published",
+            Check = check,
             Read = report.Read
         }, ct);
+        if (!check)
+        {
+            _metrics.ForHousehold(app.HouseholdId).Publish(new ErrorEvent
+            {
+                Service = ServiceName,
+                ErrorType = AppErrors.ErrorType,
+                Message = $"{app.Slug}-{app.Id}{(session.Origin.Preview ? AppOrigin.PreviewSuffix : "")}: {report.Kind}: {report.Message}"
+            });
+        }
+
         context.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 
