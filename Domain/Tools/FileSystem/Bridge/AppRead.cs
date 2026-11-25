@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Apps;
 using Domain.Contracts;
@@ -26,15 +25,16 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
                 $"Read with one of: {string.Join(", ", AppReads.Operations.All)}."));
         }
 
-        // Only reading the arguments is the caller's to get wrong; a fault past them is the fault it is.
+        // Only reading the arguments is the caller's to get wrong, and every way of getting them wrong is an
+        // ArgumentException; a fault past them is the fault it is.
         Planned read;
         try
         {
             read = Plan(operation, arguments, ct);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException or JsonException or ArgumentException)
+        catch (ArgumentException ex)
         {
-            return AppReadAnswer.Refused(ToolError.Result(ToolError.Codes.InvalidArgument, ex.Message));
+            return AppReadAnswer.Refused(ToolError.Result(ToolError.CodeFor(ex), ex.Message));
         }
 
         return Outside(read.Path) is { } refusal ? AppReadAnswer.Refused(refusal) : await read.Run();
@@ -70,7 +70,7 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
                     var query = Required(arguments, "query");
                     var filePath = Text(arguments, "filePath");
                     var directoryPath = Text(arguments, "directoryPath");
-                    var path = filePath ?? directoryPath ?? throw new InvalidOperationException("filePath or directoryPath is required.");
+                    var path = filePath ?? directoryPath ?? throw new ArgumentException("filePath or directoryPath is required.");
                     var regex = Flag(arguments, "regex") ?? false;
                     var filePattern = Text(arguments, "filePattern");
                     var maxResults = Number(arguments, "maxResults") ?? 50;
@@ -132,15 +132,30 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
             : null;
     }
 
-    // The tool's own arguments by its own names; a wrong type is the caller's invalid argument.
+    // The tool's own arguments by its own names; one missing or of the wrong type is the caller's invalid
+    // argument.
     private static string Required(JsonObject arguments, string name) =>
-        Text(arguments, name) ?? throw new InvalidOperationException($"{name} is required.");
+        Text(arguments, name) ?? throw new ArgumentException($"{name} is required.");
 
-    private static string? Text(JsonObject arguments, string name) => arguments[name]?.GetValue<string>();
+    private static string? Text(JsonObject arguments, string name) => Value<string>(arguments, name);
 
-    private static int? Number(JsonObject arguments, string name) => arguments[name]?.GetValue<int>();
+    private static int? Number(JsonObject arguments, string name) =>
+        arguments[name] is null ? null : Value<int>(arguments, name);
 
-    private static bool? Flag(JsonObject arguments, string name) => arguments[name]?.GetValue<bool>();
+    private static bool? Flag(JsonObject arguments, string name) =>
+        arguments[name] is null ? null : Value<bool>(arguments, name);
+
+    private static T? Value<T>(JsonObject arguments, string name)
+    {
+        try
+        {
+            return arguments[name] is { } node ? node.GetValue<T>() : default;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            throw new ArgumentException($"{name}: {ex.Message}", ex);
+        }
+    }
 }
 
 // What a read answers: the tool's result (a value or its envelope), or a file's bytes.

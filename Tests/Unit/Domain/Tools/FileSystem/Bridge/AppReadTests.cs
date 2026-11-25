@@ -23,6 +23,25 @@ public class AppReadTests
         answer.ShouldBeOfType<AppReadAnswer.Json>().Node["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
     }
 
+    // Missing, of the wrong type or naming no value the tool knows: each is the app's own invalid argument,
+    // never a fault worth retrying.
+    [Theory]
+    [InlineData(AppReads.Operations.Read, """{}""")]
+    [InlineData(AppReads.Operations.Read, """{"filePath":"/notes/a.md","limit":"ten"}""")]
+    [InlineData(AppReads.Operations.Search, """{"query":"a"}""")]
+    [InlineData(AppReads.Operations.Search, """{"query":"a","directoryPath":"/notes","regex":"yes"}""")]
+    [InlineData(AppReads.Operations.Search, """{"query":"a","directoryPath":"/notes","outputMode":"sideways"}""")]
+    public async Task ArgumentsMissingOrUnknown_AreTheCallersInvalidArgument(string operation, string arguments)
+    {
+        var read = Read(new Throwing());
+
+        var answer = await read.RunAsync(operation, JsonNode.Parse(arguments)!.AsObject(), CancellationToken.None);
+
+        var envelope = answer.ShouldBeOfType<AppReadAnswer.Json>().Node;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument, envelope.ToJsonString());
+        envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
     // A fault past the arguments — a backend's, a disposed client's — is never told to the app as its
     // own bad argument: it goes on as the fault it is.
     [Fact]
