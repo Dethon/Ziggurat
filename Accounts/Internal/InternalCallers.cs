@@ -65,7 +65,9 @@ public static class InternalCallers
         [Agent] = [Tunnels],
         [HouseholdServer] = [ChannelIds.Voice],
         // Sugary asks whether the session that subscribed a phone still lives, before a reminder.
-        [Sugary] = [SugaryChannel]
+        [Sugary] = [SugaryChannel],
+        // The apps server redeems the app sign-in's codes and renews its app sessions, on `apps`.
+        [Apps] = [AppChannels.Apps]
     };
 
     // Which views of a household's configuration each caller may ask for: the agent its own, each

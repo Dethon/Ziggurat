@@ -18,6 +18,15 @@ public record AccountsSettings
     // returns only to one of them, so a crafted link cannot send a fresh session anywhere else.
     public string[] AllowedOrigins { get; init; } = [];
 
+    // The registrable domain built apps are served under (`<slug>-<id>.<AppsDomain>`), per deployment
+    // (APPSDOMAIN, the value the proxy and the apps server read): the app sign-in returns a person, with
+    // a code, to a built app's origin under it and nowhere else. Never one of AllowedOrigins, which are
+    // the deployment's own hosts and its passkeys' origins. Empty signs nobody in to an app.
+    public string AppsDomain { get; init; } = "";
+
+    // How long the app sign-in's code waits for the apps server to redeem it: one redirect's worth.
+    public TimeSpan AppSignInCodeLifetime { get; init; } = TimeSpan.FromMinutes(1);
+
     public WebAuthnSettings WebAuthn { get; init; } = new();
 
     public SessionCookieSettings SessionCookie { get; init; } = new();

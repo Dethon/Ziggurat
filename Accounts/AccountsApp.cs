@@ -1,5 +1,6 @@
 using Accounts.Admin;
 using Accounts.Announcements;
+using Accounts.Apps;
 using Accounts.Configuration;
 using Accounts.Internal;
 using Accounts.Keys;
@@ -32,6 +33,7 @@ public static class AccountsApp
             .AddAccountsCore(settings, clock)
             .AddHostedService<AccountsDatabasePreparer>()
             .AddSingleton<CeremonyStore>()
+            .AddSingleton<AppSignInCodes>()
             .AddScoped<PasskeyCeremonies>()
             .AddSingleton<PageGuard>()
             .AddSingleton<AccountPage>()
@@ -112,6 +114,7 @@ public static class AccountsApp
         AccountsPages.Map(accounts);
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);
+        AppSignInRoute.Map(accounts);
         PasskeyEndpoints.Map(accounts);
         AdminApi.Map(accounts);
         InternalApi.Map(accounts);

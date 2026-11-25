@@ -50,6 +50,7 @@ public static class InternalApi
         });
         IdentityResolution.Map(routes);
         SessionRefresh.Map(routes);
+        AppSignInRedemption.Map(routes);
         TelegramLinking.Map(routes);
         HouseholdImportApi.Map(routes);
         HouseholdConfigSeedApi.Map(routes);
