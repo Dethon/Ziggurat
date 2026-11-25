@@ -1,3 +1,4 @@
+using Accounts.Configuration;
 using Accounts.Links;
 using Accounts.People;
 using Accounts.Store;
@@ -26,7 +27,8 @@ public static class HouseholdListAdmin
     }
 
     private static async Task<IResult> ListAsync(
-        IDbContextFactory<AccountsDbContext> contexts, ConnectedServersClient relay, CancellationToken ct)
+        IDbContextFactory<AccountsDbContext> contexts, ConnectedServersClient relay, HouseholdConfigStore store,
+        CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var households = await db.Tenants.AsNoTracking()
@@ -41,17 +43,21 @@ public static class HouseholdListAdmin
             .Select(g => new { TenantId = g.Key, LastSeenAt = g.Max(s => s.LastSeenAt) })
             .ToDictionaryAsync(s => s.TenantId, s => s.LastSeenAt, ct);
         var connected = await Task.WhenAll(households.Select(h => relay.ListAsync(h.Id, ct)));
+        // A household that never saved its features reads them as their defaults: apps off.
+        var apps = await Task.WhenAll(households.Select(async h =>
+            (await store.ReadAsync(h.Id, HouseholdSections.FeaturesSchema, ct))?.Apps ?? false));
 
-        return Results.Ok(households.Zip(connected, (household, servers) => new HouseholdListEntry(
+        return Results.Ok(households.Select((household, i) => new HouseholdListEntry(
             household.Id,
             household.Name,
             household.IsHome,
             household.CreatedAt,
             [.. people[household.Id].Where(u => u.Role == Role.Owner).Select(Person)],
             [.. people[household.Id].Where(u => u.Role != Role.Owner).Select(Person)],
-            servers?.Select(s => new HouseholdConnectedServer(s.ServerName, s.OpenedAt)).ToList(),
+            connected[i]?.Select(s => new HouseholdConnectedServer(s.ServerName, s.OpenedAt)).ToList(),
             lastSeen.TryGetValue(household.Id, out var seen) ? seen : null,
-            household.SuspendedAt)).ToList());
+            household.SuspendedAt,
+            apps[i])).ToList());
     }
 
     private static async Task<IResult> CreateAsync(

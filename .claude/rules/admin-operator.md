@@ -2,6 +2,7 @@
 paths:
   - "Accounts/Admin/HouseholdListAdmin.cs"
   - "Accounts/Admin/HouseholdSuspensionAdmin.cs"
+  - "Accounts/Admin/HouseholdAppsFeatureAdmin.cs"
   - "Accounts/Tunnels/ConnectedServersClient.cs"
   - "Domain/DTOs/Admin/AdminProtocol.cs"
   - "Dashboard.Client/Pages/Households.razor"
@@ -10,6 +11,7 @@ paths:
   - "Dashboard.Client/Services/HouseholdsAdminService.cs"
   - "Tests/Integration/Accounts/HouseholdListAdminTests.cs"
   - "Tests/Integration/Accounts/HouseholdSuspensionAdminTests.cs"
+  - "Tests/Integration/Accounts/HouseholdAppsFeatureAdminTests.cs"
   - "Tests/Integration/Accounts/SuspensionCoverageTests.cs"
   - "Tests/E2E/Dashboard/HouseholdListE2ETests.cs"
   - "Tests/E2E/Dashboard/DashboardHouseholdFilterE2ETests.cs"
@@ -26,8 +28,8 @@ See also: `admin.md` (routes, gate, answers, change log, the proxy), `admin-keys
 `HouseholdListAdmin`, `/households` in `Dashboard.Client`:
 
 - **`GET /operator/households`** answers every `HouseholdListEntry`, the home first, with people,
-  **connected servers** and **last seen** (`Session.LastSeenAt`, so Telegram/voice-only use never moves
-  it).
+  **connected servers**, **last seen** (`Session.LastSeenAt`, so Telegram/voice-only use never moves
+  it) and whether its **apps** feature is on (a household that never saved its features reads off).
   - Connected servers come from the agent's relay (`ConnectedServersClient` →
     `GET {AgentUrl}/internal/tunnels/{householdId}`, `ConnectedServers.Path`) with `CALLERS__agent` as
     bearer — no new secret
@@ -73,6 +75,13 @@ See also: `admin.md` (routes, gate, answers, change log, the proxy), `admin-keys
   Nothing gathers them but a list: `SuspensionCoverageTests` places every accounts route by path with
   its stance and fails on a route it does not place — a new way in says what suspension does to it
   before it ships.
+- **The apps feature** (`HouseholdAppsFeatureAdmin`): **`PUT /operator/households/{householdId}/features/apps`**
+  `HouseholdAppsFeature { on }` sets the features section's `apps` alone, the operator's alone (owners only
+  see it: `admin-owner-pages.md`), the home included; answered `AdminSaved<HouseholdAppsFeature>`; no such
+  household is 404. Saved through the section's save and announced, so the household's agents are offered
+  `/apps` from their next turn (`HouseholdAgents.Offered`); not told stands with `NotToldWarning`. Recorded
+  on that household only when it changed ("Turned the apps feature on"). Runs in the household's turn
+  (`admin.md`, "Two owners"). Turning it off touches no app space.
 - **Its open pages are told at once**: the chat hub hears `SuspensionChanged` (`HouseholdAgentsAnnouncer`)
   and sends `OnAccessChanged`; the fresh connection is refused and the page shows the notice. **And back
   again once resumed**: the chat client goes to the notice as `/accounts/account?returnUrl=<where it
@@ -87,7 +96,7 @@ See also: `admin.md` (routes, gate, answers, change log, the proxy), `admin-keys
 
 ## Tests
 
-- `HouseholdListAdminTests`, `HouseholdSuspensionAdminTests` (seam 1; the agent's listing a Kestrel stub
+- `HouseholdListAdminTests`, `HouseholdSuspensionAdminTests`, `HouseholdAppsFeatureAdminTests` (seam 1; the agent's listing a Kestrel stub
   behind the shared secret).
 - `HouseholdListE2ETests` on `DashboardAdminE2EFixture`: its stack is its own, so a test may create,
   change and suspend households freely. The base fixture keeps one page open at a time, so a second
