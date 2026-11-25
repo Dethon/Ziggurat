@@ -53,11 +53,7 @@ internal static class AgentSpecProjection
             //
             // A household's own server is named rather than addressed, and presents no deployment
             // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
-            McpServerEndpoints =
-            [
-                .. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Of(
-                    address, server => deployment.Names(server) ? credentials.For(server) : null))
-            ],
+            McpServerEndpoints = Endpoints(definition, credentials, deployment),
             TenantId = tenantId,
             // Who pays was settled where the household was read: a household that cannot pay never
             // reaches here.
@@ -75,6 +71,15 @@ internal static class AgentSpecProjection
             PatchableModels = patchableModels,
             LemonadeHostAddress = lemonadeHostAddress
         };
+
+    // A definition's endpoints as every session of it dials them: a turn's, and a registry read outside
+    // any conversation (AgentReadRegistries).
+    public static IReadOnlyList<McpServerEndpoint> Endpoints(
+        AgentDefinition definition, McpCredentials credentials, DeploymentEndpoints deployment) =>
+    [
+        .. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Of(
+            address, server => deployment.Names(server) ? credentials.For(server) : null))
+    ];
 
     // A conversation keeps the session it was built with: a window that turns mid-conversation
     // moves the next conversation, not this one, whose history is already on its provider.
@@ -217,7 +222,7 @@ internal static class AgentSpecProjection
         ];
     }
 
-    private static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
+    public static IReadOnlySet<string> ExtractFilesystemEnabledTools(IEnumerable<string> enabledFeatures)
     {
         var fsParts = enabledFeatures
             .Select(f => f.Split('.', 2))

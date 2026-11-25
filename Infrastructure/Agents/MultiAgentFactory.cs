@@ -87,10 +87,7 @@ public sealed class MultiAgentFactory(
             PromptSections = [.. definition.PromptSections.Union(PromptManifest.ForChannel(channelId), StringComparer.OrdinalIgnoreCase)]
         };
 
-        // Only the household's own agents' endpoints present a deployment credential: they are its
-        // configuration's, which its owner cannot point anywhere, where a person's registered agent
-        // names whatever its registration said.
-        var deployment = new DeploymentEndpoints(household.Agents.SelectMany(a => a.McpServerEndpoints));
+        var deployment = DeploymentEndpoints.Of(household);
         var lemonade = _lemonadeHosts.For(household.HouseholdId ?? householdId, home: household.Configuration is null or { IsHome: true });
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, Whitelist(lemonade), lemonade?.Options.Address,
