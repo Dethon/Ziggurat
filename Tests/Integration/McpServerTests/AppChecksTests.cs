@@ -1,4 +1,10 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.DTOs.Sugary;
+using McpServerSugary.Store;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -105,11 +111,48 @@ public sealed class AppChecksTests
         assertions[2]!["message"]!.GetValue<string>().ShouldContain("SyntaxError");
     }
 
-    private static async Task<JsonNode> ReportAsync(AppsServer server, string slug) =>
-        JsonNode.Parse(await BytesAsync(server, $"/{slug}/.checks/latest/report.json"))!;
+    // A check's page reads the household as the person whose turn ran it, through /_vfs/* as an installed
+    // app does: his own meals, not the other member's, on nothing but his call's own token.
+    [Fact]
+    public async Task ACheck_ReadsAsThePersonWhoseTurnRanIt()
+    {
+        await using var sugary = await SugaryServer.StartAsync(sugaryPeople: new HouseholdSugaryPeople(
+        [
+            new SugaryPerson(AppsServer.Her.UserId, "Her", ReadsEveryLog: false),
+            new SugaryPerson(AppsServer.Him.UserId, "Him", ReadsEveryLog: false)
+        ]));
+        await SaveMealAsync(sugary, AppsServer.Her, "her lentils");
+        await SaveMealAsync(sugary, AppsServer.Him, "his paella");
+        var households = new AgentHouseholds();
+        households.Add(AppsServer.Him.TenantId, new AgentDefinition
+        {
+            Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [sugary.Endpoint], EnabledFeatures = ["filesystem"],
+            WhitelistPatterns = ["domain__filesystem__*"]
+        });
+        await using var agent = await AppReadsAgent.StartAsync(households, new SharedServers { Sugary = sugary.Endpoint });
+        await using var server = await AppsServer.StartAsync(s => s with { AgentUrl = agent.Address });
+        await server.AppAsync(AppsServer.Him, "meals");
+        await server.CreateAsync(AppsServer.Him, "/meals/index.html",
+            """<!doctype html><html lang="en"><head><title>Meals</title><script type="module" src="/main.js"></script></head><body><p id="meal">loading</p></body></html>""");
+        await server.CreateAsync(AppsServer.Him, "/meals/main.js",
+            """
+            const meals = await apps.query('/sugary', 'select notes from meals');
+            document.getElementById('meal').textContent = meals.rows.map(row => row[0]).join(', ');
+            """);
+
+        var ran = await server.ExecAsync(AppsServer.Him, "/meals", "./check --viewport 800x600");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        var viewport = (await ReportAsync(server, "meals", AppsServer.Him))["viewports"]![0]!;
+        viewport["accessibility"]!.GetValue<string>().ShouldContain("paragraph: his paella", Case.Sensitive, viewport.ToJsonString());
+        viewport["failedRequests"]!.AsArray().ShouldBeEmpty();
+    }
+
+    private static async Task<JsonNode> ReportAsync(AppsServer server, string slug, Account? person = null) =>
+        JsonNode.Parse(await BytesAsync(server, $"/{slug}/.checks/latest/report.json", person))!;
 
     // A file of the mount whole, as a copy streams it: the byte read, a chunk at a time.
-    private static async Task<byte[]> BytesAsync(AppsServer server, string path)
+    private static async Task<byte[]> BytesAsync(AppsServer server, string path, Account? person = null)
     {
         var bytes = new List<byte>();
         while (true)
@@ -117,7 +160,7 @@ public sealed class AppChecksTests
             var chunk = await server.CallAsync("fs_blob_read", new Dictionary<string, object?>
             {
                 ["path"] = path, ["offset"] = bytes.Count, ["length"] = 256 * 1024
-            }, AppsServer.TurnOf(AppsServer.Her));
+            }, AppsServer.TurnOf(person ?? AppsServer.Her));
             var read = Convert.FromBase64String(chunk["contentBase64"]?.GetValue<string>()
                                                 ?? throw new InvalidOperationException(chunk.ToJsonString()));
             bytes.AddRange(read);
@@ -126,5 +169,16 @@ public sealed class AppChecksTests
                 return [.. bytes];
             }
         }
+    }
+
+    private static async Task SaveMealAsync(SugaryServer server, Account person, string notes)
+    {
+        await using var db = server.Services.GetRequiredService<SugaryStore>().For(person);
+        db.Meals.Add(new Meal
+        {
+            Id = Guid.NewGuid(), EatenAt = DateTimeOffset.Parse("2026-10-11T12:00:00Z"), Notes = notes, Outcome = MealOutcome.High,
+            FirstEstimate = new Interval(30, 40, 55), Items = [], CarbsLow = 30, Carbs = 40, CarbsHigh = 55
+        });
+        await db.SaveChangesAsync();
     }
 }
