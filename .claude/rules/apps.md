@@ -34,7 +34,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   `tree/`. **The git directory is never inside the working tree**: everything in the tree is the agent's
   to write, and a writable git directory runs code (hooks, config) on this server. Git runs through
   `AppRepository` only: arguments as a list, no system or global config, no hooks, no signing, a fixed
-  identity, `--template=` empty, a deadline; a revision from the model is a hash prefix or `HEAD~N` and is
+  identity, `--template=` empty, a deadline. What is committed is what was written: `add --all --force` (a tree's `.gitignore` names `dist/`) and `git/info/attributes` unsetting text, filter and ident conversion; a revision from the model is a hash prefix or `HEAD~N` and is
   passed after `--end-of-options`.
 - **Ids** (`Domain/Apps/BuiltAppId`): six lowercase alphanumerics from a cryptographic generator, unique
   across every household (the hostname names none). The repository is named by id, never slug, so a
