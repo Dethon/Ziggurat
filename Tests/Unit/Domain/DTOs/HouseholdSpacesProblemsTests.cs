@@ -42,6 +42,8 @@ public class HouseholdSpacesProblemsTests
         var section = new SpacesSection { Spaces = [HouseholdSpace.Default, _shared with { Approved = approved }] };
 
         HouseholdSections.SpacesSchema.Problems(HouseholdSections.SpacesSchema.Write(section)).ShouldBeEmpty();
+        // Only what was approved is stored: the section is read strictly, so a derived field written once stays.
+        HouseholdSections.SpacesSchema.Write(section).ToJsonString().ShouldNotContain("isEmpty", Case.Insensitive);
         HouseholdSections.SpacesSchema.Read(HouseholdSections.SpacesSchema.Write(section)).Spaces.ShouldBe(section.Spaces);
     }
 

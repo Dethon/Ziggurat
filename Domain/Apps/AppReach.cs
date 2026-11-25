@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
 namespace Domain.Apps;
@@ -16,6 +17,7 @@ public sealed record AppReach
 
     public static AppReach Of(AppManifest manifest) => new() { Reads = manifest.Reads, Connect = manifest.Connect };
 
+    [JsonIgnore]
     public bool IsEmpty => Reads.Count == 0 && Connect.Count == 0;
 
     // What of this reach the approval covers, in this reach's order. No approval covers nothing.
