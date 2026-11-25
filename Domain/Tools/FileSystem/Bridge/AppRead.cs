@@ -1,8 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem.Bridge;
 
@@ -23,39 +25,88 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
                 $"Read with one of: {string.Join(", ", AppReads.Operations.All)}."));
         }
 
+        // Only reading the arguments is the caller's to get wrong; a fault past them is the fault it is.
+        Planned read;
         try
         {
-            if (Outside(PathOf(operation, arguments)) is { } refusal)
-            {
-                return AppReadAnswer.Refused(refusal);
-            }
-
-            return operation switch
-            {
-                AppReads.Operations.Read => await ReadAsync(arguments, ct),
-                AppReads.Operations.Glob => await GlobAsync(arguments, ct),
-                AppReads.Operations.Info => await InfoAsync(arguments, ct),
-                AppReads.Operations.Search => await SearchAsync(arguments, ct),
-                AppReads.Operations.Query => await QueryAsync(arguments, ct),
-                AppReads.Operations.Blob => await BlobAsync(arguments, ct),
-                _ => throw new NotSupportedException(operation)
-            };
+            read = Plan(operation, arguments, ct);
         }
         catch (Exception ex) when (ex is InvalidOperationException or FormatException or JsonException or ArgumentException)
         {
             return AppReadAnswer.Refused(ToolError.Result(ToolError.Codes.InvalidArgument, ex.Message));
         }
+
+        return Outside(read.Path) is { } refusal ? AppReadAnswer.Refused(refusal) : await read.Run();
     }
 
-    // The path an operation reads, by the argument the tool takes it in.
-    private static string PathOf(string operation, JsonObject arguments) => operation switch
+    // The path an operation reads, by the argument the tool takes it in, and the tool's own call on it.
+    private Planned Plan(string operation, JsonObject arguments, CancellationToken ct)
     {
-        AppReads.Operations.Read => Required(arguments, VfsFileReadTool.FilePathParameter),
-        AppReads.Operations.Glob => Required(arguments, "basePath"),
-        AppReads.Operations.Search => Text(arguments, "filePath") ?? Text(arguments, "directoryPath")
-            ?? throw new InvalidOperationException("filePath or directoryPath is required."),
-        _ => Required(arguments, "path")
-    };
+        switch (operation)
+        {
+            case AppReads.Operations.Read:
+                {
+                    var path = Required(arguments, VfsFileReadTool.FilePathParameter);
+                    var (offset, limit) = (Number(arguments, "offset"), Number(arguments, "limit"));
+                    return Tool(path, VfsFileReadTool.Name,
+                        (registry, caller) => new VfsFileReadTool(registry).RunAsync(path, offset, limit, caller, ct));
+                }
+            case AppReads.Operations.Glob:
+                {
+                    var path = Required(arguments, "basePath");
+                    var pattern = Required(arguments, "pattern");
+                    return Tool(path, VfsGlobFilesTool.Name,
+                        (registry, caller) => new VfsGlobFilesTool(registry).RunAsync(path, pattern, caller, ct));
+                }
+            case AppReads.Operations.Info:
+                {
+                    var path = Required(arguments, "path");
+                    return Tool(path, VfsFileInfoTool.Name, (registry, caller) => new VfsFileInfoTool(registry).RunAsync(path, caller, ct));
+                }
+            case AppReads.Operations.Search:
+                {
+                    // One file where the read names one, as the tool prefers it, else a directory.
+                    var query = Required(arguments, "query");
+                    var filePath = Text(arguments, "filePath");
+                    var directoryPath = Text(arguments, "directoryPath");
+                    var path = filePath ?? directoryPath ?? throw new InvalidOperationException("filePath or directoryPath is required.");
+                    var regex = Flag(arguments, "regex") ?? false;
+                    var filePattern = Text(arguments, "filePattern");
+                    var maxResults = Number(arguments, "maxResults") ?? 50;
+                    var contextLines = Number(arguments, "contextLines") ?? 1;
+                    var outputMode = Text(arguments, "outputMode") is { } mode
+                        ? Enum.Parse<VfsTextSearchOutputMode>(mode, ignoreCase: true)
+                        : VfsTextSearchOutputMode.Content;
+                    return Tool(path, VfsTextSearchTool.Name, (registry, caller) => new VfsTextSearchTool(registry).RunAsync(
+                        query, regex, filePath, directoryPath, filePattern, maxResults, contextLines, outputMode, caller, ct));
+                }
+            case AppReads.Operations.Query:
+                {
+                    var path = Required(arguments, "path");
+                    var sql = Required(arguments, "sql");
+                    var maxRows = Number(arguments, "maxRows") ?? VfsQueryTool.DefaultMaxRows;
+                    return Tool(path, VfsQueryTool.Name,
+                        (registry, caller) => new VfsQueryTool(registry).RunAsync(path, sql, maxRows, caller, ct));
+                }
+            default:
+                {
+                    // The bridge's own read: the bytes where the mount has them, its rendered text where it has
+                    // none, refused the moment it passes the call's ceiling.
+                    var path = Required(arguments, "path");
+                    return new Planned(path, async () => await call.ReadAsync(path, ct) switch
+                    {
+                        BridgeAnswer<byte[]>.Ok ok => new AppReadAnswer.Bytes(ok.Value),
+                        BridgeAnswer<byte[]>.Refused { Error: { } error } => AppReadAnswer.Refused(error),
+                        _ => throw new InvalidOperationException("A refused read carries its envelope.")
+                    });
+                }
+        }
+    }
+
+    private Planned Tool(string path, string toolName, Func<IVirtualFileSystemRegistry, AIFunctionArguments, Task<JsonNode>> run) =>
+        new(path, async () => AppReadAnswer.Of(await call.ToolAsync(path, toolName, run)));
+
+    private sealed record Planned(string Path, Func<Task<AppReadAnswer>> Run);
 
     // The mount a path resolves to, or for a path nothing is mounted at, the mount point it names. A
     // mount the app may read that is not there while a household server is offline is that server's,
@@ -77,65 +128,6 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
                 $"{mountPoint} is not mounted while the household's {string.Join(", ", offline)} {(offline.Count == 1 ? "is" : "are")} offline.",
                 "Read again once it is back; nothing was read.")
             : null;
-    }
-
-    private async Task<AppReadAnswer> ReadAsync(JsonObject arguments, CancellationToken ct)
-    {
-        var path = Required(arguments, VfsFileReadTool.FilePathParameter);
-        var offset = Number(arguments, "offset");
-        var limit = Number(arguments, "limit");
-        return AppReadAnswer.Of(await call.ToolAsync(path, VfsFileReadTool.Name,
-            (registry, caller) => new VfsFileReadTool(registry).RunAsync(path, offset, limit, caller, ct)));
-    }
-
-    private async Task<AppReadAnswer> GlobAsync(JsonObject arguments, CancellationToken ct)
-    {
-        var path = Required(arguments, "basePath");
-        var pattern = Required(arguments, "pattern");
-        return AppReadAnswer.Of(await call.ToolAsync(path, VfsGlobFilesTool.Name,
-            (registry, caller) => new VfsGlobFilesTool(registry).RunAsync(path, pattern, caller, ct)));
-    }
-
-    private async Task<AppReadAnswer> InfoAsync(JsonObject arguments, CancellationToken ct)
-    {
-        var path = Required(arguments, "path");
-        return AppReadAnswer.Of(await call.ToolAsync(path, VfsFileInfoTool.Name,
-            (registry, caller) => new VfsFileInfoTool(registry).RunAsync(path, caller, ct)));
-    }
-
-    // One file where the read names one, as the tool prefers it, else a directory.
-    private async Task<AppReadAnswer> SearchAsync(JsonObject arguments, CancellationToken ct)
-    {
-        var query = Required(arguments, "query");
-        var filePath = Text(arguments, "filePath");
-        var directoryPath = Text(arguments, "directoryPath");
-        var path = filePath ?? directoryPath ?? throw new InvalidOperationException("filePath or directoryPath is required.");
-        var outputMode = Text(arguments, "outputMode") is { } mode
-            ? Enum.Parse<VfsTextSearchOutputMode>(mode, ignoreCase: true)
-            : VfsTextSearchOutputMode.Content;
-        return AppReadAnswer.Of(await call.ToolAsync(path, VfsTextSearchTool.Name,
-            (registry, caller) => new VfsTextSearchTool(registry).RunAsync(
-                query, Flag(arguments, "regex") ?? false, filePath, directoryPath, Text(arguments, "filePattern"),
-                Number(arguments, "maxResults") ?? 50, Number(arguments, "contextLines") ?? 1, outputMode, caller, ct)));
-    }
-
-    // The bridge's own read: the bytes where the mount has them, its rendered text where it has none,
-    // refused the moment it passes the call's ceiling.
-    private async Task<AppReadAnswer> BlobAsync(JsonObject arguments, CancellationToken ct) =>
-        await call.ReadAsync(Required(arguments, "path"), ct) switch
-        {
-            BridgeAnswer<byte[]>.Ok ok => new AppReadAnswer.Bytes(ok.Value),
-            BridgeAnswer<byte[]>.Refused { Error: { } error } => AppReadAnswer.Refused(error),
-            _ => throw new InvalidOperationException("A refused read carries its envelope.")
-        };
-
-    private async Task<AppReadAnswer> QueryAsync(JsonObject arguments, CancellationToken ct)
-    {
-        var path = Required(arguments, "path");
-        var sql = Required(arguments, "sql");
-        var maxRows = Number(arguments, "maxRows") ?? VfsQueryTool.DefaultMaxRows;
-        return AppReadAnswer.Of(await call.ToolAsync(path, VfsQueryTool.Name,
-            (registry, caller) => new VfsQueryTool(registry).RunAsync(path, sql, maxRows, caller, ct)));
     }
 
     // The tool's own arguments by its own names; a wrong type is the caller's invalid argument.
