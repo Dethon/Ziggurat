@@ -550,10 +550,30 @@ public sealed class AppPages(
         // working tree's as a publish would find it now, so the check sees what publishing would serve.
         public abstract Task<PinnedCode> PinnedAsync(CancellationToken ct);
 
-        public async Task<CommittedEntry?> AtAsync(string path, CancellationToken ct) =>
-            AppOriginFiles.Paths.Contains(path) ? new CommittedEntry.File([])
-            : path.StartsWith(AppOriginFiles.Prefix, StringComparison.Ordinal) || Segments(path) is not { } segments ? null
-            : await EntryAsync(string.Join('/', segments), ct);
+        // The origin's own spelling of a path a page named, when it serves a file there (one of the server's
+        // own under /_app/, else the app's) or, asked for, a directory: never the page's spelling, whose
+        // slashes are the page's to choose.
+        public async Task<string?> ServedPathAsync(string path, bool directories, CancellationToken ct)
+        {
+            if (Segments(path) is not { } segments)
+            {
+                return null;
+            }
+
+            var canonical = "/" + string.Join('/', segments);
+            if (AppOriginFiles.Paths.Contains(canonical))
+            {
+                return canonical;
+            }
+
+            return canonical.StartsWith(AppOriginFiles.Prefix, StringComparison.Ordinal) ? null
+                : await EntryAsync(string.Join('/', segments), ct) switch
+                {
+                    CommittedEntry.File => canonical,
+                    CommittedEntry.Directory when directories => canonical,
+                    _ => null
+                };
+        }
     }
 
     internal sealed record WorkingTreeFiles(AppManifest Manifest, string Root) : ServedFiles(Manifest)

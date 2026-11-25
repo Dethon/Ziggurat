@@ -119,7 +119,7 @@ report, and every member's landed in the author's `/<slug>/errors` (and the oper
 message), so a shared app could `throw new Error(JSON.stringify(rows))` and hand each viewer's data to its
 author past the owner-approved `connect` reach. Now only the author's own report keeps its text. Another
 member's is kept reduced (`Domain/Apps/AppErrorReduction`, applied in `AppErrorReports.ReducedAsync` against
-what that origin serves, `AppPages.ServedFiles.AtAsync`):
+what that origin serves, `AppPages.ServedFiles.ServedPathAsync`, every kept path rebuilt in the origin's own spelling, since a page's slash runs are its word too):
 - `kind`; `name`, the message's prefix when it is a standard ECMAScript error type, else `Error`;
 - `frames`: the stack's first ten places on the report's own Host whose path is a served file (or one of
   `/_app/`'s), as `/path:line:column`, the query dropped;

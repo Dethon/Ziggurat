@@ -441,7 +441,8 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
 - **Only the author's own report keeps the page's text.** Every word of a report is the page's (it may
   POST `/_errors` itself, `pushState` its route, set a User-Agent in Firefox), and the author reads the
   file, so another member's is kept **reduced** (`AppErrorReduction`, checked against what that origin
-  serves, `AppPages.ServedFiles.AtAsync`): `kind`; `name`, a standard ECMAScript error type from the
+  serves, `AppPages.ServedFiles.ServedPathAsync`, every kept path in the origin's own spelling, rebuilt
+  from its segments: the page's slashes are the page's word too): `kind`; `name`, a standard ECMAScript error type from the
   message's prefix, else `Error`; `frames`, the stack's first `MaxFrames` (10) places on the report's
   Host whose path is a served file (or `/_app/`'s), `/path:line:column`, no query; `route` only when it
   names a served file or directory; a read's `operation`, `path` cut to its mount point only when the

@@ -328,13 +328,13 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
                 ["kind"] = "error", ["message"] = $"TypeError: {canary}",
                 ["stack"] = $"TypeError: {canary}\n    at {canary} (https://{host}/main.js?{canary}:3:7)\n"
                             + $"    at https://{host}/{canary}.js:1:1\n    at https://cdn.jsdelivr.net/npm/{canary}@1.0.0/x.js:9:9\n"
-                            + $"    at https://{host}/_app/apps.js:12:3",
+                            + $"    at https://{host}/_app/apps.js:12:3\n    at https://{host}///main.js//:5:1",
                 ["route"] = $"/{canary}"
             },
             new JsonObject { ["kind"] = "rejection", ["message"] = $"{canary}Error: {canary}", ["route"] = "/" },
             new JsonObject
             {
-                ["kind"] = "read", ["message"] = canary, ["route"] = "/index.html",
+                ["kind"] = "read", ["message"] = canary, ["route"] = "///index.html//",
                 ["read"] = new JsonObject
                 {
                     ["operation"] = "query", ["path"] = $"/sugary/{canary}",
@@ -364,7 +364,8 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         entries.ShouldAllBe(e => e["viewer"]!.GetValue<string>() == AppsServer.Him.UserId
                                  && e["reduced"] != null && e["message"] == null && e["stack"] == null && e["userAgent"] == null);
         entries[0]["name"]!.GetValue<string>().ShouldBe("TypeError");
-        entries[0]["frames"]!.AsArray().Select(f => f!.GetValue<string>()).ShouldBe(["/main.js:3:7", "/_app/apps.js:12:3"]);
+        // Kept in the server's own spelling: how the page wrote a path (its slashes) is the page's word too.
+        entries[0]["frames"]!.AsArray().Select(f => f!.GetValue<string>()).ShouldBe(["/main.js:3:7", "/_app/apps.js:12:3", "/main.js:5:1"]);
         entries[0]["route"].ShouldBeNull();
         entries[1]["kind"]!.GetValue<string>().ShouldBe("rejection");
         entries[1]["name"]!.GetValue<string>().ShouldBe("Error");

@@ -93,12 +93,13 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
     private static async Task<AppErrorEntry> ReducedAsync(
         AppErrorEntry entry, AppErrorReport report, string authority, AppPages.ServedFiles served, CancellationToken ct)
     {
-        // The first places on the origin, each path looked up once: a stack is the page's to make long.
+        // The first places on the origin, each path looked up once (a stack is the page's to make long) and
+        // kept in the origin's own spelling.
         var places = AppErrorReduction.Places(report.Stack, authority).Take(AppErrorReduction.MaxFrames).ToList();
         var files = (await Task.WhenAll(places.Select(p => p.Path).Distinct(StringComparer.Ordinal)
-                .Select(async path => (Path: path, File: await served.AtAsync(path, ct) is CommittedEntry.File))))
-            .Where(p => p.File).Select(p => p.Path).ToHashSet(StringComparer.Ordinal);
-        var frames = places.Where(p => files.Contains(p.Path)).Select(p => p.ToString()).ToList();
+                .Select(async path => (Path: path, Served: await served.ServedPathAsync(path, directories: false, ct)))))
+            .Where(p => p.Served is not null).ToDictionary(p => p.Path, p => p.Served!, StringComparer.Ordinal);
+        var frames = places.Where(p => files.ContainsKey(p.Path)).Select(p => (p with { Path = files[p.Path] }).ToString()).ToList();
 
         return entry with
         {
@@ -106,7 +107,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
             Message = null,
             Stack = null,
             Frames = frames,
-            Route = await served.AtAsync(report.Route, ct) is not null ? report.Route : null,
+            Route = await served.ServedPathAsync(report.Route, directories: true, ct),
             UserAgent = null,
             Read = report.Read is { } read
                 ? new AppErrorRead
