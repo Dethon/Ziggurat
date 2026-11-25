@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Apps;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -177,17 +178,20 @@ public class AppsServingTests
         await using var _ = server;
         var published = server.Published("glucose", id);
         var preview = server.Preview("glucose", id);
-        var unknown = await server.GetAsync($"glucose-zzzzzz.{AppsServer.AppsDomain}", "/", navigate: true);
+        var unknownHost = $"glucose-zzzzzz.{AppsServer.AppsDomain}";
+        var unknown = await server.GetAsync(unknownHost, "/", server.SessionFor(AppsServer.Her, unknownHost), navigate: true);
 
         HttpResponseMessage[] refused =
         [
             await server.GetAsync(published, "/", server.SessionFor(AppsServer.Him, published), navigate: true),
             await server.GetAsync(published, "/", server.SessionFor(AppsServer.Neighbour, published), navigate: true),
-            await server.GetAsync(published, "/", navigate: true),
-            await server.GetAsync(published, "/", "no-such-session", navigate: true),
-            // Her session on the preview is not one on the published origin, nor the other way round.
-            await server.GetAsync(published, "/", server.SessionFor(AppsServer.Her, preview), navigate: true),
-            await server.GetAsync(preview, "/", server.SessionFor(AppsServer.Her, published), navigate: true),
+            // Nobody, asking for anything but a page (a page is sent to sign in: AppsSignInTests).
+            await server.GetAsync(published, "/"),
+            await server.GetAsync(published, "/", "no-such-session"),
+            // Her session on the preview is not one on the published origin, nor the other way round (a page
+            // opened so is sent to sign in for that origin).
+            await server.GetAsync(published, "/", server.SessionFor(AppsServer.Her, preview)),
+            await server.GetAsync(preview, "/", server.SessionFor(AppsServer.Her, published)),
             await server.GetAsync(preview, "/", server.SessionFor(AppsServer.Him, preview), navigate: true),
             await server.GetAsync($"glucose.{AppsServer.AppsDomain}", "/", navigate: true),
             await server.GetAsync("localhost", "/", navigate: true)
@@ -223,7 +227,7 @@ public class AppsServingTests
         await using var _ = server;
         var host = server.Published("glucose", id);
         var expired = server.Sessions.Open(AppsServer.Her, "accounts-session-1", AppOrigin.Parse(host, AppsServer.AppsDomain)!,
-            DateTimeOffset.UtcNow.AddSeconds(-1));
+            TestAssertions.Of(AppsServer.Her, AppChannels.Apps, sessionId: "accounts-session-1"), DateTimeOffset.UtcNow.AddSeconds(-1));
 
         (await server.GetAsync(host, "/", expired)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }

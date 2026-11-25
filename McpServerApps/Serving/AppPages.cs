@@ -9,11 +9,12 @@ using Microsoft.AspNetCore.StaticFiles;
 namespace McpServerApps.Serving;
 
 // Every request the proxy hands an app origin: which app is read from the Host (AppOrigin, by the
-// id), who is asking from the app session the origin's own cookie names. The published origin serves
+// id), who is asking from the app session the origin's own cookie names (AppViewers, which sends a page
+// opened with none to the app sign-in and completes it on the way back). The published origin serves
 // the served commit, to its author; the preview the working tree, to its author alone. Anyone else,
 // and anything that is no app, gets one answer, byte for byte, so a stranger cannot tell an app that
 // exists from one that does not.
-public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSettings settings)
+public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AppsSettings settings)
 {
     private static readonly FileExtensionContentTypeProvider _types = new()
     {
@@ -32,11 +33,42 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
             return;
         }
 
-        if (origin is null
-            || !reading
-            || await store.FindAsync(origin.Id, ct) is not { } app
-            || Viewer(request, origin) is not { } viewer
-            || viewer != app.Author
+        if (origin is null || !reading)
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        if (request.Path.Value == AppSignIn.CallbackPath)
+        {
+            await viewers.CompleteAsync(context, origin);
+            return;
+        }
+
+        // Who is asking is settled before whether the app is there, so a page opened by nobody is sent
+        // to sign in whether or not its app exists, and learns nothing by it.
+        var viewer = await viewers.ViewerAsync(request, origin, ct);
+        if (viewer == AppViewer.Unchecked)
+        {
+            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
+            return;
+        }
+
+        if (viewer is not AppViewer.Person { Session.Person: var person })
+        {
+            if (IsNavigation(request) && viewers.SignInFor(request) is { } signIn)
+            {
+                context.Response.Headers.Location = signIn;
+                await AppViewers.AnswerAsync(context, StatusCodes.Status302Found);
+                return;
+            }
+
+            await NotFoundAsync(context);
+            return;
+        }
+
+        if (await store.FindAsync(origin.Id, ct) is not { } app
+            || person != app.Author
             || await ServedAsync(app, origin, ct) is not { } served)
         {
             await NotFoundAsync(context);
@@ -148,9 +180,6 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
 
         await AppAnswerAsync(context, policy, StatusCodes.Status200OK, $"{type}; charset=utf-8", Encoding.UTF8.GetBytes(body));
     }
-
-    private Account? Viewer(HttpRequest request, AppOrigin origin) =>
-        request.Cookies[AppSessions.CookieName] is { Length: > 0 } token ? sessions.Find(token, origin)?.Person : null;
 
     // What an origin serves: the served commit's root for the published app (nothing until the first
     // publish), the working tree's for the preview, each with the manifest it was written with.

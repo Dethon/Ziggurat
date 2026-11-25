@@ -6,6 +6,7 @@ using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.Security;
 using McpServerApps.Modules;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
@@ -54,12 +55,22 @@ public sealed class AppsServer : IAsyncDisposable
     // Where the proxy hands app origins: the second listener, which answers by Host and serves no /mcp.
     public string PagesAddress => $"http://127.0.0.1:{Settings.Listeners.Pages}";
 
-    // The server's app sessions, which the app sign-in (ticket 04) will open; a test opens its own.
+    // The server's app sessions, which the app sign-in opens; a test may open its own.
     public AppSessions Sessions => _app.Services.GetRequiredService<AppSessions>();
 
     public BuiltAppStore Store => _app.Services.GetRequiredService<BuiltAppStore>();
 
-    public static async Task<AppsServer> StartAsync(Func<AppsSettings, AppsSettings>? configure = null)
+    // Where the fixture's sessionless navigations are sent to sign in, unless a test names its own
+    // accounts service.
+    public const string MainHost = "https://assistants.test";
+
+    // The server's clock: the system's, unless a test hands it the accounts service's.
+    public TimeProvider Clock => _app.Services.GetRequiredService<TimeProvider>();
+
+    // services: registrations over the shipped ones, as a test needs them (another clock, an accounts
+    // service's own keys).
+    public static async Task<AppsServer> StartAsync(
+        Func<AppsSettings, AppsSettings>? configure = null, Action<IServiceCollection>? services = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -74,7 +85,7 @@ public sealed class AppsServer : IAsyncDisposable
 
             var configured = new AppsSettings
             {
-                StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate,
+                StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate, PublicBaseUrl = MainHost,
                 Cdns = ["https://cdn.jsdelivr.net", "https://unpkg.com", "https://esm.sh"],
                 Listeners = new AppListeners { Mcp = mcp, Pages = TestPort.GetAvailable() }
             };
@@ -88,6 +99,9 @@ public sealed class AppsServer : IAsyncDisposable
             builder.Services.ConfigureApps(settings);
             builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
                 new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents)));
+            // The accounts service's test key, which a test's own accounts service signs with too.
+            builder.Services.Replace(ServiceDescriptor.Singleton(sp => TestAssertions.Verifier(sp.GetRequiredService<TimeProvider>())));
+            services?.Invoke(builder.Services);
             var built = builder.Build();
             built.MapMcp("/mcp");
             return built;
@@ -104,11 +118,13 @@ public sealed class AppsServer : IAsyncDisposable
 
     public string Preview(string slug, string id) => $"{slug}-{id}{AppOrigin.PreviewSuffix}.{Settings.AppsDomain}";
 
-    // A browser on an app origin, its own cookie for that origin sent when it holds a session there.
+    // A browser on an app origin, its own cookie for that origin sent when it holds a session there,
+    // through the proxy, which says the browser's scheme was https.
     public async Task<HttpResponseMessage> GetAsync(string host, string path, string? session = null, bool navigate = false)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, PagesAddress + path);
         request.Headers.Host = host;
+        request.Headers.Add("X-Forwarded-Proto", "https");
         if (session is not null)
         {
             request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
@@ -125,10 +141,12 @@ public sealed class AppsServer : IAsyncDisposable
         return response;
     }
 
-    // An app session for this person on that origin, as the app sign-in would open one.
+    // An app session for this person on that origin, as the app sign-in would open one, its assertion
+    // fresh.
     public string SessionFor(Account person, string host) =>
         Sessions.Open(person, "accounts-session-1", AppOrigin.Parse(host, Settings.AppsDomain)!,
-            DateTimeOffset.UtcNow.AddHours(1));
+            TestAssertions.Of(person, AppChannels.Apps, now: Clock.GetUtcNow(), sessionId: "accounts-session-1"),
+            Clock.GetUtcNow().AddHours(1));
 
     // A chat-client turn of this person's on one of the household's agents, its principal as the hub
     // stamps it; the test transport signs the call for that person.

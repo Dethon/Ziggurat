@@ -21,6 +21,18 @@ public record AppsSettings : IMcpHostSettings
     // deployment, so compose sets it (APPSDOMAIN); a test stack names a local one.
     public required string AppsDomain { get; init; }
 
+    // Where the deployment's people reach the accounts service, the main host (PUBLICBASEURL, the
+    // accounts service's own value): a navigation on an app origin with no app session is sent to the
+    // app sign-in there (AppSignIn.Path). Empty sends nobody to sign in, and such a navigation is the 404.
+    public string PublicBaseUrl { get; init; } = "";
+
+    // The deployment's Redis (REDISCONNECTIONSTRING), where the accounts service says a person's
+    // sessions ended (SessionsEnded), which ends their app sessions at once. Empty hears nothing: an app
+    // session then stops only when its assertion comes due for renewal.
+    public string RedisConnectionString { get; init; } = "";
+
+    public AppSessionSettings Sessions { get; init; } = new();
+
     public AppQuotas Quotas { get; init; } = new();
 
     public AppListeners Listeners { get; init; } = new();
@@ -49,4 +61,18 @@ public record AppQuotas
 
     // The whole repository: its working tree and its history.
     public long BytesPerRepository { get; init; } = 50L * 1024 * 1024;
+}
+
+// How long an app session lasts, and how long the assertion it holds is used before the session
+// refresh is asked again.
+public record AppSessionSettings
+{
+    // Its cookie's life too. Signing out, a revocation or a disabled member ends it sooner, by the
+    // announcement or at its next renewal; running out costs a silent trip to the app sign-in.
+    public TimeSpan Lifetime { get; init; } = TimeSpan.FromHours(12);
+
+    // At most half an assertion's life (the accounts service's AssertionLifetime, ten minutes), so the
+    // one an app session holds always has most of its life left for a hop to the agent; also the
+    // longest a revoked session goes on opening an app when its announcement was missed.
+    public TimeSpan AssertionKept { get; init; } = TimeSpan.FromMinutes(5);
 }
