@@ -69,9 +69,15 @@ renewal with no announcement, renewal of a live session, outage), a Chromium cas
   accounts service's `appsettings.Local.json` sets `apps.localhost`. `.zed/debug.json` was not touched.
 
 **Not verified:** the smoke tier and E2E were not run (out of scope); the `mcp-apps` and `accounts` images
-were not built. Only the in-process servers and Chromium on `apps.localhost` exercised the flow.
+were not built. Only the in-process servers and Chromium on `apps.localhost` exercised the flow. The
+Chromium case passes with the cookies made Strict too (`localhost` and `apps.localhost` may count as one
+site there), so `SameSite=Lax` is reasoned, not pinned by a test. The signed-out leg was checked as far as
+the sign-in page's `returnUrl` (it round-trips through `data-return-url` and `ReturnUrls.Resolve`), not
+through a passkey ceremony.
 
 **Deploying this needs:** rebuild `base-sdk` first (Domain changed), then `accounts` and `mcp-apps`
 (`webui` and `caddy` are unchanged by this ticket). No new secret: `mcp-apps` reuses `MCP_SECRET_APPS`
 and `REDIS_PASSWORD`, and now starts after `redis` is healthy. `APPSDOMAIN` must still be set to the real
-apps domain (ticket 03's note); the accounts service now reads it too.
+apps domain (ticket 03's note); the accounts service now reads it too. On the first deploy, check that
+an app link's redirect names `returnUrl=https://…`: the apps server takes the scheme from Caddy's
+`X-Forwarded-Proto`, and without it the accounts service refuses every return on a real apps domain.
