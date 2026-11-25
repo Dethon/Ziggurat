@@ -1,4 +1,6 @@
 using System.Net;
+using System.Text.Json.Nodes;
+using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -224,6 +226,163 @@ public class AppsServingTests
         (await server.GetAsync(host, "/mcp", server.SessionFor(AppsServer.Her, host))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await server.GetAsync("localhost", "/mcp")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
+
+    // Every answer on an app origin carries the policy its manifest makes: the published origin the
+    // served commit's manifest, the preview the tree's.
+    [Fact]
+    public async Task EveryAnswer_CarriesThePolicyItsOriginsManifestMakes()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var created = await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose","accentColor":"#e9601f","description":"Mine.","connect":["https://api.example.org"]}""");
+        var id = AppsServer.IdIn(created["note"]!.GetValue<string>());
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<h1>Hi</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.js", "console.log(1)");
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose","accentColor":"#e9601f","description":"Mine.","connect":["https://tiles.example.net"]}""", overwrite: true);
+        var published = server.Published("glucose", id);
+        var preview = server.Preview("glucose", id);
+
+        foreach (var path in new[] { "/", "/app.js", "/missing.js", "/_app/manifest.webmanifest", "/_app/sw.js", "/_app/icon.svg", "/_app/apps.js" })
+        {
+            var fromPublished = Policy(await server.GetAsync(published, path, server.SessionFor(AppsServer.Her, published)));
+            var fromPreview = Policy(await server.GetAsync(preview, path, server.SessionFor(AppsServer.Her, preview)));
+
+            fromPublished.ShouldStartWith("default-src 'none'; ", customMessage: path);
+            fromPublished.ShouldContain("script-src 'self' https://cdn.jsdelivr.net https://unpkg.com https://esm.sh;", customMessage: path);
+            fromPublished.ShouldContain("connect-src 'self' https://api.example.org;", customMessage: path);
+            fromPublished.ShouldContain("frame-ancestors 'none'", customMessage: path);
+            fromPreview.ShouldContain("connect-src 'self' https://tiles.example.net;", customMessage: path);
+        }
+    }
+
+    // A page gets the app's web manifest, its service worker and the client library, whatever the
+    // agent wrote: as files on the origin, since the policy runs no inline script. Nothing else is touched.
+    [Theory]
+    [InlineData("<!doctype html><html lang=\"en\"><HEAD data-x=\"1\"><title>Hi</title></HEAD><body>Hi</body></html>",
+        "<!doctype html><html lang=\"en\"><HEAD data-x=\"1\">{0}<title>Hi</title></HEAD><body>Hi</body></html>")]
+    [InlineData("<!doctype html><html><body>Hi</body></html>", "<!doctype html><html>{0}<body>Hi</body></html>")]
+    [InlineData("<!DOCTYPE html><h1>Hi</h1>", "<!DOCTYPE html>{0}<h1>Hi</h1>")]
+    [InlineData("<h1>Hi</h1>", "{0}<h1>Hi</h1>")]
+    public async Task APage_HasTheManifestTheWorkerAndTheClientLibraryAdded(string written, string served)
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/week/index.html", written);
+        var host = server.Preview("glucose", id);
+
+        var page = await server.GetAsync(host, "/week/", server.SessionFor(AppsServer.Her, host));
+
+        page.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
+        (await page.Content.ReadAsStringAsync()).ShouldBe(string.Format(served,
+            "<link rel=\"manifest\" href=\"/_app/manifest.webmanifest\" crossorigin=\"use-credentials\">"
+            + "<script src=\"/_app/apps.js\"></script>"
+            + "<script src=\"/_app/register.js\" defer></script>"));
+    }
+
+    [Fact]
+    public async Task AnythingButAPage_IsServedAsWritten()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/head.js", "const html = '<head></head>';");
+        var host = server.Preview("glucose", id);
+
+        var script = await server.GetAsync(host, "/head.js", server.SessionFor(AppsServer.Her, host));
+
+        (await script.Content.ReadAsStringAsync()).ShouldBe("const html = '<head></head>';");
+        script.Content.Headers.ContentType!.MediaType.ShouldBe("text/javascript");
+    }
+
+    // Each origin installs as an app of its own: its name, its colour, its icon drawn in that colour,
+    // starting and scoped at its root.
+    [Fact]
+    public async Task TheWebManifest_IsTheAppsNameAndColour_StartingAtTheRoot()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var created = await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","shortName":"Glucose","accentColor":"#3a7d44","description":"Mine."}""");
+        var id = AppsServer.IdIn(created["note"]!.GetValue<string>());
+        var host = server.Preview("glucose", id);
+        var session = server.SessionFor(AppsServer.Her, host);
+
+        var response = await server.GetAsync(host, "/_app/manifest.webmanifest", session);
+
+        response.Content.Headers.ContentType!.MediaType.ShouldBe("application/manifest+json");
+        var manifest = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        manifest["name"]!.GetValue<string>().ShouldBe("Glucose today");
+        manifest["short_name"]!.GetValue<string>().ShouldBe("Glucose");
+        manifest["start_url"]!.GetValue<string>().ShouldBe("/");
+        manifest["scope"]!.GetValue<string>().ShouldBe("/");
+        manifest["id"]!.GetValue<string>().ShouldBe("/");
+        manifest["display"]!.GetValue<string>().ShouldBe("standalone");
+        manifest["theme_color"]!.GetValue<string>().ShouldBe("#3a7d44");
+        var icon = manifest["icons"]!.AsArray().ShouldHaveSingleItem()!;
+        icon["src"]!.GetValue<string>().ShouldBe("/_app/icon.svg");
+        icon["type"]!.GetValue<string>().ShouldBe("image/svg+xml");
+
+        var drawn = await server.GetAsync(host, "/_app/icon.svg", session);
+        drawn.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
+        (await drawn.Content.ReadAsStringAsync()).ShouldBe(SpaceIcon.Svg("#3a7d44"));
+    }
+
+    [Fact]
+    public async Task AnAppWithNoShortName_IsShownByItsName()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose", name: "Glucose today"));
+        var host = server.Preview("glucose", id);
+
+        var manifest = JsonNode.Parse(await (await server.GetAsync(host, "/_app/manifest.webmanifest",
+            server.SessionFor(AppsServer.Her, host))).Content.ReadAsStringAsync())!;
+
+        manifest["short_name"]!.GetValue<string>().ShouldBe("Glucose today");
+    }
+
+    // The worker is the origin's whole scope, revalidated on every check so a new one is found, and
+    // keeps the app's own files for offline — never a read of the household's data.
+    [Fact]
+    public async Task TheServiceWorker_IsScopedAtTheRoot_AndNeverKeepsAVfsAnswer()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        var host = server.Preview("glucose", id);
+        var session = server.SessionFor(AppsServer.Her, host);
+
+        var worker = await server.GetAsync(host, "/_app/sw.js", session);
+        var registration = await server.GetAsync(host, "/_app/register.js", session);
+        var library = await server.GetAsync(host, "/_app/apps.js", session);
+
+        worker.StatusCode.ShouldBe(HttpStatusCode.OK);
+        worker.Content.Headers.ContentType!.MediaType.ShouldBe("text/javascript");
+        worker.Headers.GetValues("Service-Worker-Allowed").ShouldBe(["/"]);
+        worker.Headers.CacheControl!.NoCache.ShouldBeTrue();
+        var script = await worker.Content.ReadAsStringAsync();
+        script.ShouldContain("caches.open");
+        script.ShouldContain("'/_vfs/'");
+        (await registration.Content.ReadAsStringAsync()).ShouldContain("navigator.serviceWorker.register('/_app/sw.js', { scope: '/' })");
+        library.StatusCode.ShouldBe(HttpStatusCode.OK);
+        library.Content.Headers.ContentType!.MediaType.ShouldBe("text/javascript");
+    }
+
+    // The server's own files are not the agent's to replace: a file it wrote under /_app/ is never served.
+    [Fact]
+    public async Task TheServersOwnFiles_WinOverTheAppsFilesOfTheSameName()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/_app/sw.js", "self.registration.unregister()");
+        await server.CreateAsync(AppsServer.Her, "/glucose/_app/mine.js", "mine");
+        var host = server.Preview("glucose", id);
+        var session = server.SessionFor(AppsServer.Her, host);
+
+        (await (await server.GetAsync(host, "/_app/sw.js", session)).Content.ReadAsStringAsync()).ShouldContain("caches.open");
+        (await server.GetAsync(host, "/_app/mine.js", session)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private static string Policy(HttpResponseMessage response) =>
+        response.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem();
 
     private static async Task<string> Answer(HttpResponseMessage response) =>
         $"{(int)response.StatusCode} {response.Content.Headers.ContentType} "

@@ -36,6 +36,12 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
         }
 
         var policy = AppContentPolicy.For(served.Manifest, settings.Cdns);
+        if (request.Path.StartsWithSegments(AppOriginFiles.Prefix.TrimEnd('/')))
+        {
+            await GeneratedAsync(context, policy, served.Manifest);
+            return;
+        }
+
         if (Segments(request.Path.Value ?? "/") is not { } segments)
         {
             await AppAnswerAsync(context, policy, StatusCodes.Status404NotFound);
@@ -76,7 +82,39 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
             type = "application/octet-stream";
         }
 
+        if (type == "text/html")
+        {
+            bytes = Encoding.UTF8.GetBytes(AppOriginFiles.Inject(Encoding.UTF8.GetString(bytes)));
+        }
+
         await AppAnswerAsync(context, policy, StatusCodes.Status200OK, type, bytes);
+    }
+
+    // The server's own files under /_app/, which no file of the app's can replace.
+    private static async Task GeneratedAsync(HttpContext context, string policy, AppManifest manifest)
+    {
+        var (type, body) = context.Request.Path.Value switch
+        {
+            AppOriginFiles.ManifestPath => ("application/manifest+json", AppOriginFiles.Manifest(manifest)),
+            AppOriginFiles.IconPath => ("image/svg+xml", AppOriginFiles.Icon(manifest)),
+            AppOriginFiles.WorkerPath => ("text/javascript", AppOriginFiles.Worker),
+            AppOriginFiles.RegisterPath => ("text/javascript", AppOriginFiles.Register),
+            AppOriginFiles.LibraryPath => ("text/javascript", AppOriginFiles.Library),
+            _ => (null, null)
+        };
+        if (body is null)
+        {
+            await AppAnswerAsync(context, policy, StatusCodes.Status404NotFound);
+            return;
+        }
+
+        if (context.Request.Path.Value == AppOriginFiles.WorkerPath)
+        {
+            // Served below the root, it may still control the whole origin.
+            context.Response.Headers["Service-Worker-Allowed"] = "/";
+        }
+
+        await AppAnswerAsync(context, policy, StatusCodes.Status200OK, $"{type}; charset=utf-8", Encoding.UTF8.GetBytes(body));
     }
 
     private Account? Viewer(HttpRequest request, AppOrigin origin) =>
