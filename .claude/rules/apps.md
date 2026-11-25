@@ -154,10 +154,22 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   script that runs — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
 - **The server's own files under `/_app/`** (`AppOriginFiles`), which no app file can shadow: the web
   manifest (name, short name, colour, `id`/`start_url`/`scope` `/`), the icon (`SpaceIcon`, the
-  space icon's drawing, shared with WebChat's `/icon.svg`), the worker (network first, the cache only
-  offline, never `/_vfs/` or `/_errors`; `Service-Worker-Allowed: /`), its registration and the client
+  space icon's drawing, shared with WebChat's `/icon.svg`), the worker (`AppOriginFiles.Worker(version)`, below; `Service-Worker-Allowed: /`), its registration and the client
   library (below). Every `.html` gets the three tags first in `<head>`, the manifest link
   `crossorigin="use-credentials"` since the manifest is behind the session.
+- **The worker opens the shell from its cache** (story 19). A published origin's answers carry
+  `X-App-Version` (`AppOriginFiles.Version`: the served commit, the origin's base policy and this build's
+  generated files, hashed), and its worker embeds it: the app's own files are **cache first under that
+  version**, so a publish, an owner narrowing the approval (the kept page carries its policy) or a new
+  server build is new worker bytes, which the browser's update check installs, and the new worker drops
+  every other `app-files-*` cache. **A navigation still reaches the server first** (a sign-in, a closed
+  app, a removed page, a new version is never hidden behind a kept page); its answer is kept when served at
+  the worker's version, and the kept page (else the kept `/`, for a client route) answers only when the
+  network fails. A page served at another version than the worker's (a publish since it installed) loads
+  its files from the network until the new worker takes over (the worker remembers each window's version;
+  one it lost to a restart is taken for its own). The preview (no version) stays network first, the cache
+  only offline. `/_vfs/`, `/_errors`, `/_app/sign-in` and `/_app/sw.js` are never touched. Residual: a
+  shell opened offline after an approval narrowed runs under the old policy until the network returns.
 - **A deleted app's origin**, asked of nobody: navigations get a 410 "This app was removed" page, its
   `/_app/sw.js` a worker that clears its caches, unregisters and reloads its windows. Its id stays
   taken (`BuiltAppStore.IdTaken`), so no later app inherits that origin's storage.
@@ -444,7 +456,9 @@ with sessions the test opens (`SessionFor`, an assertion signed by `TestAssertio
 the sign-in against a real `AccountsServer` signing with the test key on its clock (handed to the apps
 server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the same in Chromium on
 `apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in, a
-pinned script and its package's file loading while another package's or version's import is refused);
+pinned script and its package's file loading while another package's or version's import is refused, the
+shell's files from the worker's cache until a publish replaces them and offline, an ended session's reload
+sent to sign in); `AppsSpacesTests` also a narrowed approval and a publish each a new worker version;
 `AppsServingTests` also a rollback serving its commit's own pinned code;
 `AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests` (pinned sources, hostile
 addresses), `OutsideCodePinningTests` (problems and what passed),

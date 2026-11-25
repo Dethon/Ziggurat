@@ -213,6 +213,40 @@ public class AppsSpacesTests
         unchecked_["stdout"]!.GetValue<string>().ShouldContain("could not be checked");
     }
 
+    // An installed app's worker keeps its shell under the version it was served at, and the kept page carries
+    // the policy it was served with: an owner narrowing the approval, like a publish, is a new version, whose
+    // worker (its bytes changed, so the browser's update check installs it) drops what the old one kept.
+    [Fact]
+    public async Task NarrowingAnApproval_OrPublishing_IsANewVersionForTheWorker()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var host = server.Published("glucose", id);
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary"],"connect":["https://api.example.com"]}""",
+            overwrite: true);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        server.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"], Connect = ["https://api.example.com"] });
+        async Task<(string Header, string Worker)> VersionAsync()
+        {
+            var page = await server.GetAsync(host, "/", server.SessionFor(AppsServer.Him, host), navigate: true);
+            var worker = await server.GetAsync(host, "/_app/sw.js", server.SessionFor(AppsServer.Him, host));
+            return (page.Headers.GetValues(global::McpServerApps.Serving.AppOriginFiles.VersionHeader).Single(),
+                await worker.Content.ReadAsStringAsync());
+        }
+
+        var approved = await VersionAsync();
+        server.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"] });
+        var narrowed = await VersionAsync();
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<h1>Published again</h1>", overwrite: true);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var republished = await VersionAsync();
+
+        new[] { approved.Header, narrowed.Header, republished.Header }.Distinct().Count().ShouldBe(3);
+        approved.Worker.ShouldContain($"const VERSION = \"{approved.Header}\";");
+        narrowed.Worker.ShouldContain($"const VERSION = \"{narrowed.Header}\";");
+    }
+
     private static string Directive(string policy, string name) =>
         policy.Split(';', StringSplitOptions.TrimEntries).Single(d => d.StartsWith(name + " ", StringComparison.Ordinal));
 }

@@ -112,9 +112,16 @@ public sealed class AppPages(
 
         var pinned = await served.PinnedAsync(ct);
         var policy = AppContentPolicy.For(served.Manifest, settings.Cdns, pinned);
+        // The version a published origin serves, which its worker keeps the app's files under.
+        var version = served is CommitFiles { Commit: var commit } ? AppOriginFiles.Version(commit, policy) : null;
+        if (version is not null)
+        {
+            context.Response.Headers[AppOriginFiles.VersionHeader] = version;
+        }
+
         if (request.Path.StartsWithSegments(AppOriginFiles.Prefix.TrimEnd('/')))
         {
-            await GeneratedAsync(context, policy, served.Manifest);
+            await GeneratedAsync(context, policy, served.Manifest, version);
             return;
         }
 
@@ -430,13 +437,13 @@ public sealed class AppPages(
     }
 
     // The server's own files under /_app/, which no file of the app's can replace.
-    private static async Task GeneratedAsync(HttpContext context, string policy, AppManifest manifest)
+    private static async Task GeneratedAsync(HttpContext context, string policy, AppManifest manifest, string? version)
     {
         var (type, body) = context.Request.Path.Value switch
         {
             AppOriginFiles.ManifestPath => ("application/manifest+json", AppOriginFiles.Manifest(manifest)),
             AppOriginFiles.IconPath => ("image/svg+xml", AppOriginFiles.Icon(manifest)),
-            AppOriginFiles.WorkerPath => ("text/javascript", AppOriginFiles.Worker),
+            AppOriginFiles.WorkerPath => ("text/javascript", AppOriginFiles.Worker(version)),
             AppOriginFiles.RegisterPath => ("text/javascript", AppOriginFiles.Register),
             AppOriginFiles.LibraryPath => ("text/javascript", AppOriginFiles.Library),
             AppOriginFiles.ModulePath => ("text/javascript", AppOriginFiles.Module),

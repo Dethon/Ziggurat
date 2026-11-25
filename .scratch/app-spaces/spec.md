@@ -287,7 +287,10 @@ until an owner removes the space.
 - The server injects into every served HTML document under the root the manifest link, the service
   worker registration and the client library. It serves a generated web manifest (the app's name, its
   colour, an icon drawn from the colour as the space icon is, `start_url` and `scope` `/`) and a
-  generated service worker that caches the app's own files and never caches `/_vfs/*` answers.
+  generated service worker that keeps the app's own files cache first under the served version (commit,
+  policy and the server's generated files), so the shell opens at once and a publish replaces it;
+  navigations reach the server first and fall back to the kept shell offline; it never caches `/_vfs/*`,
+  `/_errors` or the sign-in.
 - A deleted app's origin answers every navigation with a short "this app was removed" page, and its
   service worker with one that unregisters itself.
 - `./publish` refuses an app whose HTML under its root loads a script or stylesheet from outside the

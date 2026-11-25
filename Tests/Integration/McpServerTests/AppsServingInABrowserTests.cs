@@ -246,6 +246,116 @@ public class AppsServingInABrowserTests
         violations.ShouldAllBe(v => v.Contains("unpinned@1.0.0") || v.Contains("glance@9.9.9"));
     }
 
+    // An installed app's shell opens from what its worker kept: the app's own files come from the cache kept
+    // for the served version, so a reload reaches the network for the page alone; a publish is a new version,
+    // whose page loads its new files at once and whose worker drops the old cache; and with no network the
+    // page opens from the kept shell. The household's reads and reports, and the sign-in, are never kept.
+    [Fact]
+    public async Task APublishedAppsShell_OpensFromItsWorkersCache_UntilAPublishReplacesIt_AndOffline()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", "document.body.dataset.version = '1'; globalThis.apps.read('/sugary/a.md').catch(() => {});");
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var context = await browser.NewContextAsync();
+        var fromNetwork = 0;
+        var offline = false;
+        var refused = new ConcurrentQueue<string>();
+        // Chromium routes a worker's own fetches too, so this is the network as the worker meets it.
+        await context.RouteAsync($"{origin}/**", route =>
+        {
+            if (offline)
+            {
+                refused.Enqueue(route.Request.Url);
+                return route.AbortAsync("internetdisconnected");
+            }
+
+            if (route.Request.Url.EndsWith("/main.js", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref fromNetwork);
+            }
+
+            return route.ContinueAsync();
+        });
+        var page = await context.NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        await page.GotoAsync(origin + "/");
+        await WorkerActiveAsync(page);
+        await page.ReloadAsync();
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "1");
+        var first = await CachesAsync(page);
+        var fetched = fromNetwork;
+
+        await page.ReloadAsync();
+
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "1");
+        fromNetwork.ShouldBe(fetched, "the app's own file came from the worker's cache");
+
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", "document.body.dataset.version = '2';", overwrite: true);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await page.ReloadAsync();
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "2");
+        await Eventually.Until(async () => !(await CachesAsync(page)).Contains(first.Single()),
+            "the new version's worker drops the old version's cache");
+        await page.ReloadAsync();
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "2");
+        await Eventually.Until(async () => await CachesAsync(page) is [var only] && only != first.Single(),
+            "the new version's worker keeps its own cache alone");
+
+        offline = true;
+        await page.GotoAsync(origin + "/week");
+
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-version", "2");
+        refused.ShouldContain(origin + "/week", "the page was asked of the network, which was gone");
+        var kept = await page.EvaluateAsync<string[]>(
+            "() => caches.keys().then(names => Promise.all(names.map(n => caches.open(n).then(c => c.keys())))).then(all => all.flat().map(r => new URL(r.url).pathname))");
+        kept.ShouldNotBeEmpty();
+        kept.ShouldAllBe(path => !path.StartsWith("/_vfs/") && path != "/_errors" && path != "/_app/sign-in");
+    }
+
+    // A kept shell never stands in for the sign-in: once the app session has ended, a reload reaches the
+    // server and is sent to sign in again, as the client library tells the person a reload does.
+    [Fact]
+    public async Task AnInstalledAppWhoseSessionEnded_IsSentToSignInOnReload_NotShownItsKeptShell()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var context = await browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        await page.GotoAsync(origin + "/");
+        await WorkerActiveAsync(page);
+        await page.ReloadAsync();
+        await Assertions.Expect(page.Locator("h1")).ToHaveTextAsync("Glucose");
+
+        server.Sessions.EndAll(AppsServer.Her);
+        var signIn = page.WaitForRequestAsync(request => request.Url.StartsWith($"{AppsServer.MainHost}/accounts/app-sign-in", StringComparison.Ordinal));
+        try
+        {
+            await page.ReloadAsync();
+        }
+        catch (PlaywrightException)
+        {
+            // The main host is no name this machine resolves: the request is the claim.
+        }
+
+        (await signIn).Url.ShouldContain(Uri.EscapeDataString(origin));
+    }
+
+    private static Task<string[]> CachesAsync(IPage page) => page.EvaluateAsync<string[]>("() => caches.keys()");
+
     private static async Task<IReadOnlyList<System.Text.Json.Nodes.JsonNode>> ErrorsAsync(AppsServer server)
     {
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/glucose/errors" },
@@ -336,7 +446,7 @@ public class AppsServingInABrowserTests
     // as true at once), and one that never activates — refused by the policy or its scope — fails the
     // case at the wait's end rather than hanging it.
     private static Task WorkerActiveAsync(IPage page) =>
-        page.WaitForFunctionAsync("navigator.serviceWorker.controller !== null",
+        page.WaitForFunctionAsync("() => navigator.serviceWorker.controller !== null",
             options: new PageWaitForFunctionOptions { PollingInterval = 100, Timeout = 15_000 });
 
     // The removed worker reopens the window as it goes, so a read may land on a page being replaced.

@@ -103,3 +103,20 @@ skill teaches a bundled build; its body budget went to 1650.
 **Deploying:** an app published before this build has no pinned code recorded and loads no outside code until
 it is published again (apps exist only on this unmerged branch).
 
+**Follow-up: the shell opens quickly (story 19, branch `app-spaces`).** The worker was network first for
+everything, so an installed app's shell waited on every file. Now a published origin's answers carry
+`X-App-Version` (`AppOriginFiles.Version`: commit, base policy and the server's generated files, hashed) and
+its worker embeds it: the app's own files are cache first under that version; a navigation still goes to the
+server first and falls back to the kept page (else the kept `/`) only when the network fails, so the sign-in,
+a closed app and the removed page are never hidden. A publish, a narrowed approval or a new server build
+changes the worker's bytes; the new worker drops the old caches. A page served at a newer version than the
+worker's loads its files from the network until the new worker takes over. The preview stays network first.
+*Choice:* cache first keyed by the version over stale-while-revalidate, which would show a page one load of
+its old files after every publish. Tests (Chromium, `AppsServingInABrowserTests`): the shell's files come
+from the cache on a reload (red first: the old worker fetched them again), a publish shows the new files at
+once and the old cache goes, a client route opens offline from the kept shell, nothing under `/_vfs/`,
+`/_errors` or the sign-in is kept; an ended session's reload is sent to sign in (passed on arrival; it guards
+the navigation staying network first). `AppsSpacesTests`: a narrowed approval and a publish are each a new
+version. Residual: a shell opened offline after an approval narrowed runs under the old policy until the
+network returns.
+
