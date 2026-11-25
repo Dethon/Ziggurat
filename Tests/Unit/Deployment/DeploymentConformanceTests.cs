@@ -273,7 +273,7 @@ public class DeploymentConformanceTests
             .Where(s => s.Image == "mcp-sandbox:latest" || s.Dockerfile == "McpServerSandbox/Dockerfile")
             .Select(s => s.Name)
             .ShouldBeEmpty();
-        compose.Networks.Keys.ShouldBe(["jackbot"]);
+        compose.Networks.Keys.ShouldBe(["jackbot", "apps-browser"]);
         compose.Service("agent").Networks.ShouldBe(["jackbot"]);
         DeploymentFiles.Placeholders().Keys.ShouldNotContain("MCP_SECRET_SANDBOX");
     }
@@ -948,6 +948,90 @@ public class DeploymentConformanceTests
         deadline.ShouldBeLessThanOrEqualTo(margin);
         new global::McpServerApps.Settings.AppCheckSettings().Deadline.ShouldBe(deadline);
     }
+
+    // A check runs the agent's code in a browser, so the browser runs where nothing is to be had: a
+    // container of its own holding no secret, setting, volume, port or capability, unprivileged, on a
+    // network it shares with the apps server alone, under Chromium's own sandbox (its syscall filter lets
+    // through the user namespaces that needs, never `unconfined`).
+    [Fact]
+    public void TheChecksBrowser_HoldsNothing_AndSharesANetworkWithTheAppsServerAlone()
+    {
+        var compose = DeploymentFiles.Compose();
+        var browser = compose.Service("apps-browser");
+
+        browser.Environment.ShouldBeEmpty();
+        browser.EnvFiles.ShouldBeEmpty();
+        browser.Volumes.ShouldBeEmpty();
+        browser.Ports.ShouldBeEmpty();
+        browser.Devices.ShouldBeEmpty();
+        browser.CapAdd.ShouldBeEmpty();
+        browser.CapDrop.ShouldBe(["ALL"]);
+        browser.Privileged.ShouldBeFalse();
+        browser.SecurityOpt.ShouldBe(["no-new-privileges:true", "seccomp=${REPOSITORY_PATH}/DockerCompose/seccomp/ziggurat-apps-browser.json"]);
+        File.Exists(Path.Combine(DeploymentFiles.Directory, "seccomp", "ziggurat-apps-browser.json")).ShouldBeTrue();
+        browser.Networks.ShouldBe(["apps-browser"]);
+        compose.Services.Values.Where(s => s.Networks.Contains("apps-browser")).Select(s => s.Name)
+            .ShouldBe(["mcp-apps", "apps-browser"], ignoreOrder: true);
+    }
+
+    // The apps server runs every check on that browser's server, at the port its image listens on (one
+    // Chromium refuses to dial, so not even a renderer reaches it), and the browser reaches the app at the
+    // apps server's pages listener by its name on their network, never through public DNS.
+    [Fact]
+    public void TheAppsServer_RunsItsChecksOnTheChecksBrowser_ReachingItsPagesListenerByName()
+    {
+        var apps = DeploymentFiles.Compose().Service("mcp-apps").Environment;
+        var port = Regex.Match(BrowserDockerfile(), @"""--port"",\s*""(\d+)""").Groups[1].Value;
+        var pages = new global::McpServerApps.Settings.AppListeners().Pages;
+
+        port.ShouldBe("10080");
+        BrowserDockerfile().ShouldContain($"EXPOSE {port}");
+        apps.GetValueOrDefault("CHECKS__BROWSER__ENDPOINT").ShouldBe($"ws://apps-browser:{port}/");
+        apps.GetValueOrDefault("CHECKS__BROWSER__PAGES")
+            .ShouldBe($"mcp-apps:{pages}");
+    }
+
+    // The apps-browser image is the one place the deployment installs Chromium; the apps server's image,
+    // which holds the credential, Redis and every household's repositories, carries no browser.
+    [Fact]
+    public void Chromium_IsInstalledInTheChecksBrowsersImageAlone()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var installing = DeploymentFiles.Compose().Services.Values
+            .Where(s => s.Dockerfile is not null)
+            .Where(s =>
+            {
+                var context = s.BuildContext == "${REPOSITORY_PATH}" ? root : Path.Combine(DeploymentFiles.Directory, s.BuildContext!);
+                return File.ReadLines(Path.Combine(context, s.Dockerfile!))
+                    .Where(line => !line.TrimStart().StartsWith('#'))
+                    .Any(line => Regex.IsMatch(line, @"\bchromium\b|mcr\.microsoft\.com/playwright", RegexOptions.IgnoreCase));
+            })
+            .Select(s => s.Name)
+            .ToList();
+
+        installing.ShouldBe(["apps-browser"]);
+    }
+
+    // A Playwright client and the server it connects to refuse each other unless their versions match, so
+    // every image running a Playwright server pins the version the .NET projects reference.
+    [Theory]
+    [InlineData("apps-browser")]
+    [InlineData("camoufox")]
+    public void APlaywrightServersImage_PinsTheClientsPlaywright(string image)
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var client = Regex.Match(File.ReadAllText(Path.Combine(root, "Infrastructure", "Infrastructure.csproj")),
+            @"Include=""Microsoft\.Playwright"" Version=""([^""]+)""").Groups[1].Value;
+        var dockerfile = File.ReadAllText(Path.Combine(DeploymentFiles.Directory, image, "Dockerfile"));
+
+        client.ShouldNotBeNullOrEmpty();
+        var pins = Regex.Matches(dockerfile, @"playwright(?:-core)?[@:]v?(\d+\.\d+\.\d+)").Select(m => m.Groups[1].Value).ToList();
+        pins.ShouldNotBeEmpty();
+        pins.ShouldAllBe(pin => pin == client);
+    }
+
+    private static string BrowserDockerfile() =>
+        File.ReadAllText(Path.Combine(DeploymentFiles.Directory, "apps-browser", "Dockerfile"));
 
     // A built app's reads go from the apps server to the agent on the compose network, believed on the
     // apps server's own credential: the one the agent already holds for the apps server it dials, so no

@@ -338,8 +338,6 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerApps/Dockerfile
     restart: unless-stopped
-    # A check runs a Chromium per check (McpServerApps/Checks); an init reaps what a closed browser leaves.
-    init: true
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ./volumes/apps:/data
@@ -362,8 +360,13 @@ services:
       # the credential the agent holds for this server (MCP__SECRETS__mcp-apps there). No dependency: the
       # agent starts after this server, and a read before it answers unavailable.
       AGENTURL: http://agent:8080
+      # A check's browser: launched on apps-browser's server (below), reaching this server's pages
+      # listener by its name on the network the two share alone.
+      CHECKS__BROWSER__ENDPOINT: ws://apps-browser:10080/
+      CHECKS__BROWSER__PAGES: mcp-apps:8081
     networks:
       - jackbot
+      - apps-browser
     depends_on:
       mcp-apps-volume:
         condition: service_completed_successfully
@@ -371,6 +374,41 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      apps-browser:
+        condition: service_started
+
+  # The browser a built app's check runs in (McpServerApps/Checks, DockerCompose/apps-browser): a
+  # Playwright browser server launching one Chromium per check with what mcp-apps sends. The agent's code
+  # runs in its pages, so it holds nothing: no secret, no volume, no setting, no capability, and a
+  # read-only filesystem with scratch space in memory. It is on one network, shared with mcp-apps alone,
+  # which reaches the internet too (the CDNs and an app's connect origins, which the check's route still
+  # bounds), never Redis, the agent or the accounts service. Chromium's own sandbox runs inside it, on
+  # user namespaces the syscall filter lets through (Docker's default without CAP_SYS_ADMIN lets none),
+  # with mount, setns and bpf still refused.
+  apps-browser:
+    image: apps-browser:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: apps-browser
+    build:
+      context: ./apps-browser
+    restart: unless-stopped
+    # Its server stops when its standard input closes; an init reaps what a closed browser leaves.
+    stdin_open: true
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/node:uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${REPOSITORY_PATH}/DockerCompose/seccomp/ziggurat-apps-browser.json
+    networks:
+      - apps-browser
 
   lemonade:
     image: lemonade:latest
@@ -766,6 +804,8 @@ services:
 
 networks:
   jackbot:
+  # mcp-apps and the browser its checks run in, and nothing else of the deployment's.
+  apps-browser:
 
 volumes:
   chat-uploads:

@@ -276,6 +276,15 @@ public sealed record ComposeService(
     // The host devices it is handed, each `host:container` as written.
     public IReadOnlyList<string> Devices { get; init; } = [];
 
+    // What it may do beyond a container's defaults, and what it gives up of them, as written.
+    public IReadOnlyList<string> CapAdd { get; init; } = [];
+
+    public IReadOnlyList<string> CapDrop { get; init; } = [];
+
+    public IReadOnlyList<string> SecurityOpt { get; init; } = [];
+
+    public bool Privileged { get; init; }
+
     public static ComposeService From(string name, YamlMappingNode node) => new(
         name,
         [.. Sequence(node, "ports").Select(PublishedPort.Parse)],
@@ -304,7 +313,11 @@ public sealed record ComposeService(
             ? file.Value
             : Child(node, "build") is not null ? "Dockerfile" : null,
         Image = Child(node, "image") is YamlScalarNode image ? image.Value : null,
-        Devices = Sequence(node, "devices")
+        Devices = Sequence(node, "devices"),
+        CapAdd = Sequence(node, "cap_add"),
+        CapDrop = Sequence(node, "cap_drop"),
+        SecurityOpt = Sequence(node, "security_opt"),
+        Privileged = Child(node, "privileged") is YamlScalarNode { Value: "true" }
     };
 
     // Each file as a path, whether written bare or as `{ path, required }`.

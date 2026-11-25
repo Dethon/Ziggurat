@@ -28,7 +28,7 @@ Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 ```bash
 REDIS_PASSWORD=local-redis-password docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build \
   agent webui observability accounts mcp-idealista mcp-channel-signalr mcp-channel-telegram mcp-scheduling \
-  mcp-timers mcp-sugary mcp-apps lemonade redis caddy
+  mcp-timers mcp-sugary mcp-apps apps-browser lemonade redis caddy
 ```
 
 That is the deployment alone: a household's own servers are not in it. The agent names them (`vault`, `websearch`, ...) and, with none connected, every turn goes without their tools and is told they are offline. To have them, run the tenant kit beside it (below).
