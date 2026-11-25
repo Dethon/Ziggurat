@@ -153,7 +153,7 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   (`HouseholdAgents.Offered`, `.claude/rules/household-config.md`). `HouseholdFeaturesAdminTests` proves the
   turn side at `HouseholdAgentSource`. **`apps` is read only here**: an owner's save strips it from what was
   sent and loaded and keeps it as stored; the page shows it as a disabled toggle saying the operator sets it
-  (`FeatureHints.Apps`) and never sends it (`admin-operator.md`, "The apps feature").
+  (`FeatureHints.Apps`) and sends it back as loaded (`admin-operator.md`, "The apps feature").
 - **Spaces** (`HouseholdSpacesAdmin`) reads `AdminSpaces` (in `SpaceListing.Ordered`, the hub's order, beside
   the agents a space may open on) and saves `SpacesSection` whole. Beyond the section's rules:
   - **the default space** (`default`) is never removed while the household has it — removed spaces' topics
