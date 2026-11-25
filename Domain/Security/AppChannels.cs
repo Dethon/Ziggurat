@@ -25,4 +25,9 @@ public static class AppChannels
     // service signs it for the app sign-in's code and the session refresh, never for a proxy block,
     // since no session check stands in front of the apps domain.
     public const string Apps = "apps";
+
+    // The apps server's listing of a household's published apps (PublishedApps.Path), which no proxy
+    // block names: the accounts service signs it itself, for the owner its admin API verified, so the
+    // spaces page lists the household's apps and no assertion a browser or an app was handed reaches it.
+    public const string PublishedApps = "published-apps";
 }

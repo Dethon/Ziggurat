@@ -153,6 +153,15 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
         return Task.CompletedTask;
     }
 
+    // The manifest the app serves: the served commit's, never the working tree's; none until the first
+    // publish, nor for a commit whose manifest no longer reads.
+    public async Task<AppManifest?> PublishedManifestAsync(BuiltApp app, CancellationToken ct) =>
+        app.PublishedCommit is { } commit
+        && await Repository(app).EntryAsync(commit, AppManifest.FileName, ct) is CommittedEntry.File { Bytes: var json }
+        && AppManifest.Parse(System.Text.Encoding.UTF8.GetString(json)) is AppManifestParse.Valid { Manifest: var manifest }
+            ? manifest
+            : null;
+
     public AppRepository Repository(BuiltApp app) =>
         new(Path.Combine(AppDirectory(app), "git"), Path.Combine(AppDirectory(app), "tree"));
 

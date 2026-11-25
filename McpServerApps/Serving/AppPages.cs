@@ -449,14 +449,9 @@ public sealed class AppPages(
                 : null;
         }
 
-        if (app.PublishedCommit is not { } commit
-            || await repository.EntryAsync(commit, AppManifest.FileName, ct) is not CommittedEntry.File { Bytes: var json }
-            || AppManifest.Parse(Encoding.UTF8.GetString(json)) is not AppManifestParse.Valid { Manifest: var published })
-        {
-            return null;
-        }
-
-        return new CommitFiles(published, repository, commit);
+        return app.PublishedCommit is { } commit && await store.PublishedManifestAsync(app, ct) is { } published
+            ? new CommitFiles(published, repository, commit)
+            : null;
     }
 
     // The path's segments, or null for one that tries to leave the root or reach git.
