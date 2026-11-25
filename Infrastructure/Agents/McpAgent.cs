@@ -32,18 +32,13 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<PromptSection> _domainPrompts;
     private readonly IReadOnlyList<PromptSection> _selectedSections;
     private readonly string _agentId;
-    private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
-    private readonly bool _usesOutposts;
+    private readonly SessionReach _reach;
     private readonly bool _noTools;
     private readonly IReadOnlySet<string> _withheldTools;
-    private readonly IOutposts? _outposts;
-    private readonly IOwnServers? _ownServers;
-    private readonly IReadOnlyList<string> _withheldServers;
     private readonly Func<CancellationToken, Task<HouseholdAgents>>? _household;
 
     // What the household defined this agent as when it was built; null for one it does not define.
     private readonly AgentAsBuilt? _builtFrom;
-    private readonly string? _tenantId;
     private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
@@ -76,8 +71,7 @@ public sealed class McpAgent : DisposableAgent
 
     // A session and the household servers it was built with, which the next turn's start compares
     // with what it finds.
-    private sealed record ReconciledSession(
-        ThreadSession Session, OwnServerResolution OwnServers, ComposedEndpoints Composed);
+    private sealed record ReconciledSession(ThreadSession Session, ServerReach Reach);
 
     // Both halves of a per-message config patch, and the response format the message asked for,
     // resolved once for a turn. The values ride that turn's ChatOptions, so nothing per-request
@@ -109,17 +103,13 @@ public sealed class McpAgent : DisposableAgent
         Func<CancellationToken, Task<HouseholdAgents>>? household = null,
         AgentAsBuilt? builtFrom = null)
     {
-        _endpoints = spec.McpServerEndpoints;
-        _tenantId = spec.TenantId;
+        _reach = new SessionReach(
+            spec.McpServerEndpoints, spec.TenantId, spec.WithheldServers, household, ownServers, outposts, spec.UsesOutposts);
         _payer = spec.Payer;
-        _ownServers = ownServers;
-        _withheldServers = spec.WithheldServers;
         _household = household;
         _builtFrom = builtFrom;
-        _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
-        _outposts = outposts;
         _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger<McpAgent>();
@@ -336,7 +326,7 @@ public sealed class McpAgent : DisposableAgent
         // prefix every turn shares, and which of a household's machines are on is this turn's news.
         // Stamped as data and rendered by the decoration, so the persisted message stays as typed.
         messageList.LastOrDefault(m => m.Role == ChatRole.User)
-            ?.SetOfflineServers(reconciled.OwnServers.Offline);
+            ?.SetOfflineServers(reconciled.Reach.OwnServers.Offline);
 
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
@@ -637,14 +627,6 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    // What the household keeps from this turn: what it kept when the agent was built, and the own
-    // servers it has not set up as of now — asked of its view at each turn, which the reader keeps
-    // a moment and drops when the accounts service announces a credential minted or revoked.
-    private async Task<IReadOnlyList<string>> WithheldNowAsync(CancellationToken ct) =>
-        _household is null
-            ? _withheldServers
-            : [.. _withheldServers, .. (await _household(ct)).NotSetUp(_endpoints.Select(e => e.Address))];
-
     // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
     // machines are asked again — a lookup, not a dial — and a session built with the very servers
     // found now is the one this turn runs in. One that came online since, went offline, or
@@ -656,17 +638,10 @@ public sealed class McpAgent : DisposableAgent
     {
         return await _syncLock.WithLockAsync(async () =>
         {
-            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers, await WithheldNowAsync(ct));
-            // Asked here rather than at construction, and at every turn rather than once per
-            // session: an agent outlives many sessions and an outpost's tunnel outlives none, so a
-            // machine that opened, closed or reopened since the last turn is reconciled like a
-            // household server, and nothing mutates a session already built.
-            var composed = OutpostEndpoints.Compose(
-                ownServers.Endpoints, _outposts, _usesOutposts, _tenantId);
+            var reach = await _reach.ResolveAsync(ct);
             if (_threadSessions.TryGetValue(thread, out var existing))
             {
-                if (existing.OwnServers.ReachesTheSameServersAs(ownServers)
-                    && existing.Composed.ReachesTheSameMachinesAs(composed))
+                if (existing.Reach.ReachesTheSameAs(reach))
                 {
                     return existing;
                 }
@@ -675,27 +650,21 @@ public sealed class McpAgent : DisposableAgent
                     "Agent '{AgentName}' rebuilds its session: its household's servers or machines changed since "
                     + "the last turn (offline now: {Offline}; machines now: {Outposts})",
                     _name,
-                    ownServers.Offline.Count == 0 ? "none" : string.Join(", ", ownServers.Offline),
-                    composed.Outposts.Count == 0 ? "none" : string.Join(", ", composed.Outposts.Select(o => o.Name)));
+                    reach.OwnServers.Offline.Count == 0 ? "none" : string.Join(", ", reach.OwnServers.Offline),
+                    reach.Composed.Outposts.Count == 0 ? "none" : string.Join(", ", reach.Composed.Outposts.Select(o => o.Name)));
                 _threadSessions.TryRemove(thread, out _);
                 await existing.Session.DisposeAsync();
             }
 
-            var newSession = await ThreadSession
-                .CreateAsync(composed.Endpoints, _name, _userId, _description,
-                             _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
-                             // A write's bare time is read in the household's zone, as the server
-                             // that keeps the schedule reads it, so the delegation describes the same
-                             // instant the server will fire at.
-                             Zone);
+            var newSession = await SessionReach.BuildAsync(reach, new SessionShape(
+                _name, _userId, _description, _domainTools, _filesystemEnabledTools, _loggerFactory,
+                _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
+                // A write's bare time is read in the household's zone, as the server that keeps the
+                // schedule reads it, so the delegation describes the same instant the server will
+                // fire at.
+                Zone), ct);
 
-            // Asked about by name later, when the model tries a path on a machine that is not here.
-            OutpostEndpoints.DeclareUnreachable(
-                newSession.FileSystemRegistry, composed.Outposts,
-                newSession.ClientManager.DialledServers);
-
-            var reconciled = new ReconciledSession(newSession, ownServers, composed);
+            var reconciled = new ReconciledSession(newSession, reach);
             _threadSessions[thread] = reconciled;
             return reconciled;
         }, ct);
