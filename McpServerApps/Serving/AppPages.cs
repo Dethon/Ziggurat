@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.Tools;
 using Mcp.Hosting;
 using McpServerApps.Settings;
@@ -96,13 +97,13 @@ public sealed class AppPages(
         }
 
         var access = await AccessAsync(session, app, origin, ct);
-        if (access == Access.Unchecked)
+        if (access is Access.Unchecked)
         {
             await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AccessUnchecked);
             return;
         }
 
-        if (access == Access.Closed || await ServedAsync(app, origin, ct) is not { } served)
+        if (access is not Access.Open { SharedAs: var sharedAs } || await ServedAsync(app, origin, sharedAs, ct) is not { } served)
         {
             await NotFoundAsync(context);
             return;
@@ -195,7 +196,7 @@ public sealed class AppPages(
         }
 
         var access = await AccessAsync(session, app, origin, ct);
-        if (access == Access.Unchecked)
+        if (access is Access.Unchecked)
         {
             await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
                 StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
@@ -204,8 +205,8 @@ public sealed class AppPages(
             return;
         }
 
-        if (access == Access.Closed
-            || await ServedAsync(app, origin, ct) is not { } served
+        if (access is not Access.Open { SharedAs: var sharedAs }
+            || await ServedAsync(app, origin, sharedAs, ct) is not { } served
             || operation.Length == 0 || operation.Contains('/'))
         {
             await NotFoundAsync(context);
@@ -269,43 +270,60 @@ public sealed class AppPages(
     // the household's spaces section's word, read on the viewer's own `apps` assertion, so an id another
     // household names opens nothing. A disabled member holds no app session for long: disabling ends their
     // sessions (EndedAppSessionsListener), and a renewal answers nobody. Whether the app is shared that
-    // cannot be read just now is Unchecked, never closed nor open: an outage is no unsharing.
+    // cannot be read just now is Unchecked for anyone but its author, never closed nor open: an outage is
+    // no unsharing.
+    //
+    // Open names the space sharing the app, whose approved reach bounds what the published origin grants
+    // every viewer, its author too. The author is asked the section as well, but never waits on it: what
+    // cannot be read, or is refused, opens their own app under its whole manifest, which reaches nobody's
+    // data but theirs.
     private async Task<Access> AccessAsync(AppSession session, BuiltApp app, AppOrigin origin, CancellationToken ct)
     {
-        if (session.Person == app.Author)
+        var author = session.Person == app.Author;
+        if (author && origin.Preview)
         {
-            return Access.Open;
+            return new Access.Open(null);
         }
 
         if (origin.Preview || session.Person.TenantId != app.HouseholdId
                            || session.Proof is not ViewerProof.Assertion { Token: var assertion })
         {
-            return Access.Closed;
+            return author ? new Access.Open(null) : Access.Closed.Instance;
         }
 
         try
         {
             var spaces = await CallHousehold.OfPerson(app.HouseholdId, assertion, households).SpacesAsync(ct);
-            return spaces.Spaces.Any(space => space.AppId == app.Id) ? Access.Open : Access.Closed;
+            var sharedAs = spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id);
+            return author || sharedAs is not null ? new Access.Open(sharedAs) : Access.Closed.Instance;
         }
         // An outage, or the reader's own timeout (a cancellation this request did not ask for).
         catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "Could not read household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
-            return Access.Unchecked;
+            return author ? new Access.Open(null) : Access.Unchecked.Instance;
         }
         catch (HouseholdConfigRefusedException ex)
         {
             logger.LogWarning(ex, "The accounts service refused household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
-            return Access.Closed;
+            return author ? new Access.Open(null) : Access.Closed.Instance;
         }
     }
 
-    private enum Access
+    private abstract record Access
     {
-        Open,
-        Closed,
-        Unchecked
+        // SharedAs: the app space sharing the app, none when it is not shared.
+        public sealed record Open(HouseholdSpace? SharedAs) : Access;
+
+        public sealed record Closed : Access
+        {
+            public static readonly Closed Instance = new();
+        }
+
+        public sealed record Unchecked : Access
+        {
+            public static readonly Unchecked Instance = new();
+        }
     }
 
     // Plain and self-contained, as the closed policy loads nothing.
@@ -437,8 +455,10 @@ public sealed class AppPages(
     }
 
     // What an origin serves: the served commit's root for the published app (nothing until the first
-    // publish), the working tree's for the preview, each with the manifest it was written with.
-    private async Task<ServedFiles?> ServedAsync(BuiltApp app, AppOrigin origin, CancellationToken ct)
+    // publish), the working tree's for the preview, each with the manifest it was written with — the
+    // published one's reach, while the app is shared, no more than an owner approved (sharedAs), so every
+    // policy and read on that origin is granted only that.
+    private async Task<ServedFiles?> ServedAsync(BuiltApp app, AppOrigin origin, HouseholdSpace? sharedAs, CancellationToken ct)
     {
         var repository = store.Repository(app);
         if (origin.Preview)
@@ -451,8 +471,14 @@ public sealed class AppPages(
         }
 
         return app.PublishedCommit is { } commit && await store.PublishedManifestAsync(app, ct) is { } published
-            ? new CommitFiles(published, repository, commit)
+            ? new CommitFiles(sharedAs is null ? published : Granted(published, sharedAs.Approved), repository, commit)
             : null;
+    }
+
+    private static AppManifest Granted(AppManifest manifest, AppReach? approved)
+    {
+        var granted = AppReach.Of(manifest).Within(approved);
+        return manifest with { Reads = granted.Reads, Connect = granted.Connect };
     }
 
     // The path's segments, or null for one that tries to leave the root or reach git.

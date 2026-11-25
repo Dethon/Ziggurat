@@ -353,11 +353,16 @@ public sealed class StandInSpaces
     // Every read runs out of time, as the reader's HttpClient times out: a cancellation nobody asked for.
     public volatile bool TimesOut;
 
-    // The household shares this app as an app space (beside its default space), named so.
-    public void Share(string householdId, string appId, string name = "Glucose") =>
+    // The household shares this app as an app space (beside its default space), named so, an owner having
+    // approved that reach (none: nothing).
+    public void Share(string householdId, string appId, string name = "Glucose", AppReach? approved = null) =>
         _saved[householdId] = new SpacesSection
         {
-            Spaces = [HouseholdSpace.Default, new HouseholdSpace { Slug = "shared", Name = name, AppId = appId, Order = 1 }]
+            Spaces =
+            [
+                HouseholdSpace.Default,
+                new HouseholdSpace { Slug = "shared", Name = name, AppId = appId, Order = 1, Approved = approved }
+            ]
         };
 
     public void Unshare(string householdId) => _saved.TryRemove(householdId, out _);

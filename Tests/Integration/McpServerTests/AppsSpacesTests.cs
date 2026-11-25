@@ -1,4 +1,5 @@
 using System.Net;
+using Domain.Apps;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -145,4 +146,43 @@ public class AppsSpacesTests
             AppsServer.TurnOf(AppsServer.Her));
         deleted["errorCode"]!.GetValue<string>().ShouldBe(global::Domain.Tools.ToolError.Codes.TransientDependency, deleted.ToJsonString());
     }
+
+    // An owner approved what the app reached when sharing it; a later publish asking for more is granted, on
+    // the published origin and for every viewer, its author too, only what was approved — until an owner
+    // approves the rest. The preview, its author's alone, keeps the manifest whole.
+    [Fact]
+    public async Task APublishWideningASharedApp_IsGrantedOnlyWhatAnOwnerApproved()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var host = server.Published("glucose", id);
+        var preview = server.Preview("glucose", id);
+        server.Spaces.Share(AppsServer.Her.TenantId, id,
+            approved: new AppReach { Reads = ["/sugary"], Connect = ["https://approved.example.com"] });
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary"],"connect":["https://approved.example.com","https://tracker.example.com"]}""",
+            overwrite: true);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+
+        var his = await server.GetAsync(host, "/", server.SessionFor(AppsServer.Him, host), navigate: true);
+        var hers = await server.GetAsync(host, "/", server.SessionFor(AppsServer.Her, host), navigate: true);
+        var tree = await server.GetAsync(preview, "/", server.SessionFor(AppsServer.Her, preview), navigate: true);
+        server.Spaces.Share(AppsServer.Her.TenantId, id,
+            approved: new AppReach { Reads = ["/sugary"], Connect = ["https://approved.example.com", "https://tracker.example.com"] });
+        var approved = await server.GetAsync(host, "/", server.SessionFor(AppsServer.Him, host), navigate: true);
+
+        foreach (var page in new[] { his, hers })
+        {
+            var policy = page.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem();
+            Directive(policy, "connect-src").ShouldContain("https://approved.example.com");
+            Directive(policy, "connect-src").ShouldNotContain("https://tracker.example.com");
+            Directive(policy, "img-src").ShouldNotContain("https://tracker.example.com");
+        }
+
+        Directive(tree.Headers.GetValues("Content-Security-Policy").Single(), "connect-src").ShouldContain("https://tracker.example.com");
+        Directive(approved.Headers.GetValues("Content-Security-Policy").Single(), "connect-src").ShouldContain("https://tracker.example.com");
+    }
+
+    private static string Directive(string policy, string name) =>
+        policy.Split(';', StringSplitOptions.TrimEntries).Single(d => d.StartsWith(name + " ", StringComparison.Ordinal));
 }
