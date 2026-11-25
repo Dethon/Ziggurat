@@ -34,15 +34,17 @@ AppChannels.Apps)`'s `TurnAdmission.Admitted.Identity`); the household is its `t
 argument. `ReadRegistry` (`IAsyncDisposable`, owns the dialled clients) exposes `Registry` (the raw
 `IVirtualFileSystemRegistry`; empty for an agent with no filesystem tools), `Caller` (the
 `ConversationContext` to bind with — `VfsCall`'s `caller` — carrying the person as `Identity`, conversation
-`ReadRegistry.NoConversation`), `Offline` (own servers named and not reached) and `IsStaleAsync` (the
-lookup again, compared as a turn's start compares, for 06's cache).
+`ReadRegistry.NoConversation`), `Offline` (own servers named and not reached) and `IsStaleAsync` (for 06's
+cache: the household's `AsBuilt` of the agent compared as an open conversation's agent compares it — a
+feature turned off, the agent removed — and its servers compared as a turn's start compares them).
 
-Tests: `AgentReadRegistriesTests` (8 cases, over the wire against in-process servers): Her and Him each
+Tests: `AgentReadRegistriesTests` (9 cases, over the wire against in-process servers): Her and Him each
 read their own `/sugary` meals through the real Sugary server, signed by the agent's call tokens with
 `chn` `apps`; mount parity with a real turn of the same agent (its prompt's mounts, through the real
 factory and `FakeOpenRouter`) for an own server set up and connected, set up and offline, and never set
 up, with a shared server withheld by a feature in every case; a server going offline and coming back seen
-by `IsStaleAsync` and the next build; no filesystem tools mounts nothing; an agent the household lacks
+by `IsStaleAsync` and the next build; a feature turned off or the agent removed after the build seen by
+`IsStaleAsync`, another agent's change not; no filesystem tools mounts nothing; an agent the household lacks
 and a person's registered agent refused as `AgentNotFoundException` naming it; the guest and nobody
 refused. `InjectorModuleTests.ConfigureAgents_BuildsReadRegistries`. Contracts in
 `.claude/rules/virtual-filesystem.md` ("A registry may be read outside any conversation") and
@@ -63,6 +65,9 @@ refused. `InjectorModuleTests.ConfigureAgents_BuildsReadRegistries`. Contracts i
 ceiling, and whether a suspended household or a disabled member reads (the builder checks neither; a turn
 checks both in `ConversationGroup` before anything is built, so 06's route should ask `IAccountStanding`
 and the household's suspension before building). The red-first evidence is honest only for the Sugary
-slice and the DI registration: the builder was written whole in the first slice, so the later slices
+slice, the DI registration and the stale-agent case: the builder was written whole in the first slice, so the later slices
 passed on first run; each was mutation-checked instead (removing the own-server withholding, the stale
 check, the filesystem gate and the person check each failed exactly its test).
+Not tested on the read path: the `noTools` gate (only the `filesystem` gate is), and a reconnect as a new
+tunnel generation, which rests on `ServerState`'s comparison shared with turns (in-process servers have
+no generations).

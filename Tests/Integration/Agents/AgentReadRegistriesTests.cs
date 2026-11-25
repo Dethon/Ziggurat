@@ -117,6 +117,28 @@ public sealed class AgentReadRegistriesTests
         back.Offline.ShouldBeEmpty();
     }
 
+    // The household changing the agent since the build — a feature turned off, the agent removed — makes
+    // the registry stale as it makes an open conversation's agent; a change to another agent does not.
+    [Fact]
+    public async Task AnAgentTheHouseholdChangedSinceTheBuild_MakesTheRegistryStale()
+    {
+        await using var notes = await FileSystemServerAsync("notes");
+        var households = new FakeHouseholds();
+        var nabu = Jonas() with { Id = "nabu", Name = "Nabu" };
+        households.Add(Household, Agents(Jonas(notes.Endpoint), nabu));
+        await using var read = await Registries(households, new SharedServers { Scheduling = notes.Endpoint })
+            .BuildAsync(Viewer(Fran), "jonas", CancellationToken.None);
+
+        households.Add(Household, Agents(Jonas(notes.Endpoint), nabu with { Name = "Voz" }));
+        (await read.IsStaleAsync(CancellationToken.None)).ShouldBeFalse();
+
+        households.Add(Household, Agents(Jonas(notes.Endpoint), nabu), new FeaturesSection { Scheduling = false });
+        (await read.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+
+        households.Add(Household, Agents(nabu));
+        (await read.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+    }
+
     // A turn of an agent offered no filesystem tools mounts nothing, whatever its servers publish.
     [Fact]
     public async Task AnAgentOfferedNoFilesystemTools_MountsNothing()

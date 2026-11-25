@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
@@ -36,11 +37,12 @@ public sealed class AgentReadRegistries(
         var household = await definitions.ForHouseholdAsync(account.TenantId, ct);
         var definition = household.Find(agentId) ?? throw new AgentNotFoundException(agentId, account.TenantId);
 
+        Task<HouseholdAgents> HouseholdNow(CancellationToken ct) => definitions.ForHouseholdAsync(account.TenantId, ct);
         var reach = new SessionReach(
             AgentSpecProjection.Endpoints(definition, credentials, DeploymentEndpoints.Of(household)),
             account.TenantId,
             household.WithheldServers,
-            ct => definitions.ForHouseholdAsync(account.TenantId, ct),
+            HouseholdNow,
             ownServers,
             outposts: null,
             usesOutposts: false);
@@ -60,7 +62,8 @@ public sealed class AgentReadRegistries(
             callTokens,
             TimeZones.Named(household.TimeZone) ?? TimeZoneInfo.Local), ct);
 
-        return new ReadRegistry(session, reach, reached, ReadRegistry.CallerFor(viewer, definition.Id));
+        return new ReadRegistry(
+            session, reach, reached, HouseholdNow, household.AsBuilt(definition.Id), ReadRegistry.CallerFor(viewer, definition.Id));
     }
 }
 
@@ -76,12 +79,18 @@ public sealed class ReadRegistry : IAsyncDisposable
     private readonly ThreadSession _session;
     private readonly SessionReach _reach;
     private readonly ServerReach _reached;
+    private readonly Func<CancellationToken, Task<HouseholdAgents>> _household;
+    private readonly AgentAsBuilt? _builtFrom;
 
-    internal ReadRegistry(ThreadSession session, SessionReach reach, ServerReach reached, ConversationContext caller)
+    internal ReadRegistry(
+        ThreadSession session, SessionReach reach, ServerReach reached,
+        Func<CancellationToken, Task<HouseholdAgents>> household, AgentAsBuilt? builtFrom, ConversationContext caller)
     {
         _session = session;
         _reach = reach;
         _reached = reached;
+        _household = household;
+        _builtFrom = builtFrom;
         Caller = caller;
     }
 
@@ -93,10 +102,12 @@ public sealed class ReadRegistry : IAsyncDisposable
     // The household's own servers named by the agent and not reached by this build.
     public IReadOnlyList<string> Offline => _reached.OwnServers.Offline;
 
-    // Whether the household's servers changed since this build — one came online, went offline or
-    // reconnected — asked as a turn's start asks it: a lookup, never a dial.
+    // Whether a build now would differ: the household defines the agent otherwise (a feature turned
+    // off, the agent removed — DisposableAgent.IsStaleAsync's question), or its servers changed (one came
+    // online, went offline or reconnected — a turn's start's). Both are lookups, never a dial.
     public async Task<bool> IsStaleAsync(CancellationToken ct) =>
-        !(await _reach.ResolveAsync(ct)).ReachesTheSameAs(_reached);
+        (await _household(ct)).AsBuilt(Caller.AgentId) != _builtFrom
+        || !(await _reach.ResolveAsync(ct)).ReachesTheSameAs(_reached);
 
     public ValueTask DisposeAsync() => _session.DisposeAsync();
 
