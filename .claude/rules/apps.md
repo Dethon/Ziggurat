@@ -167,7 +167,10 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   slug, the commit's name, colour, description, `reads`, `connect`, the author's user id, the link;
   `no-store`. `apps-browser` reaches this listener, but holds no such assertion; no Caddy route names it
   (`DeploymentConformanceTests`), and the pages listener never answers it.
-- Not held: a later publish may widen `reads` or `connect` past what an owner saw when sharing.
+- **Outage vs refusal**: a reader's outage or its own timeout is unchecked (503 / `transient_dependency`), a
+  refusal closed.
+- Not held: a later publish may widen `reads` or `connect` past what an owner saw when sharing; every member's
+  runtime errors land in the author's `/<slug>/errors`, messages and all ("Runtime errors").
 
 ## App sign-in
 
