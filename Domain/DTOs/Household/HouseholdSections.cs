@@ -346,4 +346,11 @@ public sealed record HouseholdSpace
 
     // Where the space sits in the client's list, lowest first.
     public int Order { get; init; }
+
+    // A built app this space shares with the whole household (an app space): its page is the app's
+    // published origin, its name and colour the app's, and it holds no topics.
+    public string? AppId { get; init; }
+
+    [JsonIgnore]
+    public bool IsApp => AppId is not null;
 }

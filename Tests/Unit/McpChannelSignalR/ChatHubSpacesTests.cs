@@ -219,6 +219,55 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
             $"space:{Home}:attic", It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    // An app space is a household space whose page is a built app: it holds no topics and is no chat
+    // space, so an installed client from before, which knows nothing of apps, is told the chat spaces
+    // alone and never shown a space it cannot open.
+    [Fact]
+    public async Task AnAppSpace_IsNotAmongTheSpacesAConnectionIsTold()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1), Space("kitchen", 2)] };
+        var connection = await ConnectAsync();
+
+        var spaces = await connection.InvokeAsync<IReadOnlyList<HouseholdSpace>>("GetSpaces");
+
+        spaces.ShouldBe([Space("default", 0), Space("kitchen", 2)]);
+    }
+
+    [Fact]
+    public async Task JoiningAnAppSpace_IsRefusedAsNoSuchSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        var connection = await ConnectAsync();
+
+        var refused = await Should.ThrowAsync<HubException>(() => connection.InvokeAsync("JoinSpace", "glucose"));
+
+        refused.Message.ShouldContain("No such space");
+    }
+
+    // A slug an app space took may still hold the topics of a chat space removed before under it: those
+    // are listed in the default space like any removed space's, never lost between a space nobody can
+    // join and a list that takes the slug for a space's own.
+    [Fact]
+    public async Task TopicsUnderAnAppSpacesSlug_AreListedInTheDefaultSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        HoldingTopics("default", "glucose");
+        _store.Setup(s => s.GetTopicPageAsync(
+                "jonas", "default", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false, Only("glucose"), It.IsAny<TopicFilter?>()))
+            .ReturnsAsync(new TopicPage([Topic("t-glucose", "glucose")], null));
+        var connection = await ConnectAsync();
+
+        await connection.InvokeAsync("JoinSpace", SpaceConfig.DefaultSlug);
+
+        (await connection.InvokeAsync<TopicPage>("GetTopicPage", "jonas", "default", null, null, false))
+            .Topics.Select(t => t.TopicId).ShouldBe(["t-glucose"]);
+    }
+
+    private static HouseholdSpace AppSpace(string slug, int order) => new()
+    {
+        Slug = slug, Name = $"The {slug} app", AccentColor = "#654321", Order = order, AppId = "a1b2c3"
+    };
+
     private void HoldingTopics(params string[] slugs) =>
         _store.Setup(s => s.SpacesHoldingTopicsAsync(Home)).ReturnsAsync(slugs);
 

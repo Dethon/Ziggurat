@@ -211,9 +211,11 @@ public sealed class ChatHub(
 
     // Asked with the accounts service's fresh word for the connection's person rather than the
     // assertion it arrived with, which lives ten minutes while a chat client stays connected for
-    // hours: the household is the one that word names, never one the browser says.
+    // hours: the household is the one that word names, never one the browser says. Its chat spaces
+    // alone: an app space holds no topics and is joined by nobody, and an installed client that knows no
+    // app spaces would show one as a space it cannot open.
     private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct) =>
-        (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+        SpaceListing.ChatSpaces((await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces);
 
     private Task<HouseholdAgentNames> HouseholdAgentsAsync(CancellationToken ct) =>
         HouseholdViewAsync(households.AgentNamesAsync, "agents", UnvouchedAgentsError, ct);
