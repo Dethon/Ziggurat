@@ -16,6 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Reads a built app's pages at publish: outside code must be pinned (Publishing/OutsideCodePinning). -->
+    <PackageReference Include="AngleSharp" Version="1.5.2" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="11.0.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
   </ItemGroup>

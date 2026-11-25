@@ -96,6 +96,32 @@ public class AppsPublishingTests
         refused["stderr"]!.GetValue<string>().ShouldContain("./history lists them");
     }
 
+    // Outside code is pinned by version and hash in every page the app serves, nested ones too, and
+    // nothing is committed or served while one is not. A page outside the served root is the agent's
+    // source, never loaded by a person, so it is not held to it.
+    [Fact]
+    public async Task Publish_RefusesAServedPageLoadingUnpinnedOutsideCode_NamingEach()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose","accentColor":"#e9601f","description":"Mine.","root":"dist"}""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/dist/index.html",
+            """<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/dist/week/index.html",
+            """<script type="importmap">{"imports":{"preact":"https://esm.sh/preact@10.19.3"}}</script>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/src/index.html", """<script src="https://esm.sh/anything"></script>""");
+
+        var refused = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+
+        refused["exitCode"]!.GetValue<int>().ShouldBe(1, refused.ToJsonString());
+        var stderr = refused["stderr"]!.GetValue<string>();
+        stderr.ShouldStartWith("nothing published");
+        stderr.ShouldContain("index.html: the script https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js has no integrity");
+        stderr.ShouldContain("week/index.html: the import map names the outside module https://esm.sh/preact@10.19.3");
+        stderr.ShouldNotContain("esm.sh/anything");
+        Stdout(await server.ExecAsync(AppsServer.Her, "/glucose", "./history")).ShouldStartWith("no commits yet");
+    }
+
     [Fact]
     public async Task AnythingElse_IsNotFound_NamingTheActions()
     {

@@ -7,6 +7,7 @@ using Domain.Tools;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Text;
+using McpServerApps.Publishing;
 using McpServerApps.Store;
 
 namespace McpServerApps.Vfs;
@@ -79,7 +80,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
 
     public override string DescribeExec =>
         $"Run an app's action in its directory: ./{Publish} commits the working tree and serves it, answering "
-        + $"the app's link; ./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
+        + "the app's link (refused while a served page loads outside code without an exact version and integrity hash); "
+        + $"./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
         + "serves an earlier commit without rewriting history. Not a shell — anything else returns exit 127.";
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
@@ -669,6 +671,9 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
                     return Exec(cwd, "", $"nothing published: {AppManifest.FileName} breaks its rules:\n- {string.Join("\n- ", problems)}", 1);
                 case AppManifestParse.Valid { Manifest: var manifest } when !Directory.Exists(Path.Combine(repository.WorkTree, manifest.Root)):
                     return Exec(cwd, "", $"nothing published: the root '{manifest.Root}' the manifest serves is not a directory of the app.", 1);
+                case AppManifestParse.Valid { Manifest: var manifest }
+                    when await UnpinnedAsync(Path.Combine(repository.WorkTree, manifest.Root), ct) is { Count: > 0 } unpinned:
+                    return Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", unpinned)}", 1);
             }
 
             var committed = await repository.CommitAllAsync($"Publish from a turn of {_agentId ?? app.BuildingAgent}", ct);
@@ -680,6 +685,18 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
                 ? $"nothing changed since {served!.Short}; serving it at {link}\n"
                 : $"published {served!.Short}; the app is served at {link}\n", "", 0);
         }, ct);
+
+    // Every page under the served root, by its path from there: a page outside it is the agent's
+    // source, never loaded by a person.
+    private static async Task<IReadOnlyList<string>> UnpinnedAsync(string root, CancellationToken ct)
+    {
+        var pages = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(file => Path.GetExtension(file).ToLowerInvariant() is ".html" or ".htm")
+            .Order(StringComparer.Ordinal);
+        var problems = await Task.WhenAll(pages.Select(async page => OutsideCodePinning.Problems(
+            Path.GetRelativePath(root, page).Replace('\\', '/'), await File.ReadAllTextAsync(page, ct))));
+        return [.. problems.SelectMany(p => p)];
+    }
 
     private async Task<FsResult<FsExecResult>> HistoryAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)
     {
