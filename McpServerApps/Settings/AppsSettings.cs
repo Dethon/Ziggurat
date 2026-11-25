@@ -22,6 +22,23 @@ public record AppsSettings : IMcpHostSettings
     public required string AppsDomain { get; init; }
 
     public AppQuotas Quotas { get; init; } = new();
+
+    public AppListeners Listeners { get; init; } = new();
+
+    // Where a built app may load code, styles and fonts from besides itself, by exact version and
+    // integrity hash (AppContentPolicy, OutsideCodePinning): origins, no paths.
+    public IReadOnlyList<string> Cdns { get; init; } = [];
+}
+
+// The apps server's two listeners: /mcp for the deployment's network, app origins for the proxy.
+// Neither answers the other's, by the socket a request arrived on (AppPagesListener).
+public record AppListeners
+{
+    // The agent dials this one; nothing a browser sends reaches it through the proxy.
+    public int Mcp { get; init; } = 8080;
+
+    // The proxy sends every request for `*.<AppsDomain>` here and nowhere else of this server's.
+    public int Pages { get; init; } = 8081;
 }
 
 // What one household may spend of the deployment's shared storage. A refusal names the limit and

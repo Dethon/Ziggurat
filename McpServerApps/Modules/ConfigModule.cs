@@ -1,6 +1,7 @@
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using McpServerApps.Vfs;
@@ -15,6 +16,8 @@ public static class ConfigModule
         services
             .AddSingleton(TimeProvider.System)
             .AddSingleton(sp => new BuiltAppStore(settings, sp.GetRequiredService<TimeProvider>()))
+            .AddSingleton<AppSessions>()
+            .AddAppPages(settings.Listeners)
             .AddSingleton(sp => new AppsFileSystem(sp.GetRequiredService<BuiltAppStore>(), settings.AppsDomain))
             // The calling household's agent names, asked with this server's own credential on the
             // call's token: only the household's own agents build apps. No Redis here, so a renamed

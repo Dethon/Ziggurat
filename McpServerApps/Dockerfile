@@ -22,4 +22,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 USER $APP_UID
 COPY --from=publish /app/publish .
+# The server names both its listeners itself (Listeners in appsettings.json); the image's default
+# port would only be overridden, with a warning on every start.
+ENV ASPNETCORE_HTTP_PORTS=
 ENTRYPOINT ["dotnet", "McpServerApps.dll"]

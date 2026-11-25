@@ -90,6 +90,31 @@ public sealed partial class AppRepository(string gitDirectory, string workTree)
         return new AppCommit(f[0], f[1], DateTimeOffset.Parse(f[2]), f.Length > 3 ? f[3] : "");
     }
 
+    // What a commit holds at a path relative to the repository's root: a file's bytes as they were
+    // committed, a directory, or nothing. One git process, its object named on stdin — never an argument —
+    // so nothing in the path is ever read as an option; a path is segments the caller already checked.
+    public async Task<CommittedEntry?> EntryAsync(string commit, string path, CancellationToken ct)
+    {
+        if (!Sha().IsMatch(commit) || path.Any(char.IsControl))
+        {
+            return null;
+        }
+
+        var output = await RunRawAsync($"{commit}:{path}\n", ct, "cat-file", "--batch");
+        var newline = Array.IndexOf(output, (byte)'\n');
+        var header = newline < 0 ? [] : System.Text.Encoding.UTF8.GetString(output, 0, newline).Split(' ');
+        return header switch
+        {
+            [_, "blob", var size] when int.TryParse(size, out var length) && newline + 1 + length <= output.Length =>
+                new CommittedEntry.File(output.AsSpan(newline + 1, length).ToArray()),
+            [_, "tree", _] => new CommittedEntry.Directory(),
+            _ => null
+        };
+    }
+
+    [GeneratedRegex("^[0-9a-f]{40}$", RegexOptions.CultureInvariant)]
+    private static partial Regex Sha();
+
     [GeneratedRegex("^([0-9a-fA-F]{4,40}|HEAD(~[0-9]{1,4})?)$", RegexOptions.CultureInvariant)]
     private static partial Regex Revision();
 
@@ -103,11 +128,54 @@ public sealed partial class AppRepository(string gitDirectory, string workTree)
 
     private async Task<(int ExitCode, string Output, string Error)> RunAsync(CancellationToken ct, params string[] args)
     {
+        using var git = Start(args);
+        git.StandardInput.Close();
+        return await FinishAsync(git, ct, async (stdout, token) => await stdout.ReadToEndAsync(token));
+    }
+
+    // Bytes, never text: a served file is an image as often as a page.
+    private async Task<byte[]> RunRawAsync(string input, CancellationToken ct, params string[] args)
+    {
+        using var git = Start(args);
+        await git.StandardInput.WriteAsync(input);
+        git.StandardInput.Close();
+        var (exitCode, output, error) = await FinishAsync(git, ct, async (stdout, token) =>
+        {
+            using var bytes = new MemoryStream();
+            await stdout.BaseStream.CopyToAsync(bytes, token);
+            return bytes.ToArray();
+        });
+        return exitCode == 0 ? output : throw new InvalidOperationException($"git {args[0]} failed ({exitCode}): {error.Trim()}");
+    }
+
+    private static async Task<(int ExitCode, T Output, string Error)> FinishAsync<T>(
+        Process git, CancellationToken ct, Func<StreamReader, CancellationToken, Task<T>> read)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(_deadline);
+        var output = read(git.StandardOutput, deadline.Token);
+        var error = git.StandardError.ReadToEndAsync(deadline.Token);
+        try
+        {
+            await git.WaitForExitAsync(deadline.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            git.Kill(entireProcessTree: true);
+            throw;
+        }
+
+        return (git.ExitCode, await output, await error);
+    }
+
+    private Process Start(string[] args)
+    {
         var start = new ProcessStartInfo("git")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
+            StandardInputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             UseShellExecute = false
         };
         foreach (var arg in (string[])
@@ -125,24 +193,15 @@ public sealed partial class AppRepository(string gitDirectory, string workTree)
         start.Environment["GIT_TERMINAL_PROMPT"] = "0";
         start.Environment["HOME"] = gitDirectory;
 
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(_deadline);
-        using var git = Process.Start(start) ?? throw new InvalidOperationException("git could not be started");
-        git.StandardInput.Close();
-        var output = git.StandardOutput.ReadToEndAsync(deadline.Token);
-        var error = git.StandardError.ReadToEndAsync(deadline.Token);
-        try
-        {
-            await git.WaitForExitAsync(deadline.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            git.Kill(entireProcessTree: true);
-            throw;
-        }
-
-        return (git.ExitCode, await output, await error);
+        return Process.Start(start) ?? throw new InvalidOperationException("git could not be started");
     }
 }
 
 public sealed record AppCommit(string Sha, string Short, DateTimeOffset At, string Subject);
+
+public abstract record CommittedEntry
+{
+    public sealed record File(byte[] Bytes) : CommittedEntry;
+
+    public sealed record Directory : CommittedEntry;
+}

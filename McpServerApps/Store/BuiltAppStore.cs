@@ -70,6 +70,34 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
         return [.. apps.OfType<BuiltApp>().OrderBy(app => app.Slug, StringComparer.Ordinal)];
     }
 
+    // An app by its id alone, whichever household holds it: what an app origin's label names.
+    public async Task<BuiltApp?> FindAsync(string id, CancellationToken ct)
+    {
+        if (!BuiltAppId.IsValid(id) || !Directory.Exists(Root))
+        {
+            return null;
+        }
+
+        var file = Directory.EnumerateDirectories(Root)
+            .Select(household => Path.Combine(household, id, MetadataFile))
+            .FirstOrDefault(File.Exists);
+        if (file is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await using var stream = File.OpenRead(file);
+            return await JsonSerializer.DeserializeAsync<BuiltApp>(stream, _json, ct);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Deleted between finding and reading: no app.
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<BuiltApp>> ListAsync(string householdId, Account author, CancellationToken ct) =>
         [.. (await ListAsync(householdId, ct)).Where(app => app.Author == author)];
 

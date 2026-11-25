@@ -1,10 +1,16 @@
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using McpServerApps.Modules;
+using McpServerApps.Serving;
 using McpServerApps.Settings;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
@@ -29,32 +35,97 @@ public sealed class AppsServer : IAsyncDisposable
     public static readonly IReadOnlyList<HouseholdAgentName> HouseholdAgents =
         [new("jonas", "Jonas"), new("sugary", "Sugary")];
 
-    private readonly RunningServer _server;
+    private readonly WebApplication _app;
+    private readonly McpClient _client;
+    private readonly HttpClient _browser = new(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false });
 
-    private AppsServer(RunningServer server, AppsSettings settings)
+    private AppsServer(WebApplication app, McpClient client, AppsSettings settings)
     {
-        _server = server;
+        _app = app;
+        _client = client;
         Settings = settings;
     }
 
     public AppsSettings Settings { get; }
 
-    public string Endpoint => _server.Endpoint;
+    public string Endpoint => $"http://localhost:{Settings.Listeners.Mcp}/mcp";
+
+    // Where the proxy hands app origins: the second listener, which answers by Host and serves no /mcp.
+    public string PagesAddress => $"http://127.0.0.1:{Settings.Listeners.Pages}";
+
+    // The server's app sessions, which the app sign-in (ticket 04) will open; a test opens its own.
+    public AppSessions Sessions => _app.Services.GetRequiredService<AppSessions>();
 
     public static async Task<AppsServer> StartAsync(Func<AppsSettings, AppsSettings>? configure = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        var settings = new AppsSettings { StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate };
-        settings = configure?.Invoke(settings) ?? settings;
-        var server = await InMemoryMcpServer.StartAsync(collection =>
+        AppsSettings? settings = null;
+        // Both listeners are taken together, and a bind lost to either is retried on two fresh ports.
+        var (_, app) = await TestPort.StartWebAsync(mcp =>
         {
-            collection.ConfigureApps(settings);
-            collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+            if (settings is not null)
+            {
+                TestPort.Release(settings.Listeners.Pages);
+            }
+
+            var configured = new AppsSettings
+            {
+                StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate,
+                Cdns = ["https://cdn.jsdelivr.net", "https://unpkg.com", "https://esm.sh"],
+                Listeners = new AppListeners { Mcp = mcp, Pages = TestPort.GetAvailable() }
+            };
+            settings = configure?.Invoke(configured) ?? configured;
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options =>
+            {
+                options.Listen(IPAddress.Loopback, settings.Listeners.Mcp);
+                options.Listen(IPAddress.Loopback, settings.Listeners.Pages);
+            });
+            builder.Services.ConfigureApps(settings);
+            builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
                 new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents)));
+            var built = builder.Build();
+            built.MapMcp("/mcp");
+            return built;
         });
-        return new AppsServer(server, settings);
+
+        var client = await McpClient.CreateAsync(McpTestSecret.Transport($"http://localhost:{settings!.Listeners.Mcp}/mcp"));
+        return new AppsServer(app, client, settings);
     }
+
+    // The id a created app's note names, and the label its published origin and preview answer to.
+    public static string IdIn(string note) => Regex.Match(note, @"\(id ([a-z0-9]{6})\)").Groups[1].Value;
+
+    public string Published(string slug, string id) => $"{slug}-{id}.{Settings.AppsDomain}";
+
+    public string Preview(string slug, string id) => $"{slug}-{id}{AppOrigin.PreviewSuffix}.{Settings.AppsDomain}";
+
+    // A browser on an app origin, its own cookie for that origin sent when it holds a session there.
+    public async Task<HttpResponseMessage> GetAsync(string host, string path, string? session = null, bool navigate = false)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, PagesAddress + path);
+        request.Headers.Host = host;
+        if (session is not null)
+        {
+            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+        }
+
+        if (navigate)
+        {
+            request.Headers.Add("Sec-Fetch-Mode", "navigate");
+            request.Headers.Add("Accept", "text/html");
+        }
+
+        var response = await _browser.SendAsync(request);
+        await response.Content.LoadIntoBufferAsync();
+        return response;
+    }
+
+    // An app session for this person on that origin, as the app sign-in would open one.
+    public string SessionFor(Account person, string host) =>
+        Sessions.Open(person, "accounts-session-1", AppOrigin.Parse(host, Settings.AppsDomain)!,
+            DateTimeOffset.UtcNow.AddHours(1));
 
     // A chat-client turn of this person's on one of the household's agents, its principal as the hub
     // stamps it; the test transport signs the call for that person.
@@ -65,7 +136,7 @@ public sealed class AppsServer : IAsyncDisposable
     // A tool called as the agent calls it on a turn; null calls it for nobody.
     public async Task<JsonNode> CallAsync(string tool, Dictionary<string, object?> arguments, ConversationContext? turn)
     {
-        var result = await _server.Client.CallToolAsync(new CallToolRequestParams
+        var result = await _client.CallToolAsync(new CallToolRequestParams
         {
             Name = tool,
             Arguments = arguments.ToDictionary(a => a.Key, a => JsonSerializer.SerializeToElement(a.Value)),
@@ -122,7 +193,12 @@ public sealed class AppsServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _server.DisposeAsync();
+        _browser.Dispose();
+        await _client.DisposeAsync();
+        await _app.StopAsync();
+        await _app.DisposeAsync();
+        TestPort.Release(Settings.Listeners.Mcp);
+        TestPort.Release(Settings.Listeners.Pages);
         Directory.Delete(Settings.StoragePath, recursive: true);
     }
 }
