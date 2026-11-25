@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Apps;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
@@ -178,6 +179,119 @@ public sealed class AppChecksTests
         viewport["accessibility"]!.GetValue<string>().ShouldNotContain("secrets");
         viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"http://127.0.0.1:{port}/"
                                                                  && r["error"]!.GetValue<string>().StartsWith("blocked"));
+    }
+
+    // Each check runs a browser of its own, so a household runs one at a time and the server a few: one
+    // past either limit is refused at once, naming the limit and its value, never queued behind the others.
+    // The running checks are held open by a read the agent has not answered yet.
+    [Fact]
+    public async Task AChecksPastTheHouseholdsOrTheServersLimit_AreRefused_NotQueued()
+    {
+        var third = new Account("household-third", "user-third");
+        await using var agent = await HeldAgent.StartAsync();
+        await using var server = await AppsServer.StartAsync(s => s with
+        {
+            AgentUrl = agent.Address,
+            Checks = s.Checks with { PerHousehold = 1, Total = 2 }
+        });
+        foreach (var person in new[] { AppsServer.Her, AppsServer.Him, AppsServer.Neighbour, third })
+        {
+            await HoldingAppAsync(server, person);
+        }
+
+        var hers = server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+        await Eventually.Until(() => agent.Held == 1, "her check's page is reading");
+
+        var his = await server.ExecAsync(AppsServer.Him, "/glucose", "./check");
+        his["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", his.ToJsonString());
+        his["message"]!.GetValue<string>().ShouldContain("concurrent checks per household is 1");
+
+        var neighbours = server.ExecAsync(AppsServer.Neighbour, "/glucose", "./check --viewport 800x600");
+        await Eventually.Until(() => agent.Held == 2, "the neighbour's check's page is reading");
+        var thirds = await server.ExecAsync(third, "/glucose", "./check");
+        thirds["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", thirds.ToJsonString());
+        thirds["message"]!.GetValue<string>().ShouldContain("concurrent checks on this server is 2");
+
+        agent.Release();
+        (await hers)["exitCode"]!.GetValue<int>().ShouldBe(0);
+        (await neighbours)["exitCode"]!.GetValue<int>().ShouldBe(0);
+    }
+
+    // A page that never finishes is stopped at the check's deadline, its browser closed, and the report
+    // and the answer both say so.
+    [Fact]
+    public async Task ACheckPastItsDeadline_IsStopped_AndItsReportSaysSo()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with
+        {
+            Checks = s.Checks with { Deadline = TimeSpan.FromSeconds(3) }
+        });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/forever.js", "await new Promise(() => {});");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(1, ran.ToJsonString());
+        ran["stdout"]!.GetValue<string>().ShouldContain("stopped at its deadline of 3 s");
+        var report = await ReportAsync(server, "glucose");
+        report["deadlineHit"]!.GetValue<bool>().ShouldBeTrue();
+        report["viewports"]!.AsArray().ShouldAllBe(v => v!["assertions"]!.AsArray().Count == 0);
+    }
+
+    // An app whose one assertion waits on a read of the household, which HeldAgent answers only when told.
+    private static async Task HoldingAppAsync(AppsServer server, Account person)
+    {
+        await server.AppAsync(person, "glucose");
+        await server.CreateAsync(person, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(person, "/glucose/checks/reads.js", "await apps.read('/sugary/README.md'); return 'read';");
+    }
+
+    // The agent's read route, holding every read until released: what keeps a check running.
+    private sealed class HeldAgent : IAsyncDisposable
+    {
+        private readonly WebApplication _app;
+        private readonly TaskCompletionSource _released = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _held;
+
+        private HeldAgent(WebApplication app, int port)
+        {
+            _app = app;
+            Address = $"http://127.0.0.1:{port}";
+        }
+
+        public string Address { get; }
+
+        public int Held => Volatile.Read(ref _held);
+
+        public static async Task<HeldAgent> StartAsync()
+        {
+            HeldAgent? agent = null;
+            var (port, app) = await TestPort.StartWebAsync(port =>
+            {
+                var builder = WebApplication.CreateBuilder();
+                builder.WebHost.UseKestrel(options => options.Listen(System.Net.IPAddress.Loopback, port));
+                var built = builder.Build();
+                built.MapPost($"{AppReads.AgentPath}/{{operation}}", async () =>
+                {
+                    Interlocked.Increment(ref agent!._held);
+                    await agent._released.Task;
+                    return Results.Json(new { filePath = "/sugary/README.md", content = "1: Sugary" });
+                });
+                return built;
+            });
+            agent = new HeldAgent(app, port);
+            return agent;
+        }
+
+        public void Release() => _released.TrySetResult();
+
+        public async ValueTask DisposeAsync()
+        {
+            Release();
+            await _app.StopAsync();
+            await _app.DisposeAsync();
+        }
     }
 
     private static async Task<JsonNode> ReportAsync(AppsServer server, string slug, Account? person = null) =>

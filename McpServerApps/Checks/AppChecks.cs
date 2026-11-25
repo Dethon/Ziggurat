@@ -147,7 +147,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             {
                 var seen = new ViewportRun(viewport);
                 viewports.Add(seen);
-                await ViewAsync(browser, seen, address + request.Path, session, reachable, request.Assertions, run);
+                await ViewAsync(browser, seen, address + request.Path, session, reachable, request.Assertions, run, stopped.Token);
             }
         }
         catch (Exception ex) when (stopped.IsCancellationRequested)
@@ -190,7 +190,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     // shown, read for structure, and asked its assertions.
     private async Task ViewAsync(
         IBrowser browser, ViewportRun seen, string url, string session, IReadOnlySet<string> reachable,
-        IReadOnlyList<CheckAssertion> assertions, string run)
+        IReadOnlyList<CheckAssertion> assertions, string run, CancellationToken stopped)
     {
         var viewport = seen.Viewport;
         await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
@@ -237,7 +237,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         {
             await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.Load, Timeout = 0 });
         }
-        catch (PlaywrightException ex) when (browser.IsConnected)
+        catch (PlaywrightException ex) when (!stopped.IsCancellationRequested)
         {
             seen.Error = ex.Message;
         }
@@ -260,13 +260,14 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         seen.Accessibility = await page.Locator("body").AriaSnapshotAsync(new LocatorAriaSnapshotOptions { Timeout = 0 });
         foreach (var assertion in assertions)
         {
-            seen.Assertions.Add(await AssertAsync(page, assertion, browser));
+            seen.Assertions.Add(await AssertAsync(page, assertion, stopped));
         }
     }
 
     // An assertion file is the body of an async function run in the page: it passes when it returns (what
-    // it returns is its message) and fails with what it throws. One that does not parse fails with why.
-    private static async Task<AssertionOutcome> AssertAsync(IPage page, CheckAssertion assertion, IBrowser browser)
+    // it returns is its message) and fails with what it throws. One that does not parse fails with why; one
+    // cut short by the deadline is no outcome at all.
+    private static async Task<AssertionOutcome> AssertAsync(IPage page, CheckAssertion assertion, CancellationToken stopped)
     {
         try
         {
@@ -286,7 +287,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             return new AssertionOutcome(assertion.File, outcome.GetProperty("passed").GetBoolean(),
                 outcome.GetProperty("message").GetString() ?? "");
         }
-        catch (PlaywrightException ex) when (browser.IsConnected)
+        catch (PlaywrightException ex) when (!stopped.IsCancellationRequested)
         {
             return new AssertionOutcome(assertion.File, false, ex.Message);
         }
