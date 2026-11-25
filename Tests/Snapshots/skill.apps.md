@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1630 / 1650 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1697 / 1700 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -43,7 +43,7 @@ The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/pa
 
 ### Reading the household
 
-Every page has `apps` as a global (a module may `import apps from '/_app/apps.mjs'`; bundled code uses `globalThis.apps`). Each call takes the virtual paths your file tools take and answers their result:
+Every page has `apps` as a global (an unbundled module may `import apps from '/_app/apps.mjs'`; bundled code uses `globalThis.apps`: no bundler resolves that import). Each call takes the virtual paths your file tools take and answers their result:
 
 - `apps.query('/sugary', sql, {maxRows})` → `{columns, rows, rowCount, truncated}`, each row an array in column order.
 - `apps.read(filePath, {offset, limit})` → `{content, totalLines, truncated}`; `content` is numbered (`1: …`), as your reads are.
@@ -54,14 +54,14 @@ A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` 
 
 ### An npm build (a household with a sandbox)
 
-Keep the project in the sandbox home (`~/apps/<slug>`) and install and build there: `node_modules` is refused under `/apps`. Copy the source and the build in by name (`cp -r package.json package-lock.json src dist /apps/<slug>/`), read `vfsChanges`, and set `"root": "dist"`. Publishing commits everything written, whatever a `.gitignore` says. Without a sandbox, write static files.
+Keep the project in the sandbox home (`~/apps/<slug>`) and install and build there: `node_modules` is refused under `/apps`. Copy the source and the build in by name, replacing the last copy, whose old bundles would publish too (`rm -rf /apps/<slug>/src /apps/<slug>/dist && cp -r package.json package-lock.json src dist /apps/<slug>/`), read `vfsChanges`, and set `"root": "dist"`. Publishing commits everything written, whatever a `.gitignore` says. Without a sandbox, write static files.
 
 ### Checking
 
-`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Then read `/apps/<slug>/.checks/latest/`:
+`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
 - `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like.
-- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `accessibility` (the page's text and structure) and `assertions`.
+- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `accessibility` (the page's text and structure) and `assertions`.
 
 Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.
 

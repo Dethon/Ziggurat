@@ -227,6 +227,41 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
             .ShouldBeEmpty("every file in the app's working tree is the one the build wrote");
     }
 
+    // A rebuild names its bundles anew (index-<hash>.js), so a copy over the last dist/ would keep every
+    // bundle before it, and publish commits them all: the skill's recipe removes the app's dist/ in the
+    // command that copies the new one, and the mount ends up holding exactly the new build.
+    [SkippableFact]
+    public async Task ARebuildCopiedOverTheLast_ReplacesItsDistWhole_KeepingNoOldBundle()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        LeaveInTheHome(new Dictionary<string, byte[]>
+        {
+            ["dist/index.html"] = "<script type=\"module\" src=\"assets/index-old.js\"></script>"u8.ToArray(),
+            ["dist/assets/index-old.js"] = "console.log('old');"u8.ToArray()
+        });
+        await ExecAsync($"cp -r {InTheContainer}/dist /apps/{Slug}/", await MintAsync(cts.Token), cts.Token);
+        Directory.Delete(Path.Combine(fixture.WorkspaceOnHost, _build, "dist"), recursive: true);
+        var rebuilt = new Dictionary<string, byte[]>
+        {
+            ["index.html"] = "<script type=\"module\" src=\"assets/index-new.js\"></script>"u8.ToArray(),
+            ["assets/index-new.js"] = "console.log('new');"u8.ToArray()
+        };
+        LeaveInTheHome(rebuilt.ToDictionary(f => $"dist/{f.Key}", f => f.Value));
+        var call = await MintAsync(cts.Token);
+
+        var result = await ExecAsync($"rm -rf /apps/{Slug}/dist && cp -r {InTheContainer}/dist /apps/{Slug}/ && echo replaced", call, cts.Token);
+
+        Stdout(result).ShouldBe("replaced\n", result.ToString());
+        call.Changes.ShouldAllBe(c => c.Status == "applied", Described(call));
+        call.Changes.First().Path.ShouldBe($"/apps/{Slug}/dist", Described(call));
+        Directory.EnumerateFiles(Path.Combine(WorkTree(), "dist"), "*", SearchOption.AllDirectories)
+            .Select(f => Path.GetRelativePath(Path.Combine(WorkTree(), "dist"), f).Replace('\\', '/'))
+            .ShouldBe(rebuilt.Keys, ignoreOrder: true);
+        rebuilt.Where(f => !File.ReadAllBytes(Path.Combine(WorkTree(), "dist", f.Key)).SequenceEqual(f.Value)).Select(f => f.Key)
+            .ShouldBeEmpty("every file in the app's working tree is the rebuild's");
+    }
+
     // npm's defaults put its global prefix in /usr/local, which a command's user cannot write: the image
     // moves it to the home, where its cache already is, and puts its bin on a login shell's PATH, so a
     // tool installed globally runs by name in a later command.

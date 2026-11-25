@@ -5,8 +5,10 @@ description-budget: 110
 # Everything an app takes, from the manifest to its errors, paid once by a conversation that builds
 # one: the apps server serves no prompt section, so nothing about building an app is standing. 1650 since
 # the page's policy loads only the pinned packages (a bundled build is the way) and a member's errors arrive
-# reduced: both change what the agent does, so both are taught.
-body-budget: 1650
+# reduced: both change what the agent does, so both are taught. 1700 since a build left its old bundles to
+# publish and imported the library a bundler cannot resolve, and since a check's refused reads are reported
+# apart (measured 1,697 on 2026-11-25).
+body-budget: 1700
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -50,7 +52,7 @@ The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/pa
 
 ### Reading the household
 
-Every page has `apps` as a global (a module may `import apps from '/_app/apps.mjs'`; bundled code uses `globalThis.apps`). Each call takes the virtual paths your file tools take and answers their result:
+Every page has `apps` as a global (an unbundled module may `import apps from '/_app/apps.mjs'`; bundled code uses `globalThis.apps`: no bundler resolves that import). Each call takes the virtual paths your file tools take and answers their result:
 
 - `apps.query('/sugary', sql, {maxRows})` → `{columns, rows, rowCount, truncated}`, each row an array in column order.
 - `apps.read(filePath, {offset, limit})` → `{content, totalLines, truncated}`; `content` is numbered (`1: …`), as your reads are.
@@ -61,14 +63,14 @@ A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` 
 
 ### An npm build (a household with a sandbox)
 
-Keep the project in the sandbox home (`~/apps/<slug>`) and install and build there: `node_modules` is refused under `/apps`. Copy the source and the build in by name (`cp -r package.json package-lock.json src dist /apps/<slug>/`), read `vfsChanges`, and set `"root": "dist"`. Publishing commits everything written, whatever a `.gitignore` says. Without a sandbox, write static files.
+Keep the project in the sandbox home (`~/apps/<slug>`) and install and build there: `node_modules` is refused under `/apps`. Copy the source and the build in by name, replacing the last copy, whose old bundles would publish too (`rm -rf /apps/<slug>/src /apps/<slug>/dist && cp -r package.json package-lock.json src dist /apps/<slug>/`), read `vfsChanges`, and set `"root": "dist"`. Publishing commits everything written, whatever a `.gitignore` says. Without a sandbox, write static files.
 
 ### Checking
 
-`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Then read `/apps/<slug>/.checks/latest/`:
+`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
 - `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like.
-- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `accessibility` (the page's text and structure) and `assertions`.
+- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `accessibility` (the page's text and structure) and `assertions`.
 
 Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.
 
