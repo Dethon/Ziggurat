@@ -1,6 +1,6 @@
 using Domain.Apps;
 
-namespace Domain.Contracts;
+namespace Infrastructure.Clients.Apps;
 
 // A person's apps for WebChat's space switcher, as the apps server lists them (PersonsApps): their own
 // published apps, and the links of the household's apps named as shared. Asked for the session a chat

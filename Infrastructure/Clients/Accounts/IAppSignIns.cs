@@ -1,6 +1,6 @@
 using Domain.DTOs.Channel;
 
-namespace Domain.Contracts;
+namespace Infrastructure.Clients.Accounts;
 
 // The apps server's two questions of the accounts service, asked with its own credential. Redeeming:
 // the app sign-in's code a browser brought back to a built app's origin, with that origin, answered

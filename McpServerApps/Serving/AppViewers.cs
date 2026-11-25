@@ -4,6 +4,7 @@ using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
 using McpServerApps.Settings;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;

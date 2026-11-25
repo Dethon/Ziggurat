@@ -9,6 +9,7 @@ using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Domain.Security;
+using Infrastructure.Clients.Apps;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Internal;
