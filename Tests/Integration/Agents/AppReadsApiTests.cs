@@ -41,12 +41,62 @@ public sealed class AppReadsApiTests
         (await NotesAsync(agent, SugaryServer.Him)).ShouldBe(["his paella"]);
     }
 
-    private static async Task<IReadOnlyList<string?>> NotesAsync(AppReadsAgent agent, Account viewer)
+    // Neither half opens the route alone: the apps server's credential without a believable assertion,
+    // or an assertion without the credential (another server's, or none), is refused before anything is
+    // built or read.
+    public static TheoryData<string, string?, string?> Unbelieved => new()
+    {
+        { "no credential", null, TestAssertions.Of(SugaryServer.Her, AppChannels.Apps) },
+        { "another credential", "wrong-secret", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps) },
+        { "no assertion", McpTestSecret.Value, null },
+        { "a forged assertion", McpTestSecret.Value, TestAssertions.Forged(SugaryServer.Her, AppChannels.Apps) },
+        { "another channel's assertion", McpTestSecret.Value, TestAssertions.Of(SugaryServer.Her, AppChannels.SexyTime) },
+        { "the guest's assertion", McpTestSecret.Value, TestAssertions.OfGuest(SugaryServer.Her.TenantId, AppChannels.Apps) },
+        { "nobody's assertion", McpTestSecret.Value, TestAssertions.OfNobody(AppChannels.Apps) }
+    };
+
+    [Theory]
+    [MemberData(nameof(Unbelieved))]
+    public async Task ARequestWithoutBothTheCredentialAndABelievableAssertion_IsRefused(
+        string what, string? credential, string? assertion)
+    {
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas());
+        await using var agent = await AppReadsAgent.StartAsync(households);
+
+        using var response = await agent.ReadAsync(
+            AppReads.Operations.Info, _glucoseApp, new JsonObject { ["path"] = "/sugary" }, assertion, credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized, what);
+    }
+
+    // Who reads is the assertion's person alone: the identity headers the proxy writes elsewhere,
+    // naming somebody else, are never read.
+    [Fact]
+    public async Task TheIdentityHeadersBesideTheAssertion_AreNeverRead()
+    {
+        await using var sugary = await SugaryServer.StartAsync(sugaryPeople: _people);
+        await SaveMealAsync(sugary, SugaryServer.Her, "her lentils");
+        await SaveMealAsync(sugary, SugaryServer.Him, "his paella");
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(sugary.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households, new SharedServers { Sugary = sugary.Endpoint });
+
+        (await NotesAsync(agent, SugaryServer.Her, new Dictionary<string, string>
+        {
+            [ForwardedAccount.UserHeader] = SugaryServer.Him.UserId,
+            [ForwardedAccount.TenantHeader] = SugaryServer.Him.TenantId,
+            [ForwardedAccount.RolesHeader] = "owner"
+        })).ShouldBe(["her lentils"]);
+    }
+
+    private static async Task<IReadOnlyList<string?>> NotesAsync(
+        AppReadsAgent agent, Account viewer, IReadOnlyDictionary<string, string>? headers = null)
     {
         using var response = await agent.ReadAsync(
             AppReads.Operations.Query, _glucoseApp,
             new JsonObject { ["path"] = "/sugary", ["sql"] = "select notes from meals" },
-            TestAssertions.Of(viewer, AppChannels.Apps));
+            TestAssertions.Of(viewer, AppChannels.Apps), headers: headers);
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
         return [.. body["rows"]!.AsArray().Select(row => row![0]?.GetValue<string>())];
