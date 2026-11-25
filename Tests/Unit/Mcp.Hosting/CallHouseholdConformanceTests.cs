@@ -30,6 +30,12 @@ public class CallHouseholdConformanceTests
 
     private static readonly string _gate = Path.Combine("Mcp.Hosting", "CallTokenGate.cs");
 
+    private static readonly Regex _tokenHandedOn = new(@"\.VerifiedToken\b|\bcaller\.CallToken\b");
+
+    private static readonly string _registrar = Path.Combine("Infrastructure", "Utils", "FileSystemServerTools.cs");
+
+    private static readonly string _appsMount = Path.Combine("McpServerApps", "Vfs", "AppsFileSystem.cs");
+
     private static readonly string _domainTools = Path.Combine("Domain", "Tools") + Path.DirectorySeparatorChar;
 
     [Fact]
@@ -57,7 +63,19 @@ public class CallHouseholdConformanceTests
         Sources()
             .Where(file => file.Key != _turn && file.Key != _gate && _verifiedToken.IsMatch(file.Value))
             .Select(file => file.Key)
-            .ShouldBeEmpty("the token the gate verified is read by the household accessor alone; these files read it");
+            .ShouldBeEmpty("the token the gate verified is read in CallTurn alone (the household accessor and VerifiedToken); "
+                           + "these files read it");
+
+    // The verified token itself goes back to the agent that signed it and nowhere else: the registrar hands
+    // it to a mount (FileSystemCaller.CallToken), and only the apps mount takes it, for a check whose page
+    // reads as the call's person. Any other reader could replay a person's call for two minutes.
+    [Fact]
+    public void TheVerifiedToken_ReachesOnlyTheAppsMountsChecks() =>
+        Sources()
+            .Where(file => file.Key != _turn && file.Key != _registrar && file.Key != _appsMount)
+            .Where(file => _tokenHandedOn.IsMatch(file.Value))
+            .Select(file => file.Key)
+            .ShouldBeEmpty("the call's verified token is handed from the registrar to the apps mount alone; these files take it");
 
     // Guards the scans above: a pattern or a root that matched nothing would keep them green forever.
     [Fact]
@@ -67,6 +85,8 @@ public class CallHouseholdConformanceTests
 
         _callTokenProof.IsMatch(sources[_accessor]).ShouldBeTrue($"{_accessor} should build the call token's proof");
         _verifiedToken.IsMatch(sources[_turn]).ShouldBeTrue($"{_turn} should read the token the gate verified");
+        _tokenHandedOn.IsMatch(sources[_registrar]).ShouldBeTrue($"{_registrar} should hand the verified token on");
+        _tokenHandedOn.IsMatch(sources[_appsMount]).ShouldBeTrue($"{_appsMount} should take the verified token");
         var search = sources[Path.Combine("McpServerIdealista", "McpTools", "McpPropertySearchTool.cs")];
         _toolCode.IsMatch(search).ShouldBeTrue("Idealista's search should read as tool code");
         search.ShouldContain("call.Household");

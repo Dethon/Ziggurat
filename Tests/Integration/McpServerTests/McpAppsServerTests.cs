@@ -201,11 +201,11 @@ public class McpAppsServerTests
 
         glob["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe(
         [
-            "/glucose/", "/glucose/app.json", "/glucose/dist/", "/glucose/dist/index.html", "/glucose/history",
+            "/glucose/", "/glucose/app.json", "/glucose/check", "/glucose/dist/", "/glucose/dist/index.html", "/glucose/history",
             "/glucose/publish", "/glucose/rollback", "/glucose/src/", "/glucose/src/old.html"
         ]);
         glob["executables"]!.AsArray().Select(e => e!.GetValue<string>())
-            .ShouldBe(["/glucose/history", "/glucose/publish", "/glucose/rollback"], ignoreOrder: true);
+            .ShouldBe(["/glucose/check", "/glucose/history", "/glucose/publish", "/glucose/rollback"], ignoreOrder: true);
         var opened = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/glucose/publish" },
             AppsServer.TurnOf(AppsServer.Her));
         opened["errorCode"]!.GetValue<string>().ShouldNotBeNull();

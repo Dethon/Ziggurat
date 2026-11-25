@@ -177,7 +177,7 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
         }
 
         var scope = new AppReadScope { Id = app.Id, Agent = app.BuildingAgent, Reads = served.Manifest.Reads };
-        await ReadAnswerAsync(context, policy, await reads.ReadAsync(operation, scope, arguments, session.Assertion, ct));
+        await ReadAnswerAsync(context, policy, await reads.ReadAsync(operation, scope, arguments, session.Proof, ct));
     }
 
     // A read's arguments are a path, a pattern or a statement: small. A body larger is never held.

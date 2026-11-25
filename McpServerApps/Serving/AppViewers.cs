@@ -45,7 +45,7 @@ public sealed class AppViewers(
             return AppViewer.Nobody;
         }
 
-        if (clock.GetUtcNow() < session.RenewAt)
+        if (clock.GetUtcNow() < session.RenewAt || session.Proof is not ViewerProof.Assertion { SessionId: var sessionId })
         {
             return new AppViewer.Person(session);
         }
@@ -53,7 +53,7 @@ public sealed class AppViewers(
         ResolvedAccount? renewed;
         try
         {
-            renewed = await accounts.RenewAsync(session.Person.UserId, session.SessionId, ct);
+            renewed = await accounts.RenewAsync(session.Person.UserId, sessionId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -75,7 +75,7 @@ public sealed class AppViewers(
             return AppViewer.Unchecked;
         }
 
-        if (new Account(person.TenantId, person.UserId) != session.Person || person.SessionId != session.SessionId)
+        if (new Account(person.TenantId, person.UserId) != session.Person || person.SessionId != sessionId)
         {
             logger.LogWarning("A renewal of an app session of account {UserId} named somebody else; the session is ended",
                 session.Person.UserId);
@@ -84,7 +84,7 @@ public sealed class AppViewers(
         }
 
         sessions.Renewed(token, renewed.Assertion);
-        return new AppViewer.Person(session with { Assertion = renewed.Assertion });
+        return new AppViewer.Person(session with { Proof = new ViewerProof.Assertion(renewed.Assertion, sessionId) });
     }
 
     // A page opened with no app session, sent to sign in: only with a main host to send it to and only

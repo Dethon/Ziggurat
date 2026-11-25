@@ -26,7 +26,7 @@ public sealed record BuiltApp
 }
 
 // The volume: `<storage>/<household>/<id>/` holds an app's metadata (`app.meta.json`), its git
-// directory (`git/`) and its working tree (`tree/`). Repositories are named by id, never by slug, so
+// directory (`git/`), its working tree (`tree/`) and what its checks saw (`checks/`). Repositories are named by id, never by slug, so
 // a renamed app keeps its links. Creating, renaming, deleting and publishing run one at a time per
 // household, so a quota or a slug is never decided on a listing another call is changing.
 public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
@@ -156,9 +156,20 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     public AppRepository Repository(BuiltApp app) =>
         new(Path.Combine(AppDirectory(app), "git"), Path.Combine(AppDirectory(app), "tree"));
 
-    // The repository as a whole: its working tree and its history.
-    public long SizeOf(BuiltApp app) =>
-        new DirectoryInfo(AppDirectory(app)).EnumerateFiles("*", SearchOption.AllDirectories).Sum(file => file.Length);
+    // What the app's checks saw, beside its repository and never in it: inside the working tree a publish
+    // would commit the screenshots and the preview serve them. The mount shows it read-only as
+    // `/<slug>/.checks/`.
+    public string ChecksDirectory(BuiltApp app) => Path.Combine(AppDirectory(app), "checks");
+
+    // The repository as a whole: its working tree and its history. A check's output is the server's,
+    // replaced on every check, and spends nothing of the app's.
+    public long SizeOf(BuiltApp app)
+    {
+        var checks = ChecksDirectory(app) + Path.DirectorySeparatorChar;
+        return new DirectoryInfo(AppDirectory(app)).EnumerateFiles("*", SearchOption.AllDirectories)
+            .Where(file => !file.FullName.StartsWith(checks, StringComparison.Ordinal))
+            .Sum(file => file.Length);
+    }
 
     private string Root => Path.GetFullPath(settings.StoragePath);
 

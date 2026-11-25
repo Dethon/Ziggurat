@@ -5,11 +5,21 @@ using McpServerApps.Settings;
 
 namespace McpServerApps.Serving;
 
-// One app session: who it is for, the accounts session it was made from (so ending that ends this),
-// the one origin it opens — an app's published origin or its preview, never both — the latest `apps`
-// assertion the accounts service signed for it, when that is next renewed, and when the session ends.
+// One app session: who it is for, the one origin it opens — an app's published origin or its preview,
+// never both — what proves who reads through it, when that is next renewed, and when the session ends.
 public sealed record AppSession(
-    Account Person, string SessionId, AppOrigin Origin, string Assertion, DateTimeOffset RenewAt, DateTimeOffset ExpiresAt);
+    Account Person, AppOrigin Origin, ViewerProof Proof, DateTimeOffset RenewAt, DateTimeOffset ExpiresAt);
+
+// What the agent is handed with a read to believe who it is for: a signed-in viewer's `apps` assertion,
+// with the accounts session it was made from (so ending that ends this), or a check's call token, the
+// agent's own for the tool call that ran `./check`.
+public abstract record ViewerProof
+{
+    public sealed record Assertion(string Token, string SessionId) : ViewerProof;
+
+    // Never renewed: a check ends before its call token does.
+    public sealed record CheckCall(string Token) : ViewerProof;
+}
 
 // The app sessions this server holds, named to the browser by a host-only `__Host-` cookie on the
 // origin each opens. Held in memory, and deliberately: the accounts service's word that a person's
@@ -17,7 +27,8 @@ public sealed record AppSession(
 // a server that is down, and sessions kept in memory are lost at the same moment — so no session ever
 // outlives an announcement it missed. A restart costs a fresh app sign-in, which is silent while the
 // person's own session lives. Indexed by person (their household is the account's tenant), because
-// that is how sessions end.
+// that is how sessions end — a check's session too, which the server opens itself for the person whose
+// turn ran the check, on that call's token, and ends when the check does.
 public sealed class AppSessions(TimeProvider clock, AppsSettings settings)
 {
     public const string CookieName = "__Host-app-session";
@@ -27,14 +38,23 @@ public sealed class AppSessions(TimeProvider clock, AppsSettings settings)
     private readonly Dictionary<Account, HashSet<string>> _byPerson = [];
 
     // A new session's token: what the cookie carries, and the only way to name the session.
-    public string Open(Account person, string sessionId, AppOrigin origin, string assertion, DateTimeOffset expiresAt)
+    public string Open(Account person, string sessionId, AppOrigin origin, string assertion, DateTimeOffset expiresAt) =>
+        Open(new AppSession(person, origin, new ViewerProof.Assertion(assertion, sessionId),
+            clock.GetUtcNow() + settings.Sessions.AssertionKept, expiresAt));
+
+    // A check's session: its preview alone, read as the person on the call token of the call that ran it,
+    // until its deadline.
+    public string OpenCheck(Account person, AppOrigin origin, string callToken, DateTimeOffset expiresAt) =>
+        Open(new AppSession(person, origin, new ViewerProof.CheckCall(callToken), expiresAt, expiresAt));
+
+    private string Open(AppSession session)
     {
         var token = Base64Url(RandomNumberGenerator.GetBytes(32));
+        var person = session.Person;
         lock (_gate)
         {
             DropExpired();
-            _byToken[token] = new AppSession(
-                person, sessionId, origin, assertion, clock.GetUtcNow() + settings.Sessions.AssertionKept, expiresAt);
+            _byToken[token] = session;
             if (!_byPerson.TryGetValue(person, out var tokens))
             {
                 _byPerson[person] = tokens = new HashSet<string>(StringComparer.Ordinal);
@@ -63,9 +83,13 @@ public sealed class AppSessions(TimeProvider clock, AppsSettings settings)
     {
         lock (_gate)
         {
-            if (_byToken.TryGetValue(token, out var session))
+            if (_byToken.TryGetValue(token, out var session) && session.Proof is ViewerProof.Assertion held)
             {
-                _byToken[token] = session with { Assertion = assertion, RenewAt = clock.GetUtcNow() + settings.Sessions.AssertionKept };
+                _byToken[token] = session with
+                {
+                    Proof = held with { Token = assertion },
+                    RenewAt = clock.GetUtcNow() + settings.Sessions.AssertionKept
+                };
             }
         }
     }

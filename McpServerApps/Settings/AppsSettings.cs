@@ -39,6 +39,8 @@ public record AppsSettings : IMcpHostSettings
 
     public AppQuotas Quotas { get; init; } = new();
 
+    public AppCheckSettings Checks { get; init; } = new();
+
     public AppListeners Listeners { get; init; } = new();
 
     // Where a built app may load code, styles and fonts from besides itself, by exact version and
@@ -79,4 +81,22 @@ public record AppSessionSettings
     // one an app session holds always has most of its life left for a hop to the agent; also the
     // longest a revoked session goes on opening an app when its announcement was missed.
     public TimeSpan AssertionKept { get; init; } = TimeSpan.FromMinutes(5);
+}
+// How far a check (`./check`, Checks/AppChecks) may go. Checks past a limit are refused, never queued: the
+// agent hears the limit's name and value and tells the person rather than waiting on somebody else's.
+public record AppCheckSettings
+{
+    // How long one check runs, every viewport included, before its browser is closed and its report says
+    // so. At most the agent's call token refresh margin (callTokens:refreshMargin, 30 s): the page reads as
+    // the check's person on the token of the call that ran it, which has at least that much life left when
+    // it arrives (DeploymentConformanceTests).
+    public TimeSpan Deadline { get; init; } = TimeSpan.FromSeconds(30);
+
+    // How long a loaded page may take to go quiet on the network before it is shown as it is: a page
+    // that polls never does.
+    public TimeSpan Settle { get; init; } = TimeSpan.FromSeconds(5);
+
+    // Each runs its own Chromium, so these bound the server's memory as much as its fairness.
+    public int PerHousehold { get; init; } = 1;
+    public int Total { get; init; } = 2;
 }

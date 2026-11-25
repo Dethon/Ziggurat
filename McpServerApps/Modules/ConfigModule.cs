@@ -1,6 +1,7 @@
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using McpServerApps.Checks;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
@@ -22,7 +23,10 @@ public static class ConfigModule
             .AddAppPages(settings.Listeners)
             // A built app's reads, handed to the agent with this server's own credential (AgentReads).
             .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services
-            .AddSingleton(sp => new AppsFileSystem(sp.GetRequiredService<BuiltAppStore>(), settings.AppsDomain))
+            // A check runs the preview in a browser of its own, as the person whose turn asked.
+            .AddSingleton<AppChecks>()
+            .AddSingleton(sp => new AppsFileSystem(
+                sp.GetRequiredService<BuiltAppStore>(), sp.GetRequiredService<AppChecks>(), settings.AppsDomain))
             // The calling household's agent names, asked with this server's own credential on the
             // call's token: only the household's own agents build apps. A save is heard on Redis when
             // the server has it; without, a renamed or added agent reaches it when its kept answer runs out.

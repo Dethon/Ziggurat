@@ -7,6 +7,7 @@ using Domain.Tools;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Text;
+using McpServerApps.Checks;
 using McpServerApps.Publishing;
 using McpServerApps.Store;
 
@@ -14,25 +15,37 @@ namespace McpServerApps.Vfs;
 
 // The calling person's built apps as a mount: /apps/<slug>/ is one app's working tree, written with
 // the file tools the agent already has. Writing /apps/<slug>/app.json creates the app; its action
-// files publish it, list its history and roll it back, on the mount itself so they need no sandbox;
+// files publish it, list its history, roll it back and check it, on the mount itself so they need no
+// sandbox; what a check saw is read back from `/<slug>/.checks/latest/`, which only the server writes;
 // removing the directory deletes it. Each call acts for the person its verified token names, in that
 // person's household: another member's apps are neither listed nor reachable, and a call naming
 // nobody is refused rather than shown an empty list.
-public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : FileSystemBackendBase
+public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string appsDomain) : FileSystemBackendBase
 {
     public const string Name = "apps";
     public const string Publish = "publish";
     public const string History = "history";
     public const string Rollback = "rollback";
+    public const string Check = "check";
 
+    // Where the mount shows what the app's last check saw (BuiltAppStore.ChecksDirectory), read-only.
+    public const string ChecksOutput = ".checks";
+
+    // Viewports a check may ask for, and how large: a screenshot is one image the model is shown.
+    private const int MaxViewports = 4;
+    private const int MinViewportSide = 240;
+    private const int MaxViewportSide = 3840;
+
+    // The app's own assertions (`checks/*.js` in its working tree), each run inside the page.
+    private const string AssertionsDirectory = "checks";
     // The longest slug whose preview label (`<slug>-<id>-preview`) is still one DNS label.
     public const int SlugLength = 40;
 
-    private static readonly string[] _actions = [Publish, History, Rollback];
+    private static readonly string[] _actions = [Publish, History, Rollback, Check];
 
     // Names at an app's root the server keeps for what it produces itself (checks, runtime errors);
     // never the agent's to write, so a later release can serve them without colliding with a file.
-    private static readonly string[] _reserved = [.. _actions, "check", "errors", ".checks"];
+    private static readonly string[] _reserved = [.. _actions, "errors", ChecksOutput];
 
     // What the text read opens: the shared text list plus what a web app is made of besides.
     private static readonly string[] _textFiles =
@@ -41,6 +54,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
     private Account? _author;
     private string? _agentId;
     private ICallHousehold? _household;
+    private string? _callToken;
 
     public override FileSystemBackendBase For(FileSystemCaller caller)
     {
@@ -48,6 +62,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         view._author = Principal.Of(caller.Conversation)?.Account;
         view._agentId = caller.Conversation?.AgentId;
         view._household = caller.Household;
+        view._callToken = caller.CallToken;
         return view;
     }
 
@@ -57,8 +72,9 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         "The person's own built apps — small read-only web apps, each a git repository served on an origin "
         + "of its own: /apps/<slug>/ is one app's working tree. Writing /apps/<slug>/app.json creates an "
         + "app; the action files ./publish, ./history [--limit N] and ./rollback <rev> in its directory "
-        + "publish the working tree, list its commits and serve an earlier one; removing the directory "
-        + "deletes the app. Writes under node_modules/ are refused.";
+        + "publish the working tree, list its commits and serve an earlier one; ./check opens the preview in a "
+        + "browser as the person and leaves screenshots and report.json in /<slug>/.checks/latest/; removing "
+        + "the directory deletes the app. Writes under node_modules/ are refused.";
 
     public override string DescribeCreate =>
         "Write a text file into an app's working tree. /<slug>/app.json creates the app (its manifest: "
@@ -82,7 +98,11 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         $"Run an app's action in its directory: ./{Publish} commits the working tree and serves it, answering "
         + "the app's link (refused while a served page loads outside code without an exact version and integrity hash); "
         + $"./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
-        + "serves an earlier commit without rewriting history. Not a shell — anything else returns exit 127.";
+        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] opens "
+        + "the preview in a headless browser as the person (a phone and a desktop unless named), runs each "
+        + $"{AssertionsDirectory}/*.js in the page (an async function body: returning passes, throwing fails) and "
+        + $"writes one PNG per viewport and report.json (console, failed requests, policy violations, an "
+        + $"accessibility snapshot, assertions) to {ChecksOutput}/latest/. Not a shell — anything else returns exit 127.";
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
@@ -97,7 +117,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         }
 
         var apps = await store.ListAsync(author.TenantId, author, ct);
-        var candidates = apps.SelectMany(app => Listing(app)).ToList();
+        var candidates = apps.SelectMany(app => Listing(app).Select(c => (c.Path, c.IsDirectory))).ToList();
         var actions = apps.SelectMany(app => _actions.Select(action => $"/{app.Slug}/{action}")).ToHashSet(StringComparer.Ordinal);
         return Glob(
             pattern,
@@ -149,8 +169,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         return await ResolveAsync(path, ct) switch
         {
             AppNode.Action { Name: var action } => ExecutableOnly<FsReadResult>(path, action),
-            AppNode.Entry { Full: var full, App: var app } when File.Exists(full) =>
-                new TextReadTool(store.Repository(app).WorkTree, _textFiles).Run(full, offset, limit)
+            AppNode.Entry { Full: var full, Base: var root } when File.Exists(full) =>
+                new TextReadTool(root, _textFiles).Run(full, offset, limit)
                     .Map(read => read with { FilePath = path }),
             AppNode.Root or AppNode.AppDirectory => Invalid<FsReadResult>($"'{path}' is a directory: glob it to list it."),
             AppNode.Entry { Full: var full } when Directory.Exists(full) => Invalid<FsReadResult>($"'{path}' is a directory: glob it to list it."),
@@ -175,7 +195,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
 
         var scope = (path ?? directoryPath ?? "").Trim('/');
         var files = (await store.ListAsync(author.TenantId, author, ct))
-            .SelectMany(app => Listing(app).Where(c => !c.IsDirectory).Select(c => (App: app, c.Path)))
+            .SelectMany(app => Listing(app).Where(c => !c.IsDirectory).Select(c => (App: app, c.Path, c.Full)))
             .Where(f => scope.Length == 0 || f.Path == scope || f.Path.StartsWith(scope + "/", StringComparison.Ordinal))
             .Where(f => !_actions.Contains(Path.GetFileName(f.Path)) || f.Path.Count(c => c == '/') > 1)
             .Where(f => _textFiles.Contains(Path.GetExtension(f.Path).ToLowerInvariant()) && admits(Path.GetFileName(f.Path)))
@@ -184,8 +204,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
 
         return await SearchNodesAsync(
             files,
-            async (file, token) => ($"/{file.Path}", await File.ReadAllTextAsync(
-                Path.Combine(store.Repository(file.App).WorkTree, file.Path[(file.App.Slug.Length + 1)..]), token)),
+            async (file, token) => ($"/{file.Path}", await File.ReadAllTextAsync(file.Full, token)),
             new FsSearchScan
             {
                 Query = query,
@@ -518,8 +537,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         return await ResolveAsync(path, ct) switch
         {
             AppNode.Action { Name: var action } => ExecutableOnly<FsBlobReadResult>(path, action),
-            AppNode.Entry { Full: var full, App: var app } when File.Exists(full) =>
-                new BlobReadTool(store.Repository(app).WorkTree).Run(full, offset, length),
+            AppNode.Entry { Full: var full, Base: var root } when File.Exists(full) =>
+                new BlobReadTool(root).Run(full, offset, length),
             AppNode.Invalid { Reason: var reason } => Invalid<FsBlobReadResult>(reason),
             _ => NotFound<FsBlobReadResult>(path)
         };
@@ -636,7 +655,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         if (app is null)
         {
             return Fail<FsExecResult>(ToolError.Codes.UnsupportedOperation,
-                $"exec runs an app's actions in its directory, /<slug>: ./{Publish}, ./{History}, ./{Rollback} (got '{path}').");
+                $"exec runs an app's actions in its directory, /<slug>: ./{Publish}, ./{History}, ./{Rollback}, ./{Check} (got '{path}').");
         }
 
         var words = command.Trim().Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
@@ -651,6 +670,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
             History => await HistoryAsync(app, path, args, ct),
             Rollback when args is [var revision] => await RollbackAsync(app, path, revision, ct),
             Rollback => Exec(path, "", $"usage: ./{Rollback} <rev> — a commit from ./{History}.", 2),
+            Check => await CheckAsync(app, path, args, ct),
             _ => Exec(path, "", $"command not found: {action}\navailable: {string.Join(", ", _actions)}", 127)
         };
     }
@@ -696,6 +716,91 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
         var problems = await Task.WhenAll(pages.Select(async page => OutsideCodePinning.Problems(
             Path.GetRelativePath(root, page).Replace('\\', '/'), await File.ReadAllTextAsync(page, ct))));
         return [.. problems.SelectMany(p => p)];
+    }
+
+    // The preview checked in the server's browser as the person whose turn this is, on this call's own
+    // token, which the agent believes for that person's reads while the check runs.
+    private async Task<FsResult<FsExecResult>> CheckAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)
+    {
+        if (CheckArguments(args) is not var (viewports, route))
+        {
+            return Exec(cwd, "",
+                $"usage: ./{Check} [--viewport WxH]... [--path /route] — at most {MaxViewports} viewports, each side "
+                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /.", 2);
+        }
+
+        if (_callToken is not { } callToken)
+        {
+            return Fail<FsExecResult>(ToolError.Codes.PermissionDenied,
+                "This call carries no token the agent signed, so nobody's reads could be shown in a check.");
+        }
+
+        var tree = store.Repository(app).WorkTree;
+        var manifestPath = Path.Combine(tree, AppManifest.FileName);
+        if (!File.Exists(manifestPath)
+            || AppManifest.Parse(await File.ReadAllTextAsync(manifestPath, ct)) is not AppManifestParse.Valid { Manifest: var manifest })
+        {
+            return Exec(cwd, "", $"nothing checked: {AppManifest.FileName} is missing or breaks its rules, so the preview serves nothing.", 1);
+        }
+
+        var assertionsDirectory = Path.Combine(tree, AssertionsDirectory);
+        var assertions = Directory.Exists(assertionsDirectory)
+            ? await Task.WhenAll(Directory.EnumerateFiles(assertionsDirectory, "*.js")
+                .Order(StringComparer.Ordinal)
+                .Select(async file => new CheckAssertion($"{AssertionsDirectory}/{Path.GetFileName(file)}", await File.ReadAllTextAsync(file, ct))))
+            : [];
+        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken), ct);
+        return outcome switch
+        {
+            CheckOutcome.Refused { Limit: var limit, Value: var value } => Quota<FsExecResult>(limit, value,
+                "Another check is running; tell the person, and check again once it has finished."),
+            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report),
+                report.Error ?? "", report.DeadlineHit || report.Error is not null || report.Viewports.Any(v => v.Assertions.Any(a => !a.Passed)) ? 1 : 0),
+            _ => throw new InvalidOperationException("A check runs or is refused.")
+        };
+    }
+
+    // `--viewport WxH` (repeatable) and `--path /route`, or null for anything else.
+    private static (IReadOnlyList<CheckViewport> Viewports, string Path)? CheckArguments(IReadOnlyList<string> args)
+    {
+        var viewports = new List<CheckViewport>();
+        var route = "/";
+        for (var i = 0; i < args.Count; i += 2)
+        {
+            if (i + 1 >= args.Count)
+            {
+                return null;
+            }
+
+            switch (args[i], args[i + 1])
+            {
+                case ("--viewport", var size) when size.Split('x') is [var w, var h]
+                                                  && int.TryParse(w, out var width) && int.TryParse(h, out var height)
+                                                  && width is >= MinViewportSide and <= MaxViewportSide
+                                                  && height is >= MinViewportSide and <= MaxViewportSide:
+                    viewports.Add(new CheckViewport(width, height));
+                    break;
+                case ("--path", var asked) when asked.StartsWith('/') && asked.Length <= 512 && !asked.Any(char.IsWhiteSpace):
+                    route = asked;
+                    break;
+                default:
+                    return null;
+            }
+        }
+
+        return viewports.Count > MaxViewports ? null : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route);
+    }
+
+    private static string CheckSummary(BuiltApp app, CheckReport report)
+    {
+        var lines = report.Viewports.Select(v =>
+            $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
+            + $"{v.PolicyViolations.Count} policy violations, assertions {v.Assertions.Count(a => a.Passed)} passed and "
+            + $"{v.Assertions.Count(a => !a.Passed)} failed{(v.Settled ? "" : " (the page never went quiet)")}");
+        var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
+        return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
+               + $"screenshots and {AppChecks.ReportFile} are in /{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}/ "
+               + "(file_read shows a screenshot)\n";
     }
 
     private async Task<FsResult<FsExecResult>> HistoryAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)
@@ -862,17 +967,38 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
     private static bool IsUnder(string relative, string segment) =>
         relative.Split('/').Contains(segment, StringComparer.Ordinal);
 
-    // Every path of an app as the mount lists it, mount-relative and without a leading slash: the app's
-    // directory, its action files and its working tree, never a .git anywhere in it.
-    private IEnumerable<(string Path, bool IsDirectory)> Listing(BuiltApp app)
+    // Every path of an app as the mount lists it, mount-relative and without a leading slash, with where
+    // it is kept: the app's directory, its action files, its working tree (never a .git anywhere in it)
+    // and what its last check saw.
+    private IEnumerable<(string Path, string Full, bool IsDirectory)> Listing(BuiltApp app)
     {
         var tree = store.Repository(app).WorkTree;
-        yield return (app.Slug, true);
+        yield return (app.Slug, tree, true);
         foreach (var action in _actions)
         {
-            yield return ($"{app.Slug}/{action}", false);
+            yield return ($"{app.Slug}/{action}", "", false);
         }
 
+        foreach (var entry in Entries(app.Slug, tree))
+        {
+            yield return entry;
+        }
+
+        var checksDirectory = store.ChecksDirectory(app);
+        var latest = Path.Combine(checksDirectory, AppChecks.LatestDirectory);
+        if (Directory.Exists(latest))
+        {
+            yield return ($"{app.Slug}/{ChecksOutput}", checksDirectory, true);
+            yield return ($"{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}", latest, true);
+            foreach (var entry in Entries($"{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}", latest))
+            {
+                yield return entry;
+            }
+        }
+    }
+
+    private static IEnumerable<(string Path, string Full, bool IsDirectory)> Entries(string prefix, string tree)
+    {
         var pending = new Stack<string>([tree]);
         while (pending.TryPop(out var directory))
         {
@@ -883,14 +1009,14 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
                     continue;
                 }
 
-                var relative = $"{app.Slug}/{Path.GetRelativePath(tree, entry.FullName).Replace('\\', '/')}";
+                var relative = $"{prefix}/{Path.GetRelativePath(tree, entry.FullName).Replace('\\', '/')}";
                 var isDirectory = entry is DirectoryInfo;
                 if (isDirectory)
                 {
                     pending.Push(entry.FullName);
                 }
 
-                yield return (relative, isDirectory);
+                yield return (relative, entry.FullName, isDirectory);
             }
         }
     }
@@ -915,7 +1041,11 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
             (null, _) => new AppNode.Missing(segments[0], relative),
             (_, [_]) => new AppNode.AppDirectory(app),
             (_, [_, var action]) when _actions.Contains(action) => new AppNode.Action(app, action),
-            _ => new AppNode.Entry(app, relative, Path.Combine(store.Repository(app).WorkTree, relative))
+            // What the server keeps beside the tree, shown where the agent looks for it: every write there is
+            // refused as a reserved name's.
+            (_, [_, ChecksOutput, ..]) => new AppNode.Entry(app, relative,
+                Path.Combine([store.ChecksDirectory(app), .. segments[2..]]), store.ChecksDirectory(app)),
+            _ => new AppNode.Entry(app, relative, Path.Combine(store.Repository(app).WorkTree, relative), store.Repository(app).WorkTree)
         };
     }
 
@@ -927,7 +1057,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
 
         public sealed record Action(BuiltApp App, string Name) : AppNode;
 
-        public sealed record Entry(BuiltApp App, string Relative, string Full) : AppNode;
+        // Full is where it is kept, under Base: the working tree, or the checks' own directory.
+        public sealed record Entry(BuiltApp App, string Relative, string Full, string Base) : AppNode;
 
         // A slug the person has no app by, with what was asked under it.
         public sealed record Missing(string Slug, string Relative) : AppNode;

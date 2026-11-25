@@ -320,9 +320,18 @@ public class FileSystemServerConformanceTests
             ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>(), new ReadSnapshots(TimeProvider.System)),
             ["sugary-watches"] = new SugaryWatchFileSystem(
                 Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System),
-            ["apps"] = new AppsFileSystem(
-                new BuiltAppStore(new AppsSettings { AppsDomain = "apps.test" }, TimeProvider.System), "apps.test")
+            ["apps"] = AppsMount()
         };
+
+    private static AppsFileSystem AppsMount()
+    {
+        var settings = new AppsSettings { AppsDomain = "apps.test" };
+        var store = new BuiltAppStore(settings, TimeProvider.System);
+        return new AppsFileSystem(store,
+            new global::McpServerApps.Checks.AppChecks(settings, new global::McpServerApps.Serving.AppSessions(TimeProvider.System, settings),
+                store, TimeProvider.System, Microsoft.Extensions.Logging.Abstractions.NullLogger<global::McpServerApps.Checks.AppChecks>.Instance),
+            "apps.test");
+    }
 
     // The other half of the same idea. A mount's identity used to be written three times per server
     // — in the backend, in the resource address, and in the resource body's name and mount point —

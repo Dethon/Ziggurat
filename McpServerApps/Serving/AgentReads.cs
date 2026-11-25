@@ -12,13 +12,14 @@ namespace McpServerApps.Serving;
 
 // A built app's read handed to the agent, which reads it (AppReads.AgentPath): this server's own
 // credential, which the agent holds for the apps server it dials, carries the app — its id, building
-// agent and the origin's reads — and the viewer's current `apps` assertion says who reads. The agent's
+// agent and the origin's reads — and the viewer's current `apps` assertion says who reads, or, on a
+// check's session, the agent's own token for the call that ran the check. The agent's
 // answer comes back as it was: the tool's result (200), a file's bytes (200) or the tools' envelope (422).
 // An agent that cannot be reached, or that did not believe this server, is the unavailable envelope.
 public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<AgentReads> logger)
 {
     public async Task<AgentReadAnswer> ReadAsync(
-        string operation, AppReadScope app, JsonObject arguments, string assertion, CancellationToken ct)
+        string operation, AppReadScope app, JsonObject arguments, ViewerProof viewer, CancellationToken ct)
     {
         if (settings.AgentUrl.Length == 0)
         {
@@ -30,7 +31,15 @@ public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<A
             Content = JsonContent.Create(new AppReadRequest { App = app, Arguments = arguments })
         };
         request.Headers.Add("Authorization", SharedSecret.Header(settings.Mcp.SharedSecret));
-        request.Headers.Add(ForwardedAccount.AssertionHeader, assertion);
+        switch (viewer)
+        {
+            case ViewerProof.Assertion { Token: var assertion }:
+                request.Headers.Add(ForwardedAccount.AssertionHeader, assertion);
+                break;
+            case ViewerProof.CheckCall { Token: var callToken }:
+                request.Headers.Add(AppReads.CheckCallTokenHeader, callToken);
+                break;
+        }
         try
         {
             using var response = await http.SendAsync(request, ct);

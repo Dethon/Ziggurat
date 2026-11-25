@@ -219,12 +219,12 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var phone = (await accounts.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
         var cookie = await SignInAsync(apps, accounts, host, "/", phone.Token);
         var origin = AppOrigin.Parse(host, AppsServer.AppsDomain)!;
-        var first = apps.Sessions.Find(cookie.Token, origin).ShouldNotBeNull().Assertion;
+        var first = ((global::McpServerApps.Serving.ViewerProof.Assertion)apps.Sessions.Find(cookie.Token, origin).ShouldNotBeNull().Proof).Token;
 
         accounts.Clock.Advance(accounts.Settings.AssertionLifetime + TimeSpan.FromMinutes(1));
 
         (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.OK);
-        var renewed = apps.Sessions.Find(cookie.Token, origin).ShouldNotBeNull().Assertion;
+        var renewed = ((global::McpServerApps.Serving.ViewerProof.Assertion)apps.Sessions.Find(cookie.Token, origin).ShouldNotBeNull().Proof).Token;
         renewed.ShouldNotBe(first);
         var claims = (await accounts.VerifyAssertionAsync(renewed)).Claims.ShouldNotBeNull();
         claims.ChannelId.ShouldBe(AppChannels.Apps);
