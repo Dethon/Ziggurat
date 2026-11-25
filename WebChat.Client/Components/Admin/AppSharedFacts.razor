@@ -1,7 +1,11 @@
+@using Domain.Apps
 @using Domain.DTOs.Admin
 
 @* What an owner sees of an app shared, or about to be shared, with the household: who made it, what of
-   the household it reads and which outside origins it talks to, as its published version says. *@
+   the household it reads and which outside origins it talks to. About to be shared, that is what its
+   published version asks, all of which sharing it approves. Shared, it is what an owner approved, and
+   apart from it what its published version asks beyond that, which it is not granted until an owner
+   approves it and saves. *@
 <div class="admin-field">
     <span class="admin-field-label">App</span>
     <span>@Name, coloured @Colour</span>
@@ -9,12 +13,28 @@
     {
         <span class="admin-field-hint">@app.Description</span>
         <span class="admin-field-hint">Made by @(app.AuthorName.Length > 0 ? app.AuthorName : "a former member")</span>
+        var shown = Shared ? Approved ?? AppReach.None : app.Reach;
         <span class="admin-field-hint">
-            Reads @(app.Reads.Count == 0 ? "nothing of the household" : string.Join(", ", app.Reads))
+            @(Shared ? "Approved to read" : "Reads") @(shown.Reads.Count == 0 ? "nothing of the household" : string.Join(", ", shown.Reads))
         </span>
         <span class="admin-field-hint">
-            Talks to @(app.Connect.Count == 0 ? "no outside origin" : string.Join(", ", app.Connect))
+            @(Shared ? "Approved to talk to" : "Talks to") @(shown.Connect.Count == 0 ? "no outside origin" : string.Join(", ", shown.Connect))
         </span>
+        @if (Shared && Pending is { IsEmpty: false } pending)
+        {
+            <span class="admin-field-hint admin-pending" role="status">
+                Its published version also asks to
+                @string.Join(" and ", new[]
+                {
+                    pending.Reads.Count == 0 ? null : $"read {string.Join(", ", pending.Reads)}",
+                    pending.Connect.Count == 0 ? null : $"talk to {string.Join(", ", pending.Connect)}"
+                }.OfType<string>()),
+                which nobody in the household is granted until an owner approves it.
+            </span>
+            <div class="admin-actions">
+                <button type="button" class="admin-secondary" @onclick="OnApprove">Approve what it asks</button>
+            </div>
+        }
         <a class="admin-field-hint" href="@app.Url" target="_blank" rel="noopener noreferrer">@app.Url</a>
     }
 </div>
@@ -28,4 +48,17 @@
 
     [Parameter, EditorRequired]
     public string Colour { get; set; } = "";
+
+    // Shared already: show what an owner approved, and what it asks beyond that.
+    [Parameter]
+    public bool Shared { get; set; }
+
+    [Parameter]
+    public AppReach? Approved { get; set; }
+
+    [Parameter]
+    public AppReach? Pending { get; set; }
+
+    [Parameter]
+    public EventCallback OnApprove { get; set; }
 }

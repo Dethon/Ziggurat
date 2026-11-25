@@ -1,3 +1,4 @@
+using Domain.Apps;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using Shouldly;
@@ -67,7 +68,8 @@ public sealed class SpaceDraftsTests
         "https://glucose-a1b2c3.apps.example/");
 
     // An app space is the app's name and colour, goes after the last space, opens on no agent and keeps
-    // the app it shares through a save, as a chat space keeps what it is.
+    // the app it shares through a save, as a chat space keeps what it is. Sharing it approves the reach the
+    // page showed of it, and no more.
     [Fact]
     public void ASharedApp_IsAnAppSpaceAfterTheLast_KeptThroughTheSection()
     {
@@ -77,14 +79,21 @@ public sealed class SpaceDraftsTests
 
         drafts.ToSection().Spaces.Last().ShouldBe(new HouseholdSpace
         {
-            Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = "a1b2c3", Order = 4
+            Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = "a1b2c3", Order = 4,
+            Approved = new AppReach { Reads = ["/sugary"] }
         });
     }
 
+    // Its approved reach too: a save sending none against the one loaded would be merged as an owner taking
+    // the approval away.
     [Fact]
-    public void AnAppSpaceLoaded_KeepsItsAppThroughASave()
+    public void AnAppSpaceLoaded_KeepsItsAppAndItsApprovalThroughASave()
     {
-        var loaded = new HouseholdSpace { Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = "a1b2c3", Order = 4 };
+        var loaded = new HouseholdSpace
+        {
+            Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = "a1b2c3", Order = 4,
+            Approved = new AppReach { Reads = ["/sugary"] }
+        };
         var drafts = new SpaceDrafts([.. _loaded, loaded]);
 
         drafts.Move(4, -1);
@@ -114,5 +123,28 @@ public sealed class SpaceDraftsTests
         drafts.Share(_glucose);
 
         drafts.Shareable([_glucose, lights]).ShouldBe([lights]);
+    }
+
+    // A publish asking for more than an owner approved is shown as waiting on one; approving it on the page
+    // sends all the app asks as the space's approval, and nothing is shown waiting after.
+    [Fact]
+    public void ApprovingAnAppThatAsksForMore_SendsAllItAsks_AndLeavesNothingPending()
+    {
+        var wider = _glucose with { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] };
+        var shared = new HouseholdSpace
+        {
+            Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = "a1b2c3", Order = 4,
+            Approved = new AppReach { Reads = ["/sugary"] }
+        };
+        var loaded = new AdminSpaces([.. _loaded, shared], [], [wider]);
+        var drafts = new SpaceDrafts(loaded.Spaces);
+        var draft = drafts.All[4];
+        var before = drafts.PendingOf(draft, loaded);
+
+        draft.Approve(wider);
+
+        before.ShouldBe(new AppReach { Reads = ["/notes"], Connect = ["https://tracker.example.com"] });
+        drafts.PendingOf(draft, loaded).ShouldBe(AppReach.None);
+        drafts.ToSection().Spaces[4].Approved.ShouldBe(new AppReach { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] });
     }
 }

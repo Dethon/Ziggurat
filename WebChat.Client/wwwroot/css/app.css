@@ -3593,6 +3593,13 @@ select:focus:not(:focus-visible) {
     color: var(--text-muted);
 }
 
+/* What a shared app asks beyond what an owner approved: not granted until approved. */
+.admin-field-hint.admin-pending {
+    color: var(--text-primary);
+    border-left: 3px solid var(--warning);
+    padding-left: 0.5rem;
+}
+
 .admin-actions {
     display: flex;
     justify-content: flex-end;

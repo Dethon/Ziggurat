@@ -17,7 +17,8 @@
         Each space keeps its own conversations, under its own name and colour, and opens on the agent you pick
         for it unless a person picked another there. The conversations of a space you remove stay in the
         default space. An app space shares one of the household's published apps with everyone in it, under
-        the app's name and colour; removing it shares the app no longer. Changes are saved together.
+        the app's name and colour, reading and talking to no more than an owner approved; removing it shares the
+        app no longer. Changes are saved together, an approval too.
     </p>
 
     @if (_state.Notice is { } notice)
@@ -53,7 +54,10 @@
                     </header>
                     @if (draft.AppId is { } appId)
                     {
-                        <AppSharedFacts App="@saved.Apps?.FirstOrDefault(a => a.Id == appId)" Name="@draft.Name" Colour="@draft.AccentColor" />
+                        var app = saved.Apps?.FirstOrDefault(a => a.Id == appId);
+                        <AppSharedFacts App="@app" Name="@draft.Name" Colour="@draft.AccentColor" Shared="true"
+                                        Approved="@draft.Approved" Pending="@_drafts.PendingOf(draft, saved)"
+                                        OnApprove="@(() => { if (app is not null) draft.Approve(app); })" />
                     }
                     else
                     {

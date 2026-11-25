@@ -1,3 +1,4 @@
+using Domain.Apps;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
@@ -45,14 +46,16 @@ public sealed class SpaceDrafts
     public void Remove(int index) => _drafts.RemoveAt(index);
 
     // A published app shared with the household as an app space: its name and colour (the admin API
-    // stamps them again from the app), after the last space, at the app's own slug unless a space has it.
+    // stamps them again from the app), after the last space, at the app's own slug unless a space has it,
+    // approving the reach the page showed of it.
     public void Share(AdminSpaceApp app) => _drafts.Add(new SpaceDraft
     {
         Slug = FreeSlug(app.Slug),
         Name = app.Name,
         AccentColor = app.AccentColor,
         AppId = app.Id,
-        Order = NextOrder
+        Order = NextOrder,
+        Approved = app.Reach
     });
 
     // The household's published apps no space shares yet.
@@ -66,21 +69,10 @@ public sealed class SpaceDrafts
             .Select(n => n == 1 ? slug : $"{slug}-{n}")
             .First(candidate => _drafts.All(draft => draft.Slug != candidate));
 
-    public SpacesSection ToSection() => new()
-    {
-        Spaces =
-        [
-            .. _drafts.Select(draft => new HouseholdSpace
-            {
-                Slug = draft.Slug,
-                Name = draft.Name.Trim(),
-                AccentColor = draft.AccentColor.Trim(),
-                DefaultAgent = string.IsNullOrEmpty(draft.DefaultAgent) || draft.AppId is not null ? null : draft.DefaultAgent,
-                Order = draft.Order,
-                AppId = draft.AppId
-            })
-        ]
-    };
+    // What an app space's app asks beyond what this page would approve for it: what waits on an owner.
+    public AppReach? PendingOf(SpaceDraft draft, AdminSpaces loaded) => loaded.PendingOf(draft.ToSpace());
+
+    public SpacesSection ToSection() => new() { Spaces = [.. _drafts.Select(draft => draft.ToSpace())] };
 }
 
 public sealed class SpaceDraft
@@ -99,6 +91,23 @@ public sealed class SpaceDraft
     // The built app an app space shares, set when it is added; none for a chat space.
     public string? AppId { get; init; }
 
+    // The reach approved for an app space's app, as loaded until the owner approves what it asks now; sent
+    // back as loaded, since a save sending none would be merged as an owner taking the approval away.
+    public AppReach? Approved { get; set; }
+
+    public void Approve(AdminSpaceApp app) => Approved = app.Reach;
+
+    public HouseholdSpace ToSpace() => new()
+    {
+        Slug = Slug,
+        Name = Name.Trim(),
+        AccentColor = AccentColor.Trim(),
+        DefaultAgent = string.IsNullOrEmpty(DefaultAgent) || AppId is not null ? null : DefaultAgent,
+        Order = Order,
+        AppId = AppId,
+        Approved = Approved
+    };
+
     public static SpaceDraft Of(HouseholdSpace space) => new()
     {
         Slug = space.Slug,
@@ -107,6 +116,7 @@ public sealed class SpaceDraft
         AccentColor = space.AccentColor,
         DefaultAgent = space.DefaultAgent ?? "",
         Order = space.Order,
-        AppId = space.AppId
+        AppId = space.AppId,
+        Approved = space.Approved
     };
 }
