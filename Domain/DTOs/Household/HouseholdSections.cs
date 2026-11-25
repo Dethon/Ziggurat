@@ -197,7 +197,17 @@ public static partial class HouseholdSections
 
             if (space.AppId is not { } app)
             {
+                if (space.Approved is not null)
+                {
+                    yield return $"space {space.Slug} shares no app, so it has no approved reach";
+                }
+
                 continue;
+            }
+
+            foreach (var problem in space.Approved?.Problems(space.Slug) ?? [])
+            {
+                yield return problem;
             }
 
             if (!BuiltAppId.IsValid(app))
@@ -376,6 +386,10 @@ public sealed record HouseholdSpace
     // A built app this space shares with the whole household (an app space): its page is the app's
     // published origin, its name and colour the app's, and it holds no topics.
     public string? AppId { get; init; }
+
+    // The reach an owner approved for the app space's app when sharing it, or since: while shared, its
+    // published origin is granted no more of what its manifest asks. None approves nothing.
+    public AppReach? Approved { get; init; }
 
     [JsonIgnore]
     public bool IsApp => AppId is not null;
