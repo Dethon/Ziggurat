@@ -5,6 +5,7 @@ using Domain.Monitor;
 using Domain.Security;
 using Domain.Tools;
 using Domain.Tools.FileSystem.Bridge;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
@@ -15,16 +16,19 @@ namespace Infrastructure.Agents;
 // The household decides on every read whether the agent acts for the viewer at all, as for a turn
 // (HouseholdStanding): the assertion an app session holds may be five minutes old.
 public sealed class AppReader(
-    AssertionVerifier assertions, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge)
+    AssertionVerifier assertions, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge,
+    ILogger<AppReader> logger)
 {
     // Null where the assertion is not believed: none, a forgery, out of date, another channel's, the
     // guest's or nobody's. Who reads is its person, of its household, and nothing else the request says.
     public async Task<AppReadAnswer?> ReadAsync(
         string? assertion, string operation, AppReadRequest request, CancellationToken ct)
     {
-        if (await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct)
-            is not TurnAdmission.Admitted { Identity: { Account: not null } viewer })
+        var admission = await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct);
+        if (admission is not TurnAdmission.Admitted { Identity: { Account: not null } viewer })
         {
+            logger.LogWarning("Refused a read of app {AppId}: its assertion is {Reason}", request.App.Id,
+                admission is TurnAdmission.Refused { Reason: var reason } ? reason : "the guest's");
             return null;
         }
 
@@ -48,7 +52,7 @@ public sealed class AppReader(
         await using (lease)
         {
             var registry = lease.Registry;
-            return await new AppRead(registry.Call(bridge.MaxFileBytes), request.App.Reads, registry.Offline)
+            return await new AppRead(registry.Call(viewer, bridge.MaxFileBytes), request.App.Reads, registry.Offline)
                 .RunAsync(operation, request.Arguments, ct);
         }
     }

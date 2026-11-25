@@ -19,11 +19,14 @@ public static class AppReadsApi
 {
     public static void MapAppReads(this IEndpointRouteBuilder app) =>
         app.MapPost($"{AppReads.AgentPath}/{{operation}}", async (
-            HttpContext http, string operation, McpCredentials credentials, SharedServers shared, AppReader reader) =>
+            HttpContext http, string operation, McpCredentials credentials, SharedServers shared, AppReader reader,
+            ILoggerFactory loggers) =>
         {
             var ct = http.RequestAborted;
             if (!FromTheAppsServer(http.Request, credentials, shared))
             {
+                loggers.CreateLogger(nameof(AppReadsApi))
+                    .LogWarning("Refused an app read: the caller did not present the apps server's credential");
                 return Results.Unauthorized();
             }
 

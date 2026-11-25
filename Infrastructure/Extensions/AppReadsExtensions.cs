@@ -27,6 +27,7 @@ public static class AppReadsExtensions
                     sp.GetService<IAgentDefinitionProvider>(), sp.GetService<IAccountStanding>(),
                     sp.GetRequiredService<ILoggerFactory>().CreateLogger<AppReader>()),
                 sp.GetRequiredService<ReadRegistryCache>(),
-                bridge));
+                bridge,
+                sp.GetRequiredService<ILogger<AppReader>>()));
     }
 }

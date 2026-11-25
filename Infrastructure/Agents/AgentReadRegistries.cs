@@ -113,10 +113,21 @@ public sealed class ReadRegistry : IAsyncDisposable
     // Whether the agent is offered a file tool, by its name: one it was never given is never run for it.
     public Func<string, bool> Offered { get; }
 
-    // One read's bridge call over these mounts, for this person, at the bridge's per-file ceiling. No
-    // token: nothing finds it again, and it lives as long as the read.
-    public VfsCall Call(long maxFileBytes) =>
-        new("", Registry, Permission, Offered, [.. Registry.GetMounts().Where(VfsCall.IsServed)], Caller, maxFileBytes);
+    // One read's bridge call over these mounts at the bridge's per-file ceiling, signed as `viewer`: the
+    // person this registry was built for, as the read's own verified identity names them now, so a kept
+    // registry never signs with roles they had when it was built. No token: nothing finds it again, and
+    // it lives as long as the read.
+    public VfsCall Call(IdentityClaims viewer, long maxFileBytes)
+    {
+        if (viewer.Account != Caller.Identity?.Account)
+        {
+            throw new ArgumentException("a registry is read only by the person it was built for", nameof(viewer));
+        }
+
+        return new VfsCall(
+            "", Registry, Permission, Offered, [.. Registry.GetMounts().Where(VfsCall.IsServed)],
+            CallerFor(viewer, Caller.AgentId), maxFileBytes);
+    }
 
     // The household's own servers named by the agent and not reached by this build.
     public IReadOnlyList<string> Offline => _reached.OwnServers.Offline;

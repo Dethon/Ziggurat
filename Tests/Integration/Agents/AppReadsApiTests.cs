@@ -1,16 +1,21 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.Security;
 using Domain.Tools;
+using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Agents;
 
@@ -286,6 +291,31 @@ public sealed class AppReadsApiTests
         await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her), ToolError.Codes.TransientDependency, "could not be read");
     }
 
+    // Every read is signed as the viewer the assertion now names, though the registry it reads through was
+    // built for an earlier one: a role the person gained or lost since reaches the server on the next read.
+    [Fact]
+    public async Task EachRead_IsSignedAsTheAssertionsViewer_NotTheOneTheRegistryWasBuiltFor()
+    {
+        await using var roles = await InMemoryMcpServer.StartAsync(services =>
+        {
+            services.AddSingleton(new RolesMount());
+            services.AddToolServer(new ProbeSettings()).AddFileSystemTools<RolesMount>().AddFileSystemResource<RolesMount>();
+        });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(roles.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var app = _glucoseApp with { Reads = ["/roles"] };
+        var glob = new JsonObject { ["basePath"] = "/roles", ["pattern"] = "*" };
+
+        async Task<IReadOnlyList<string>> SeenAsync(string[] assertedRoles) =>
+            [.. (await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, app, glob,
+                    TestAssertions.Of(SugaryServer.Her, AppChannels.Apps, roles: assertedRoles))))["entries"]!
+                .AsArray().Select(e => e!.GetValue<string>())];
+
+        (await SeenAsync(["member"])).ShouldBe(["/roles/member"]);
+        (await SeenAsync(["member", "sees-all"])).ShouldBe(["/roles/member", "/roles/sees-all"], ignoreOrder: true);
+    }
+
     // Neither half opens the route alone: the apps server's credential without a believable assertion,
     // or an assertion without the credential (another server's, or none), is refused before anything is
     // built or read.
@@ -389,5 +419,23 @@ public sealed class AppReadsApiTests
             CarbsHigh = 55
         });
         await db.SaveChangesAsync();
+    }
+
+    private sealed record ProbeSettings : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
+
+    // Lists the roles of whoever the call token says is calling.
+    private sealed class RolesMount(FileSystemCaller? caller = null) : FileSystemBackendBase
+    {
+        public override string FilesystemName => "roles";
+
+        public override string DescribeMount => "Who is calling.";
+
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new RolesMount(caller);
+
+        public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+            Task.FromResult(Glob([.. caller?.Conversation?.Identity?.Roles ?? []]));
     }
 }
