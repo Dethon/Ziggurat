@@ -5,7 +5,8 @@ using Domain.DTOs.Admin;
 namespace Dashboard.Client.Effects;
 
 // The household list's requests and what each answer does to the page: a list replaces the list, a
-// minted link is shown once and the list is read again, anything else is said as a notice.
+// minted link is shown once and the list is read again, a suspension or the apps feature changed reads
+// the list again, anything else is said as a notice.
 public sealed class HouseholdsEffect(HouseholdsAdminService admin, HouseholdsStore store)
 {
     public async Task LoadAsync()
@@ -27,19 +28,23 @@ public sealed class HouseholdsEffect(HouseholdsAdminService admin, HouseholdsSto
     public Task MintOwnerRecoveryAsync(string householdId, string userId) =>
         MintAsync(() => admin.MintOwnerRecoveryAsync(householdId, userId));
 
-    // The list is read again either way, so the row says what the household is now; a suspension that
+    public Task SetSuspensionAsync(string householdId, bool suspended) =>
+        ChangeAsync(() => admin.SetSuspensionAsync(householdId, suspended));
+
+    public Task SetAppsFeatureAsync(string householdId, bool on) =>
+        ChangeAsync(() => admin.SetAppsFeatureAsync(householdId, on));
+
+    // The list is read again either way, so the row says what the household is now; a change that
     // stood with a caveat says it.
-    public async Task SetSuspensionAsync(string householdId, bool suspended)
+    private async Task ChangeAsync<T>(Func<Task<HouseholdsAnswer<AdminSaved<T>>>> change)
     {
         store.SetBusy(true);
         try
         {
-            var answer = await admin.SetSuspensionAsync(householdId, suspended);
-            store.SetNotice(answer switch
+            store.SetNotice(await change() switch
             {
-                HouseholdsAnswer<AdminSaved<HouseholdSuspension>>.Answered { Value.Warning: { } warning } =>
-                    new HouseholdsNotice(warning, []),
-                HouseholdsAnswer<AdminSaved<HouseholdSuspension>>.Answered => null,
+                HouseholdsAnswer<AdminSaved<T>>.Answered { Value.Warning: { } warning } => new HouseholdsNotice(warning, []),
+                HouseholdsAnswer<AdminSaved<T>>.Answered => null,
                 var other => NoticeOf(other)
             });
             await LoadAsync();

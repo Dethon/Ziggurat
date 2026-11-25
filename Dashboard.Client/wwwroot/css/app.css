@@ -797,7 +797,7 @@ button { cursor: pointer; }
 .minted-link input { flex: 1; font-family: var(--mono); font-size: 0.8rem; min-width: 0; }
 .minted-link button.quiet { width: auto; padding: 0 0.75rem; height: 32px; border: 1px solid var(--border-strong); color: var(--text); }
 
-.tbl-households { --cols: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 1.5fr) 110px minmax(0, 1.4fr); max-height: none; }
+.tbl-households { --cols: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 1.5fr) 110px 130px minmax(0, 1.4fr); max-height: none; }
 .tbl-households .table-row { align-items: start; padding-top: 0.75rem; padding-bottom: 0.75rem; }
 .tbl-households .table-row > span { white-space: normal; overflow-wrap: anywhere; }
 .household-name { font-weight: 600; }
@@ -818,8 +818,9 @@ button { cursor: pointer; }
     background: rgba(167, 139, 250, 0.14);
     vertical-align: 1px;
 }
-.status { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
-.status .running { color: var(--accent-green); font-weight: 500; }
+.status, .apps-feature { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.status .running, .apps-feature .running { color: var(--accent-green); font-weight: 500; }
+.apps-feature .off { color: var(--text-muted); }
 .status .suspended { color: var(--accent-red); font-weight: 500; }
 .status .confirm { flex-basis: 100%; color: var(--text-muted); font-size: 0.78rem; }
 
@@ -1006,7 +1007,8 @@ button { cursor: pointer; }
         color: var(--text-subtle);
         margin-bottom: 0.1rem;
     }
-    .tbl-households .owners[data-label]::before, .tbl-households .status[data-label]::before { flex-basis: 100%; }
+    .tbl-households .owners[data-label]::before, .tbl-households .status[data-label]::before,
+    .tbl-households .apps-feature[data-label]::before { flex-basis: 100%; }
     .households-page input { min-width: 0; width: 100%; }
     .new-household label { flex-basis: 100%; }
     .new-household button { width: 100%; }

@@ -52,6 +52,14 @@ public sealed class HouseholdsAdminService(HttpClient http)
             },
             async content => (await content.ReadFromJsonAsync<AdminSaved<HouseholdSuspension>>())!);
 
+    public Task<HouseholdsAnswer<AdminSaved<HouseholdAppsFeature>>> SetAppsFeatureAsync(string householdId, bool on) =>
+        SendAsync(
+            new HttpRequestMessage(HttpMethod.Put, AdminProtocol.AppsFeature(householdId))
+            {
+                Content = JsonContent.Create(new HouseholdAppsFeature(on))
+            },
+            async content => (await content.ReadFromJsonAsync<AdminSaved<HouseholdAppsFeature>>())!);
+
     private async Task<HouseholdsAnswer<T>> SendAsync<T>(HttpRequestMessage request, Func<HttpContent, Task<T>> read)
     {
         request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);

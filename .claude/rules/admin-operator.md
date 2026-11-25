@@ -12,6 +12,7 @@ paths:
   - "Tests/Integration/Accounts/HouseholdListAdminTests.cs"
   - "Tests/Integration/Accounts/HouseholdSuspensionAdminTests.cs"
   - "Tests/Integration/Accounts/HouseholdAppsFeatureAdminTests.cs"
+  - "Tests/Unit/Dashboard.Client/Effects/HouseholdsEffectTests.cs"
   - "Tests/Integration/Accounts/SuspensionCoverageTests.cs"
   - "Tests/E2E/Dashboard/HouseholdListE2ETests.cs"
   - "Tests/E2E/Dashboard/DashboardHouseholdFilterE2ETests.cs"
@@ -75,13 +76,6 @@ See also: `admin.md` (routes, gate, answers, change log, the proxy), `admin-keys
   Nothing gathers them but a list: `SuspensionCoverageTests` places every accounts route by path with
   its stance and fails on a route it does not place — a new way in says what suspension does to it
   before it ships.
-- **The apps feature** (`HouseholdAppsFeatureAdmin`): **`PUT /operator/households/{householdId}/features/apps`**
-  `HouseholdAppsFeature { on }` sets the features section's `apps` alone, the operator's alone (owners only
-  see it: `admin-owner-pages.md`), the home included; answered `AdminSaved<HouseholdAppsFeature>`; no such
-  household is 404. Saved through the section's save and announced, so the household's agents are offered
-  `/apps` from their next turn (`HouseholdAgents.Offered`); not told stands with `NotToldWarning`. Recorded
-  on that household only when it changed ("Turned the apps feature on"). Runs in the household's turn
-  (`admin.md`, "Two owners"). Turning it off touches no app space.
 - **Its open pages are told at once**: the chat hub hears `SuspensionChanged` (`HouseholdAgentsAnnouncer`)
   and sends `OnAccessChanged`; the fresh connection is refused and the page shows the notice. **And back
   again once resumed**: the chat client goes to the notice as `/accounts/account?returnUrl=<where it
@@ -93,11 +87,20 @@ See also: `admin.md` (routes, gate, answers, change log, the proxy), `admin-keys
   `/accounts/me` still names the person. A refused fire counts as emitted, so the scheduler advances a cron and
   deletes a one-shot as if it ran: a one-shot due while suspended is gone on resume (kept so by the user, 2026-11-05); the Suspend confirmation and the members
   page say so.
+- **The apps feature** (`HouseholdAppsFeatureAdmin`): **`PUT /operator/households/{householdId}/features/apps`**
+  `HouseholdAppsFeature { on }` sets the features section's `apps` alone, the operator's alone (owners only
+  see it: `admin-owner-pages.md`), the home included; answered `AdminSaved<HouseholdAppsFeature>`; no such
+  household is 404. Saved through the section's save and announced, so the household's agents are offered
+  `/apps` from their next turn (`HouseholdAgents.Offered`); not told stands with `AdminSections.NotToldWarning`. Recorded
+  on that household only when it changed ("Turned the apps feature on"). Runs in the household's turn
+  (`admin.md`, "Two owners"). Turning it off touches no app space. The page's Apps column says on or off with
+  "Turn on"/"Turn off" (`HouseholdsEffect.SetAppsFeatureAsync`), the list read again after either.
 
 ## Tests
 
 - `HouseholdListAdminTests`, `HouseholdSuspensionAdminTests`, `HouseholdAppsFeatureAdminTests` (seam 1; the agent's listing a Kestrel stub
   behind the shared secret).
+- `HouseholdsEffectTests` (the page's switch over a stubbed admin API).
 - `HouseholdListE2ETests` on `DashboardAdminE2EFixture`: its stack is its own, so a test may create,
   change and suspend households freely. The base fixture keeps one page open at a time, so a second
   person uses `OwnerSessionAsync` / `OpenAsAsync` over HTTP rather than a page beside the operator's.
