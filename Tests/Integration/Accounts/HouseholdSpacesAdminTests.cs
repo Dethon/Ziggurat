@@ -253,6 +253,25 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe([$"Added space glucose, sharing app {id}; added space kitchen"]);
     }
 
+    // A save answers the page what it loads: the household's published apps beside the spaces, whatever the
+    // save held — unsharing the last app space leaves it to share again without a reload.
+    [Fact]
+    public async Task ASave_AnswersTheHouseholdsAppsToo_WhateverItHeld()
+    {
+        await using var apps = await AppsAsync();
+        await using var server = await StartAsync(apps);
+        var (household, ana) = await AppsHouseholdAsync(server);
+        var id = await PublishedAsync(apps, new Account(household, ana), "glucose");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var shared = new HouseholdSpace { Slug = "glucose", Name = "Glucose today", AccentColor = "#e9601f", AppId = id, Order = 1 };
+        await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection { Spaces = [HouseholdSpace.Default, shared] });
+
+        var unshared = await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection { Spaces = [HouseholdSpace.Default] });
+
+        (await unshared.Content.ReadFromJsonAsync<AdminSaved<AdminSpaces>>())!.Value.Apps.ShouldNotBeNull()
+            .Select(a => a.Id).ShouldBe([id]);
+    }
+
     // Only one of the household's published apps is shared: one not published yet, another household's
     // or no app at all is refused, naming the space, and nothing is saved.
     [Theory]

@@ -83,7 +83,8 @@ public static class HouseholdSpacesAdmin
             }
 
             var added = sent.Spaces.Where(s => s.IsApp && before.Spaces.All(b => b.Slug != s.Slug)).ToList();
-            var published = sent.Spaces.Any(s => s.IsApp) ? await PublishedAsync(store, apps, caller, ct) : [];
+            // Asked whatever the save holds, since the answer is what the page shows next: the apps it may share.
+            var published = await PublishedAsync(store, apps, caller, ct);
             if (added.Count > 0 && published is null)
             {
                 return Results.Json(new AdminRefusal(AdminSpaces.AppsUnavailableMessage, []),

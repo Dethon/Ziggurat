@@ -288,7 +288,8 @@ public sealed class AppPages(
             var spaces = await CallHousehold.OfPerson(app.HouseholdId, assertion, households).SpacesAsync(ct);
             return spaces.Spaces.Any(space => space.AppId == app.Id) ? Access.Open : Access.Closed;
         }
-        catch (HttpRequestException ex)
+        // An outage, or the reader's own timeout (a cancellation this request did not ask for).
+        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "Could not read household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
             return Access.Unchecked;

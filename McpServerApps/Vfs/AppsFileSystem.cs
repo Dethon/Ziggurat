@@ -957,7 +957,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         {
             spaces = await _household.SpacesAsync(ct);
         }
-        catch (HttpRequestException)
+        // An outage, or the reader's own timeout (a cancellation this call did not ask for).
+        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             return Fail<T>(ToolError.Codes.TransientDependency,
                 $"Whether the household shares the app {app.Slug} as a space could not be checked just now, so it was not deleted.",

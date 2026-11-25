@@ -103,4 +103,46 @@ public class AppsSpacesTests
         (await server.GetAsync(host, "/", server.SessionFor(AppsServer.Her, host), navigate: true)).StatusCode
             .ShouldBe(HttpStatusCode.OK);
     }
+
+    // A read of the household from a shared app's page is opened by the same rule as its pages: shared, it
+    // goes on to the agent (none in this fixture, so the unavailable envelope); unshared, the one 404;
+    // spaces that cannot be read, the unavailable envelope saying so, and nothing goes to the agent.
+    [Fact]
+    public async Task AReadFromASharedAppsPage_IsOpenedByTheSameRule()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var host = server.Published("glucose", id);
+        var his = server.SessionFor(AppsServer.Him, host);
+        var arguments = new System.Text.Json.Nodes.JsonObject { ["filePath"] = "/sugary/meals.md" };
+
+        var unshared = await server.ReadAsync(host, "read", arguments, his);
+        server.Spaces.Share(AppsServer.Her.TenantId, id);
+        var shared = await server.ReadAsync(host, "read", arguments, his);
+        server.Spaces.Down = true;
+        var unchecked_ = await server.ReadAsync(host, "read", arguments, his);
+
+        unshared.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        shared.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await shared.Content.ReadAsStringAsync()).ShouldNotContain("shared with the reader");
+        unchecked_.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await unchecked_.Content.ReadAsStringAsync()).ShouldContain("shared with the reader");
+    }
+
+    // A reader that runs out of time is an outage like any other: told to try again, never a fault.
+    [Fact]
+    public async Task SpacesThatTakeTooLong_AreUnchecked_NotAFault()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        var host = server.Published("glucose", id);
+        server.Spaces.Share(AppsServer.Her.TenantId, id);
+        server.Spaces.TimesOut = true;
+
+        (await server.GetAsync(host, "/", server.SessionFor(AppsServer.Him, host), navigate: true)).StatusCode
+            .ShouldBe(HttpStatusCode.ServiceUnavailable);
+        var deleted = await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" },
+            AppsServer.TurnOf(AppsServer.Her));
+        deleted["errorCode"]!.GetValue<string>().ShouldBe(global::Domain.Tools.ToolError.Codes.TransientDependency, deleted.ToJsonString());
+    }
 }

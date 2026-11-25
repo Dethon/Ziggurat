@@ -350,6 +350,9 @@ public sealed class StandInSpaces
 
     public volatile bool Down;
 
+    // Every read runs out of time, as the reader's HttpClient times out: a cancellation nobody asked for.
+    public volatile bool TimesOut;
+
     // The household shares this app as an app space (beside its default space), named so.
     public void Share(string householdId, string appId, string name = "Glucose") =>
         _saved[householdId] = new SpacesSection
@@ -360,5 +363,7 @@ public sealed class StandInSpaces
     public void Unshare(string householdId) => _saved.TryRemove(householdId, out _);
 
     public SpacesSection Read(string householdId) =>
-        Down ? throw new HttpRequestException("the accounts service is down") : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
+        Down ? throw new HttpRequestException("the accounts service is down")
+        : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
+        : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
 }
