@@ -60,15 +60,14 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
     public override string FilesystemName => Name;
 
-    public override string DescribeMount =>
-        "The person's own built apps — small read-only web apps, each a git repository served on an origin "
-        + "of its own: /apps/<slug>/ is one app's working tree. Writing /apps/<slug>/app.json creates an "
-        + "app; the action files ./publish, ./history [--limit N] and ./rollback <rev> in its directory "
-        + "publish the working tree, list its commits and serve an earlier one; ./check opens the preview in a "
-        + "browser as the person and leaves screenshots and report.json in /<slug>/.checks/latest/; "
-        + "/<slug>/errors, once a page has reported one, lists the runtime errors people's browsers met (uncaught "
-        + "errors, unhandled rejections, refused reads), one JSON object a line, newest first; removing "
-        + "the directory deletes the app. Writes under node_modules/ are refused.";
+    // Every turn of an agent offered /apps reads this line beside every other mount's, under the mounts
+    // section's budget; making, checking, publishing and repairing an app is the `apps` skill's.
+    public const string MountDescription =
+        "The person's own built apps — small read-only web apps, each a git repository served on an origin of "
+        + "its own: /apps/<slug>/ is one app's working tree, and writing its app.json creates it. Building, "
+        + "checking, publishing, rolling back and reading its errors are in the `apps` skill, not here.";
+
+    public override string DescribeMount => MountDescription;
 
     public override string DescribeCreate =>
         "Write a text file into an app's working tree. /<slug>/app.json creates the app (its manifest: "

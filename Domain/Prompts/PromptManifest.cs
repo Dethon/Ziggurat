@@ -29,8 +29,9 @@ public static class PromptManifest
     // section's budget covering its real mount list (2,800 where it covered its own words at 600) is
     // most of what it stands at: the prompt did not grow, the figure stopped leaving the list out.
     // Nabu dialling Sugary (its log and glucose watches advertised beside the voice section) made him
-    // the largest agent, at 11,700.
-    public const int StandingTokens = 11_700;
+    // the largest agent, at 11,700. The mounts budget measured with Home Assistant's mounts and the
+    // apps mount live (3,600 where it was 2,800 with Home Assistant offline) raised it to 12,500.
+    public const int StandingTokens = 12_500;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
