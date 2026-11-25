@@ -38,8 +38,10 @@ Tests:
 - `ChatHubSpacesTests` (+4): the switcher's order (chat and app spaces by the section's order, then private
   apps by name), the ids and session asked; an own shared app is its space alone; apps not asked leave the chat
   spaces; `GetSpaces`' JSON byte for byte with apps answered.
-- `SpaceStoreTests` (+1), `SpaceEffectTests` (+2): the list kept across space changes and replaced by the next
-  answer; asked on a validated space and on `LoadSwitcher`; not live keeps the last list silently.
+- `SpaceStoreTests` (+1), `SpaceEffectTests` (+2), `InitializationEffectTests` (the first load's order): the
+  list kept across space changes and replaced by the next answer; asked on becoming live again and on
+  `LoadSwitcher`; not live keeps the last list silently; the first load dispatches `LoadSwitcher` after the
+  topics' first page.
 - `McpServerContractTests.EveryServiceAChatHubMethodTakes_IsRegisteredByTheChannelsModule` (the composition:
   the real `ConfigureChannel`), `DeploymentConformanceTests.TheChatHub_AsksTheAppsServersListingOfAPersonsAppsOnItsMcpListener`.
 - `AppSpacesE2ETests` (collection `WebChatE2E.AppSpaces`, slice `zulu`, `CollectionSlices` 25): an owner of
@@ -52,16 +54,24 @@ Tests:
 
 **Red first:** the listing (3 of 4; the pages-listener case passed on arrival, as ticket 09's did), the session
 refresh case, the hub's three switcher cases ("Method does not exist"), the client's live-session case against
-a null stub, the conformance case, the store and effect cases (3), and the E2E at the switcher's button (after
-fixing the test's own vault path). The composition case was seen red by taking `AddPersonsApps` out. Passed on
-arrival: the client's three null cases (a null stub answers them too) and the `GetSpaces` JSON case, which
-guards what did not change.
+a null stub, the conformance case, the store and effect cases (3), the load-point move (the first load's order
+and the live-again case), and the E2E at the switcher's button (after fixing the test's own vault path). The
+composition case was seen red by taking `AddPersonsApps` out. The client's three null cases passed against the
+null stub and were each seen red by breaking the client (no empty-URL check, a revoked session not stopped, an
+unreachable apps server not caught). The `GetSpaces` case pins the hub's JSON as a literal and guards what
+did not change; it passed on arrival.
 
 **Choices and deviations:**
 - *There was no space switcher*: spaces were reached by address alone. The header's mark is now the switcher
   (a button with the mark and a caret, "Spaces"), a plain mark when there is one place. A chat space is an
-  in-app link to its address; an app is a plain link to its origin (a top-level navigation, same tab). It loads
-  as a space is validated and again whenever it opens; `GetSpaces` stays what validation and joining use.
+  in-app link to its address; an app is a plain link to its origin (a top-level navigation, same tab).
+  `GetSpaces` stays what validation and joining use.
+- *When the list is asked*: last in the first load (after the agents and the topics' first page), on becoming
+  live again, and whenever the switcher opens. SignalR answers a connection's invocations one at a time, and
+  this one costs two accounts calls and the listing (up to `AppsTimeout` with a hung apps server), so it is
+  never in front of the chat's own calls; a space switch does not ask (the list is the household's). A
+  household with one place shows a plain mark, so a first app published or shared since the page loaded
+  appears after the next reconnect or reload, not live.
 - *The hub method takes `IPersonsApps` as `[FromServices]`* (as `DismissAlert` does), not by constructor: some
   sixteen test hosts build the hub by hand. The composition test above holds the module to registering it.
 - *The listing reads no spaces.* The hub names the app ids its own spaces read found, and the apps server
@@ -91,8 +101,10 @@ guards what did not change.
 `WebChatCollectionSliceTests`, `E2EImagesTests`, `DrawnIconConformanceTests` passed. E2E: `AppSpacesE2ETests`
 (three runs), `HouseholdSpacesE2ETests`, `HouseholdAdminE2ETests`, `HouseholdMembersE2ETests`,
 `SeesAllWithdrawnE2ETests`, the Hearth classes and `WebChatPageE2ETests` (the header changed): all passed after
-the fix above. Not run: the full suite, the other E2E collections, smoke, eval. The switcher was seen only
-through Playwright's locators, never looked at.
+the fix above; after moving the load points, `WebChatApprovalE2ETests`, the picker and space cases and this
+collection again. Not run: the full suite, the other E2E collections, smoke, eval. The switcher was looked at
+once in screenshots taken by a throwaway edit of the E2E (desktop with the app space and the private app; a
+phone with the home's 26 spaces, the list scrolling inside 60% of the screen); nothing kept.
 
 **Deploying this needs:** no new secret, no Caddy change. Rebuild `base-sdk` first (Domain and Infrastructure
 changed), then `accounts`, `mcp-apps`, `mcp-channel-signalr` and `webui`; `docker-compose.yml` gains

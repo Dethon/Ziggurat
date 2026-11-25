@@ -130,7 +130,7 @@ services:
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
       # Where WebChat's space switcher learns a person's apps: the apps server's listing on its MCP
       # listener, asked with the accounts service's word for the session on persons-apps. No dependency:
-      # an apps server not up costs the switcher its apps, never the chat.
+      # an apps server not up costs the switcher its apps; the page asks it after its own first calls.
       APPSURL: http://mcp-apps:8080
     networks:
       - jackbot

@@ -225,7 +225,22 @@ public sealed class InitializationEffect : IDisposable
     // The deferred completion is owed exactly once, to whichever path gets here first.
     private bool ClaimAgentCatalog() => Interlocked.Exchange(ref _awaitingAgentCatalog, 0) == 1;
 
+    // The space switcher's list is asked last, however the first load ends: the hub answers a connection's
+    // calls one at a time, and that ask waits on the apps server, so it never stands in front of the chat's
+    // own first calls.
     private async Task SelectAgentAndLoadTopicsAsync(IReadOnlyList<AgentCatalogEntry> agents)
+    {
+        try
+        {
+            await SelectAgentAndLoadFirstPageAsync(agents);
+        }
+        finally
+        {
+            _dispatcher.Dispatch(new LoadSwitcher());
+        }
+    }
+
+    private async Task SelectAgentAndLoadFirstPageAsync(IReadOnlyList<AgentCatalogEntry> agents)
     {
         if (agents.Count == 0)
         {

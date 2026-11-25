@@ -21,6 +21,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly IDisposable _handlerRegistration;
     private readonly IDisposable _validatedRegistration;
     private readonly IDisposable _switcherRegistration;
+    private readonly IDisposable _liveAgainSubscription;
     private string _previousSlug = "default";
 
     public SpaceEffect(
@@ -40,13 +41,11 @@ public sealed class SpaceEffect : IDisposable
 
         _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(
             action => HandleSelectSpaceAsync(action.Slug).LogFaults(_logger, nameof(SelectSpace)));
-        _validatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(action =>
-        {
-            FollowTheSpace(action.Slug);
-            LoadSwitcherAsync().LogFaults(_logger, nameof(LoadSwitcher));
-        });
+        _validatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(action => FollowTheSpace(action.Slug));
         _switcherRegistration = dispatcher.RegisterHandler<LoadSwitcher>(
             _ => LoadSwitcherAsync().LogFaults(_logger, nameof(LoadSwitcher)));
+        _liveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
+            _ => LoadSwitcherAsync().LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain)));
     }
 
     // First load opens the household's first space when the address names none of them (a space
@@ -122,9 +121,12 @@ public sealed class SpaceEffect : IDisposable
         _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor, space.DefaultAgent));
     }
 
-    // What the space switcher offers, asked of the hub once a space is joined and whenever the switcher is
-    // opened, so an app space shared or an app published since is there the next time the person looks. Not
-    // live, it keeps what it last listed and says nothing: the person asked nothing that failed.
+    // What the space switcher offers: asked once the first load's own calls are done (InitializationEffect
+    // dispatches LoadSwitcher last, since the hub answers a connection's calls one at a time and this one
+    // waits on the apps server), whenever the page is live again after an interruption and whenever the
+    // switcher opens, so an app space shared or an app published since is there the next time the person
+    // looks. A space switch asks nothing: the list is the household's, not the space's. Not live, it keeps
+    // what it last listed and says nothing: the person asked nothing that failed.
     public async Task LoadSwitcherAsync()
     {
         var listed = await _topicService.GetSpacesAndAppsAsync();
@@ -139,5 +141,6 @@ public sealed class SpaceEffect : IDisposable
         _handlerRegistration.Dispose();
         _validatedRegistration.Dispose();
         _switcherRegistration.Dispose();
+        _liveAgainSubscription.Dispose();
     }
 }

@@ -331,15 +331,15 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
 
         var spaces = await connection.InvokeAsync<System.Text.Json.JsonElement>("GetSpaces");
 
-        spaces.GetRawText().ShouldBe(System.Text.Json.JsonSerializer.Serialize(new[] { Space("default", 0) }, HubJson));
+        // Spelled out, so a field the space or the switcher gains shows here as a change of this answer.
+        spaces.GetRawText().ShouldBe(
+            """[{"slug":"default","name":"The default","accentColor":"#123456","defaultAgent":null,"order":0,"appId":null,"approved":null}]""");
     }
 
     private static HouseholdSpace AppSpace(string slug, int order) => new()
     {
         Slug = slug, Name = $"The {slug} app", AccentColor = "#654321", Order = order, AppId = "a1b2c3"
     };
-
-    private static readonly System.Text.Json.JsonSerializerOptions HubJson = new(System.Text.Json.JsonSerializerDefaults.Web);
 
     private static PersonsApp App(string id, string name, bool own) =>
         new(id, name, "#0000ff", $"https://{name.Split(' ')[0].ToLowerInvariant()}-{id}.apps.example/", own);
