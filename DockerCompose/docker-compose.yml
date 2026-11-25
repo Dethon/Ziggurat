@@ -356,6 +356,10 @@ services:
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
       # Where the accounts service announces that a person's sessions ended, which ends their app sessions.
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # Where a built app's reads go: the agent's internal route, which believes MCP__SHAREDSECRET above,
+      # the credential the agent holds for this server (MCP__SECRETS__mcp-apps there). No dependency: the
+      # agent starts after this server, and a read before it answers unavailable.
+      AGENTURL: http://agent:8080
     networks:
       - jackbot
     depends_on:

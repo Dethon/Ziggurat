@@ -934,6 +934,26 @@ public class DeploymentConformanceTests
         new global::McpServerApps.Settings.AppSessionSettings().AssertionKept.ShouldBe(kept);
     }
 
+    // A built app's reads go from the apps server to the agent on the compose network, believed on the
+    // apps server's own credential: the one the agent already holds for the apps server it dials, so no
+    // secret exists for this alone and holding the agent API's opens nothing here. The route is never
+    // reached through the proxy.
+    [Fact]
+    public void TheAppsServer_ReadsThroughTheAgent_WithTheCredentialTheAgentHoldsForIt()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps").Environment;
+        var dialled = ServerAddress.FromUrl(ShippedSetting("Agent", "sharedServers", "apps").GetString()!).ShouldNotBeNull();
+
+        dialled.Name.ShouldBe("mcp-apps");
+        apps.GetValueOrDefault("AGENTURL").ShouldBe("http://agent:8080");
+        apps["MCP__SHAREDSECRET"].ShouldBe(compose.Service("agent").Environment[$"MCP__SECRETS__{dialled.Name}"]);
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.AppReads.AgentRoute("read"))?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
+    }
+
     // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
     // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
     [Fact]
