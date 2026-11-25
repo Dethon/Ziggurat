@@ -1,5 +1,7 @@
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.Security;
+using Domain.Tools;
 using Domain.Tools.FileSystem.Bridge;
 
 namespace Infrastructure.Agents;
@@ -20,7 +22,23 @@ public sealed class AppReader(AssertionVerifier assertions, ReadRegistryCache re
             return null;
         }
 
-        await using var lease = await registries.LeaseAsync(viewer, request.App.Agent, ct);
-        return await new AppRead(lease.Registry.Call(bridge.MaxFileBytes), request.App.Reads).RunAsync(operation, request.Arguments, ct);
+        ReadLease lease;
+        try
+        {
+            lease = await registries.LeaseAsync(viewer, request.App.Agent, ct);
+        }
+        catch (AgentNotFoundException)
+        {
+            return AppReadAnswer.Refused(ToolError.PermissionDenied(
+                $"The household no longer has {request.App.Agent}, the agent that built this app, so the app reads nothing.",
+                "Build the app again with one of the household's agents."));
+        }
+
+        await using (lease)
+        {
+            var registry = lease.Registry;
+            return await new AppRead(registry.Call(bridge.MaxFileBytes), request.App.Reads, registry.Offline)
+                .RunAsync(operation, request.Arguments, ct);
+        }
     }
 }

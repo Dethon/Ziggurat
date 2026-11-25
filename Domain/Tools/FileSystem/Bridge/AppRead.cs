@@ -11,7 +11,8 @@ namespace Domain.Tools.FileSystem.Bridge;
 // the tool's result shape on virtual paths, and allowed only where the call would run unasked (VfsCall).
 // An app reads only the mount points its manifest's `reads` names, and nothing reachable here changes
 // anything: every other operation is refused with the permission envelope.
-public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads)
+// `offline`: the household's own servers the agent names that this build did not reach.
+public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnlyList<string> offline)
 {
     public async Task<AppReadAnswer> RunAsync(string operation, JsonObject arguments, CancellationToken ct)
     {
@@ -56,15 +57,26 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads)
         _ => Required(arguments, "path")
     };
 
-    // The mount a path resolves to, or for a path nothing is mounted at, the mount point it names.
+    // The mount a path resolves to, or for a path nothing is mounted at, the mount point it names. A
+    // mount the app may read that is not there while a household server is offline is that server's,
+    // as likely as not: which mount point a server publishes is known only once it is reached, so the
+    // read is unavailable rather than missing, and worth asking again.
     private ToolErrorResult? Outside(string path)
     {
-        var mountPoint = call.MountPointOf(path) ?? "/" + path.Trim('/').Split('/')[0];
-        return reads.Contains(mountPoint, StringComparer.Ordinal)
-            ? null
-            : ToolError.PermissionDenied(
+        var mounted = call.MountPointOf(path);
+        var mountPoint = mounted ?? "/" + path.Trim('/').Split('/')[0];
+        if (!reads.Contains(mountPoint, StringComparer.Ordinal))
+        {
+            return ToolError.PermissionDenied(
                 $"{path} is outside what this app reads: its manifest's reads are {(reads.Count == 0 ? "none" : string.Join(", ", reads))}.",
                 "Name the mount point in the manifest's reads and publish the app again.");
+        }
+
+        return mounted is null && offline.Count > 0
+            ? CapabilityError.For(CapabilityState.Unavailable,
+                $"{mountPoint} is not mounted while the household's {string.Join(", ", offline)} {(offline.Count == 1 ? "is" : "are")} offline.",
+                "Read again once it is back; nothing was read.")
+            : null;
     }
 
     private async Task<AppReadAnswer> ReadAsync(JsonObject arguments, CancellationToken ct)

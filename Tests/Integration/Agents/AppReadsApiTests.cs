@@ -166,6 +166,99 @@ public sealed class AppReadsApiTests
             ToolError.Codes.PermissionDenied, "file_info");
     }
 
+    // The household turning a feature off withholds its server from the agent's reads as from its turns:
+    // the mount is not there, as the tool would answer.
+    [Fact]
+    public async Task AWithheldFeature_LeavesItsMountOut_AsForATurn()
+    {
+        await using var sugary = await SugaryServer.StartAsync(sugaryPeople: _people);
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, [Jonas(sugary.Endpoint)], new FeaturesSection { Sugary = false });
+        await using var agent = await AppReadsAgent.StartAsync(households, new SharedServers { Sugary = sugary.Endpoint });
+
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Query, _glucoseApp,
+                new JsonObject { ["path"] = "/sugary", ["sql"] = "select notes from meals" },
+                TestAssertions.Of(SugaryServer.Her, AppChannels.Apps)),
+            ToolError.Codes.NotFound, "/sugary");
+    }
+
+    // A household server the agent names, set up and not connected, is unavailable rather than missing:
+    // the read is worth asking again once it is back. Its name is not its mount point's.
+    [Fact]
+    public async Task AnOfflineOwnServer_AnswersTheUnavailableEnvelope()
+    {
+        await using var vault = await TextFileServer.StartAsync("vault", new Dictionary<string, string> { ["a.md"] = "vault" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, [Jonas("kit-files")], null, ownServers: ["kit-files"]);
+        var online = new Dictionary<string, string>();
+        await using var agent = await AppReadsAgent.StartAsync(households, online: online);
+        var app = _glucoseApp with { Reads = ["/vault"] };
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+
+        var refused = await RefusedAsync(
+            agent.ReadAsync(AppReads.Operations.Read, app, new JsonObject { ["filePath"] = "/vault/a.md" }, her),
+            ToolError.Codes.TransientDependency, "kit-files");
+        refused["retryable"]!.GetValue<bool>().ShouldBeTrue();
+
+        online["kit-files"] = vault.Endpoint;
+        (await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, new JsonObject { ["filePath"] = "/vault/a.md" }, her)))
+            ["content"]!.GetValue<string>().ShouldContain("vault");
+    }
+
+    // A file crosses whole, so a blob read has the bridge's ceiling: past it the read is refused, not
+    // served slowly. The text read pages through the tool's own window instead.
+    [Fact]
+    public async Task ABlobPastTheBridgesCeiling_IsRefused()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string>
+        {
+            ["small.png"] = "0123456789",
+            ["large.png"] = "0123456789A"
+        });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households, maxFileBytes: 10);
+        var app = _glucoseApp with { Reads = ["/notes"] };
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+
+        using var small = await agent.ReadAsync(AppReads.Operations.Blob, app, new JsonObject { ["path"] = "/notes/small.png" }, her);
+        (await small.Content.ReadAsStringAsync()).ShouldBe("0123456789");
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Blob, app, new JsonObject { ["path"] = "/notes/large.png" }, her),
+            ToolError.Codes.InvalidArgument, "10 bytes");
+    }
+
+    // An app reads through the agent that built it, and only while the household has that agent: one it
+    // no longer has refuses every read, naming it — read cold, or after a read was cached — and nothing
+    // of it is kept, so the agent added back reads again.
+    [Fact]
+    public async Task ABuildingAgentTheHouseholdNoLongerHas_RefusesEveryRead_NamingIt()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string> { ["a.md"] = "notes" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+        var app = _glucoseApp with { Reads = ["/notes"] };
+        var read = new JsonObject { ["filePath"] = "/notes/a.md" };
+
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app with { Agent = "nabu" }, read, her),
+            ToolError.Codes.PermissionDenied, "nabu");
+
+        await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her));
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint) with { Id = "nabu", Name = "Nabu" });
+        foreach (var operation in AppReads.Operations.All)
+        {
+            await RefusedAsync(agent.ReadAsync(operation, app, new JsonObject
+            {
+                ["path"] = "/notes", ["filePath"] = "/notes/a.md", ["basePath"] = "/notes", ["pattern"] = "*", ["query"] = "x",
+                ["sql"] = "select 1"
+            }, her), ToolError.Codes.PermissionDenied, "jonas");
+        }
+
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her));
+    }
+
     // Neither half opens the route alone: the apps server's credential without a believable assertion,
     // or an assertion without the credential (another server's, or none), is refused before anything is
     // built or read.
