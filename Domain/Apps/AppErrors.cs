@@ -139,7 +139,12 @@ public sealed record AppErrorRead
             yield return "read.envelope.errorCode is one of the tools' codes.";
         }
 
-        if (Envelope.Message.Length > AppErrorReport.MaxMessage || Envelope.Hint?.Length > AppErrorReport.MaxMessage)
+        if (Envelope.Message is null)
+        {
+            yield return "read.envelope.message is given.";
+        }
+
+        if (Envelope.Message?.Length > AppErrorReport.MaxMessage || Envelope.Hint?.Length > AppErrorReport.MaxMessage)
         {
             yield return $"read.envelope's message and hint are at most {AppErrorReport.MaxMessage} characters.";
         }
@@ -151,7 +156,10 @@ public sealed record AppErrorRead
 public sealed record AppErrorEnvelope
 {
     public required string ErrorCode { get; init; }
-    public required string Message { get; init; }
+
+    // Always given by a page; never kept from another member's (AppErrorReduction).
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Message { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Hint { get; init; }
@@ -166,18 +174,32 @@ public abstract record AppErrorReportParse
     public sealed record Refused(string Problem) : AppErrorReportParse;
 }
 
-// One kept runtime error, as the agent reads it at /apps/<slug>/errors.
+// One kept runtime error, as the agent reads it at /apps/<slug>/errors. The author's own report keeps the
+// page's text; another member's keeps only what the server checked (AppErrorReduction) and says so.
 public sealed record AppErrorEntry
 {
     public required DateTimeOffset Time { get; init; }
     public required string Kind { get; init; }
-    public required string Message { get; init; }
+
+    // A reduced report's error type: a standard one, else Error.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Name { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Message { get; init; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Stack { get; init; }
 
-    public required string Route { get; init; }
-    public required string UserAgent { get; init; }
+    // A reduced report's stack: each place in the app's own files, `/path:line:column`, innermost first.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? Frames { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Route { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UserAgent { get; init; }
 
     // The viewer's person id (their account's user id; the household is the app's).
     public required string Viewer { get; init; }
@@ -190,4 +212,8 @@ public sealed record AppErrorEntry
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AppErrorRead? Read { get; init; }
+
+    // Set on another member's report, saying what of it was kept and what to do instead.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reduced { get; init; }
 }

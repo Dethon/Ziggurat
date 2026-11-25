@@ -202,8 +202,8 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   reader, same cache, so an outage costs it the reader's timeout), but **accounts never closes an author's
   own app**: spaces unreadable or refused open it under its whole manifest, which reaches no one's data but
   theirs — the one case it is granted more than approved.
-- Not held: every member's runtime errors land in the author's `/<slug>/errors`, messages and all ("Runtime
-  errors").
+- **A member's runtime errors reach the author reduced** ("Runtime errors"), so an error is no channel past
+  the approved reach.
 
 ## App sign-in
 
@@ -388,6 +388,17 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   `envelope` with a known `errorCode`, message, hint). Anything else is 400. **The server stamps the
   rest**: `time` (its clock), `userAgent` (the header, cut at 500), `viewer` (the session's user id),
   `origin` (`published`/`preview`), and the envelope's `retryable` from this side's taxonomy.
+- **Only the author's own report keeps the page's text.** Every word of a report is the page's (it may
+  POST `/_errors` itself, `pushState` its route, set a User-Agent in Firefox), and the author reads the
+  file, so another member's is kept **reduced** (`AppErrorReduction`, checked against what that origin
+  serves, `AppPages.ServedFiles.AtAsync`): `kind`; `name`, a standard ECMAScript error type from the
+  message's prefix, else `Error`; `frames`, the stack's first `MaxFrames` (10) places on the report's
+  Host whose path is a served file (or `/_app/`'s), `/path:line:column`, no query; `route` only when it
+  names a served file or directory; a read's `operation`, `path` cut to its mount point only when the
+  origin's manifest reads it, and the envelope's code; `reduced` (`AppErrorReduction.Note`, telling the
+  agent to ask the person or `./check`). No message, stack, user agent, hint or envelope message. What
+  remains is a numeric channel (which frames, lines, columns, type, kind and served route), bounded by the
+  frame cap and the per-session minute.
   **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
   dropped. 204 when kept.
 - **Kept** (`Store/AppErrorLog`): `<app>/errors` (`BuiltAppStore.ErrorsFile`, beside `git/` and `tree/`,
@@ -397,16 +408,16 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
   dropped, its directory never made again. The mount shows it read-only at **`/<slug>/errors`** once one
   was reported (listed, read and searched as text; every write refused as a reserved name's).
 - **The operator sees a person's report** as an `ErrorEvent` (`Service` `mcp-apps`, `ErrorType`
-  `AppErrors.ErrorType` = `AppRuntimeError`, message `<slug>-<id>[-preview]: <kind>: <message>`, never the
-  stack) under **the app's own household** (`ForHousehold(app.HouseholdId)`), on the metrics feed the
+  `AppErrors.ErrorType` = `AppRuntimeError`, message `<slug>-<id>[-preview]: <kind>: <message>` for the
+  author's own and `…: <kind>: <name>` for a member's, never the stack nor a member's text) under **the app's own household** (`ForHousehold(app.HouseholdId)`), on the metrics feed the
   apps server publishes to when it has Redis (`AddMetricsPublishing`, its heartbeat the health tile, so it
   is no `HttpProbes` target; the shared filter's failed tool calls reach the feed too). **A check's
   session's report is answered 204 and kept nowhere**, before its minute is counted: `report.json` already
   shows the agent those page errors, every viewport of every check is a new page whose reports would push
   people's out of `Errors:Kept`, and no person met them.
-- A message is an Error's own text, and nothing but the shape and the caps holds it back: an app that
-  writes what it read into one sends it, and so does an engine message quoting its input (Chromium's
-  `JSON.parse` names the text it could not parse).
+- The author's own message is an Error's own text, held back by nothing but the shape and the caps (an
+  engine message may quote its input: Chromium's `JSON.parse` names the text it could not parse): it is
+  their own data, on their own app.
 
 ## Tests
 
@@ -434,7 +445,7 @@ reading through `/_vfs/*`, and another household's 404, `AppsSpacesTests`/`AppsR
 `AppSpacesOverTheWireTests` an app space end to end on a real accounts service and Redis; `AppsRuntimeErrorsTests`
 `/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
 envelope, `Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's
-report kept nowhere), a
+report kept nowhere, a member's report reduced with no text of the page's in the file or the event), a
 Chromium case the library's reporting; `AppChecksTests` the check
 in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the

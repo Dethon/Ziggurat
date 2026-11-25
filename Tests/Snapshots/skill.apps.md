@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1559 / 1600 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1596 / 1600 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -83,4 +83,4 @@ Exit 1 means an assertion failed or the check did not finish. A check past the h
 
 ### When it breaks
 
-`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met (the library reports uncaught errors, unhandled rejections and refused reads itself; an error the app catches and swallows never arrives), newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `viewer` and `origin` (`published` or `preview`). Read it, fix the cause, check, publish.
+`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met (the library reports uncaught errors, unhandled rejections and refused reads itself; an error the app catches and swallows never arrives), newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `viewer` and `origin` (`published` or `preview`). Another member's entry is `reduced` to `name` (the error type), `frames` (places in the app's files) and a read's mount and code: ask them, or check. Read it, fix the cause, check, publish.

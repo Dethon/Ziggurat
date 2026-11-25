@@ -19,6 +19,10 @@ public static partial class AppOriginFiles
     public const string LibraryPath = Prefix + "apps.js";
     public const string ModulePath = Prefix + "apps.mjs";
 
+    // Every file the server serves under Prefix on an app's origin (the sign-in's callback is no file).
+    public static readonly IReadOnlySet<string> Paths =
+        new HashSet<string>([ManifestPath, IconPath, WorkerPath, RegisterPath, LibraryPath, ModulePath], StringComparer.Ordinal);
+
     // The manifest is fetched with the page's cookie (use-credentials), since the origin opens to its
     // app session alone; the library runs before the app's own scripts, the registration after parsing.
     public const string Tags =

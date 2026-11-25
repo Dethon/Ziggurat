@@ -113,3 +113,29 @@ recording publisher, and the collector's handling of `ErrorEvent`s is existing, 
 Rebuild `base-sdk` first, since Domain changed. Then rebuild `mcp-apps` and `observability` (the probe list
 changed). Until the apps server runs this build its pages' library sends nothing; after it, an open page
 keeps the old library until it reloads.
+
+**Follow-up: a member's errors are no data channel (branch `app-spaces`).** The page wrote every word of a
+report, and every member's landed in the author's `/<slug>/errors` (and the operator's event repeated the
+message), so a shared app could `throw new Error(JSON.stringify(rows))` and hand each viewer's data to its
+author past the owner-approved `connect` reach. Now only the author's own report keeps its text. Another
+member's is kept reduced (`Domain/Apps/AppErrorReduction`, applied in `AppErrorReports.ReducedAsync` against
+what that origin serves, `AppPages.ServedFiles.AtAsync`):
+- `kind`; `name`, the message's prefix when it is a standard ECMAScript error type, else `Error`;
+- `frames`: the stack's first ten places on the report's own Host whose path is a served file (or one of
+  `/_app/`'s), as `/path:line:column`, the query dropped;
+- `route` only when it names a served file or directory;
+- for a read: the operation, the path cut to its mount point only when the origin's manifest reads it, and
+  the envelope's code;
+- `reduced`, a note telling the agent to ask the person or run `./check`.
+
+No message, stack, user agent, envelope message or hint. The operator's event is `<label>: <kind>: <name>`
+for a member's report. *Deviation from the brief:* it kept the route path without its query. The path is
+the page's too (`history.pushState('/' + rows)`), a 1000-character channel, so it is kept only when it names
+something the origin serves. The User-Agent was dropped too: Firefox lets a page set it on `fetch`. What
+remains is a numeric channel (which frames, their lines and columns, the kind, type and served route),
+bounded by ten frames and `Errors:PerSessionPerMinute`.
+Test: `AppsRuntimeErrorsTests.AnotherMembersReport_KeepsOnlyWhatTheServerChecks_AndNoTextThePageWrote`
+plants one string in every field a page controls (message, stack names, paths and query, route, read path,
+envelope message and hint, User-Agent), posts it as a member of a shared app and finds it nowhere in the file
+or the operator's events; the author's own same report keeps it. It was red first.
+

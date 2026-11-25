@@ -302,6 +302,88 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         raw.ShouldContain("/día");
     }
 
+    // A shared app runs on every member's phone, and its author reads the errors file: a page could throw
+    // what it read about its viewer (or post /_errors itself) and so hand it to the author past the reach an
+    // owner approved. Another member's report keeps only what the server can check — the kind, a standard
+    // error type, the stack's places in the app's own served files, a route that names a served file, a
+    // read's operation, approved mount and code — and says it was reduced; no text the page wrote is kept,
+    // in the file or in the operator's event. The author's own report keeps its text.
+    [Fact]
+    public async Task AnotherMembersReport_KeepsOnlyWhatTheServerChecks_AndNoTextThePageWrote()
+    {
+        var metrics = new Tests.Unit.RecordingMetricsPublisher();
+        await using var apps = await AppsServer.StartAsync(services: services => services.AddSingleton<IMetricsPublisher>(metrics));
+        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
+        await apps.CreateAsync(AppsServer.Her, "/glucose/index.html", "<script type=\"module\" src=\"/main.js\"></script>");
+        await apps.CreateAsync(AppsServer.Her, "/glucose/main.js", "throw new TypeError('rows is undefined');");
+        await apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        apps.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"] });
+        var host = apps.Published("glucose", id);
+        var his = apps.SessionFor(AppsServer.Him, host);
+        const string canary = "her-lentils-180";
+        var bodies = new[]
+        {
+            new JsonObject
+            {
+                ["kind"] = "error", ["message"] = $"TypeError: {canary}",
+                ["stack"] = $"TypeError: {canary}\n    at {canary} (https://{host}/main.js?{canary}:3:7)\n"
+                            + $"    at https://{host}/{canary}.js:1:1\n    at https://cdn.jsdelivr.net/npm/{canary}@1.0.0/x.js:9:9\n"
+                            + $"    at https://{host}/_app/apps.js:12:3",
+                ["route"] = $"/{canary}"
+            },
+            new JsonObject { ["kind"] = "rejection", ["message"] = $"{canary}Error: {canary}", ["route"] = "/" },
+            new JsonObject
+            {
+                ["kind"] = "read", ["message"] = canary, ["route"] = "/index.html",
+                ["read"] = new JsonObject
+                {
+                    ["operation"] = "query", ["path"] = $"/sugary/{canary}",
+                    ["envelope"] = new JsonObject { ["errorCode"] = "permission_denied", ["message"] = canary, ["hint"] = canary }
+                }
+            },
+            new JsonObject
+            {
+                ["kind"] = "read", ["message"] = canary, ["route"] = "/",
+                ["read"] = new JsonObject
+                {
+                    ["operation"] = "read", ["path"] = $"/{canary}/a.md",
+                    ["envelope"] = new JsonObject { ["errorCode"] = "permission_denied", ["message"] = canary }
+                }
+            }
+        };
+
+        foreach (var body in bodies)
+        {
+            using var reported = await apps.ReportAsync(host, body.ToJsonString(), his, userAgent: $"Mozilla/5.0 {canary}");
+            reported.StatusCode.ShouldBe(HttpStatusCode.NoContent, await reported.Content.ReadAsStringAsync());
+        }
+
+        (await apps.ReadAsync(AppsServer.Her, "/glucose/errors")).ShouldNotContain(canary);
+        metrics.Published.OfType<ErrorEvent>().ShouldAllBe(e => !e.Message.Contains(canary));
+        var entries = (await EntriesAsync(apps)).Reverse().ToList();
+        entries.ShouldAllBe(e => e["viewer"]!.GetValue<string>() == AppsServer.Him.UserId
+                                 && e["reduced"] != null && e["message"] == null && e["stack"] == null && e["userAgent"] == null);
+        entries[0]["name"]!.GetValue<string>().ShouldBe("TypeError");
+        entries[0]["frames"]!.AsArray().Select(f => f!.GetValue<string>()).ShouldBe(["/main.js:3:7", "/_app/apps.js:12:3"]);
+        entries[0]["route"].ShouldBeNull();
+        entries[1]["kind"]!.GetValue<string>().ShouldBe("rejection");
+        entries[1]["name"]!.GetValue<string>().ShouldBe("Error");
+        entries[1]["route"]!.GetValue<string>().ShouldBe("/");
+        entries[2]["route"]!.GetValue<string>().ShouldBe("/index.html");
+        entries[2]["read"]!.ToJsonString().ShouldBe("""{"operation":"query","path":"/sugary","envelope":{"errorCode":"permission_denied","retryable":false}}""");
+        entries[3]["read"]!["path"].ShouldBeNull();
+        metrics.Published.OfType<ErrorEvent>().First().Message.ShouldBe($"glucose-{id}: error: TypeError");
+
+        using var hers = await apps.ReportAsync(host, bodies[0].ToJsonString(), apps.SessionFor(AppsServer.Her, host),
+            userAgent: $"Mozilla/5.0 {canary}");
+        var own = (await EntriesAsync(apps))[0];
+        own["reduced"].ShouldBeNull();
+        own["message"]!.GetValue<string>().ShouldBe($"TypeError: {canary}");
+        own["stack"]!.GetValue<string>().ShouldContain($"/{canary}.js:1:1");
+        own["route"]!.GetValue<string>().ShouldBe($"/{canary}");
+        metrics.Published.OfType<ErrorEvent>().Last().Message.ShouldContain(canary);
+    }
+
     // The errors as the agent reads them: one JSON object a line, newest first.
     private Task<IReadOnlyList<JsonNode>> EntriesAsync() => EntriesAsync(_apps);
 

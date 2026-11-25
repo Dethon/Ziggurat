@@ -257,12 +257,13 @@ public sealed class AppPages(
             case Access.Unchecked:
                 await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable);
                 return;
-            case Access.Closed:
+            case Access.Open { SharedAs: var sharedAs } when await ServedAsync(app, origin, sharedAs, ct) is { } served:
+                await reports.ReportAsync(context, app, session, served, ct);
+                return;
+            default:
                 await NotFoundAsync(context);
                 return;
         }
-
-        await reports.ReportAsync(context, app, session, ct);
     }
 
     // Who may open an app's origins, its pages, reads and reports alike: its author; and the published
@@ -529,13 +530,20 @@ public sealed class AppPages(
         await response.WriteAsync("Not found.", context.RequestAborted);
     }
 
-    private abstract record ServedFiles(AppManifest Manifest)
+    // What an origin serves at a page's path: one of the server's own files under /_app/, else the app's
+    // (a directory too), else nothing.
+    internal abstract record ServedFiles(AppManifest Manifest)
     {
         // A path below the manifest's root, its segments already checked.
         public abstract Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct);
+
+        public async Task<CommittedEntry?> AtAsync(string path, CancellationToken ct) =>
+            AppOriginFiles.Paths.Contains(path) ? new CommittedEntry.File([])
+            : path.StartsWith(AppOriginFiles.Prefix, StringComparison.Ordinal) || Segments(path) is not { } segments ? null
+            : await EntryAsync(string.Join('/', segments), ct);
     }
 
-    private sealed record WorkingTreeFiles(AppManifest Manifest, string Root) : ServedFiles(Manifest)
+    internal sealed record WorkingTreeFiles(AppManifest Manifest, string Root) : ServedFiles(Manifest)
     {
         public override async Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct)
         {
@@ -555,7 +563,7 @@ public sealed class AppPages(
         }
     }
 
-    private sealed record CommitFiles(AppManifest Manifest, AppRepository Repository, string Commit) : ServedFiles(Manifest)
+    internal sealed record CommitFiles(AppManifest Manifest, AppRepository Repository, string Commit) : ServedFiles(Manifest)
     {
         public override Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct) =>
             Repository.EntryAsync(Commit, string.Join('/', new[] { Manifest.Root, relative }.Where(p => p.Length > 0)), ct);

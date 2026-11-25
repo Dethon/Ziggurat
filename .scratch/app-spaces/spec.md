@@ -351,6 +351,12 @@ until an owner removes the space.
 - The client library reports uncaught errors, unhandled rejections and failed or refused reads to
   `/_errors` on the app's origin: message, stack, the virtual path and envelope for a read, the route,
   the user agent, the time and the viewer's person id. Never the data read.
+- Every word of a report is the page's, so only the author's own reports keep their text. Another
+  member's report is kept reduced to what the server can check against what the origin serves: the kind,
+  a standard error type (else `Error`), the stack's places in the app's own served files (path, line,
+  column), the route only when it names a served file, and for a read its operation, its mount point when
+  the app reads it, and the envelope's code. The entry says it was reduced. The operator's event never
+  carries a member's text.
 - The apps server keeps the newest N per app, serves them as `/apps/<slug>/errors`, and logs them as
   household errors the operator sees.
 
