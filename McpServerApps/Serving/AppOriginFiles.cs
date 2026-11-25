@@ -95,9 +95,20 @@ public static partial class AppOriginFiles
     // How a built app reads the household: each of the file tools' reads, by the tool's own arguments,
     // answered with the tool's own result — and a refusal thrown as a ReadError carrying the tools'
     // envelope (errorCode, message, retryable, hint), with the path it was about. Small and dependent on
-    // nothing; one expression, so the classic script and the module are the same object.
-    private const string Reader =
-        """
+    // nothing; one expression, so the classic script and the module are the same object, and the error
+    // listeners below are installed once whichever loads first.
+    //
+    // It also tells the server what went wrong (POST /_errors, AppErrors): every uncaught error, unhandled
+    // rejection and failed or refused read, so the agent can see why an app broke on somebody's phone.
+    // - What went wrong, never what was read: a read's operation, path and envelope; an Error's name,
+    //   message and stack; a thrown or rejected value that is no Error by its type alone.
+    // - A failed read is reported as the read, once: its ReadError is never reported again as the rejection
+    //   or uncaught error it becomes when the app does not catch it.
+    // - One broken loop is one report: the same error is sent once a page, and at most ten a minute, well
+    //   under the server's own limit a session (Errors:PerSessionPerMinute).
+    // - Reporting never throws into the app, and a report that fails is dropped, never reported itself.
+    private static readonly string Reader =
+        $$"""
         (() => {
           'use strict';
           class ReadError extends Error {
@@ -112,6 +123,70 @@ public static partial class AppOriginFiles
               this.envelope = envelope;
             }
           }
+
+          const clip = (text, length) => typeof text === 'string' && text.length > 0 ? text.slice(0, length) : undefined;
+          const reported = new WeakSet();
+          const seen = new Set();
+          let minute = 0;
+          let sent = 0;
+          const report = body => {
+            try {
+              const key = JSON.stringify([body.kind, body.message, body.read?.operation, body.read?.path]);
+              const now = Date.now();
+              if (now - minute >= 60000) {
+                minute = now;
+                sent = 0;
+              }
+              if (seen.has(key) || sent >= 10) {
+                return;
+              }
+              seen.add(key);
+              sent++;
+              fetch('{{AppErrors.OriginPath}}', {
+                method: 'POST', credentials: 'same-origin', cache: 'no-store', keepalive: true,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...body, route: location.pathname.slice(0, {{AppErrorReport.MaxRoute}}) })
+              }).catch(() => {});
+            } catch {
+              // Nothing about reporting reaches the app.
+            }
+          };
+          const described = (value, otherwise) => value instanceof Error
+            ? { message: clip(`${value.name}: ${value.message}`, {{AppErrorReport.MaxMessage}}), stack: clip(value.stack, {{AppErrorReport.MaxStack}}) }
+            : { message: otherwise };
+          const typeOf = value => value === null ? 'null' : typeof value;
+
+          // A resource that failed to load is an event of the element's, not the window's ErrorEvent.
+          addEventListener('error', event => {
+            if (!(event instanceof ErrorEvent) || reported.has(event.error)) {
+              return;
+            }
+            report({ kind: '{{AppErrors.Kinds.Error}}', ...described(event.error, event.error == null
+              ? clip(event.message, {{AppErrorReport.MaxMessage}}) ?? 'Script error.'
+              : `Uncaught ${typeOf(event.error)}, not an Error`) });
+          });
+          addEventListener('unhandledrejection', event => {
+            if (reported.has(event.reason)) {
+              return;
+            }
+            report({ kind: '{{AppErrors.Kinds.Rejection}}',
+              ...described(event.reason, `A promise was rejected with ${typeOf(event.reason)}, not an Error`) });
+          });
+
+          const refused = (operation, path, envelope) => {
+            const error = new ReadError(operation, path, envelope);
+            reported.add(error);
+            const message = clip(envelope.message, {{AppErrorReport.MaxMessage}});
+            report({
+              kind: '{{AppErrors.Kinds.Read}}', message: message ?? 'The read failed.',
+              read: {
+                operation,
+                path: typeof path === 'string' && path.startsWith('/') ? clip(path, {{AppErrorReport.MaxRoute}}) : undefined,
+                envelope: { errorCode: envelope.errorCode, message: message ?? '', hint: clip(envelope.hint, {{AppErrorReport.MaxMessage}}) }
+              }
+            });
+            return error;
+          };
 
           // Not the tools' envelope: no app session (the origin's one 404), or nobody answered.
           const unanswered = status => status === 404 || status === 401
@@ -129,7 +204,7 @@ public static partial class AppOriginFiles
               return response;
             }
             const envelope = await response.json().catch(() => null);
-            throw new ReadError(operation, path, envelope?.ok === false ? envelope : unanswered(response.status));
+            throw refused(operation, path, envelope?.ok === false ? envelope : unanswered(response.status));
           };
           const json = async (operation, path, args) => (await send(operation, path, args)).json();
 
@@ -147,12 +222,12 @@ public static partial class AppOriginFiles
         """;
 
     // A classic script, run before the app's own scripts, so `apps` is there for every one of them.
-    public const string Library =
+    public static readonly string Library =
         "// Generated by the apps server: the client library a built app reads the household through.\n"
         + "globalThis.apps ??= " + Reader + ";\n";
 
     // The same library as an ES module, for an app that imports it.
-    public const string Module =
+    public static readonly string Module =
         "// Generated by the apps server: the client library a built app reads the household through.\n"
         + "const apps = (globalThis.apps ??= " + Reader + ");\n"
         + "export default apps;\n"

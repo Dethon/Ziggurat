@@ -136,6 +136,74 @@ public class AppsServingInABrowserTests
         violations.ShouldBeEmpty();
     }
 
+    // A published app that breaks in a person's browser tells the agent why, through the library alone:
+    // an uncaught error (thrown fifty times by one loop, reported once), an unhandled rejection, and two
+    // failed reads — one the app caught, one it did not, each reported once as the read it was. A value
+    // that is not an Error is named by its type, so what the app held never leaves the page.
+    [Fact]
+    public async Task APublishedAppThatThrows_HasItsErrorsReportedToItsErrorsFile_OnceEach()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            try {
+              await globalThis.apps.read('/vault/a.md');
+            } catch (error) {
+              document.body.dataset.caught = error.errorCode;
+            }
+            globalThis.apps.query('/sugary', 'select notes from meals');
+            for (let i = 0; i < 50; i++) {
+              setTimeout(() => { throw new TypeError('rows is undefined'); }, 0);
+            }
+            Promise.reject(new Error('the chart never drew'));
+            Promise.reject({ rows: [['her lentils']] });
+            """);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var page = await (await browser.NewContextAsync()).NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        var violations = await ViolationsAsync(page);
+
+        await page.GotoAsync(origin + "/today");
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-caught", "transient_dependency");
+
+        IReadOnlyList<System.Text.Json.Nodes.JsonNode> entries = [];
+        await Eventually.Until(async () => (entries = await ErrorsAsync(server)).Count >= 5, "the page's five errors are reported");
+        await Eventually.Settle();
+        entries = await ErrorsAsync(server);
+
+        entries.Select(e => $"{e["kind"]} {e["read"]?["path"]}".Trim()).Order().ToList().ShouldBe(
+            ["error", "read /sugary", "read /vault/a.md", "rejection", "rejection"], string.Join("\n", entries));
+        entries.ShouldContain(e => e["kind"]!.GetValue<string>() == "error"
+                                   && e["message"]!.GetValue<string>() == "TypeError: rows is undefined");
+        entries.ShouldContain(e => e["message"]!.GetValue<string>() == "Error: the chart never drew"
+                                   && e["stack"]!.GetValue<string>().Contains("main.js"));
+        entries.ShouldContain(e => e["read"]!["envelope"]!["errorCode"]!.GetValue<string>() == "transient_dependency"
+                                   && e["read"]!["operation"]!.GetValue<string>() == "query");
+        entries.ShouldAllBe(e => e["route"]!.GetValue<string>() == "/today" && e["viewer"]!.GetValue<string>() == AppsServer.Her.UserId);
+        string.Join("\n", entries).ShouldNotContain("her lentils");
+        violations.ShouldBeEmpty();
+    }
+
+    private static async Task<IReadOnlyList<System.Text.Json.Nodes.JsonNode>> ErrorsAsync(AppsServer server)
+    {
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/glucose/errors" },
+            AppsServer.TurnOf(AppsServer.Her));
+        return read["content"]?.GetValue<string>() is not { } content
+            ? []
+            :
+            [
+                .. content.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(line => System.Text.Json.Nodes.JsonNode.Parse(line[(line.IndexOf(": ", StringComparison.Ordinal) + 2)..])!)
+            ];
+    }
+
     [Fact]
     public async Task ARemovedAppsInstalledWorker_TakesItselfAway()
     {
