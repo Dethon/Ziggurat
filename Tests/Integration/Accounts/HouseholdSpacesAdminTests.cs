@@ -386,7 +386,10 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         untouched.PendingOf(untouched.Spaces[1]).ShouldBe(pending);
         approved.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] });
         approved.PendingOf(approved.Spaces[1]).ShouldBe(AppReach.None);
-        (await ChangesAsync(admin)).First().Summary.ShouldBe("Changed space glucose's approved reach");
+        // The suite's clock stands still, so the log's order says nothing: only the approving save names the reach.
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
+            [$"Added space glucose, sharing app {id}", "Added space kitchen", "Changed space glucose's approved reach"],
+            ignoreOrder: true);
     }
 
     // The apps server not answering costs only what needs it: the spaces still load (their app spaces as

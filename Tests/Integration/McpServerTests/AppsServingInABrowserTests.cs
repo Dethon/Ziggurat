@@ -184,8 +184,9 @@ public class AppsServingInABrowserTests
                                    && e["message"]!.GetValue<string>() == "TypeError: rows is undefined");
         entries.ShouldContain(e => e["message"]!.GetValue<string>() == "Error: the chart never drew"
                                    && e["stack"]!.GetValue<string>().Contains("main.js"));
-        entries.ShouldContain(e => e["read"]!["envelope"]!["errorCode"]!.GetValue<string>() == "transient_dependency"
-                                   && e["read"]!["operation"]!.GetValue<string>() == "query");
+        // Entries are newest first by arrival, which the page does not order: one without a read may come first.
+        entries.Where(e => e["read"] is not null).ShouldContain(e => e["read"]!["envelope"]!["errorCode"]!.GetValue<string>() == "transient_dependency"
+                                                                 && e["read"]!["operation"]!.GetValue<string>() == "query");
         entries.ShouldAllBe(e => e["route"]!.GetValue<string>() == "/today" && e["viewer"]!.GetValue<string>() == AppsServer.Her.UserId);
         string.Join("\n", entries).ShouldNotContain("her lentils");
         violations.ShouldBeEmpty();

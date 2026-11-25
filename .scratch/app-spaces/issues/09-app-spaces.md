@@ -127,7 +127,9 @@ When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 m
 `AppsServingInABrowserTests.APublishedAppThatThrows_HasItsErrorsReportedToItsErrorsFile_OnceEach`, after 710 ms,
 with no message captured. Six reruns, alone and in the full filter, all passed, and so did three runs of the filter in parallel with
 `.trx` loggers. That case is the author's own
-session, which never reads the spaces. It is still a possible load flake to look at. The `~Apps` filter also
+session, which never reads the spaces. **Found and fixed** (closing the widening gap): its read-envelope
+predicate dereferenced `read` on every entry, so it threw whenever a report without one arrived after the read
+(the file is newest first); it now looks among the reads alone. The `~Apps` filter also
 matches `WebChatSignInE2ETests.ALinkToAnotherServicesPage_…`, which timed out once while the stack was
 starting and passed after. The `~Spaces` filter pulls in E2E classes, `HouseholdSpacesE2ETests` among them,
 which ran against the existing E2E stack. They are no evidence for this page, since that stack's `webui` was
