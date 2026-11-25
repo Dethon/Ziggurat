@@ -59,15 +59,36 @@ public class AppSignInTests
     }
 
     [Fact]
-    public void TheCallback_IsOnTheOrigin_CarryingTheCodeAndThePath()
+    public void TheCallback_IsOnTheOrigin_CarryingTheCodeThePathAndTheState()
     {
-        var callback = new Uri(AppSignIn.Callback("https://glucose-k3x9p2.apps.example", "the-code", "/week?d=1&x=2"));
+        var state = AppSignIn.NewState();
+        var callback = new Uri(AppSignIn.Callback("https://glucose-k3x9p2.apps.example", "the-code", "/week?d=1&x=2", state));
 
         callback.GetLeftPart(UriPartial.Path).ShouldBe("https://glucose-k3x9p2.apps.example" + AppSignIn.CallbackPath);
         var query = System.Web.HttpUtility.ParseQueryString(callback.Query);
         query[AppSignIn.CodeParameter].ShouldBe("the-code");
         query[AppSignIn.PathParameter].ShouldBe("/week?d=1&x=2");
+        query[AppSignIn.StateParameter].ShouldBe(state);
     }
+
+    // The state the apps server ties a sign-in to the browser that started it by: fresh each time, and
+    // the accounts service carries back only something of its shape.
+    [Fact]
+    public void AState_IsFreshEachTime_AndOfItsOwnShape()
+    {
+        var state = AppSignIn.NewState();
+
+        AppSignIn.NewState().ShouldNotBe(state);
+        AppSignIn.IsState(state).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("short")]
+    [InlineData("has spaces in it and is long enough to pass")]
+    [InlineData("<script>alert(1)</script>-padding-padding-padding")]
+    public void AnythingElse_IsNoState(string? state) => AppSignIn.IsState(state).ShouldBeFalse();
 
     [Theory]
     [InlineData("/week?d=1", "/week?d=1")]

@@ -56,10 +56,8 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AppsSettin
 
         if (viewer is not AppViewer.Person { Session.Person: var person })
         {
-            if (IsNavigation(request) && viewers.SignInFor(request) is { } signIn)
+            if (IsNavigation(request) && await viewers.SendToSignInAsync(context))
             {
-                context.Response.Headers.Location = signIn;
-                await AppViewers.AnswerAsync(context, StatusCodes.Status302Found);
                 return;
             }
 

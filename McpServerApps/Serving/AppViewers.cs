@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Domain.Apps;
 using Domain.Contracts;
@@ -15,8 +16,9 @@ namespace McpServerApps.Serving;
 // server alone decides what they may open (AppPages).
 //
 // - A page opened with no app session is sent to the app sign-in on the main host, carrying where it
-//   was going (AppSignIn.ReturnTo); the person comes back to CallbackPath with a code, which is
-//   redeemed service to service for an assertion, and the session's cookie is set.
+//   was going (AppSignIn.ReturnTo) and a state this browser keeps in a cookie; the person comes back
+//   to CallbackPath with a code and that state, the code is redeemed service to service for an
+//   assertion only in the browser holding the state, and the session's cookie is set.
 // - The assertion an app session holds is renewed by the session refresh once it has been held
 //   AssertionKept, as the chat hub renews its connection's person: never after the session is
 //   revoked (the refresh answers nobody, and the app session ends), never on the word of a session
@@ -30,6 +32,11 @@ public sealed class AppViewers(
     TimeProvider clock,
     ILogger<AppViewers> logger)
 {
+    public const string StateCookieName = "__Host-app-sign-in";
+
+    // Long enough for a passkey sign-in on the way.
+    private static readonly TimeSpan _stateLifetime = TimeSpan.FromMinutes(10);
+
     public async Task<AppViewer> ViewerAsync(HttpRequest request, AppOrigin origin, CancellationToken ct)
     {
         if (request.Cookies[AppSessions.CookieName] is not { Length: > 0 } token
@@ -80,13 +87,25 @@ public sealed class AppViewers(
         return new AppViewer.Person(session with { Assertion = renewed.Assertion });
     }
 
-    // Whether a page opened with no app session can be sent to sign in: only with a main host to send
-    // it to, and only for an origin the accounts service would send a code back to.
-    public string? SignInFor(HttpRequest request) =>
-        settings.PublicBaseUrl.Length > 0 && ReturnOf(request) is { } target
-            ? $"{settings.PublicBaseUrl.TrimEnd('/')}{AppSignIn.Path}?{AppSignIn.ReturnUrlParameter}="
-              + Uri.EscapeDataString($"{target.Origin}{target.Path}")
-            : null;
+    // A page opened with no app session, sent to sign in: only with a main host to send it to and only
+    // for an origin the accounts service would send a code back to, else false (and the caller's 404).
+    // The sign-in is tied to this browser by a fresh state, kept in a cookie of this origin's alone and
+    // carried there and back, which the callback holds the code to.
+    public async Task<bool> SendToSignInAsync(HttpContext context)
+    {
+        if (settings.PublicBaseUrl.Length == 0 || ReturnOf(context.Request) is not { } target)
+        {
+            return false;
+        }
+
+        var state = AppSignIn.NewState();
+        context.Response.Cookies.Append(StateCookieName, state, Cookie(_stateLifetime));
+        context.Response.Headers.Location =
+            $"{settings.PublicBaseUrl.TrimEnd('/')}{AppSignIn.Path}?{AppSignIn.ReturnUrlParameter}="
+            + $"{Uri.EscapeDataString($"{target.Origin}{target.Path}")}&{AppSignIn.StateParameter}={state}";
+        await AnswerAsync(context, StatusCodes.Status302Found);
+        return true;
+    }
 
     // The person's arrival back from the app sign-in: the code redeemed for this origin, the assertion
     // verified, the session opened and its cookie set, then on to where they were going on this origin.
@@ -97,7 +116,13 @@ public sealed class AppViewers(
         var request = context.Request;
         var ct = context.RequestAborted;
         var code = request.Query[AppSignIn.CodeParameter].ToString();
-        if (code.Length == 0 || ReturnOf(request) is not { } target)
+        var state = request.Query[AppSignIn.StateParameter].ToString();
+        // Checked before the code is redeemed, so a code brought to the wrong browser is not spent by it.
+        if (code.Length == 0
+            || !AppSignIn.IsState(state)
+            || request.Cookies[StateCookieName] is not { } started
+            || !CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(started), Encoding.ASCII.GetBytes(state))
+            || ReturnOf(request) is not { } target)
         {
             await AnswerAsync(context, StatusCodes.Status400BadRequest, SignInRefused);
             return;
@@ -131,17 +156,8 @@ public sealed class AppViewers(
         var token = sessions.Open(new Account(person.TenantId, person.UserId), sessionId, origin, redeemed.Assertion,
             clock.GetUtcNow() + lifetime);
         var response = context.Response;
-        // Lax, not Strict: every arrival here is the end of a hop from the main host, another site, and
-        // a Strict cookie would not be sent on the navigation that follows it.
-        response.Cookies.Append(AppSessions.CookieName, token, new CookieOptions
-        {
-            HttpOnly = true,
-            Secure = true,
-            SameSite = SameSiteMode.Lax,
-            Path = "/",
-            MaxAge = lifetime,
-            IsEssential = true
-        });
+        response.Cookies.Delete(StateCookieName, Cookie(TimeSpan.Zero));
+        response.Cookies.Append(AppSessions.CookieName, token, Cookie(lifetime));
         response.Headers.Location = AppSignIn.SamePath(request.Query[AppSignIn.PathParameter].ToString());
         await AnswerAsync(context, StatusCodes.Status303SeeOther);
     }
@@ -154,6 +170,19 @@ public sealed class AppViewers(
         return AppSignIn.ReturnTo($"{scheme}://{request.Host.Value}{request.PathBase}{request.Path}{request.QueryString}",
             settings.AppsDomain);
     }
+
+    // Host-only and `__Host-`, so no other origin under the apps domain — another app's code — can set
+    // or read it. Lax, not Strict: every arrival on the callback ends a hop from the main host, another
+    // site, and a Strict cookie is not sent on such a navigation, nor on the one after it.
+    private static CookieOptions Cookie(TimeSpan lifetime) => new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.Lax,
+        Path = "/",
+        MaxAge = lifetime == TimeSpan.Zero ? null : lifetime,
+        IsEssential = true
+    };
 
     public static Task AnswerAsync(HttpContext context, int status, string? page = null)
     {

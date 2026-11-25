@@ -10,8 +10,9 @@ namespace Accounts.Apps;
 // is read here (a passkey sign-in first if there is none, which comes back here), and they are sent back
 // to the app's origin with a code for this session, bound to that origin. A return that is not a built
 // app's origin under the apps domain is refused before anything is issued (AppSignIn.ReturnTo), so a
-// crafted link cannot carry a code anywhere else. Whether this person may open that app is the apps
-// server's to decide; this vouches only for who they are.
+// crafted link cannot carry a code anywhere else; so is one without the apps server's state, which goes
+// back beside the code for the apps server to hold against the browser that started the sign-in.
+// Whether this person may open that app is the apps server's to decide; this vouches only for who they are.
 public static class AppSignInRoute
 {
     public const string Path = "/app-sign-in";
@@ -22,7 +23,8 @@ public static class AppSignInRoute
         {
             http.Response.Headers.CacheControl = "no-store";
             var returnUrl = http.Request.Query[AppSignIn.ReturnUrlParameter].ToString();
-            if (AppSignIn.ReturnTo(returnUrl, settings.AppsDomain) is not { } target)
+            var state = http.Request.Query[AppSignIn.StateParameter].ToString();
+            if (AppSignIn.ReturnTo(returnUrl, settings.AppsDomain) is not { } target || !AppSignIn.IsState(state))
             {
                 return AccountsPages.Page(http, "Not an app of this deployment",
                     """
@@ -39,7 +41,8 @@ public static class AppSignInRoute
             if (session is null)
             {
                 return Results.Redirect(SignInPage.Url(settings,
-                    $"{AccountsApp.PathBase}{Path}?{AppSignIn.ReturnUrlParameter}={Uri.EscapeDataString(returnUrl)}"));
+                    $"{AccountsApp.PathBase}{Path}?{AppSignIn.ReturnUrlParameter}={Uri.EscapeDataString(returnUrl)}"
+                    + $"&{AppSignIn.StateParameter}={state}"));
             }
 
             // As every page here: nothing of a suspended household opens, an app included.
@@ -49,6 +52,6 @@ public static class AppSignInRoute
             }
 
             var code = codes.Issue(new AppSignInCode(target.Origin, session.UserId, session.SessionId));
-            return Results.Redirect(AppSignIn.Callback(target.Origin, code, target.Path));
+            return Results.Redirect(AppSignIn.Callback(target.Origin, code, target.Path, state));
         });
 }

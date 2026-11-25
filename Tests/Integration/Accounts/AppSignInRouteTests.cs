@@ -24,6 +24,7 @@ public class AppSignInRouteTests
     private const string Glucose = "https://glucose-k3x9p2.apps.example";
     private const string AppsCredential = "apps-credential";
     private const string SignalRCredential = "signalr-credential";
+    private const string State = "the-apps-servers-state-for-this-browser-0123";
 
     private static Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
@@ -50,6 +51,7 @@ public class AppSignInRouteTests
         back.GetLeftPart(UriPartial.Path).ShouldBe(Glucose + AppSignIn.CallbackPath);
         var query = HttpUtility.ParseQueryString(back.Query);
         query[AppSignIn.PathParameter].ShouldBe("/week?d=1");
+        query[AppSignIn.StateParameter].ShouldBe(State);
 
         var redeemed = await RedeemAsync(server, query[AppSignIn.CodeParameter]!, Glucose);
 
@@ -83,6 +85,21 @@ public class AppSignInRouteTests
         response.Headers.Location.ShouldBeNull();
     }
 
+    // The state is the apps server's own, carried back as it came; a request without one, or with
+    // anything else in its place, did not come from the apps server and is refused.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("short")]
+    [InlineData("\"><script>alert(1)</script>--------------------")]
+    public async Task ARequestWithoutTheAppsServersState_IsRefused(string? state)
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (session, _) = await SessionAsync(server, fran.UserId);
+
+        (await OpenAsync(server, $"{Glucose}/", session, state)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
     // A deployment that names no apps domain signs nobody in to an app.
     [Fact]
     public async Task NoAppsDomain_RefusesEveryReturn()
@@ -108,8 +125,9 @@ public class AppSignInRouteTests
         signIn.AbsolutePath.ShouldBe("/accounts/sign-in");
         var back = HttpUtility.ParseQueryString(signIn.Query)["returnUrl"].ShouldNotBeNull();
         back.ShouldStartWith(AppSignIn.Path + "?");
-        HttpUtility.ParseQueryString(back[back.IndexOf('?')..])[AppSignIn.ReturnUrlParameter]
-            .ShouldBe($"{Glucose}/week?d=1&x=2");
+        var again = HttpUtility.ParseQueryString(back[back.IndexOf('?')..]);
+        again[AppSignIn.ReturnUrlParameter].ShouldBe($"{Glucose}/week?d=1&x=2");
+        again[AppSignIn.StateParameter].ShouldBe(State);
         global::Accounts.Pages.ReturnUrls.Resolve(server.Settings, back).ShouldBe(back);
     }
 
@@ -267,11 +285,13 @@ public class AppSignInRouteTests
             .ShouldNotBeNull();
     }
 
-    // The browser arriving from an app origin, with its session cookie when it holds one.
-    private static Task<HttpResponseMessage> OpenAsync(AccountsServer server, string returnUrl, string? session)
+    // The browser arriving from an app origin, with its session cookie when it holds one, and the state
+    // the apps server tied its sign-in to.
+    private static Task<HttpResponseMessage> OpenAsync(AccountsServer server, string returnUrl, string? session, string? state = State)
     {
         var request = new HttpRequestMessage(HttpMethod.Get,
-            $"{AppSignIn.Path}?{AppSignIn.ReturnUrlParameter}={Uri.EscapeDataString(returnUrl)}");
+            $"{AppSignIn.Path}?{AppSignIn.ReturnUrlParameter}={Uri.EscapeDataString(returnUrl)}"
+            + (state is null ? "" : $"&{AppSignIn.StateParameter}={Uri.EscapeDataString(state)}"));
         request.Headers.Accept.ParseAdd("text/html");
         if (session is not null)
         {

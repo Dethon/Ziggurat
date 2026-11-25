@@ -120,14 +120,22 @@ public sealed class AppsServer : IAsyncDisposable
 
     // A browser on an app origin, its own cookie for that origin sent when it holds a session there,
     // through the proxy, which says the browser's scheme was https.
-    public async Task<HttpResponseMessage> GetAsync(string host, string path, string? session = null, bool navigate = false)
+    // signInState: the cookie the origin set as it sent the browser to sign in, which it holds the
+    // callback to.
+    public async Task<HttpResponseMessage> GetAsync(
+        string host, string path, string? session = null, bool navigate = false, string? signInState = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, PagesAddress + path);
         request.Headers.Host = host;
         request.Headers.Add("X-Forwarded-Proto", "https");
-        if (session is not null)
+        var cookies = new[]
         {
-            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+            session is null ? null : $"{AppSessions.CookieName}={session}",
+            signInState is null ? null : $"{AppViewers.StateCookieName}={signInState}"
+        }.OfType<string>().ToList();
+        if (cookies.Count > 0)
+        {
+            request.Headers.Add("Cookie", string.Join("; ", cookies));
         }
 
         if (navigate)

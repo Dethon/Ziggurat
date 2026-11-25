@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace Domain.Apps;
 
 // The app sign-in's wire, spelled once for its two ends. A navigation on an app origin with no app
@@ -16,6 +18,7 @@ public static class AppSignIn
     public const string CallbackPath = "/_app/sign-in";
     public const string CodeParameter = "code";
     public const string PathParameter = "path";
+    public const string StateParameter = "state";
 
     // The built app's origin an address is on — scheme, host and port, lower-cased — and the path it
     // asked for, or none when the address is not a built app's under the apps domain. https always;
@@ -36,8 +39,20 @@ public static class AppSignIn
     }
 
     // Where the accounts service sends the person back with their code.
-    public static string Callback(string origin, string code, string path) =>
-        $"{origin}{CallbackPath}?{CodeParameter}={Uri.EscapeDataString(code)}&{PathParameter}={Uri.EscapeDataString(path)}";
+    public static string Callback(string origin, string code, string path, string state) =>
+        $"{origin}{CallbackPath}?{CodeParameter}={Uri.EscapeDataString(code)}&{PathParameter}={Uri.EscapeDataString(path)}"
+        + $"&{StateParameter}={state}";
+
+    // A fresh one per sign-in the apps server starts, kept in a cookie of the origin's own and carried
+    // through the accounts service and back, so a callback is believed only by the browser that started
+    // it: somebody else's code, sent to this browser in a link, signs it in as nobody.
+    public static string NewState() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    // The accounts service carries back only something of a state's shape, so nothing it echoes is
+    // anything but a token: base64url, 32 to 64 characters.
+    public static bool IsState(string? state) =>
+        state is { Length: >= 32 and <= 64 } && state.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 
     // A path on the callback's own origin: exactly one leading '/', since a browser reads `//host` and
     // `/\host` as another site's. Anything else is the app's front page.

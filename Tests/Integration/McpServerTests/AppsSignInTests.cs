@@ -37,8 +37,39 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         response.StatusCode.ShouldBe(HttpStatusCode.Redirect);
         var signIn = response.Headers.Location.ShouldNotBeNull();
         signIn.GetLeftPart(UriPartial.Path).ShouldBe(AppsServer.MainHost + AppSignIn.Path);
-        HttpUtility.ParseQueryString(signIn.Query)[AppSignIn.ReturnUrlParameter].ShouldBe($"https://{host}/week?d=1");
+        var query = HttpUtility.ParseQueryString(signIn.Query);
+        query[AppSignIn.ReturnUrlParameter].ShouldBe($"https://{host}/week?d=1");
         response.Headers.CacheControl.ShouldNotBeNull().NoStore.ShouldBeTrue();
+        // The sign-in is tied to this browser: the state it carries is kept in a cookie of the origin's own.
+        var state = query[AppSignIn.StateParameter].ShouldNotBeNull();
+        AppSignIn.IsState(state).ShouldBeTrue();
+        var cookie = response.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem();
+        cookie.ShouldStartWith($"{AppViewers.StateCookieName}={state};");
+        cookie.ToLowerInvariant().ShouldContain("secure");
+        cookie.ToLowerInvariant().ShouldContain("httponly");
+        cookie.ToLowerInvariant().ShouldContain("samesite=lax");
+        cookie.ToLowerInvariant().ShouldContain("path=/");
+        cookie.ToLowerInvariant().ShouldNotContain("domain=");
+    }
+
+    // A code is believed only by the browser that started its sign-in: one sent another browser in a
+    // link — somebody's own code, to sign a victim in as them — signs nobody in, and is not spent by it.
+    [Fact]
+    public async Task ACallbackThisBrowserDidNotStart_SignsNobodyIn()
+    {
+        await using var accounts = await AccountsAsync();
+        var fran = await accounts.MintOperatorAsync("Fran");
+        await using var apps = await AppsFor(accounts);
+        var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
+        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+
+        var noState = await apps.GetAsync(host, callback, navigate: true);
+        var anotherState = await apps.GetAsync(host, callback, navigate: true, signInState: AppSignIn.NewState());
+
+        noState.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        noState.Headers.Contains("Set-Cookie").ShouldBeFalse();
+        anotherState.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await apps.GetAsync(host, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.SeeOther);
     }
 
     // Whether an app is there is nobody's to learn before signing in: a label naming no app is sent
@@ -107,10 +138,10 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var fran = await accounts.MintOperatorAsync("Fran");
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var callback = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
-        (await apps.GetAsync(host, callback, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        (await apps.GetAsync(host, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.SeeOther);
 
-        var again = await apps.GetAsync(host, callback, navigate: true);
+        var again = await apps.GetAsync(host, callback, navigate: true, signInState: state);
 
         again.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         again.Headers.Location.ShouldBeNull();
@@ -125,11 +156,11 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var fran = await accounts.MintOperatorAsync("Fran");
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var callback = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
         var preview = host.Insert(host.IndexOf('.'), AppOrigin.PreviewSuffix);
 
-        (await apps.GetAsync(preview, callback, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-        (await apps.GetAsync(host, callback, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await apps.GetAsync(preview, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await apps.GetAsync(host, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     // Every way a person's sessions end is announced, and the apps server ends every app session of
@@ -248,11 +279,15 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
     }
 
     // The browser's round trip up to its arrival back on the app's origin: the app's redirect, the
-    // accounts service's answer to this person's session cookie. The callback's path and query.
-    private static async Task<string> CallbackAsync(AppsServer apps, AccountsServer accounts, string host, string path, string session)
+    // accounts service's answer to this person's session cookie. The callback's path and query, and the
+    // state cookie the origin set on the way out.
+    private static async Task<(string Callback, string State)> CallbackAsync(
+        AppsServer apps, AccountsServer accounts, string host, string path, string session)
     {
         var toSignIn = await apps.GetAsync(host, path, navigate: true);
         toSignIn.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        var state = toSignIn.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem().Split(';')[0]
+            [(AppViewers.StateCookieName.Length + 1)..];
         using var request = new HttpRequestMessage(HttpMethod.Get, toSignIn.Headers.Location);
         request.Headers.Add("Cookie", $"{SessionCookie.Name}={session}");
         request.Headers.Accept.ParseAdd("text/html");
@@ -261,15 +296,19 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var callback = back.Headers.Location.ShouldNotBeNull();
         callback.Scheme.ShouldBe(Https);
         callback.Host.ShouldBe(host);
-        return callback.PathAndQuery;
+        return (callback.PathAndQuery, state);
     }
 
     private static async Task<(string Token, string SetCookie, string Location)> SignInAsync(
         AppsServer apps, AccountsServer accounts, string host, string path, string session)
     {
-        var arrived = await apps.GetAsync(host, await CallbackAsync(apps, accounts, host, path, session), navigate: true);
+        var (callback, state) = await CallbackAsync(apps, accounts, host, path, session);
+        var arrived = await apps.GetAsync(host, callback, navigate: true, signInState: state);
         arrived.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
-        var setCookie = arrived.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem();
+        var setCookies = arrived.Headers.GetValues("Set-Cookie").ToList();
+        // The state is spent with the sign-in.
+        setCookies.ShouldContain(c => c.StartsWith($"{AppViewers.StateCookieName}=;", StringComparison.Ordinal));
+        var setCookie = setCookies.Single(c => c.StartsWith($"{AppSessions.CookieName}=", StringComparison.Ordinal));
         var token = setCookie.Split(';')[0][(AppSessions.CookieName.Length + 1)..];
         return (token, setCookie, arrived.Headers.Location.ShouldNotBeNull().OriginalString);
     }
