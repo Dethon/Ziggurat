@@ -190,6 +190,39 @@ public class McpAppsServerTests
         opened["hint"]!.GetValue<string>().ShouldContain("./publish");
     }
 
+    // The id, not the slug, names the repository and ends the hostname, so a renamed app keeps it.
+    [Fact]
+    public async Task MovingAnAppsDirectory_RenamesTheApp_AndKeepsItsId()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var id = Id(await server.AppAsync(AppsServer.Her, "glucose"));
+
+        var moved = await server.CallAsync("fs_move", new Dictionary<string, object?>
+        {
+            ["sourcePath"] = "/glucose", ["destinationPath"] = "/sugar-today"
+        }, AppsServer.TurnOf(AppsServer.Her));
+
+        moved["message"]!.GetValue<string>().ShouldContain($"https://sugar-today-{id}.apps.test/");
+        (await server.GlobAsync(AppsServer.Her, "*")).ShouldBe(["/sugar-today/"]);
+    }
+
+    // A manifest is checked on every way in: bytes streamed onto it would skip the check.
+    [Fact]
+    public async Task TheManifest_IsNeverWrittenAsBytes()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+
+        var refused = await server.CallAsync("fs_blob_write", new Dictionary<string, object?>
+        {
+            ["path"] = "/glucose/app.json", ["contentBase64"] = Convert.ToBase64String("{}"u8.ToArray()),
+            ["offset"] = 0, ["overwrite"] = true, ["createDirectories"] = true
+        }, AppsServer.TurnOf(AppsServer.Her));
+
+        refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        (await server.ReadAsync(AppsServer.Her, "/glucose/app.json")).ShouldContain("Glucose today");
+    }
+
     [Fact]
     public async Task RemovingTheDirectory_DeletesTheRepositoryAndItsMetadata()
     {
