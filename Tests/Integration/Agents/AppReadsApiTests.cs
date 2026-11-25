@@ -41,6 +41,41 @@ public sealed class AppReadsApiTests
         (await NotesAsync(agent, SugaryServer.Him)).ShouldBe(["his paella"]);
     }
 
+    // Each operation is the file tool's own, answering its result on virtual paths: what the model would
+    // have been answered, so an app reads what its agent read while building it.
+    [Fact]
+    public async Task EachReadOperation_AnswersTheToolsResultOnVirtualPaths()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string>
+        {
+            ["garden/plan.md"] = "tomatoes\npeppers",
+            ["photo.png"] = "not really a picture"
+        });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var app = _glucoseApp with { Reads = ["/notes"] };
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+
+        var read = await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, new JsonObject { ["filePath"] = "/notes/garden/plan.md" }, her));
+        read["filePath"]!.GetValue<string>().ShouldBe("/notes/garden/plan.md");
+        read["content"]!.GetValue<string>().ShouldContain("peppers");
+
+        var glob = await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, app, new JsonObject { ["basePath"] = "/notes", ["pattern"] = "**/*.md" }, her));
+        glob["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe(["/notes/garden/plan.md"]);
+
+        var info = await JsonAsync(agent.ReadAsync(AppReads.Operations.Info, app, new JsonObject { ["path"] = "/notes/garden/plan.md" }, her));
+        info["path"]!.GetValue<string>().ShouldBe("/notes/garden/plan.md");
+        info["exists"]!.GetValue<bool>().ShouldBeTrue();
+
+        var search = await JsonAsync(agent.ReadAsync(AppReads.Operations.Search, app, new JsonObject { ["query"] = "peppers", ["directoryPath"] = "/notes" }, her));
+        search["results"]!.AsArray().Select(r => r!["file"]!.GetValue<string>()).ShouldBe(["/notes/garden/plan.md"]);
+
+        using var blob = await agent.ReadAsync(AppReads.Operations.Blob, app, new JsonObject { ["path"] = "/notes/photo.png" }, her);
+        blob.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await blob.Content.ReadAsStringAsync()).ShouldBe("not really a picture");
+    }
+
     // Neither half opens the route alone: the apps server's credential without a believable assertion,
     // or an assertion without the credential (another server's, or none), is refused before anything is
     // built or read.
@@ -100,6 +135,14 @@ public sealed class AppReadsApiTests
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
         return [.. body["rows"]!.AsArray().Select(row => row![0]?.GetValue<string>())];
+    }
+
+    private static async Task<JsonNode> JsonAsync(Task<HttpResponseMessage> sent)
+    {
+        using var response = await sent;
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
+        return body;
     }
 
     private static AgentDefinition Jonas(params string[] endpoints) => new()

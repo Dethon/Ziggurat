@@ -8,13 +8,19 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Security;
+using Domain.Tools.Config;
+using Domain.Tools.Files;
 using Domain.Tools.FileSystem.Bridge;
 using global::Agent.App;
 using Infrastructure.Agents;
+using Infrastructure.Clients;
 using Infrastructure.Extensions;
+using Infrastructure.Utils;
+using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Fixtures;
 
@@ -103,6 +109,56 @@ public sealed class AppReadsAgent : IAsyncDisposable
         _client.Dispose();
         await _app.StopAsync();
         await _app.DisposeAsync();
+    }
+}
+
+// A household's text filesystem, published as `/<name>` by a server of its own, its files on a disk the
+// test writes: text read, search, glob, info and the blob read a copy streams through.
+public sealed class TextFileServer : IAsyncDisposable
+{
+    private readonly RunningServer _server;
+
+    private TextFileServer(RunningServer server, string directory)
+    {
+        _server = server;
+        Directory = directory;
+    }
+
+    public string Directory { get; }
+
+    public string Endpoint => _server.Endpoint;
+
+    public static async Task<TextFileServer> StartAsync(string name, IReadOnlyDictionary<string, string> files)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "app-reads-tests", Guid.NewGuid().ToString("N"));
+        foreach (var (path, content) in files)
+        {
+            var full = Path.Combine(directory, path);
+            System.IO.Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            await File.WriteAllTextAsync(full, content);
+        }
+
+        System.IO.Directory.CreateDirectory(directory);
+        var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddTransient<IFileSystemClient, LocalFileSystemClient>()
+            .AddSingleton(sp => new TextDiskFileSystem(
+                name, $"The household's {name}.", sp.GetRequiredService<IFileSystemClient>(),
+                new LibraryPathConfig(directory), [".md", ".txt", ".json", ".png"]))
+            .AddToolServer(new TextServerSettings(), ToolResponse.Create)
+            .AddFileSystemTools<TextDiskFileSystem>()
+            .AddFileSystemResource<TextDiskFileSystem>());
+        return new TextFileServer(server, directory);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _server.DisposeAsync();
+        System.IO.Directory.Delete(Directory, recursive: true);
+    }
+
+    private sealed record TextServerSettings : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
     }
 }
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Apps;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 
 namespace Domain.Tools.FileSystem.Bridge;
@@ -16,15 +17,70 @@ public sealed class AppRead(VfsCall call)
         {
             return operation switch
             {
+                AppReads.Operations.Read => await ReadAsync(arguments, ct),
+                AppReads.Operations.Glob => await GlobAsync(arguments, ct),
+                AppReads.Operations.Info => await InfoAsync(arguments, ct),
+                AppReads.Operations.Search => await SearchAsync(arguments, ct),
                 AppReads.Operations.Query => await QueryAsync(arguments, ct),
+                AppReads.Operations.Blob => await BlobAsync(arguments, ct),
                 _ => throw new NotSupportedException(operation)
             };
         }
-        catch (Exception ex) when (ex is InvalidOperationException or FormatException or JsonException)
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException or JsonException or ArgumentException)
         {
             return AppReadAnswer.Refused(ToolError.Result(ToolError.Codes.InvalidArgument, ex.Message));
         }
     }
+
+    private async Task<AppReadAnswer> ReadAsync(JsonObject arguments, CancellationToken ct)
+    {
+        var path = Required(arguments, VfsFileReadTool.FilePathParameter);
+        var offset = Number(arguments, "offset");
+        var limit = Number(arguments, "limit");
+        return AppReadAnswer.Of(await call.ToolAsync(path, VfsFileReadTool.Name,
+            (registry, caller) => new VfsFileReadTool(registry).RunAsync(path, offset, limit, caller, ct)));
+    }
+
+    private async Task<AppReadAnswer> GlobAsync(JsonObject arguments, CancellationToken ct)
+    {
+        var path = Required(arguments, "basePath");
+        var pattern = Required(arguments, "pattern");
+        return AppReadAnswer.Of(await call.ToolAsync(path, VfsGlobFilesTool.Name,
+            (registry, caller) => new VfsGlobFilesTool(registry).RunAsync(path, pattern, caller, ct)));
+    }
+
+    private async Task<AppReadAnswer> InfoAsync(JsonObject arguments, CancellationToken ct)
+    {
+        var path = Required(arguments, "path");
+        return AppReadAnswer.Of(await call.ToolAsync(path, VfsFileInfoTool.Name,
+            (registry, caller) => new VfsFileInfoTool(registry).RunAsync(path, caller, ct)));
+    }
+
+    // One file where the read names one, as the tool prefers it, else a directory.
+    private async Task<AppReadAnswer> SearchAsync(JsonObject arguments, CancellationToken ct)
+    {
+        var query = Required(arguments, "query");
+        var filePath = Text(arguments, "filePath");
+        var directoryPath = Text(arguments, "directoryPath");
+        var path = filePath ?? directoryPath ?? throw new InvalidOperationException("filePath or directoryPath is required.");
+        var outputMode = Text(arguments, "outputMode") is { } mode
+            ? Enum.Parse<VfsTextSearchOutputMode>(mode, ignoreCase: true)
+            : VfsTextSearchOutputMode.Content;
+        return AppReadAnswer.Of(await call.ToolAsync(path, VfsTextSearchTool.Name,
+            (registry, caller) => new VfsTextSearchTool(registry).RunAsync(
+                query, Flag(arguments, "regex") ?? false, filePath, directoryPath, Text(arguments, "filePattern"),
+                Number(arguments, "maxResults") ?? 50, Number(arguments, "contextLines") ?? 1, outputMode, caller, ct)));
+    }
+
+    // The bridge's own read: the bytes where the mount has them, its rendered text where it has none,
+    // refused the moment it passes the call's ceiling.
+    private async Task<AppReadAnswer> BlobAsync(JsonObject arguments, CancellationToken ct) =>
+        await call.ReadAsync(Required(arguments, "path"), ct) switch
+        {
+            BridgeAnswer<byte[]>.Ok ok => new AppReadAnswer.Bytes(ok.Value),
+            BridgeAnswer<byte[]>.Refused { Error: { } error } => AppReadAnswer.Refused(error),
+            _ => throw new InvalidOperationException("A refused read carries its envelope.")
+        };
 
     private async Task<AppReadAnswer> QueryAsync(JsonObject arguments, CancellationToken ct)
     {
@@ -42,6 +98,8 @@ public sealed class AppRead(VfsCall call)
     private static string? Text(JsonObject arguments, string name) => arguments[name]?.GetValue<string>();
 
     private static int? Number(JsonObject arguments, string name) => arguments[name]?.GetValue<int>();
+
+    private static bool? Flag(JsonObject arguments, string name) => arguments[name]?.GetValue<bool>();
 }
 
 // What a read answers: the tool's result (a value or its envelope), or a file's bytes.
