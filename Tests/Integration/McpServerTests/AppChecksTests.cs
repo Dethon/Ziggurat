@@ -239,6 +239,32 @@ public sealed class AppChecksTests
         report["viewports"]!.AsArray().ShouldAllBe(v => v!["assertions"]!.AsArray().Count == 0);
     }
 
+    // The viewports and the route are the agent's to name, and what a check leaves is the server's: the
+    // last check's files replaced whole by the next, never writable, never part of the app.
+    [Fact]
+    public async Task ACheck_OpensTheRouteAtTheViewportsNamed_AndItsOutputIsTheServersAlone()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1 id="route"></h1></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", "document.getElementById('route').textContent = location.pathname;");
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 600x400 --path /week");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest"))
+            .ShouldBe(["/glucose/.checks/latest/600x400.png", "/glucose/.checks/latest/report.json"]);
+        var report = await ReportAsync(server, "glucose");
+        report["path"]!.GetValue<string>().ShouldBe("/week");
+        report["viewports"]![0]!["accessibility"]!.GetValue<string>().ShouldContain("heading \"/week\"");
+        var written = await server.CreateAsync(AppsServer.Her, "/glucose/.checks/latest/report.json", "{}", overwrite: true);
+        written["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", written.ToJsonString());
+        (await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport huge"))["exitCode"]!.GetValue<int>().ShouldBe(2);
+        (await server.GlobAsync(AppsServer.Her, "**", "/glucose")).ShouldNotContain(p => p.Contains(".checks/run-"));
+    }
+
     // An app whose one assertion waits on a read of the household, which HeldAgent answers only when told.
     private static async Task HoldingAppAsync(AppsServer server, Account person)
     {
