@@ -27,6 +27,7 @@ public static class ConfigModule
             .AddAppPages(settings.Listeners)
             // The household's published apps, for its owners' spaces page on the accounts service.
             .AddPublishedAppsListing(settings.Listeners)
+            .AddPersonsAppsListing(settings.Listeners)
             // A built app's reads, handed to the agent with this server's own credential (AgentReads).
             .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services
             // A check runs the preview in a browser of its own, as the person whose turn asked.

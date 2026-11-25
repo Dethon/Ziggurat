@@ -30,4 +30,9 @@ public static class AppChannels
     // block names: the accounts service signs it itself, for the owner its admin API verified, so the
     // spaces page lists the household's apps and no assertion a browser or an app was handed reaches it.
     public const string PublishedApps = "published-apps";
+
+    // The apps server's listing of a person's apps for WebChat's space switcher (PersonsApps.Path), which
+    // no proxy block names: the accounts service signs it for the chat hub's session refresh alone, so the
+    // hub lists a person's apps and no assertion a browser or an app was handed reaches it.
+    public const string PersonsApps = "persons-apps";
 }
