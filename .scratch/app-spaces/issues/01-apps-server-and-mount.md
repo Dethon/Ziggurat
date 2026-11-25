@@ -11,8 +11,8 @@ Spec: `.scratch/app-spaces/spec.md` ("The apps server", "The `/apps` mount").
 - [ ] Each call acts for the call token's household and the call principal's person. A call naming nobody is refused.
 - [ ] `/apps` lists only the calling person's apps, one directory per slug. Another member's apps and another household's are never listed or reachable.
 - [ ] Writing `app.json` mints a six-character lowercase alphanumeric id, initialises the repository, and records the author and the building agent. A slug follows the existing slug rule and is unique per author.
-- [ ] The app manifest is validated whole (`name`, `shortName`, `accentColor`, `description`, `root`, `reads` as mount points of the building agent, `connect` as bare `https` origins). Each refusal quotes the broken rule, and a refused file is never stored.
-- [ ] A turn of a registered (custom) agent cannot create an app, and the refusal says why.
+- [ ] The app manifest is validated whole (`name`, `shortName`, `accentColor`, `description`, `root`, `reads` as well-formed mount points, `connect` as bare `https` origins). Each refusal quotes the broken rule, and a refused file is never stored.
+- [ ] A turn of a registered (custom) agent cannot create an app, and the refusal says why: the turn's agent id (from `_meta`) must be in the household's agent-names view, as the scheduling server checks.
 - [ ] The mount offers glob, info, read, search, text create/edit, delete, move, copy, blob read/write and its own exec, by overriding only. No hand-written `fs_*` tool.
 - [ ] Writes under any `node_modules/` path are refused.
 - [ ] `./publish` commits the working tree if it changed, records that commit as the served one, and answers the app's link (`<slug>-<id>.<apps-domain>`).

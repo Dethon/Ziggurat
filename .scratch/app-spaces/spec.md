@@ -213,7 +213,9 @@ until an owner removes the space.
   and cannot change it.
 - **Only the household's own agents build apps.** A registered (custom) agent resolves for its owner
   alone, so viewers could never read through it: a write of `app.json` from a turn whose agent is not
-  one of the household's own is refused, naming why.
+  one of the household's own is refused, naming why. The building agent is the turn's agent id the
+  call's `_meta` carries, checked against the household's agent-names view as the scheduling server
+  checks its agent directories.
 - Storage is one volume holding a directory per household and a git repository per app, named by the
   app's id, never its slug. Repositories are operated through the git CLI in the image. Per-app
   metadata (id, slug, author, household, building agent, published commit, whether it is an app
@@ -241,7 +243,8 @@ until an owner removes the space.
   - `name`, `shortName` (optional), `accentColor` (the space colour rule), `description`;
   - `root`: the directory served, default the repository root (an npm app names its build output,
     e.g. `dist`);
-  - `reads`: the mount points the app may read, each a mount point of the building agent;
+  - `reads`: the mount points the app may read (checked for shape here; the apps server cannot
+    know an agent's mounts, so one the building agent lacks answers unmounted at the read API);
   - `connect`: outside origins the app may fetch, each an `https` origin, no wildcards, no paths.
   A write that breaks any rule is refused with the rule's words; the file is never stored half-valid.
 - Server-produced, read-only, never in the repository:
