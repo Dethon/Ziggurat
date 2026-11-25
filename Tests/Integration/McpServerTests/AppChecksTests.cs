@@ -39,6 +39,37 @@ public sealed class AppChecksTests
         viewports.ShouldAllBe(v => v!["accessibility"]!.GetValue<string>().Contains("heading \"Glucose today\" [level=1]"));
     }
 
+    // What a page gets wrong reaches the agent before the person: an error it logs or throws, a request
+    // answered 404, and what its content policy refused, each with what it was about.
+    [Fact]
+    public async Task ACheck_ReportsConsoleErrors_FailedRequests_AndPolicyViolations()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><h1>Glucose</h1><img alt="chart" src="https://charts.example.org/today.png"></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            console.error('the glucose curve did not draw');
+            await fetch('/data/missing.json');
+            throw new Error('nothing to show');
+            """);
+
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
+        var console = viewport["console"]!.AsArray();
+        console.ShouldContain(c => c!["type"]!.GetValue<string>() == "error"
+                                   && c["text"]!.GetValue<string>() == "the glucose curve did not draw");
+        console.ShouldContain(c => c!["type"]!.GetValue<string>() == "uncaught"
+                                   && c["text"]!.GetValue<string>().Contains("nothing to show"));
+        viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>().EndsWith("/data/missing.json")
+                                                                 && r["status"]!.GetValue<int>() == 404);
+        var violation = viewport["policyViolations"]!.AsArray().ShouldHaveSingleItem()!;
+        violation["directive"]!.GetValue<string>().ShouldBe("img-src");
+        violation["blockedUri"]!.GetValue<string>().ShouldBe("https://charts.example.org/today.png");
+    }
+
     private static async Task<JsonNode> ReportAsync(AppsServer server, string slug) =>
         JsonNode.Parse(await BytesAsync(server, $"/{slug}/.checks/latest/report.json"))!;
 
