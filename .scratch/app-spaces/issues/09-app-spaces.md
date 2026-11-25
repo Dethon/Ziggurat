@@ -30,9 +30,12 @@ Accounts: `Admin/HouseholdAppsClient`, `HouseholdSpacesAdmin` (listing, stamping
 `accounts.md`.
 
 Tests:
-- `AppsSpacesTests` (5, stand-in spaces `AppsServer.Spaces`): a member opens a shared app's page and reports;
+- `AppsSpacesTests` (7, stand-in spaces `AppsServer.Spaces`): a member opens a shared app's page and reports;
   the preview stays the author's; another household's member gets the one 404 even when both households name
-  the id; unsharing closes it; unreadable spaces are a 503 for a member and nothing to the author.
+  the id; unsharing closes it; unreadable spaces are a 503 for a member and nothing to the author; a member's
+  `/_vfs` read follows the same rule (shared goes on to the agent, unshared the 404, unreadable the
+  unavailable envelope saying so); a reader that times out is unchecked, never a fault (page 503, delete
+  `transient_dependency`).
 - `AppSpacesOverTheWireTests` (real accounts and Redis): an owner reads the listing through the admin API and
   shares the app; a member signed in through the app sign-in opens it; another household's member gets 404; a
   member disabled through the admin API gets 404 once `SessionsEnded` ends their app session; removing the
@@ -41,7 +44,7 @@ Tests:
   `signalr`, forged, none), and that the pages listener does not answer it.
 - `McpAppsServerTests`: delete refused naming the space and allowed once unshared; unreadable spaces delete
   nothing.
-- `HouseholdSpacesAdminTests` (+12 with a real apps server): the listing with author name, reads and connect;
+- `HouseholdSpacesAdminTests` (+13 with a real apps server): a save answers the household's apps whatever it held; the listing with author name, reads and connect;
   no apps without the feature; name and colour stamped from the app and order among chat spaces, with the
   summary; unpublished, another household's and unknown apps refused; five kind changes refused; an apps
   server down stops only a new app space.
@@ -84,6 +87,14 @@ was not broken on purpose.
 - *The new app space's slug*: the app's slug, else the first free `<slug>-<n>`, set by the page. The section's
   slug rule applies.
 
+**Deviations from the brief:**
+- *An app space's slug can be an orphan in one case.* The brief said nothing should list an app space's slug
+  as an orphan. When that slug still holds a removed chat space's topics, they are listed in the default
+  space (`ListedWith` reads chat spaces alone). Otherwise those topics could be neither listed nor joined. An
+  app space's own slug holds no topics, so nothing else is listed.
+- *Spaces that cannot be read answer 503, not the existing 404.* An outage is no unsharing, and a member
+  should be told to retry rather than shown "not found".
+
 **Disabled members:** nothing in the section names them. The 404 comes from the session ending: disabling
 revokes their sessions, `SessionsEnded` ends their app sessions (`EndAll`), and a renewal answers nobody.
 When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 min) at worst.
@@ -92,6 +103,8 @@ When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 m
 - A later publish can widen `reads` or `connect` after the owner approved them. The owner sees only what the
   served commit says now.
 - Without Redis, unsharing and the delete check lag by up to `Accounts:ConfigurationLifetime` (1 min).
+- Other members' runtime error messages now land in the author's `/apps/<slug>/errors`. This adds to
+  ticket 08's "a message may carry data" gap: a shared app's error text can carry what another member read.
 - `AppSpacesOverTheWireTests` does not cover the delete refusal: the suite's call tokens are signed for
   `localhost`, which the real accounts service does not take as `mcp-apps`. The refusal is covered against the
   stand-in, and the view's call-token row by `HouseholdConfigurationTests`.
@@ -100,10 +113,13 @@ When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 m
 **Run:** `~Apps`, `~Spaces`, `~Conformance`, `~HouseholdConfigurationTests` and the touched classes. Final run:
 1027 passed and 2 skipped of 1029. The first such run after a fresh build had one failure:
 `AppsServingInABrowserTests.APublishedAppThatThrows_HasItsErrorsReportedToItsErrorsFile_OnceEach`, after 710 ms,
-with no message captured. Six reruns, alone and in the full filter, all passed. That case is the author's own
+with no message captured. Six reruns, alone and in the full filter, all passed, and so did three runs of the filter in parallel with
+`.trx` loggers. That case is the author's own
 session, which never reads the spaces. It is still a possible load flake to look at. The `~Apps` filter also
 matches `WebChatSignInE2ETests.ALinkToAnotherServicesPage_…`, which timed out once while the stack was
-starting and passed after.
+starting and passed after. The `~Spaces` filter pulls in E2E classes, `HouseholdSpacesE2ETests` among them,
+which ran against the existing E2E stack. They are no evidence for this page, since that stack's `webui` was
+not rebuilt from this tree.
 
 **Not run:** the full suite, E2E on purpose, smoke and eval. No image was built.
 
