@@ -74,6 +74,16 @@ RUN arch="${TARGETARCH:-amd64}" \
         --exclude="node-v${NODE_VERSION}-linux-${node_arch}/README.md" \
  && rm /tmp/node.tar.gz
 
+# npm's cache is ~/.npm already, but its global prefix is the root-owned /usr/local, where a command's
+# `npm install -g` is refused. npm's own builtin config moves it to the home (npm expands ${HOME}, the
+# workspace in a command's minimal environment), and a login shell — every exec is `bash -lc` — finds
+# what it installed. Appended, so nothing installed there shadows the image's own tools.
+RUN printf '%s\n' 'prefix=${HOME}/.npm-global' > /usr/local/lib/node_modules/npm/npmrc \
+ && printf '%s\n' \
+      '# npm installs globals into the home (/usr/local/lib/node_modules/npm/npmrc).' \
+      'PATH="$PATH:$HOME/.npm-global/bin"' \
+      > /etc/profile.d/npm-global.sh
+
 # Commands run with the bounding set dropped and no-new-privs, so a setuid binary gains nothing;
 # fusermount3 is the one that would matter once the container holds SYS_ADMIN for FUSE, so it loses
 # the bit as well rather than relying on one guard alone.

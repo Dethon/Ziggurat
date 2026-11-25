@@ -111,7 +111,7 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
         }
 
         // The build, and what npm keeps in the home beside it.
-        foreach (var left in new[] { _build, ".npm" }.Select(name => Path.Combine(fixture.WorkspaceOnHost, name))
+        foreach (var left in new[] { _build, ".npm", ".npm-global" }.Select(name => Path.Combine(fixture.WorkspaceOnHost, name))
                      .Where(Directory.Exists))
         {
             Directory.Delete(left, recursive: true);
@@ -225,6 +225,32 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
             ignoreOrder: true, customMessage: Described(call));
         _built.Where(f => !File.ReadAllBytes(Path.Combine(WorkTree(), "dist", f.Key)).SequenceEqual(f.Value)).Select(f => f.Key)
             .ShouldBeEmpty("every file in the app's working tree is the one the build wrote");
+    }
+
+    // npm's defaults put its global prefix in /usr/local, which a command's user cannot write: the image
+    // moves it to the home, where its cache already is, and puts its bin on a login shell's PATH, so a
+    // tool installed globally runs by name in a later command.
+    [SkippableFact]
+    public async Task InstallingAToolGlobally_LandsInTheHomeAndRunsByNameInTheNextCommand()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        LeaveInTheHome(new Dictionary<string, byte[]>
+        {
+            ["tool/package.json"] = """{"name":"greet-tool","version":"1.0.0","bin":{"greet":"greet.js"}}"""u8.ToArray(),
+            ["tool/greet.js"] = "#!/usr/bin/env node\nconsole.log('hello from greet');\n"u8.ToArray()
+        });
+        var call = await MintAsync(cts.Token);
+
+        var installed = await ExecAsync(
+            $"npm config get prefix; npm config get cache; npm install -g --no-audit --no-fund --loglevel=error {InTheContainer}/tool >/dev/null && echo installed",
+            call, cts.Token);
+        var ran = await ExecAsync("greet", call, cts.Token);
+
+        Stdout(installed).ShouldBe(
+            $"{SandboxE2EFixture.ContainerWorkspace}/.npm-global\n{SandboxE2EFixture.ContainerWorkspace}/.npm\ninstalled\n",
+            installed.ToString());
+        Stdout(ran).ShouldBe("hello from greet\n", ran.ToString());
     }
 
     // The Node the image pins (McpServerSandbox/Dockerfile's NODE_VERSION), with its npm and corepack, as
