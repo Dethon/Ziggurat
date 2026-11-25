@@ -19,6 +19,9 @@ paths:
   - "Tests/Integration/Agents/ReadRegistryCacheTests.cs"
   - "Domain/Security/CheckCallVerifier.cs"
   - "Tests/Integration/McpServerTests/AppChecksTests.cs"
+  - "Tests/Integration/Fixtures/PlaywrightBrowserServer.cs"
+  - "DockerCompose/apps-browser/**"
+  - "DockerCompose/seccomp/ziggurat-apps-browser.json"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -213,8 +216,9 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
 
 ## Checks
 
-`./check` (`Checks/AppChecks`, the mount's `CheckAsync`): the preview opened in the apps server's own
-headless Chromium as the person whose turn ran it.
+`./check` (`Checks/AppChecks`, the mount's `CheckAsync`): the preview opened in a headless Chromium of
+its own as the person whose turn ran it; in the deployment that browser runs in the `apps-browser`
+container, never in `mcp-apps`.
 
 - **Arguments**: `--viewport WxH` (repeatable, at most 4, each side 240–3840; default a phone `390x844`
   and a desktop `1280x800`), `--path /route` (default `/`). Anything else is exit 2. The tree's
@@ -229,16 +233,38 @@ headless Chromium as the person whose turn ran it.
   the wall clock; the guest, nobody, another server's or both headers at once are 401). Nothing is minted
   for a check: the token arrives with at least the agent's `callTokens:refreshMargin` (30 s) left, so
   `Checks:Deadline` is at most that (`DeploymentConformanceTests`).
-- **The browser** is full Chromium (`Channel = "chromium"`, new headless; the headless shell ignores the
-  flag below), **one per check**, launched with `--host-resolver-rules=MAP *.<AppsDomain>
-  127.0.0.1:<Listeners.Pages>` (the app is reached at this server, never through DNS) and
+- **The browser** (`Checks/CheckBrowser`, one options object for both ways of getting it): full Chromium
+  (`Channel = "chromium"`, new headless; the headless shell ignores the secure-origin flag), **one per
+  check**, **always in Chromium's own sandbox** (`ChromiumSandbox = true`; no fallback to `--no-sandbox`:
+  a host that cannot sandbox fails the check "the browser could not run"), launched with
+  `--host-resolver-rules=MAP *.<AppsDomain> <Checks:Browser:Pages>` (the app is reached at this server's
+  pages listener, never through DNS; empty is `127.0.0.1:<Listeners.Pages>`) and
   `--unsafely-treat-insecure-origin-as-secure=http://<preview host>` (the `__Host-` cookie and the worker
-  need a secure context; the flag is per process, hence one browser each, and closing it is the deadline).
-  The session cookie is set host-only over CDP, as the tests set theirs. Playwright's own default is
-  `--no-sandbox`. The image installs it with the bundled driver (`cli.js install --with-deps --no-shell
-  chromium`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, `HOME=/tmp`: compose's `PUID` may have no home,
-  and Chromium will not start without a writable one); compose runs the container with `init: true` so
-  its children are reaped.
+  need a secure context; the flag is per process, hence one browser each, and closing it is the
+  deadline). The session cookie is set host-only over CDP. **`Checks:Browser:Endpoint` empty launches it
+  here** (a host run, the tests); **set, it connects** to a Playwright browser server and sends the same
+  options in `x-playwright-launch-options`, and the server launches the browser for that connection
+  alone and closes it with the connection.
+- **`apps-browser`** (`DockerCompose/apps-browser`, compose; `DeploymentConformanceTests` pins all of it):
+  `node:22-bookworm-slim` + `playwright-core@<Microsoft.Playwright's version>` (the handshake refuses a
+  minor mismatch) + full Chromium alone, running `run-server --unsafe` (without `--unsafe` the server
+  drops `args` and `chromiumSandbox`) as `node` on **port 10080, one of Chromium's restricted ports**, so
+  no page, nor a compromised renderer's network stack, can dial the server that would launch anything.
+  It holds **no secret, setting, volume, port or capability** (`cap_drop: ALL`, `no-new-privileges`,
+  `read_only` with `/tmp` and `/home/node` in memory, `stdin_open` since the server exits when stdin
+  closes, `init`), and sits on the `apps-browser` network with `mcp-apps` alone: it reaches `mcp-apps`
+  (8081, and 8080 behind the server's secret), the internet and whatever the host's NAT reaches, never
+  Redis, the agent or the accounts service. `mcp-apps` reaches it at `CHECKS__BROWSER__ENDPOINT:
+  ws://apps-browser:10080/` and is reached by it at `CHECKS__BROWSER__PAGES: mcp-apps:8081` (topology
+  values; the service's DNS name, which `compose run` does not give). **The sandbox's syscall filter**
+  (`DockerCompose/seccomp/ziggurat-apps-browser.json`) is Docker 29.8.0's default (moby/profiles
+  `seccomp/v0.2.3`, as the sandbox's) plus `clone`/`unshare` for any namespace (the kernel still refuses
+  any but a user namespace without `CAP_SYS_ADMIN` over it) and `chroot` (the default's needs
+  `CAP_SYS_CHROOT`, which is dropped); `mount`, `setns`, `bpf` and the rest of `SYS_ADMIN`'s grant stay
+  refused. `chrome://sandbox` there says "adequately sandboxed" (verified on Docker Desktop's WSL2; a
+  host whose AppArmor or `kernel.apparmor_restrict_unprivileged_userns` refuses the container a user
+  namespace fails every check, and is fixed on the host, never with `--no-sandbox`). The `mcp-apps` image carries the
+  Playwright driver only (made executable in its publish stage), no browser.
 - **What the page reaches**: a context route lets through only the preview's origin, `Cdns` and the tree
   manifest's `connect`; a request anywhere else (a navigation onto the deployment's network included) is
   aborted and reported `blocked`. The route sees only a request's first URL, so an allowed origin can
@@ -281,5 +307,6 @@ route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCa
 `AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppChecksTests` the check
 in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
-deadline); `AppReadsApiTests` also the check's call token; the deployment and server tables
+deadline), launched in process and once on a local `run-server --unsafe` from the bundled driver
+(`PlaywrightBrowserServer`), a dead endpoint, and `chrome://sandbox` both ways; `AppReadsApiTests` also the check's call token; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.

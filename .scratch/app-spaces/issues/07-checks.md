@@ -86,11 +86,8 @@ call token goes back to the agent, which believes it as its own signature:
   deadline's own token (the deadline test caught this).
 
 **Known gaps:**
-- *Chromium runs without its sandbox* (`--no-sandbox`, Playwright's default). In the built image, launching
-  with `chromiumSandbox: true` fails under Docker's default seccomp ("Chromium sandboxing failed"). Agent
-  code therefore runs in a browser whose renderer escape would reach the apps server's container. It is
-  bounded by the route above and by the code being the household's own agent's. Enabling the sandbox needs
-  a seccomp profile or user-namespace allowance for `mcp-apps`, which was not done here.
+- ~~*Chromium runs without its sandbox*~~ Closed by the follow-up below: the browser left `mcp-apps` and
+  runs sandboxed in `apps-browser`.
 - The agent's `file_read` showing a check's PNG as an image was not exercised end to end. The server's byte
   read of the PNG was, and that is what `file_read` streams.
 - `./check` holds its exec call for up to the deadline (30 s).
@@ -102,7 +99,71 @@ an aria snapshot. The arbitrary uid failed at first ("chrome_crashpad_handler: -
 which is why the image now sets `HOME=/tmp`. The .NET server itself was not started in the container.
 
 **Deploying this needs:** no new secret or setting. Rebuild `base-sdk` first, since Domain, Infrastructure
-and Mcp.Hosting changed. Then rebuild `agent` (it now believes a check's token) and `mcp-apps` (Chromium,
-about 2 GB now). `mcp-apps` gains `init: true`. Checks read data only once the agent runs this build;
-before that, a check's reads answer 503 and show as failed requests.
+and Mcp.Hosting changed. Then rebuild `agent` (it now believes a check's token), `mcp-apps` and
+`apps-browser` (the follow-up below). Checks read data only once the agent runs this build; before that, a
+check's reads answer 503 and show as failed requests.
 
+**Follow-up: the browser left `mcp-apps` (branch `app-spaces`).** Chromium ran in the apps server's own
+container with `--no-sandbox`, so agent-written JS ran unsandboxed beside `MCP_SECRET_APPS`, Redis and every
+household's repositories. Now:
+- *The seam* is `Checks:Browser` (`CheckBrowserSettings`): `Endpoint` empty launches the browser in
+  process (a host run, the tests); set, `CheckBrowser.OpenAsync` connects to a Playwright browser server
+  and sends the very `BrowserTypeLaunchOptions` it would have launched with, as JSON in
+  `x-playwright-launch-options`. `Pages` is where that browser reaches the pages listener (empty:
+  `127.0.0.1:<Listeners.Pages>`). Compose sets both as topology values: `ws://apps-browser:10080/` and
+  `mcp-apps:8081`. A `--host-resolver-rules` `MAP` to a hostname works: Chromium resolves the target
+  through Docker's DNS. It does need the service's DNS name, which `compose run` does not give.
+- *The server* is `run-server --unsafe` in `DockerCompose/apps-browser` (`node:22-bookworm-slim`,
+  `playwright-core@1.64.1`, full Chromium alone). It launches one browser per connection, so "one per
+  check, closing it is the deadline" still holds: after a deadline no Chromium process was left. Without
+  `--unsafe` (`filterLaunchOptions`, 1.64.1) the server drops `args` and `chromiumSandbox`. `--unsafe`
+  also lets a client pick `executablePath`. So the server listens on **10080, one of Chromium's
+  restricted ports**: a page's `WebSocket` and `fetch` to it are refused inside Chromium's network stack,
+  while a plain client connects. That was probed in the container: the page was refused and a CDN
+  answered 200.
+- *The sandbox is on.* `chromiumSandbox: true` in both modes. Docker's default filter refuses namespaces
+  without `CAP_SYS_ADMIN`, so `DockerCompose/seccomp/ziggurat-apps-browser.json` is Docker 29.8.0's default
+  (moby/profiles `seccomp/v0.2.3`) with `clone`/`unshare` let through for any namespace and `chroot`
+  unconditionally. Each was found necessary:
+  - With `clone`/`unshare` allowed only for flags including `CLONE_NEWUSER`, the renderer crashed.
+  - Without `chroot`, the browser would not start, because `cap_drop: ALL` removes the default's
+    `CAP_SYS_CHROOT` rule.
+
+  `mount`, `setns` and `bpf` stay refused, with no `SYS_ADMIN` and never `privileged`. In the hardened
+  container (`cap_drop: ALL`, `no-new-privileges`, `read_only`, uid 1000, `CapEff` 0), `chrome://sandbox`
+  read "You are adequately sandboxed" (PID and network namespaces, seccomp-BPF). No Chromium process in
+  a running check had `--no-sandbox`.
+- *What it can reach:* the `apps-browser` network only, which it shares with `mcp-apps` alone. That gives
+  it `mcp-apps` 8081, and 8080 behind the server's secret. It also reaches the internet and the host's LAN
+  through the bridge's NAT; the check's route still bounds what a page may request, and the CDNs and
+  `connect` origins need the internet. It holds nothing: no secret, setting, volume, port or capability.
+  It cannot reach Redis, the agent or the accounts service.
+- *Images:* `mcp-apps` went from 2.01 GB to 760 MB; it keeps only the Playwright driver, made executable
+  at publish. `apps-browser` is 1.42 GB.
+- *Tests:*
+  - `AppChecksTests` gained three cases: a check through a local `run-server --unsafe` from the bundled
+    driver (`PlaywrightBrowserServer`) reaching the pages listener by `localhost`, secure context included;
+    a dead endpoint, which reports "the browser could not run"; and `chrome://sandbox` launched here and
+    on a server.
+  - `DeploymentConformanceTests` pins the service:
+    - no env, `env_file`, volume, port, device or added capability; `cap_drop: ALL`; not privileged;
+    - exactly `no-new-privileges` and its filter;
+    - on its own network, shared with `mcp-apps` alone;
+    - the endpoint and pages values;
+    - Chromium installed in that image alone;
+    - every Playwright server image pinned to `Microsoft.Playwright`'s version, camoufox included.
+
+  `DeploymentFiles` now reads `cap_add`, `cap_drop`, `security_opt` and `privileged`.
+- *Proved in Docker* with a throwaway harness: the real apps server module and `AppChecks`, built on the
+  `mcp-apps` image, running as uid 1654 with no home. Both default viewports came back with screenshots,
+  the aria snapshot, and an assertion reading `isSecureContext` true. The `mcp-apps` image has no
+  `/ms-playwright` and no `chrome` anywhere. The real compose definition started the server from the
+  repository root (the relative seccomp path resolved). The full stack, smoke tier and E2E were not run.
+- *Deploying:*
+  - Build `apps-browser` and rebuild `mcp-apps` (`up --build` does both).
+  - `mcp-apps` loses `init: true` (it starts no browser now) and joins the new `apps-browser` network.
+  - **Verify the sandbox on prod**: `chrome://sandbox` from a client on that network, or the process
+    arguments during a check. Prod enforces AppArmor `docker-default`, and a kernel refusing the container
+    a user namespace (`kernel.apparmor_restrict_unprivileged_userns=1` on Ubuntu 24.04 and later) fails
+    every check with "the browser could not run". That is fixed on the host, for example with an AppArmor
+    profile allowing `userns` for the container, never with `--no-sandbox`.
