@@ -69,7 +69,8 @@ reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never
   listener and for `/browse` on the other; inserted first, ahead of the gate, so `/mcp` is absent there.
   The proxy reaches the pages through the relay alone, by the `pages` tag the server registers
   (`.claude/rules/tunnel-forwarding.md`, "Browse pages"); no route names the server
-  (`DeploymentConformanceTests`). `WebIdentityServerHarness` opens both listeners.
+  (`DeploymentConformanceTests`). `WebIdentityServerHarness` opens both listeners. The apps server's
+  app origins are the second instance (`AppPagesListener`, `.claude/rules/apps.md`).
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for servers
   that offer the agent things to call. Tool server and channel server are independent: a dual-role
   server calls `AddToolServer` then `AddChannelServer`.
