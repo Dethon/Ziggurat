@@ -16,7 +16,8 @@ namespace McpServerApps.Vfs;
 // The calling person's built apps as a mount: /apps/<slug>/ is one app's working tree, written with
 // the file tools the agent already has. Writing /apps/<slug>/app.json creates the app; its action
 // files publish it, list its history, roll it back and check it, on the mount itself so they need no
-// sandbox; what a check saw is read back from `/<slug>/.checks/latest/`, which only the server writes;
+// sandbox; what a check saw is read back from `/<slug>/.checks/latest/`, and the runtime errors its pages
+// reported from `/<slug>/errors`, which only the server writes;
 // removing the directory deletes it. Each call acts for the person its verified token names, in that
 // person's household: another member's apps are neither listed nor reachable, and a call naming
 // nobody is refused rather than shown an empty list.
@@ -76,7 +77,9 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         + "of its own: /apps/<slug>/ is one app's working tree. Writing /apps/<slug>/app.json creates an "
         + "app; the action files ./publish, ./history [--limit N] and ./rollback <rev> in its directory "
         + "publish the working tree, list its commits and serve an earlier one; ./check opens the preview in a "
-        + "browser as the person and leaves screenshots and report.json in /<slug>/.checks/latest/; removing "
+        + "browser as the person and leaves screenshots and report.json in /<slug>/.checks/latest/; "
+        + "/<slug>/errors, once a page has reported one, lists the runtime errors people's browsers met (uncaught "
+        + "errors, unhandled rejections, refused reads), one JSON object a line, newest first; removing "
         + "the directory deletes the app. Writes under node_modules/ are refused.";
 
     public override string DescribeCreate =>

@@ -165,13 +165,15 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     // newest first. The mount shows it read-only as `/<slug>/errors`.
     public string ErrorsFile(BuiltApp app) => Path.Combine(AppDirectory(app), "errors");
 
-    // The repository as a whole: its working tree and its history. A check's output is the server's,
-    // replaced on every check, and spends nothing of the app's.
+    // The repository as a whole: its working tree and its history. A check's output and the reported errors
+    // are the server's, bounded by the server, and spend nothing of the app's.
     public long SizeOf(BuiltApp app)
     {
         var checks = ChecksDirectory(app) + Path.DirectorySeparatorChar;
+        var errors = ErrorsFile(app);
         return new DirectoryInfo(AppDirectory(app)).EnumerateFiles("*", SearchOption.AllDirectories)
-            .Where(file => !file.FullName.StartsWith(checks, StringComparison.Ordinal))
+            .Where(file => !file.FullName.StartsWith(checks, StringComparison.Ordinal)
+                           && !file.FullName.StartsWith(errors, StringComparison.Ordinal))
             .Sum(file => file.Length);
     }
 

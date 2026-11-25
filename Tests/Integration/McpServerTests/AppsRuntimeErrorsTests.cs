@@ -202,6 +202,40 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         (await EntriesAsync(apps)).Select(e => e["message"]!.GetValue<string>()).ShouldBe(["loop 4", "elsewhere", "loop 2", "loop 1"]);
     }
 
+    // The errors are the server's: listed beside the app's files, read like any text file, never written,
+    // edited, moved or deleted by the agent, never committed, and spending nothing of the app's quota.
+    [Fact]
+    public async Task TheErrorsFile_IsListedAndRead_ButNeverWrittenCommittedOrCounted()
+    {
+        var host = _apps.Published("glucose", _id);
+        var app = (await _apps.Store.FindAsync(_id, CancellationToken.None))!;
+        var before = _apps.Store.SizeOf(app);
+        using var reported = await _apps.ReportAsync(host, Uncaught, _apps.SessionFor(AppsServer.Her, host));
+
+        (await _apps.GlobAsync(AppsServer.Her, "*", "/glucose")).ShouldContain("/glucose/errors");
+        var refusals = new[]
+        {
+            await _apps.CreateAsync(AppsServer.Her, "/glucose/errors", "[]", overwrite: true),
+            await _apps.CallAsync("fs_edit", new Dictionary<string, object?>
+            {
+                ["path"] = "/glucose/errors",
+                ["edits"] = new[] { new { oldString = "rows", newString = "data" } }
+            }, AppsServer.TurnOf(AppsServer.Her)),
+            await _apps.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose/errors" }, AppsServer.TurnOf(AppsServer.Her)),
+            await _apps.CallAsync("fs_move", new Dictionary<string, object?>
+            {
+                ["sourcePath"] = "/glucose/errors", ["destinationPath"] = "/glucose/kept.txt"
+            }, AppsServer.TurnOf(AppsServer.Her))
+        };
+
+        refusals.ShouldAllBe(refused => refused["errorCode"]!.GetValue<string>() == "permission_denied");
+        (await EntriesAsync()).ShouldHaveSingleItem()["message"]!.GetValue<string>().ShouldBe("TypeError: rows is undefined");
+        _apps.Store.SizeOf(app).ShouldBe(before);
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/index.html", "<h1>Glucose, again</h1>", overwrite: true);
+        await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        (await _apps.GetAsync(host, "/errors", _apps.SessionFor(AppsServer.Her, host))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     // The errors as the agent reads them: one JSON object a line, newest first.
     private Task<IReadOnlyList<JsonNode>> EntriesAsync() => EntriesAsync(_apps);
 
