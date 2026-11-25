@@ -16,6 +16,9 @@ using Domain.Tools.Sugary.Watches;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
+using McpServerApps.Settings;
+using McpServerApps.Store;
+using McpServerApps.Vfs;
 using McpServerSandbox.McpPrompts;
 using McpServerSugary.Tables;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,7 +50,8 @@ public class FileSystemServerConformanceTests
         { "sandbox", "sandbox", typeof(SandboxFileSystem) },
         { "outpost", "outpost", typeof(OutpostFileSystem) },
         { "sugary", "sugary", typeof(SugaryFileSystem) },
-        { "sugary-watches", "sugary", typeof(SugaryWatchFileSystem) }
+        { "sugary-watches", "sugary", typeof(SugaryWatchFileSystem) },
+        { "apps", "apps", typeof(AppsFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -108,7 +112,14 @@ public class FileSystemServerConformanceTests
             ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"],
             // Glucose watches, at /watchers beside the home's: the home watches' surface, kept in
             // Sugary's store.
-            ["sugary-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"]
+            ["sugary-watches"] = ["fs_read", "fs_info", "fs_glob", "fs_create", "fs_edit", "fs_delete", "fs_blob_read"],
+            // A person's built apps: a text working tree like the vault's, whose binary build output
+            // arrives through the blob write, plus its own exec for the action files.
+            ["apps"] =
+            [
+                "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
+                "fs_delete", "fs_copy", "fs_exec", "fs_blob_read", "fs_blob_write"
+            ]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent
@@ -129,7 +140,8 @@ public class FileSystemServerConformanceTests
             // The working directory it was started with: where files land and commands run.
             ["outpost"] = "home/someone/project",
             ["sugary"] = null,
-            ["sugary-watches"] = null
+            ["sugary-watches"] = null,
+            ["apps"] = null
         };
 
     // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
@@ -151,7 +163,8 @@ public class FileSystemServerConformanceTests
             // not on whichever of their machines happens to be switched on.
             ["outpost"] = false,
             ["sugary"] = false,
-            ["sugary-watches"] = false
+            ["sugary-watches"] = false,
+            ["apps"] = false
         };
 
     // How far each mount's shell reaches, which is what the exec screen asks before a command runs
@@ -172,7 +185,9 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = ShellReach.Contained,
             ["outpost"] = null,
             ["sugary"] = null,
-            ["sugary-watches"] = null
+            ["sugary-watches"] = null,
+            // Its exec runs a closed catalog of actions, never a shell.
+            ["apps"] = null
         };
 
     // Where each mount is published, where that is not `/<name>`: an outpost is a separate machine
@@ -304,7 +319,9 @@ public class FileSystemServerConformanceTests
                 "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
             ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>(), new ReadSnapshots(TimeProvider.System)),
             ["sugary-watches"] = new SugaryWatchFileSystem(
-                Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System)
+                Mock.Of<IGlucoseWatches>(), Mock.Of<IHouseholdVoices>(), TimeZoneInfo.Utc, TimeProvider.System),
+            ["apps"] = new AppsFileSystem(
+                new BuiltAppStore(new AppsSettings { AppsDomain = "apps.test" }, TimeProvider.System), "apps.test")
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server

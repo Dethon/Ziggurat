@@ -3,6 +3,7 @@ using Mcp.Hosting;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
+using McpServerApps.Modules;
 using McpServerHomeAssistant.Modules;
 using McpServerIdealista.Modules;
 using McpServerLibrary.Modules;
@@ -15,6 +16,7 @@ using McpServerTimers.Modules;
 using McpServerVault.Modules;
 using McpServerWebSearch.Modules;
 using Microsoft.Extensions.DependencyInjection;
+using AppsSettings = McpServerApps.Settings;
 using HaSettings = McpServerHomeAssistant.Settings;
 using IdealistaSettings = McpServerIdealista.Settings;
 using LibrarySettings = McpServerLibrary.Settings;
@@ -220,6 +222,12 @@ public static class McpServerRegistrations
             new TimersSettings.TimerSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureTimers(settings),
             DeliveryPolicy.GateOnLive),
+
+        // The volume is never touched at registration: a repository is made by the first app.json a
+        // person writes.
+        Row("apps", "McpServerApps", McpServerRole.Tool,
+            new AppsSettings.AppsSettings { StoragePath = "/data", AppsDomain = "apps.test", Mcp = DeploymentGate },
+            (services, settings) => services.ConfigureApps(settings)),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,
             new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"], Mcp = DeploymentGate },

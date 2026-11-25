@@ -38,8 +38,30 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             return new FsResult<FsEditResult>.Err(resolveError);
         }
 
-        var content = File.ReadAllText(fullPath);
+        if (!Apply(File.ReadAllText(fullPath), edits).TryGetValue(out var applied, out var applyError))
+        {
+            return new FsResult<FsEditResult>.Err(applyError);
+        }
 
+        var content = applied.Content;
+        var tempPath = fullPath + ".tmp";
+        File.WriteAllText(tempPath, content);
+        File.Move(tempPath, fullPath, overwrite: true);
+
+        return new FsResult<FsEditResult>.Ok(new FsEditResult
+        {
+            Status = "success",
+            FilePath = fullPath,
+            TotalOccurrencesReplaced = applied.TotalReplaced,
+            Edits = applied.Edits
+        });
+    }
+
+    // The edits laid over a text in order, each seeing the result of the ones before it, or the first
+    // that cannot apply; nothing is read or written. A mount that judges a file's content before
+    // keeping it (an app manifest) applies here and stores only what passes.
+    public static FsResult<AppliedEdits> Apply(string content, IReadOnlyList<TextEdit> edits)
+    {
         var perEditResults = new List<FsEditDetail>();
         var totalReplaced = 0;
 
@@ -50,14 +72,14 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             if (positions.Count == 0)
             {
                 var suggestion = FindCaseInsensitiveSuggestion(content, edit.OldString);
-                return FsError.Invalid<FsEditResult>(suggestion is not null
+                return FsError.Invalid<AppliedEdits>(suggestion is not null
                     ? $"Text '{Truncate(edit.OldString, 100)}' not found (case-sensitive). Did you mean '{Truncate(suggestion, 100)}'?"
                     : $"Text '{Truncate(edit.OldString, 100)}' not found in file.");
             }
 
             if (!edit.ReplaceAll && positions.Count > 1)
             {
-                return FsError.Invalid<FsEditResult>(
+                return FsError.Invalid<AppliedEdits>(
                     $"Found {positions.Count} occurrences of the specified text. Provide more surrounding context in oldString to disambiguate, or set replaceAll=true.");
             }
 
@@ -78,17 +100,7 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
             });
         }
 
-        var tempPath = fullPath + ".tmp";
-        File.WriteAllText(tempPath, content);
-        File.Move(tempPath, fullPath, overwrite: true);
-
-        return new FsResult<FsEditResult>.Ok(new FsEditResult
-        {
-            Status = "success",
-            FilePath = fullPath,
-            TotalOccurrencesReplaced = totalReplaced,
-            Edits = perEditResults
-        });
+        return new FsResult<AppliedEdits>.Ok(new AppliedEdits(content, totalReplaced, perEditResults));
     }
 
     private static string ReplaceFirst(string content, string oldString, string newString, int position)
@@ -129,3 +141,5 @@ public class TextEditTool(string vaultPath, string[] allowedExtensions)
         return text.Length > maxLength ? text[..maxLength] + "..." : text;
     }
 }
+
+public sealed record AppliedEdits(string Content, int TotalReplaced, IReadOnlyList<FsEditDetail> Edits);

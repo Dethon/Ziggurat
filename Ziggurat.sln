@@ -66,6 +66,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HouseholdMigration", "House
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LemonadeForwarder", "LemonadeForwarder\LemonadeForwarder.csproj", "{36C2FED3-43FE-4BCA-80E1-6FB5E6636D05}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerApps", "McpServerApps\McpServerApps.csproj", "{2B026211-6598-4E39-A379-E70528C2C89F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -388,6 +390,18 @@ Global
 		{36C2FED3-43FE-4BCA-80E1-6FB5E6636D05}.Release|x64.Build.0 = Release|Any CPU
 		{36C2FED3-43FE-4BCA-80E1-6FB5E6636D05}.Release|x86.ActiveCfg = Release|Any CPU
 		{36C2FED3-43FE-4BCA-80E1-6FB5E6636D05}.Release|x86.Build.0 = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|x64.Build.0 = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Debug|x86.Build.0 = Debug|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|x64.ActiveCfg = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|x64.Build.0 = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|x86.ActiveCfg = Release|Any CPU
+		{2B026211-6598-4E39-A379-E70528C2C89F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
