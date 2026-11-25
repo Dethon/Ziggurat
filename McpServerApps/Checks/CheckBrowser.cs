@@ -14,6 +14,8 @@ namespace McpServerApps.Checks;
 //   `--no-sandbox`, and a browser server drops a sandbox it is not asked for.
 // - **The apps domain resolves to this server's pages listener** (Checks:Browser:Pages, else this
 //   machine's loopback), never through public DNS; the page arrives by Host as any app origin's does.
+// - **Its way out is the egress proxy** (Checks:Browser:Proxy, CheckEgress) when there is one: in the
+//   deployment its network has no other.
 // - **The preview is a secure context**, as it is behind the proxy on https: its `__Host-` session cookie
 //   and its worker need one, and plain http under a real domain is none. The flag is the process's, so
 //   each check has a browser of its own, and closing it is how the deadline stops everything at once.
@@ -29,7 +31,13 @@ internal static class CheckBrowser
 
     public static BrowserTypeLaunchOptions Options(AppsSettings settings, string address)
     {
-        var pages = settings.Checks.Browser.Pages is "" ? $"127.0.0.1:{settings.Listeners.Pages}" : settings.Checks.Browser.Pages;
+        var browser = settings.Checks.Browser;
+        var pages = browser.Pages is "" ? $"127.0.0.1:{settings.Listeners.Pages}" : browser.Pages;
+        // Everything but the app origins through the egress proxy, loopback included (Chromium sends
+        // loopback direct unless told), when there is one.
+        string[] egress = browser.Proxy is ""
+            ? []
+            : [$"--proxy-server=http://{browser.Proxy}", $"--proxy-bypass-list=*.{settings.AppsDomain};<-loopback>"];
         return new BrowserTypeLaunchOptions
         {
             Channel = "chromium",
@@ -39,7 +47,8 @@ internal static class CheckBrowser
             Args =
             [
                 $"--host-resolver-rules=MAP *.{settings.AppsDomain} {pages}",
-                $"--unsafely-treat-insecure-origin-as-secure={address}"
+                $"--unsafely-treat-insecure-origin-as-secure={address}",
+                .. egress
             ]
         };
     }

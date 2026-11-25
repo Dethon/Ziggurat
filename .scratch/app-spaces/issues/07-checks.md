@@ -171,3 +171,25 @@ uid with no home (4242, `HOME=/`), so `HOME=/tmp` was dropped. Both default view
     a user namespace (`kernel.apparmor_restrict_unprivileged_userns=1` on Ubuntu 24.04 and later) fails
     every check with "the browser could not run". That is fixed on the host, for example with an AppArmor
     profile allowing `userns` for the container, never with `--no-sandbox`.
+
+**Follow-up: the check browser reaches no LAN (branch `app-spaces`).** `apps-browser` sat on an ordinary NAT
+network, so it reached the host's LAN and published ports, and the per-page route judged only a request's
+first URL: a `connect` origin the author controls could answer 307 and Chromium followed it to `192.168.x.x`
+with method and body. Now the fix is the network's:
+- The `apps-browser` network is `internal: true` (no route out of the host). Its one way out is
+  `McpServerApps/Checks/CheckEgress`, a CONNECT-only proxy in the apps server on `Listeners.Egress` (8082),
+  bound on `mcp-apps`'s own address facing the browser server, so no other `jackbot` container can use it.
+- The proxy resolves the target once, refuses it unless every address it answers with is public
+  (`EgressAddresses`: default deny, global unicast minus private, loopback, link-local, CGNAT, documentation,
+  multicast and reserved ranges, IPv4-in-IPv6 forms judged as IPv4), and dials one of those addresses, never
+  the name again. A redirect's next hop is a fresh CONNECT, judged the same.
+- The browser gets `--proxy-server=http://mcp-apps:8082` and `--proxy-bypass-list=*.<AppsDomain>;<-loopback>`
+  (`CHECKS__BROWSER__PROXY`); app origins still go direct to the pages listener by the `MAP` rule.
+- *Choice:* this proxy over squid's `dst` ACLs, because squid judges a name on its DNS cache and may resolve
+  again to connect (a zero-TTL rebinding window), and it would be a fourth image to pin.
+- Tests: `CheckEgressTests` (arranged network below the judgment: a public origin tunnelled at its judged
+  address; a redirect's private next hop refused by address, name, mixed answer, mapped IPv6, with nothing
+  dialled; a rebinding name asked once; plain http refused), `EgressAddressesTests`, `CheckBrowserTests`
+  (the flags), `AppChecksTests.ACheckBehindTheEgressProxy_DialsNoPrivateAddress_EvenOneTheRouteAllows`
+  (Chromium: red first, it dialled loopback twice), and `DeploymentConformanceTests.TheChecksBrowsersOnlyWayOut_IsTheAppsServersEgressProxy`.
+

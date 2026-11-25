@@ -240,6 +240,46 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest")).ShouldBe(["/glucose/.checks/latest/report.json"]);
     }
 
+    // In the deployment the check's browser has no way out but the apps server's egress proxy, which reaches
+    // the public internet alone: the route judges only a request's first address, so an origin the app may
+    // reach can redirect the browser onto the LAN or the host, and only the proxy, judging each address the
+    // browser dials, stops it. Here a request the route lets through (an image from an origin it allows) is
+    // to a private address, as a redirect's next hop would be: refused, and nothing there is ever dialled.
+    [Fact]
+    public async Task ACheckBehindTheEgressProxy_DialsNoPrivateAddress_EvenOneTheRouteAllows()
+    {
+        using var inside = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        inside.Start();
+        var dialled = 0;
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                using var client = await inside.AcceptTcpClientAsync();
+                Interlocked.Increment(ref dialled);
+            }
+        });
+        var allowed = $"https://127.0.0.1:{((System.Net.IPEndPoint)inside.LocalEndpoint).Port}";
+        var egress = TestPort.GetAvailable();
+        await using var server = await StartAsync(s => s with
+        {
+            Cdns = [.. s.Cdns, allowed],
+            Listeners = s.Listeners with { Egress = egress },
+            Checks = s.Checks with { Browser = s.Checks.Browser with { Proxy = $"127.0.0.1:{egress}" } }
+        });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            $"""<!doctype html><html lang="en"><head><title>Glucose</title></head><body><h1>Glucose</h1><img alt="" src="{allowed}/pixel.png"></body></html>""");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
+        viewport["screenshot"]!.GetValue<string>().ShouldBe("800x600.png", viewport.ToJsonString());
+        viewport["failedRequests"]!.AsArray().ShouldContain(r => r!["url"]!.GetValue<string>() == $"{allowed}/pixel.png");
+        dialled.ShouldBe(0);
+    }
+
     // Each check runs a browser of its own, so a household runs one at a time and the server a few: one
     // past either limit is refused at once, naming the limit and its value, never queued behind the others.
     // The running checks are held open by a read the agent has not answered yet.

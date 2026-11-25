@@ -974,6 +974,26 @@ public class DeploymentConformanceTests
             .ShouldBe(["mcp-apps", "apps-browser"], ignoreOrder: true);
     }
 
+    // The agent's code chooses where the check's page goes, and an origin it may reach can redirect it on, so
+    // the browser's network has no way out of the host at all (`internal`: not the LAN, not the host's
+    // published ports, not the internet): its one way out is the apps server's egress proxy, which reaches the
+    // public internet alone, judging every address the browser dials (Checks/CheckEgress). The apps server
+    // launches every check's browser through it, on the port it listens on.
+    [Fact]
+    public void TheChecksBrowsersOnlyWayOut_IsTheAppsServersEgressProxy()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps").Environment;
+        var egress = new global::McpServerApps.Settings.AppListeners().Egress;
+
+        compose.Service("apps-browser").Networks.ShouldAllBe(network => compose.InternalNetworks.Contains(network));
+        compose.Service("apps-browser").NetworkMode.ShouldBeNull();
+        compose.Service("apps-browser").Networks.ShouldNotContain("default");
+        apps.GetValueOrDefault("CHECKS__BROWSER__PROXY").ShouldBe($"mcp-apps:{egress}");
+        compose.Service("mcp-apps").Networks.ShouldContain(network => !compose.InternalNetworks.Contains(network),
+            "the apps server dials the internet for the browser");
+    }
+
     // The apps server runs every check on that browser's server, at the port its image listens on (one
     // Chromium refuses to dial, so not even a renderer reaches it), and the browser reaches the app at the
     // apps server's pages listener by its name on their network, never through public DNS.

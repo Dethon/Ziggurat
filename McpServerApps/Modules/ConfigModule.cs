@@ -44,6 +44,15 @@ public static class ConfigModule
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
 
+        // The check browser's one way out, where it has a proxy to go through (in the deployment its network
+        // has no other): the public internet alone.
+        if (settings.Checks.Browser.Proxy.Length > 0)
+        {
+            services
+                .AddSingleton<IEgressNetwork, SystemEgressNetwork>()
+                .AddHostedService<CheckEgress>();
+        }
+
         // Where every way a person's sessions end is announced, which ends their app sessions at once, and
         // the deployment's metrics feed, where a broken app is a household error the operator sees (and a
         // failed tool call too, by the shared filter). Connected when first asked, so a host run or a test

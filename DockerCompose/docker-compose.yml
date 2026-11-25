@@ -366,9 +366,11 @@ services:
       # agent starts after this server, and a read before it answers unavailable.
       AGENTURL: http://agent:8080
       # A check's browser: launched on apps-browser's server (below), reaching this server's pages
-      # listener by its name on the network the two share alone.
+      # listener by its name on the network the two share alone, and the internet through this server's
+      # egress proxy alone (its network has no way out), which refuses the LAN, the host and this network.
       CHECKS__BROWSER__ENDPOINT: ws://apps-browser:10080/
       CHECKS__BROWSER__PAGES: mcp-apps:8081
+      CHECKS__BROWSER__PROXY: mcp-apps:8082
     networks:
       - jackbot
       - apps-browser
@@ -385,9 +387,10 @@ services:
   # The browser a built app's check runs in (McpServerApps/Checks, DockerCompose/apps-browser): a
   # Playwright browser server launching one Chromium per check with what mcp-apps sends. The agent's code
   # runs in its pages, so it holds nothing: no secret, no volume, no setting, no capability, and a
-  # read-only filesystem with scratch space in memory. It is on one network, shared with mcp-apps alone,
-  # which reaches the internet too (the CDNs and an app's connect origins, which the check's route still
-  # bounds), never Redis, the agent or the accounts service. Chromium's own sandbox runs inside it, on
+  # read-only filesystem with scratch space in memory. It is on one internal network, shared with mcp-apps
+  # alone, with no way out of the host: not the LAN, the host's published ports nor the internet. Its one
+  # way out is mcp-apps's egress proxy (Checks/CheckEgress), which reaches public addresses alone, judged
+  # after resolving, every redirect's hop included; never Redis, the agent or the accounts service. Chromium's own sandbox runs inside it, on
   # user namespaces the syscall filter lets through (Docker's default without CAP_SYS_ADMIN lets none),
   # with mount, setns and bpf still refused.
   apps-browser:
@@ -813,8 +816,10 @@ services:
 
 networks:
   jackbot:
-  # mcp-apps and the browser its checks run in, and nothing else of the deployment's.
+  # mcp-apps and the browser its checks run in, and nothing else of the deployment's. Internal: no
+  # route out of the host, so the browser's only egress is mcp-apps's proxy.
   apps-browser:
+    internal: true
 
 volumes:
   chat-uploads:

@@ -59,6 +59,10 @@ public record AppListeners
 
     // The proxy sends every request for `*.<AppsDomain>` here and nowhere else of this server's.
     public int Pages { get; init; } = 8081;
+
+    // The check browser's one way out (Checks/CheckEgress), when Checks:Browser:Proxy names it: no HTTP
+    // here, bound only where that browser reaches it.
+    public int Egress { get; init; } = 8082;
 }
 
 // What one household may spend of the deployment's shared storage. A refusal names the limit and
@@ -129,4 +133,9 @@ public record CheckBrowserSettings
     // Where that browser reaches this server's pages listener, `host:port`. Empty is this machine's
     // loopback on Listeners.Pages, which is right for a browser on this machine and no other.
     public string Pages { get; init; } = "";
+
+    // Where that browser reaches this server's egress proxy (Checks/CheckEgress, on Listeners.Egress),
+    // `host:port`: in the deployment its only way out, since its network has none. Empty runs no proxy and
+    // sends the browser through none (a host run, most tests).
+    public string Proxy { get; init; } = "";
 }

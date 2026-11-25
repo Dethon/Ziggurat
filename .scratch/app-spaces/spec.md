@@ -349,6 +349,9 @@ until an owner removes the space.
   run inside the page, each reporting pass or fail with a message).
 - The browser reaches app origins at the apps server itself, never through public DNS; its data reads
   go through the same `/_vfs/*` path an installed app uses.
+- The browser's network has no way out of the host; its one way out is the apps server's egress proxy,
+  which reaches public addresses alone, judged after resolving and dialled as judged, so a page (or an
+  allowed origin's redirect) never reaches the LAN, the host or the deployment's network.
 - Nothing of the app runs anywhere but inside the browser page.
 - Checks beyond the quota are refused, not queued. A check past its deadline is stopped and its report
   says so.

@@ -46,15 +46,16 @@ public static class DeploymentFiles
                 c => ((YamlScalarNode)c.Key).Value!,
                 c => ComposeService.From(((YamlScalarNode)c.Key).Value!, (YamlMappingNode)c.Value))
             : [];
-        var networks = root.Children.TryGetValue(new YamlScalarNode("networks"), out var declared)
-            && declared is YamlMappingNode map
-                ? map.Children.ToDictionary(
-                    c => ((YamlScalarNode)c.Key).Value!,
-                    c => c.Value is YamlMappingNode settings
-                         && settings.Children.TryGetValue(new YamlScalarNode("external"), out var external)
-                         && external is YamlScalarNode { Value: "true" })
-                : [];
-        return new ComposeFile(services, networks);
+        var declaredNetworks = root.Children.TryGetValue(new YamlScalarNode("networks"), out var declared)
+                               && declared is YamlMappingNode map
+            ? map.Children.ToDictionary(c => ((YamlScalarNode)c.Key).Value!, c => c.Value as YamlMappingNode)
+            : [];
+        bool Flag(YamlMappingNode? settings, string key) =>
+            settings is not null && settings.Children.TryGetValue(new YamlScalarNode(key), out var value)
+                                 && value is YamlScalarNode { Value: "true" };
+        return new ComposeFile(services,
+            declaredNetworks.ToDictionary(n => n.Key, n => Flag(n.Value, "external")),
+            declaredNetworks.Where(n => Flag(n.Value, "internal")).Select(n => n.Key).ToHashSet());
     }
 
     private static IReadOnlyDictionary<string, string> PlaceholdersIn(string directory) =>
@@ -212,10 +213,11 @@ public static class HomeAgents
     public static global::Domain.DTOs.AgentDefinition Definition(string id) => Definitions().Single(a => a.Id == id);
 }
 
-// The services, and the networks the file declares with whether each is another project's
-// (`external: true`) rather than its own.
+// The services, the networks the file declares with whether each is another project's
+// (`external: true`) rather than its own, and those with no way out of the host (`internal: true`).
 public sealed record ComposeFile(
-    IReadOnlyDictionary<string, ComposeService> Services, IReadOnlyDictionary<string, bool> Networks)
+    IReadOnlyDictionary<string, ComposeService> Services, IReadOnlyDictionary<string, bool> Networks,
+    IReadOnlySet<string> InternalNetworks)
 {
     public ComposeService Service(string name) =>
         Services.TryGetValue(name, out var service)

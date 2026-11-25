@@ -37,4 +37,22 @@ public class CheckBrowserTests
         ]);
         options.ChromiumSandbox.ShouldBe(true);
     }
+
+    // In the deployment the browser's network has no way out but the apps server's egress proxy, which
+    // refuses the LAN and the host: everything goes through it but the app origins, which the MAP rule sends
+    // to the pages listener — loopback included, which Chromium would otherwise send direct.
+    [Fact]
+    public void ABrowserGivenAProxy_SendsEverythingButTheAppOriginsThroughIt_LoopbackIncluded()
+    {
+        var settings = new AppsSettings
+        {
+            AppsDomain = "apps.test",
+            Checks = new AppCheckSettings { Browser = new CheckBrowserSettings { Proxy = "mcp-apps:8082" } }
+        };
+
+        var args = CheckBrowser.Options(settings, Preview).Args!;
+
+        args.ShouldContain("--proxy-server=http://mcp-apps:8082");
+        args.ShouldContain("--proxy-bypass-list=*.apps.test;<-loopback>");
+    }
 }

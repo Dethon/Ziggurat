@@ -355,12 +355,30 @@ container, never in `mcp-apps`.
   no page, nor a compromised renderer's network stack, can dial the server that would launch anything.
   It holds **no secret, setting, volume, port or capability** (`cap_drop: ALL`, `no-new-privileges`,
   `read_only` with `/tmp` and `/home/node` in memory, `stdin_open` since the server exits when stdin
-  closes, `init`), and sits on the `apps-browser` network with `mcp-apps` alone: it reaches `mcp-apps`
-  (8081, and 8080 behind the server's secret), the internet and through NAT the host's LAN and published
-  ports (Caddy, Lemonade; Redis is on loopback), and shares no network with Redis, the agent or the
-  accounts service. `mcp-apps` reaches it at `CHECKS__BROWSER__ENDPOINT:
-  ws://apps-browser:10080/` and is reached by it at `CHECKS__BROWSER__PAGES: mcp-apps:8081` (topology
-  values; the service's DNS name, which `compose run` does not give). **The sandbox's syscall filter**
+  closes, `init`), and sits on the `apps-browser` network with `mcp-apps` alone, **`internal: true`**: no
+  route out of the host (not the LAN, the host's published ports, `host.docker.internal` nor the
+  internet); it reaches `mcp-apps` alone (8081, 8082, and 8080 behind the server's secret), and shares no
+  network with Redis, the agent or the accounts service. `mcp-apps` reaches it at
+  `CHECKS__BROWSER__ENDPOINT: ws://apps-browser:10080/` and is reached by it at `CHECKS__BROWSER__PAGES:
+  mcp-apps:8081` and `CHECKS__BROWSER__PROXY: mcp-apps:8082` (topology values; the service's DNS name,
+  which `compose run` does not give).
+- **The egress proxy is the browser's one way out** (`Checks/CheckEgress`, a hosted service only when
+  `Checks:Browser:Proxy` is set; `DeploymentConformanceTests` pins the internal network and the value).
+  The browser is launched with `--proxy-server=http://<Proxy>` and `--proxy-bypass-list=*.<AppsDomain>;<-loopback>`
+  (app origins direct to the pages listener by the `MAP` rule; loopback through the proxy, which Chromium
+  would otherwise send direct). The proxy: **CONNECT alone** (everything a check page reaches outside is
+  https; anything else 405), the target resolved **once**, refused 403 unless **every** address it
+  answers is public (`EgressAddresses.IsPublic`: default deny, global unicast minus private, loopback,
+  link-local, CGNAT, benchmarking, documentation, multicast, reserved, Teredo/6to4/NAT64 judged by their
+  IPv4), then **dialled at a judged address, never the name again** (no DNS rebinding); bytes piped both
+  ways. A redirect's next hop is a new CONNECT, judged the same. **Bound on `mcp-apps`'s own address
+  facing the browser server** (the Endpoint host resolved, the local address the kernel would send from),
+  so no other container on `jackbot` gets a way out through it; loopback when the browser is launched
+  here. A raw listener (`Listeners.Egress`, 8082), outside the MCP gate and the pages listener. Why this
+  over squid's `dst` ACLs: squid judges a name on its own DNS cache and may resolve again to connect, so a
+  zero-TTL rebinding can slip between; this dials what it judged, one class with no image of its own to pin.
+  The host's public address, on a host that has one, is reached on its public ports alone, which the
+  internet reaches too. **The sandbox's syscall filter**
   (`DockerCompose/seccomp/ziggurat-apps-browser.json`) is Docker 29.8.0's default (moby/profiles
   `seccomp/v0.2.3`, as the sandbox's) plus `clone`/`unshare` for any namespace (the kernel still refuses
   any but a user namespace without `CAP_SYS_ADMIN` over it) and `chroot` (the default's needs
@@ -372,7 +390,8 @@ container, never in `mcp-apps`.
 - **What the page reaches**: a context route lets through only the preview's origin, `Cdns` and the tree
   manifest's `connect`; a request anywhere else (a navigation onto the deployment's network included) is
   aborted and reported `blocked`. The route sees only a request's first URL, so an allowed origin can
-  still redirect the browser anywhere: **nothing is kept of a page that is not the preview** — the
+  still redirect the browser on: the egress proxy refuses every private hop, and **nothing is kept of a
+  page that is not the preview** — the
   screenshot and snapshot are taken and kept only while the main frame is on the preview's origin, an
   assertion runs only then (one that ends elsewhere fails "left the preview"), console entries are
   recorded only then, and the viewport's `error` says it left. The policy is never bypassed, so its
@@ -485,5 +504,9 @@ in real Chromium on `apps.test` (screenshots, console, failed requests, violatio
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
 deadline), launched in process and once on a local `run-server --unsafe` from the bundled driver
 (`PlaywrightBrowserServer`), a dead endpoint, and `chrome://sandbox` both ways; `CheckBrowserTests` that
-`Checks:Browser:Pages` reaches the `MAP` rule; `AppReadsApiTests` also the check's call token; the deployment and server tables
+`Checks:Browser:Pages` reaches the `MAP` rule and `Proxy` the proxy flags; `CheckEgressTests` the proxy on an
+arranged network (a public origin tunnelled at its judged address, a redirect's private next hop refused by
+name or address with nothing dialled, a rebinding name never asked twice, plain http refused),
+`EgressAddressesTests` the classifier, `AppChecksTests` a check behind the proxy dialling no private address
+its route allows; `AppReadsApiTests` also the check's call token; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
