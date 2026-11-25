@@ -66,15 +66,21 @@ public sealed class AppReader(
         }
     }
 
-    private static ToolErrorResult Refused(StandingRefusal refusal) => refusal switch
+    // Only a standing that could not be read is worth asking again; every other refusal holds until somebody
+    // changes it, as it does for a turn (ConversationGroup.RefuseByStandingAsync).
+    internal static ToolErrorResult Refused(StandingRefusal refusal) => refusal switch
     {
         StandingRefusal.Suspended => ToolError.PermissionDenied(
             "The household is suspended, so its apps read nothing.", "Nothing to do here: the operator resumes a household."),
         StandingRefusal.Disabled => ToolError.PermissionDenied(
             "This person is disabled in the household, so the household's apps read nothing for them.",
             "An owner of the household enables them again."),
-        _ => ToolError.TransientDependency(
+        StandingRefusal.SugaryOff => ToolError.PermissionDenied(
+            "Sugary is turned off for the household, so this read was refused.",
+            "An owner of the household turns Sugary back on on the Features page."),
+        StandingRefusal.Unchecked => ToolError.TransientDependency(
             "Whether the household lets this read through could not be read just now, so nothing was read.",
-            "Read again in a moment.")
+            "Read again in a moment."),
+        _ => throw new ArgumentOutOfRangeException(nameof(refusal), refusal, "Every standing refusal is answered.")
     };
 }
