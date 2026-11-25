@@ -43,6 +43,10 @@ services:
     volumes: ["./volumes/smoke/sugary:/data"]
   mcp-sugary:
     volumes: ["./volumes/smoke/sugary:/data"]
+  mcp-apps-volume:
+    volumes: ["./volumes/smoke/apps:/data"]
+  mcp-apps:
+    volumes: ["./volumes/smoke/apps:/data"]
   agent-volume:
     volumes: ["./volumes/smoke/agent-keys:/keys"]
   agent:
