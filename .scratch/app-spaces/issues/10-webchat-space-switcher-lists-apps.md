@@ -62,8 +62,8 @@ guards what did not change.
   (a button with the mark and a caret, "Spaces"), a plain mark when there is one place. A chat space is an
   in-app link to its address; an app is a plain link to its origin (a top-level navigation, same tab). It loads
   as a space is validated and again whenever it opens; `GetSpaces` stays what validation and joining use.
-- *The hub method takes `IPersonsApps` as `[FromServices]`* (as `DismissAlert` does), not by constructor: 17
-  test hosts build the hub by hand. The composition test above holds the module to registering it.
+- *The hub method takes `IPersonsApps` as `[FromServices]`* (as `DismissAlert` does), not by constructor: some
+  sixteen test hosts build the hub by hand. The composition test above holds the module to registering it.
 - *The listing reads no spaces.* The hub names the app ids its own spaces read found, and the apps server
   answers those published in the assertion's household with name and link only. So a holder of a
   `persons-apps` assertion (the hub alone) can learn an unshared app's name and link by its id; giving the
