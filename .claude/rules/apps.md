@@ -22,6 +22,9 @@ paths:
   - "Tests/Integration/Fixtures/PlaywrightBrowserServer.cs"
   - "DockerCompose/apps-browser/**"
   - "DockerCompose/seccomp/ziggurat-apps-browser.json"
+  - "Domain/Apps/PublishedApps.cs"
+  - "Accounts/Admin/HouseholdAppsClient.cs"
+  - "Tests/Integration/McpServerTests/AppSpacesOverTheWireTests.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -89,6 +92,9 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   (below). Unknown is exit 127 naming the actions.
 - Moving `/<slug>` to `/<new-slug>` renames the app; other moves stay within one app; copies may go
   between the caller's apps.
+- **Deleting an app the household shares as an app space is refused** `permission_denied`, naming the
+  space an owner removes first (`AppsFileSystem.SharedRefusalAsync`, the call's household's `spaces`
+  through `ICallHousehold.SpacesAsync`); spaces that cannot be read delete nothing (`transient_dependency`).
 
 ## Serving built apps
 
@@ -99,8 +105,9 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   `tls_{$CADDY_TLS:cloudflare}`; nothing else of the deployment is on that domain (`DeploymentConformanceTests`).
 - **The app is the Host's label, by id** (`Domain/Apps/AppOrigin.Parse`): `<slug>-<id>` or `<slug>-<id>-preview`;
   the slug is shape-checked and ignored, so a renamed app's old link opens it.
-- **Who opens what** (`AppPages`): the published origin, its author (ticket 09 adds an app space's
-  members); the preview, its author alone. **The viewer is settled before the app is looked up**: a page
+- **Who opens what** (`AppPages.AccessAsync`, the one rule pages, reads and reports ask): the published
+  origin, its author and, while the household shares it as an app space (below), every member of the
+  app's household; the preview, its author alone. **The viewer is settled before the app is looked up**: a page
   opened with no app session is sent to sign in whether or not its app exists; a signed-in viewer who
   may not open it, an unknown label, a non-GET (but a read's POST to `/_vfs/*` and a report's to `/_errors`, below), anything but a page opened with no session, an app never
   published (on its published origin) gets **one 404, byte for byte**, under `AppContentPolicy.Closed`.
@@ -133,6 +140,34 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 - **Local name**: `apps.localhost` (smoke override, `scripts/run-local.sh` on 6019): loopback by name, and on
   plain http a secure context in Chromium, which the `__Host-` cookie and the worker need (verified on http
   only; through the smoke stack's Caddy on its untrusted local CA a browser may refuse the worker).
+
+## App spaces
+
+An **app space** is a household space sharing a published app (`HouseholdSpace.AppId`;
+`.claude/rules/admin-owner-pages.md` for the owners' side, `chat-hub.md` for the hub's).
+
+- **The household's `spaces` section is the one truth** of which apps are shared; the apps server keeps
+  no copy. It reads the `spaces` view (`InternalCallers`: `mcp-apps` reads it beside `agent-names`) on a
+  call's token for a delete, and on **the viewer's own `apps` assertion** for an origin
+  (`CallHousehold.OfPerson`; `apps` is `mcp-apps`'s assertion channel), kept by the reader a minute or
+  until a save is heard on Redis — so removing the space closes the app within that.
+- **Access**: the author needs no read; anyone else must be of the app's household (`tid` equal to the
+  app's, so an id another household names opens nothing), on the published origin, holding an assertion
+  (a check's session never), and the app must be in the section. Spaces that cannot be read are a 503 (a
+  page `AccessUnchecked`, a read the `transient_dependency` envelope), never the 404 and never open; a
+  refusal is closed.
+- **A disabled member** is closed by the session ending: disabling revokes their sessions, announced as
+  `SessionsEnded` (`EndedAppSessionsListener` → `EndAll`), and a renewal answers nobody — within
+  `Sessions:AssertionKept` when the announcement is missed. Nothing in the section names them.
+- **The listing** `GET PublishedApps.Path` (`/internal/published-apps`, `Serving/PublishedAppsListing`)
+  on the **MCP listener**, outside `/mcp` and so outside the secret's gate: believed on an assertion for
+  **`AppChannels.PublishedApps`** naming an `owner` (`AdmitAsync`; 401 else, 403 a member), which only
+  the accounts service signs, for the owner its admin gate verified (`HouseholdAppsClient`). It answers
+  the assertion household's apps with a served commit (`BuiltAppStore.PublishedManifestAsync`): id,
+  slug, the commit's name, colour, description, `reads`, `connect`, the author's user id, the link;
+  `no-store`. `apps-browser` reaches this listener, but holds no such assertion; no Caddy route names it
+  (`DeploymentConformanceTests`), and the pages listener never answers it.
+- Not held: a later publish may widen `reads` or `connect` past what an owner saw when sharing.
 
 ## App sign-in
 
@@ -181,7 +216,7 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
   JSON object, at most 64 KiB), **from a page of that origin alone** (the `Origin` header's authority is
   the Host: every app shares the apps domain, so a sibling app's page is same-site and its POST carries
   this origin's cookie): the viewer and app settled exactly as for a page — nobody, a viewer
-  who may not open the app (`AppPages.MayOpen`), or another origin's page is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
+  who may not open the app (`AppPages.AccessAsync`; spaces that cannot be read, a 503 envelope), or another origin's page is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
   the origin's own manifest** (the served commit's on the published origin, so a tree edit widens
   nothing until published; the tree's on the preview), the building agent from `app.meta.json`, and the
   assertion the app session holds, renewed first if it was due. The answer goes back as it came, under the
@@ -348,7 +383,9 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
-`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsRuntimeErrorsTests`
+`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsSpacesTests`
+who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing,
+`AppSpacesOverTheWireTests` an app space end to end on a real accounts service and Redis; `AppsRuntimeErrorsTests`
 `/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
 envelope, `Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's
 report kept nowhere), a

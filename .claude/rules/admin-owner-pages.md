@@ -9,6 +9,8 @@ paths:
   - "Accounts/Admin/HouseholdServersAdmin.cs"
   - "Accounts/Admin/HouseholdUsageAdmin.cs"
   - "Accounts/Admin/HouseholdUsageClient.cs"
+  - "Accounts/Admin/HouseholdAppsClient.cs"
+  - "WebChat.Client/Components/Admin/AppSharedFacts.razor"
   - "Accounts/Members/MemberStore.cs"
   - "Accounts/Tunnels/TunnelCredentialStore.cs"
   - "Accounts/Tunnels/ConnectedServersClient.cs"
@@ -156,6 +158,18 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
     are listed there, alarms push there, the chat's address opens it — only renamed, recoloured, reordered;
   - a name is at most `AdminSpaces.NameLength`; a space opens on one of the household's agents or none;
   - **a slug is set when a space is added and never edited**: a new slug is a new space.
+  - **an app space** (`appId`) shares one of the household's published apps with every member. `AdminSpaces.Apps`
+    lists them (`AdminSpaceApp`: author by their name now, `reads`, `connect`, link) from the apps server's
+    listing (`HouseholdAppsClient`, `AccountsSettings.AppsUrl` = `APPSURL`, within `AppsTimeout`), asked on an
+    assertion this service signs for the gate-verified owner on `AppChannels.PublishedApps` (as usage's), and
+    only for a household with the `apps` feature (else none, nobody asked); null when it could not be asked,
+    which costs only a **new** app space (503 `AdminSpaces.AppsUnavailableMessage`): the page loads and saves.
+    A new app space must name one of the listed apps (400 naming the space); its **name and colour are stamped
+    from the app** on every save and answer (as last saved when the server is down), never the page's word;
+    **what a space is never changes under its slug** (an app space's app, a chat space never becoming one);
+    one space per app, none opening on an agent, the default space never one (the section's rules). Ordered
+    among chat spaces as any space. Removing it unshares the app; summaries name the app's id ("added space
+    glucose, sharing app a1b2c3").
 - **A removed space's topics are not moved** (`.claude/rules/chat-hub.md`, "Spaces"): the default space lists
   them read side, so a space added back under its slug has its conversations again.
 - **A removed space's phones** (`push:space@{tenant}:{slug}`) are left as they are: nothing pushes to a space
@@ -163,7 +177,9 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   every space's set.
 - **The pages**: `/admin/features` (`HouseholdFeaturesPage`) and `/admin/spaces` (`HouseholdSpacesPage`:
   Remove not offered for the default space; changes are the page's until "Save spaces" sends the list in
-  order). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
+  order; an app space shows its app's facts (`AppSharedFacts`) in place of name, colour and agent, and
+  "Share an app" offers the listed apps no space shares yet (`SpaceDrafts.Shareable`/`Share`: the app's slug,
+  else the first free `<slug>-<n>`)). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
   turns read them).
 
 ## Own servers

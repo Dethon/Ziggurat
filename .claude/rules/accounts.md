@@ -137,7 +137,7 @@ Fido2 with discoverable credentials, relying party `WebAuthn:RelyingPartyId` (th
 
 - Per-deployment compose entries, not secrets: `WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`, `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`; `DeploymentConformanceTests` checks they describe hosts the Caddyfile serves, and missing ones refuse startup. `APPSDOMAIN` (optional: empty signs nobody in to an app) is held equal to the proxy's and the apps server's.
 - `Telegram:BotUsername` (`TELEGRAM__BOTUSERNAME`) is optional: empty shows the bare code, which is safe; a wrong or placeholder name would hand every code to whoever owns that bot.
-- Its one secret is `HOUSEHOLDCONFIG__MASTERKEY` (`.claude/rules/household-config.md`); its `CALLERS__<host>` are its callers' existing credentials (`channel-identity.md`; a host run takes `local-mcp-secret` from the launch configuration). `AGENTKEYSURL`, `AGENTURL`, `REDIS__CONNECTIONSTRING` (announcements only, nothing stored) are explained on `AccountsSettings`.
+- Its one secret is `HOUSEHOLDCONFIG__MASTERKEY` (`.claude/rules/household-config.md`); its `CALLERS__<host>` are its callers' existing credentials (`channel-identity.md`; a host run takes `local-mcp-secret` from the launch configuration). `AGENTKEYSURL`, `AGENTURL`, `OBSERVABILITYURL`, `APPSURL` (the apps server's published-apps listing, for the spaces page), `REDIS__CONNECTIONSTRING` (announcements only, nothing stored) are explained on `AccountsSettings`.
 - Its time is `AccountsClock`, never the container's `TimeProvider`, so a test moves the service's time without moving Kestrel's.
 
 ## Tests
