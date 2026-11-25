@@ -318,22 +318,18 @@ public sealed class AppPages(
             return author ? new Access.Open(null) : Access.Closed.Instance;
         }
 
-        try
+        switch (await AppSharing.OfAsync(CallHousehold.OfPerson(app.HouseholdId, assertion, households), app, ct))
         {
-            var spaces = await CallHousehold.OfPerson(app.HouseholdId, assertion, households).SpacesAsync(ct);
-            var sharedAs = spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id);
-            return author || sharedAs is not null ? new Access.Open(sharedAs) : Access.Closed.Instance;
-        }
-        // An outage, or the reader's own timeout (a cancellation this request did not ask for).
-        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
-        {
-            logger.LogWarning(ex, "Could not read household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
-            return author ? new Access.Open(null) : Access.Unchecked.Instance;
-        }
-        catch (HouseholdConfigRefusedException ex)
-        {
-            logger.LogWarning(ex, "The accounts service refused household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
-            return author ? new Access.Open(null) : Access.Closed.Instance;
+            case AppSharing.Read { SharedAs: var sharedAs }:
+                return author || sharedAs is not null ? new Access.Open(sharedAs) : Access.Closed.Instance;
+            case AppSharing.Unreadable { Cause: var cause }:
+                logger.LogWarning(cause, "Could not read household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
+                return author ? new Access.Open(null) : Access.Unchecked.Instance;
+            case AppSharing.Refused { Cause: var cause }:
+                logger.LogWarning(cause, "The accounts service refused household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
+                return author ? new Access.Open(null) : Access.Closed.Instance;
+            default:
+                throw new InvalidOperationException("The spaces are read, unreadable or refused.");
         }
     }
 

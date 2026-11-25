@@ -346,12 +346,15 @@ public sealed class AppsServer : IAsyncDisposable
 }
 
 // Each household's spaces section, the one default space until a test says otherwise; Down makes every
-// read fail as an accounts service that cannot be asked does.
+// read fail as an accounts service that cannot be asked does, Refuses as one that will not answer this
+// server does.
 public sealed class StandInSpaces
 {
     private readonly ConcurrentDictionary<string, SpacesSection> _saved = new(StringComparer.Ordinal);
 
     public volatile bool Down;
+
+    public volatile bool Refuses;
 
     // Every read runs out of time, as the reader's HttpClient times out: a cancellation nobody asked for.
     public volatile bool TimesOut;
@@ -372,6 +375,7 @@ public sealed class StandInSpaces
 
     public SpacesSection Read(string householdId) =>
         Down ? throw new HttpRequestException("the accounts service is down")
+        : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
         : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
         : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
 }

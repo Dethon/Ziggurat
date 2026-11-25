@@ -295,6 +295,23 @@ public class McpAppsServerTests
         server.StoredDirectories(AppsServer.Her).ShouldNotBeEmpty();
     }
 
+    // The accounts service refuses this server the household's spaces: whether the app is shared is not
+    // known, so nothing is deleted, and the refusal is closed as a page's would be — never a fault to retry.
+    [Fact]
+    public async Task AnAppWhoseSpacesAreRefused_IsNotDeleted_AndTheRefusalIsNoFaultToRetry()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        server.Spaces.Refuses = true;
+
+        var refused = await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" },
+            AppsServer.TurnOf(AppsServer.Her));
+
+        refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied, refused.ToJsonString());
+        refused["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        server.StoredDirectories(AppsServer.Her).ShouldNotBeEmpty();
+    }
+
     [Fact]
     public async Task TheAppsPerHousehold_AreLimited_AndTheRefusalNamesTheLimit()
     {

@@ -752,21 +752,14 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             return "";
         }
 
-        SpacesSection spaces;
-        try
-        {
-            spaces = await _household.SpacesAsync(ct);
-        }
-        // An outage, the reader's own timeout (a cancellation this call did not ask for), or a refusal.
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
-                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        var sharing = await AppSharing.OfAsync(_household, app, ct);
+        if (sharing is not AppSharing.Read { SharedAs: var space })
         {
             return "whether the household's owners approved what it reads and talks to could not be checked just now: while the "
                    + "household shares the app as a space, it is granted no more than they approved\n";
         }
 
-        if (spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id) is not { } space
-            || AppReach.Of(served).Beyond(space.Approved) is not { IsEmpty: false } beyond)
+        if (space is null || AppReach.Of(served).Beyond(space.Approved) is not { IsEmpty: false } beyond)
         {
             return "";
         }
@@ -999,24 +992,21 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             return Nobody<T>();
         }
 
-        SpacesSection spaces;
-        try
+        return await AppSharing.OfAsync(_household, app, ct) switch
         {
-            spaces = await _household.SpacesAsync(ct);
-        }
-        // An outage, or the reader's own timeout (a cancellation this call did not ask for).
-        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
-        {
-            return Fail<T>(ToolError.Codes.TransientDependency,
-                $"Whether the household shares the app {app.Slug} as a space could not be checked just now, so it was not deleted.",
-                "Try again in a moment.");
-        }
-
-        return spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id) is { } space
-            ? Fail<T>(ToolError.Codes.PermissionDenied,
+            AppSharing.Read { SharedAs: null } => null,
+            AppSharing.Read { SharedAs: { } space } => Fail<T>(ToolError.Codes.PermissionDenied,
                 $"The app {app.Slug} is the household's space '{space.Name}', so it is not deleted while it is shared.",
-                $"Ask an owner of the household to remove the space '{space.Name}' on the spaces page first; then it can be deleted.")
-            : null;
+                $"Ask an owner of the household to remove the space '{space.Name}' on the spaces page first; then it can be deleted."),
+            AppSharing.Unreadable => Fail<T>(ToolError.Codes.TransientDependency,
+                $"Whether the household shares the app {app.Slug} as a space could not be checked just now, so it was not deleted.",
+                "Try again in a moment."),
+            // Refused is closed, as an origin is to anyone but the author: asking again changes nothing.
+            _ => Fail<T>(ToolError.Codes.PermissionDenied,
+                $"The accounts service would not tell this server whether the household shares the app {app.Slug} as a space, "
+                + "so it was not deleted.",
+                "Tell the person; the household's operator has to look at why the apps server's word is refused.")
+        };
     }
 
     private FsResult<T>? OverQuota<T>(BuiltApp app, long added, long replaced) where T : class =>
