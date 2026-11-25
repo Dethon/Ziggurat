@@ -64,7 +64,8 @@ was not broken on purpose.
 **Choices the spec left open:**
 - *One source of truth*: the household's `spaces` section. The apps server keeps no copy. It reads the view
   through `HouseholdConfigurationClient` (kept a minute, dropped on a heard save), on the viewer's `apps`
-  assertion for an origin and on the call token for a delete. An author's own app never waits on accounts.
+  assertion for an origin and on the call token for a delete. An author's own app never waits on accounts
+  (since the widening gap closed, its published origin reads them too, but is never closed by them).
 - *`GetSpaces` filters app spaces now* (chat spaces alone, as ticket 10 requires), and so do `JoinSpace`,
   `DefaultOf`, `ListedWith` and `ShownIn`. A slug an app space took that still holds a removed chat space's
   topics lists them in the default space.
@@ -108,8 +109,8 @@ When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 m
   The spaces page shows what a publish asks beyond it ("Approve what it asks", then save); `./publish` names
   what waits on an owner. No migration: an app space saved on this branch before has no approval and grants
   nothing until an owner saves one. One exception, on purpose: spaces the author's own session cannot read
-  (or that are refused) open the author's app under its whole manifest, since an author's app never waits on
-  accounts and that reach is no one's data but theirs. `./rollback` serves an older commit under the same
+  (or that are refused) open the author's app under its whole manifest, since accounts never closes an
+  author's own app and that reach is no one's data but theirs. `./rollback` serves an older commit under the same
   rule but its answer does not name what waits. Tests: `AppsSpacesTests` (policy, publish answer),
   `AppsReadsTests` (a read refused, then approved), `HouseholdSpacesAdminTests` (pending shown, an unrelated
   save approving nothing, approval capped, 503 without the listing), `SpaceDraftsTests`,
@@ -127,7 +128,7 @@ When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 m
 `AppsServingInABrowserTests.APublishedAppThatThrows_HasItsErrorsReportedToItsErrorsFile_OnceEach`, after 710 ms,
 with no message captured. Six reruns, alone and in the full filter, all passed, and so did three runs of the filter in parallel with
 `.trx` loggers. That case is the author's own
-session, which never reads the spaces. **Found and fixed** (closing the widening gap): its read-envelope
+session, which then never read the spaces. **Found and fixed** (closing the widening gap): its read-envelope
 predicate dereferenced `read` on every entry, so it threw whenever a report without one arrived after the read
 (the file is newest first); it now looks among the reads alone. The `~Apps` filter also
 matches `WebChatSignInE2ETests.ALinkToAnotherServicesPage_…`, which timed out once while the stack was

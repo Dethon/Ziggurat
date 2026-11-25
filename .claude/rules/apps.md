@@ -179,9 +179,10 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   policies of a page and the `/_vfs/*` reads' `AppReadScope` get it); what it asks `Beyond` is not granted
   (a read of it is `AppRead`'s `permission_denied`, its hint naming an owner's approval). No approval
   recorded grants nothing (no migration: app spaces existed only on the unmerged branch). The preview keeps
-  its manifest whole, being the author's alone. The author reads the spaces too (same reader, same cache),
-  but **an author's own app never waits on accounts**: spaces unreadable or refused open it under its whole
-  manifest, which reaches no one's data but theirs — the one case it is granted more than approved.
+  its manifest whole, being the author's alone. The author's published origin reads the spaces too (same
+  reader, same cache, so an outage costs it the reader's timeout), but **accounts never closes an author's
+  own app**: spaces unreadable or refused open it under its whole manifest, which reaches no one's data but
+  theirs — the one case it is granted more than approved.
 - Not held: every member's runtime errors land in the author's `/<slug>/errors`, messages and all ("Runtime
   errors").
 

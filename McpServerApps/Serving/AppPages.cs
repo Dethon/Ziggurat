@@ -274,9 +274,9 @@ public sealed class AppPages(
     // no unsharing.
     //
     // Open names the space sharing the app, whose approved reach bounds what the published origin grants
-    // every viewer, its author too. The author is asked the section as well, but never waits on it: what
-    // cannot be read, or is refused, opens their own app under its whole manifest, which reaches nobody's
-    // data but theirs.
+    // every viewer, its author too. The author's published origin is asked the section as well, but never
+    // closed by it: what cannot be read, or is refused, opens their own app under its whole manifest, which
+    // reaches nobody's data but theirs.
     private async Task<Access> AccessAsync(AppSession session, BuiltApp app, AppOrigin origin, CancellationToken ct)
     {
         var author = session.Person == app.Author;

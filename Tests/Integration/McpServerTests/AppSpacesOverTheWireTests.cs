@@ -57,6 +57,9 @@ public class AppSpacesOverTheWireTests(RedisFixture redis) : IClassFixture<Redis
             fran.TenantId, HouseholdSections.FeaturesSchema, new JsonObject { ["apps"] = true }, CancellationToken.None);
         var author = new Account(fran.TenantId, fran.UserId);
         var id = AppsServer.IdIn(await apps.AppAsync(author, "glucose"));
+        await apps.CreateAsync(author, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary"],"connect":["https://tracker.example.com"]}""",
+            overwrite: true);
         await apps.CreateAsync(author, "/glucose/index.html", "<h1>Glucose</h1>");
         await apps.ExecAsync(author, "/glucose", "./publish");
         var host = apps.Published("glucose", id);
@@ -67,12 +70,19 @@ public class AppSpacesOverTheWireTests(RedisFixture redis) : IClassFixture<Redis
         var offered = (await (await admin.GetAsync(AdminProtocol.Spaces)).Content.ReadFromJsonAsync<AdminSpaces>())!;
         var app = offered.Apps.ShouldNotBeNull().ShouldHaveSingleItem();
         var shared = await admin.PutAsync(AdminProtocol.Spaces, AdminEdit.Of(
-            new SpacesSection { Spaces = [.. offered.Spaces, new HouseholdSpace { Slug = "glucose", Name = app.Name, AppId = app.Id, Order = 1 }] },
+            new SpacesSection
+            {
+                Spaces = [.. offered.Spaces, new HouseholdSpace { Slug = "glucose", Name = app.Name, AppId = app.Id, Order = 1, Approved = app.Reach }]
+            },
             new SpacesSection { Spaces = offered.Spaces }));
 
         shared.StatusCode.ShouldBe(HttpStatusCode.OK, await shared.Content.ReadAsStringAsync());
         await Eventually.Until(async () => (await apps.GetAsync(host, "/", hers.Token, navigate: true)).StatusCode == HttpStatusCode.OK,
             "the shared app to open for another member");
+        // The approval crossed the spaces view whole: the member's page is granted the origin it approved.
+        (await apps.GetAsync(host, "/", hers.Token, navigate: true)).Headers.GetValues("Content-Security-Policy").Single()
+            .Split(';', StringSplitOptions.TrimEntries).Single(d => d.StartsWith("connect-src ", StringComparison.Ordinal))
+            .ShouldContain("https://tracker.example.com");
         var his = await apps.SignInThroughAsync(accounts, host, "/", await accounts.MintSessionAsync(dani));
         (await apps.GetAsync(host, "/", his.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.OK);
         var theirs = await apps.SignInThroughAsync(accounts, host, "/", await accounts.MintSessionAsync(stranger));
