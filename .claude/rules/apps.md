@@ -10,6 +10,13 @@ paths:
   - "Accounts/Apps/**"
   - "Accounts/Internal/AppSignInRedemption.cs"
   - "DockerCompose/caddy/Caddyfile"
+  - "Agent/App/AppReadsApi.cs"
+  - "Infrastructure/Agents/AppReader.cs"
+  - "Infrastructure/Agents/ReadRegistryCache.cs"
+  - "Domain/Tools/FileSystem/Bridge/AppRead.cs"
+  - "Tests/Integration/Fixtures/AppReadsAgent.cs"
+  - "Tests/Integration/Agents/AppReadsApiTests.cs"
+  - "Tests/Integration/Agents/ReadRegistryCacheTests.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -89,7 +96,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 - **Who opens what** (`AppPages`): the published origin, its author (ticket 09 adds an app space's
   members); the preview, its author alone. **The viewer is settled before the app is looked up**: a page
   opened with no app session is sent to sign in whether or not its app exists; a signed-in viewer who
-  may not open it, an unknown label, a non-GET, anything but a page opened with no session, an app never
+  may not open it, an unknown label, a non-GET (but a read's POST to `/_vfs/*`, below), anything but a page opened with no session, an app never
   published (on its published origin) gets **one 404, byte for byte**, under `AppContentPolicy.Closed`.
 - **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie names one, which opens one
   `AppOrigin` (published or preview, never both) until it expires (`Sessions:Lifetime`, 12 h), keeping
@@ -108,7 +115,7 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   manifest (name, short name, colour, `id`/`start_url`/`scope` `/`), the icon (`SpaceIcon`, the
   space icon's drawing, shared with WebChat's `/icon.svg`), the worker (network first, the cache only
   offline, never `/_vfs/` or `/_errors`; `Service-Worker-Allowed: /`), its registration and the client
-  library **stub** (ticket 06). Every `.html` gets the three tags first in `<head>`, the manifest link
+  library (below). Every `.html` gets the three tags first in `<head>`, the manifest link
   `crossorigin="use-credentials"` since the manifest is behind the session.
 - **A deleted app's origin**, asked of nobody: navigations get a 410 "This app was removed" page, its
   `/_app/sw.js` a worker that clears its caches, unregisters and reloads its windows. Its id stays
@@ -153,6 +160,53 @@ accounts side in `accounts.md`, "The app sign-in"):
   (`AddAssertionVerifier`), `PUBLICBASEURL`, Redis; `mcp-apps` depends on `redis`. A host run reads them
   from `appsettings.Local.json`, the accounts service its `CALLERS__mcp-apps` from `run-local.sh`/launch.
 
+## The app read API
+
+A built app reads the household as its viewer (the wire spelled once in `Domain/Apps/AppReads`):
+
+- **The client library** (`AppOriginFiles.Library`, `/_app/apps.js`): a classic script injected first,
+  so `globalThis.apps` exists before any of the app's scripts; `/_app/apps.mjs` is the same object as an
+  ES module (default and named exports). `read(filePath, {offset, limit})`, `glob(basePath, pattern)`,
+  `info(path)`, `search(query, {directoryPath | filePath, …})`, `query(path, sql, {maxRows})` answer the
+  file tools' JSON; `blob(path)` a `Blob`. A refusal throws `apps.ReadError` carrying the envelope
+  (`errorCode`, `message`, `retryable`, `hint`, `envelope`) and the `path`; the origin's 404 is
+  `authentication`, anything else unanswered `transient_dependency`. Dependency-free, one expression.
+- **`POST /_vfs/<operation>` on the origin** (`AppPages.ReadAsync`), the body the tool's arguments (one
+  JSON object, at most 64 KiB): the viewer and app settled exactly as for a page — nobody, or a viewer
+  who may not open the app, is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
+  the origin's own manifest** (the served commit's on the published origin, so a tree edit widens
+  nothing until published; the tree's on the preview), the building agent from `app.meta.json`, and the
+  assertion the app session holds, renewed first if it was due. The answer goes back as it came, under the
+  origin's policy, `no-store`; an agent unreachable, or one that did not believe this server, is a 503
+  `transient_dependency` envelope.
+- **The agent's route** `POST /internal/app-reads/<operation>` (`AppReadsApi`, on the compose network
+  alone, never routed by Caddy): believes **the apps server's own credential** — the one the agent holds
+  for the apps server it dials (`sharedServers.apps` → `MCP__SECRETS__mcp-apps` = `MCP_SECRET_APPS`, the
+  apps server's `MCP__SHAREDSECRET`), so no secret exists for this alone and the agent API's secret,
+  which SexyTime's server holds, opens nothing here — for the app (id, building agent, reads), and **the
+  viewer's `apps` assertion** (`VerifyTurnAsync` for `AppChannels.Apps`, a person) for who reads. No
+  other header is read. Then, per read: the household's standing (`HouseholdStanding`, the turn's rule:
+  suspended or disabled is `permission_denied`, unreadable `transient_dependency`), the registry
+  (`ReadRegistryCache` over `AgentReadRegistries`), and `AppRead` over the registry's `VfsCall`. 200 the
+  tool's JSON or the bytes, 422 the envelope, 401 not believed.
+- **What is read** (`AppRead`, Domain): each operation the file tool's own call (`VfsCall.ToolAsync`,
+  the tool's result shape on virtual paths), the blob the bridge's byte read (`VfsCall.ReadAsync`, so
+  `vfsBridge:maxFileBytes` applies). Refused with `permission_denied`: an operation not in
+  `AppReads.Operations` (nothing that changes anything is reachable), a path whose mount point — the
+  resolved one, else the path's first segment — is not in `reads` (checked per request: the cached
+  registry is shared by every app of that agent and viewer), and a tool the building agent is not offered
+  or whose whitelist would ask (`ReadRegistry.Permission`, `Offered`). A mount the app reads that is not
+  mounted while a household server is offline is `transient_dependency` naming the offline servers (a
+  server's mount point is known only once reached). A building agent the household no longer has refuses
+  every read, naming it.
+- **The cache** (`ReadRegistryCache`): one registry per (household, agent, person), built once
+  (single-flight), leased per read; every lease asks `IsStaleAsync` and a stale one is rebuilt; one nobody
+  leased for `appReads:registryIdle` (2 min, agent appsettings) is let go; an evicted one is disposed only
+  when its last lease ends; a failed build is never kept. Disposed with the host.
+- **Wiring**: `AGENTURL: http://agent:8080` on `mcp-apps` (empty answers every read unavailable; a host
+  run's `appsettings.Local.json` names 5000), conformance-checked with the credential pair and the route
+  off the proxy.
+
 ## Tests
 
 `McpAppsServerTests` and `AppsPublishingTests` drive the server in process through its MCP tools
@@ -163,5 +217,7 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in);
 `AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
-`HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; the deployment and server tables
+`HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
+route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
+`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
