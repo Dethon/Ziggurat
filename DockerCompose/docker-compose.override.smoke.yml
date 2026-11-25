@@ -45,8 +45,12 @@ services:
     volumes: ["./volumes/smoke/sugary:/data"]
   mcp-apps-volume:
     volumes: ["./volumes/smoke/apps:/data"]
+  # Apps under .localhost: loopback by name, and a secure context in Chromium (the app session's
+  # __Host- cookie and the service worker need one) whatever certificate Caddy's own CA presents.
   mcp-apps:
     volumes: ["./volumes/smoke/apps:/data"]
+    environment:
+      APPSDOMAIN: apps.localhost
   agent-volume:
     volumes: ["./volumes/smoke/agent-keys:/keys"]
   agent:
@@ -59,6 +63,7 @@ services:
   caddy:
     environment:
       CADDY_TLS: internal
+      APPSDOMAIN: apps.localhost
     volumes:
       - "./volumes/smoke/caddy_data:/data"
       - "./volumes/smoke/caddy_config:/config"

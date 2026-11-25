@@ -19,6 +19,13 @@ x-cors-origins: &cors-origins
   CORS__ALLOWEDORIGINS__0: https://assistants.herfluffness.com
   CORS__ALLOWEDORIGINS__1: https://sexy.herfluffness.com
 
+# The registrable domain built apps are served under (<slug>-<id>.<domain>), per deployment: the proxy
+# serves its wildcard site and the apps server parses its labels, so the two read one value. A second
+# domain, never a subdomain of this deployment's, so no cookie of its reaches app code. Set it to the
+# domain bought for the purpose; Caddy's Cloudflare token must be able to answer its DNS challenge.
+x-apps-domain: &apps-domain
+  APPSDOMAIN: changeme
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -334,15 +341,12 @@ services:
     volumes:
       - ./volumes/apps:/data
     environment:
-      <<: *timezone
+      # The apps domain: whose labels name built apps (x-apps-domain above).
+      <<: [ *timezone, *apps-domain ]
       MCP__SHAREDSECRET: ${MCP_SECRET_APPS}
       # A tool call's token: the agent's, for this name, checked against the keys it publishes.
       MCP__AUDIENCE: mcp-apps
       MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
-      # Per deployment: the registrable domain built apps are served under, <slug>-<id>.<domain> — a
-      # second domain, never a subdomain of this deployment's, so no cookie of its reaches app code.
-      # Set it to the domain bought for the purpose.
-      APPSDOMAIN: changeme
     networks:
       - jackbot
     depends_on:
@@ -730,7 +734,7 @@ services:
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
     environment:
-      <<: *timezone
+      <<: [ *timezone, *apps-domain ]
       CF_API_TOKEN: ${CF_API_TOKEN}
     restart: unless-stopped
     networks:
@@ -739,6 +743,7 @@ services:
       - webui
       - agent
       - mcp-sugary
+      - mcp-apps
       - accounts
 
 networks:

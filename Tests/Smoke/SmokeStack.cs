@@ -37,8 +37,11 @@ public sealed partial class SmokeStack : IAsyncLifetime
     public string MainHost { get; } = HostStartingWith("assistants.");
     public string DashboardHost { get; } = HostStartingWith("assistants-dashboard.");
     public string SugaryHost { get; } = HostStartingWith("sugary.");
+    // The deployment's own hosts, each one name to ask: the built apps' wildcard site is no host of
+    // its own (an app origin is a name under the smoke override's APPSDOMAIN, apps.localhost, which
+    // resolves to loopback by itself).
     public IReadOnlyList<string> Hosts { get; } =
-        [.. DeploymentFiles.Caddyfile().Hosts.Select(h => h.Name).Where(n => !n.StartsWith('('))];
+        [.. DeploymentFiles.Caddyfile().Hosts.Select(h => h.Name).Where(n => !n.StartsWith('(') && !n.StartsWith('*'))];
 
     public string OperatorSession { get; private set; } = "";
     public string MemberSession { get; private set; } = "";

@@ -835,6 +835,58 @@ public class DeploymentConformanceTests
         DeploymentFiles.Placeholders().Keys.ShouldContain("MCP_SECRET_APPS");
     }
 
+    // Built apps are served on a domain of their own, one wildcard site for every app origin: all of it
+    // goes to the apps server's pages listener, which decides who opens what by its own app session, so
+    // no session check stands in front of it and nothing else of the deployment is served there.
+    [Fact]
+    public void TheAppsDomain_IsOneWildcardSite_SendingEverythingToTheAppsServersPagesListener()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+        var listener = new global::McpServerApps.Settings.AppListeners().Pages;
+        var pages = $"mcp-apps:{listener}";
+
+        var apps = hosts.Single(h => h.Name.Contains("{$APPSDOMAIN}", StringComparison.Ordinal));
+        apps.Name.ShouldBe("*.{$APPSDOMAIN}");
+        apps.Body.ShouldContain("import tls_{$CADDY_TLS:cloudflare}");
+        apps.ForwardAuth.ShouldBeNull();
+        apps.Body.ShouldNotContain("forward_auth");
+        apps.Routes.ShouldHaveSingleItem().Matcher.ShouldBeNull();
+        apps.Routes[0].Upstream.ShouldBe(pages);
+        hosts.Where(h => h != apps).SelectMany(h => h.Routes)
+            .ShouldNotContain(r => r.Upstream != null && r.Upstream.StartsWith("mcp-apps", StringComparison.Ordinal));
+    }
+
+    // The proxy and the apps server name one apps domain, set once per deployment; it is no secret.
+    // It is never under the deployment's own domain: the accounts session cookie is sent to every host
+    // under that, and app code must never be sent it.
+    [Fact]
+    public void TheAppsDomain_IsOneValueTheProxyAndTheAppsServerShare_OutsideTheSessionCookiesDomain()
+    {
+        var compose = DeploymentFiles.Compose();
+        var domain = compose.Service("mcp-apps").Environment["APPSDOMAIN"];
+        var cookieDomain = compose.Service("accounts").Environment["SESSIONCOOKIE__DOMAIN"];
+
+        domain.ShouldNotBeNullOrWhiteSpace();
+        compose.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+        DeploymentFiles.Placeholders().Keys.ShouldNotContain("APPSDOMAIN");
+        ("." + domain).EndsWith(cookieDomain, StringComparison.OrdinalIgnoreCase).ShouldBeFalse();
+        DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(') && !h.Name.StartsWith('*'))
+            .ShouldNotContain(h => h.Name.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // A stack on somebody's own machine serves apps under .localhost, which resolves to loopback and is
+    // a secure context in Chromium (the `__Host-` cookie and the service worker need one) whatever
+    // certificate Caddy's own CA presents.
+    [Fact]
+    public void TheSmokeStack_ServesAppsUnderALocalWildcardName()
+    {
+        var smoke = DeploymentFiles.Compose("docker-compose.override.smoke.yml");
+        var domain = smoke.Service("mcp-apps").Environment["APPSDOMAIN"];
+
+        domain.ShouldEndWith(".localhost");
+        smoke.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+    }
+
     // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
     // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
     [Fact]
