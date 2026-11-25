@@ -2,23 +2,28 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools;
+using Mcp.Hosting;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerApps.Serving;
 
 // Every request the proxy hands an app origin: which app is read from the Host (AppOrigin, by the
 // id), who is asking from the app session the origin's own cookie names (AppViewers, which sends a page
 // opened with none to the app sign-in and completes it on the way back). The published origin serves
-// the served commit, to its author; the preview the working tree, to its author alone. Anyone else,
+// the served commit, to its author and, while the household shares it as an app space, to every member
+// of its household; the preview the working tree, to its author alone (AccessAsync). Anyone else,
 // and anything that is no app, gets one answer, byte for byte, so a stranger cannot tell an app that
 // exists from one that does not.
 public sealed class AppPages(
-    BuiltAppStore store, AppViewers viewers, AgentReads reads, AppErrorReports reports, AppsSettings settings)
+    BuiltAppStore store, AppViewers viewers, AgentReads reads, AppErrorReports reports, IHouseholdConfiguration households,
+    AppsSettings settings, ILogger<AppPages> logger)
 {
     private static readonly FileExtensionContentTypeProvider _types = new()
     {
@@ -73,7 +78,7 @@ public sealed class AppPages(
             return;
         }
 
-        if (viewer is not AppViewer.Person { Session.Person: var person })
+        if (viewer is not AppViewer.Person { Session: var session })
         {
             if (IsNavigation(request) && await viewers.SendToSignInAsync(context))
             {
@@ -84,9 +89,20 @@ public sealed class AppPages(
             return;
         }
 
-        if (await store.FindAsync(origin.Id, ct) is not { } app
-            || !MayOpen(person, app)
-            || await ServedAsync(app, origin, ct) is not { } served)
+        if (await store.FindAsync(origin.Id, ct) is not { } app)
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        var access = await AccessAsync(session, app, origin, ct);
+        if (access == Access.Unchecked)
+        {
+            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AccessUnchecked);
+            return;
+        }
+
+        if (access == Access.Closed || await ServedAsync(app, origin, ct) is not { } served)
         {
             await NotFoundAsync(context);
             return;
@@ -172,8 +188,23 @@ public sealed class AppPages(
         }
 
         if (viewer is not AppViewer.Person { Session: var session }
-            || await store.FindAsync(origin.Id, ct) is not { } app
-            || !MayOpen(session.Person, app)
+            || await store.FindAsync(origin.Id, ct) is not { } app)
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        var access = await AccessAsync(session, app, origin, ct);
+        if (access == Access.Unchecked)
+        {
+            await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
+                StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
+                    "Whether this app is shared with the reader could not be checked just now, so nothing was read.",
+                    "Read again in a moment.")));
+            return;
+        }
+
+        if (access == Access.Closed
             || await ServedAsync(app, origin, ct) is not { } served
             || operation.Length == 0 || operation.Contains('/'))
         {
@@ -214,18 +245,80 @@ public sealed class AppPages(
         }
 
         if (viewer is not AppViewer.Person { Session: var session }
-            || await store.FindAsync(origin.Id, ct) is not { } app
-            || !MayOpen(session.Person, app))
+            || await store.FindAsync(origin.Id, ct) is not { } app)
         {
             await NotFoundAsync(context);
             return;
         }
 
+        switch (await AccessAsync(session, app, origin, ct))
+        {
+            case Access.Unchecked:
+                await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable);
+                return;
+            case Access.Closed:
+                await NotFoundAsync(context);
+                return;
+        }
+
         await reports.ReportAsync(context, app, session, ct);
     }
 
-    // Who may open an app's origins, its pages, reads and reports alike: its author.
-    private static bool MayOpen(Account person, BuiltApp app) => person == app.Author;
+    // Who may open an app's origins, its pages, reads and reports alike: its author; and the published
+    // origin, while the household shares the app as an app space, every member of the app's household —
+    // the household's spaces section's word, read on the viewer's own `apps` assertion, so an id another
+    // household names opens nothing. A disabled member holds no app session for long: disabling ends their
+    // sessions (EndedAppSessionsListener), and a renewal answers nobody. Whether the app is shared that
+    // cannot be read just now is Unchecked, never closed nor open: an outage is no unsharing.
+    private async Task<Access> AccessAsync(AppSession session, BuiltApp app, AppOrigin origin, CancellationToken ct)
+    {
+        if (session.Person == app.Author)
+        {
+            return Access.Open;
+        }
+
+        if (origin.Preview || session.Person.TenantId != app.HouseholdId
+                           || session.Proof is not ViewerProof.Assertion { Token: var assertion })
+        {
+            return Access.Closed;
+        }
+
+        try
+        {
+            var spaces = await CallHousehold.OfPerson(app.HouseholdId, assertion, households).SpacesAsync(ct);
+            return spaces.Spaces.Any(space => space.AppId == app.Id) ? Access.Open : Access.Closed;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning(ex, "Could not read household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
+            return Access.Unchecked;
+        }
+        catch (HouseholdConfigRefusedException ex)
+        {
+            logger.LogWarning(ex, "The accounts service refused household {Household}'s spaces for app {App}", app.HouseholdId, app.Id);
+            return Access.Closed;
+        }
+    }
+
+    private enum Access
+    {
+        Open,
+        Closed,
+        Unchecked
+    }
+
+    // Plain and self-contained, as the closed policy loads nothing.
+    private const string AccessUnchecked =
+        """
+        <!doctype html>
+        <html lang="en">
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Could not open this app</title>
+        <h1>Could not open this app right now</h1>
+        <p>Whether it is shared with you could not be checked. Try again in a moment.</p>
+        </html>
+        """;
 
     // Every app shares the apps domain, so a sibling app's page is same-site: its POST here carries this
     // origin's cookie, and only its Origin header says it is not this origin's own page. A read or a report
