@@ -17,7 +17,8 @@ namespace McpServerApps.Serving;
 // the served commit, to its author; the preview the working tree, to its author alone. Anyone else,
 // and anything that is no app, gets one answer, byte for byte, so a stranger cannot tell an app that
 // exists from one that does not.
-public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads reads, AppsSettings settings)
+public sealed class AppPages(
+    BuiltAppStore store, AppViewers viewers, AgentReads reads, AppErrorReports reports, AppsSettings settings)
 {
     private static readonly FileExtensionContentTypeProvider _types = new()
     {
@@ -41,6 +42,13 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
             && !store.IsRemoved(origin.Id))
         {
             await ReadAsync(context, origin, operation.Value?.TrimStart('/') ?? "");
+            return;
+        }
+
+        if (origin is not null && HttpMethods.IsPost(request.Method) && request.Path.Value == AppErrors.OriginPath
+            && !store.IsRemoved(origin.Id))
+        {
+            await ReportAsync(context, origin);
             return;
         }
 
@@ -180,12 +188,60 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
         await ReadAnswerAsync(context, policy, await reads.ReadAsync(operation, scope, arguments, session.Proof, ct));
     }
 
+    // A runtime error a page of the app reports (the client library's POST to /_errors): the viewer and the
+    // app settled as for a read — the one 404 for anyone who may not open it — then kept on that app alone,
+    // stamped with who reported it, on which origin, from which browser and when (AppErrorReports).
+    private async Task ReportAsync(HttpContext context, AppOrigin origin)
+    {
+        var ct = context.RequestAborted;
+        if (!AppErrorReports.FromThisOrigin(context.Request))
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        var viewer = await viewers.ViewerAsync(context.Request, origin, ct);
+        if (viewer == AppViewer.Unchecked)
+        {
+            await AppViewers.AnswerAsync(context, StatusCodes.Status503ServiceUnavailable, AppViewers.SignInUnchecked);
+            return;
+        }
+
+        if (viewer is not AppViewer.Person { Session: var session }
+            || await store.FindAsync(origin.Id, ct) is not { } app
+            || session.Person != app.Author)
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        await reports.ReportAsync(context, app, session, ct);
+    }
+
     // A read's arguments are a path, a pattern or a statement: small. A body larger is never held.
     private const int MaxArgumentBytes = 64 * 1024;
 
     private static async Task<JsonObject?> ArgumentsAsync(HttpRequest request, CancellationToken ct)
     {
-        if (request.ContentLength > MaxArgumentBytes)
+        if (await BodyAsync(request, MaxArgumentBytes, ct) is not { } body)
+        {
+            return null;
+        }
+
+        try
+        {
+            return body.Length == 0 ? [] : JsonNode.Parse(body) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // A request's body, or null for one longer than max: a body larger is never held.
+    internal static async Task<byte[]?> BodyAsync(HttpRequest request, int max, CancellationToken ct)
+    {
+        if (request.ContentLength > max)
         {
             return null;
         }
@@ -195,7 +251,7 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
         int read;
         while ((read = await request.Body.ReadAsync(buffer, ct)) > 0)
         {
-            if (body.Length + read > MaxArgumentBytes)
+            if (body.Length + read > max)
             {
                 return null;
             }
@@ -203,14 +259,7 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
             body.Write(buffer, 0, read);
         }
 
-        try
-        {
-            return body.Length == 0 ? [] : JsonNode.Parse(body.ToArray()) as JsonObject;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
+        return body.ToArray();
     }
 
     // The agent's answer as it came, under the origin's policy, kept by nothing: a read is one viewer's.

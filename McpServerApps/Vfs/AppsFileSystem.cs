@@ -31,6 +31,9 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     // Where the mount shows what the app's last check saw (BuiltAppStore.ChecksDirectory), read-only.
     public const string ChecksOutput = ".checks";
 
+    // Where the mount shows the runtime errors the app's pages reported (BuiltAppStore.ErrorsFile), read-only.
+    public const string ErrorsOutput = "errors";
+
     // Viewports a check may ask for, and how large: a screenshot is one image the model is shown.
     private const int MaxViewports = 4;
     private const int MinViewportSide = 240;
@@ -45,7 +48,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
     // Names at an app's root the server keeps for what it produces itself (checks, runtime errors);
     // never the agent's to write, so a later release can serve them without colliding with a file.
-    private static readonly string[] _reserved = [.. _actions, "errors", ChecksOutput];
+    private static readonly string[] _reserved = [.. _actions, ErrorsOutput, ChecksOutput];
 
     // What the text read opens: the shared text list plus what a web app is made of besides.
     private static readonly string[] _textFiles =
@@ -984,6 +987,12 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             yield return entry;
         }
 
+        var errors = store.ErrorsFile(app);
+        if (File.Exists(errors))
+        {
+            yield return ($"{app.Slug}/{ErrorsOutput}", errors, false);
+        }
+
         var checksDirectory = store.ChecksDirectory(app);
         var latest = Path.Combine(checksDirectory, AppChecks.LatestDirectory);
         if (Directory.Exists(latest))
@@ -1045,6 +1054,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             // refused as a reserved name's.
             (_, [_, ChecksOutput, ..]) => new AppNode.Entry(app, relative,
                 Path.Combine([store.ChecksDirectory(app), .. segments[2..]]), store.ChecksDirectory(app)),
+            (_, [_, ErrorsOutput]) => new AppNode.Entry(app, relative, store.ErrorsFile(app), Path.GetDirectoryName(store.ErrorsFile(app))!),
             _ => new AppNode.Entry(app, relative, Path.Combine(store.Repository(app).WorkTree, relative), store.Repository(app).WorkTree)
         };
     }

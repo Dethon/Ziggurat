@@ -41,6 +41,8 @@ public record AppsSettings : IMcpHostSettings
 
     public AppCheckSettings Checks { get; init; } = new();
 
+    public AppErrorSettings Errors { get; init; } = new();
+
     public AppListeners Listeners { get; init; } = new();
 
     // Where a built app may load code, styles and fonts from besides itself, by exact version and
@@ -82,6 +84,15 @@ public record AppSessionSettings
     // longest a revoked session goes on opening an app when its announcement was missed.
     public TimeSpan AssertionKept { get; init; } = TimeSpan.FromMinutes(5);
 }
+// What the apps server keeps of the runtime errors its apps' pages report (`/_errors`).
+public record AppErrorSettings
+{
+    // The newest this many per app are kept; an older one drops as a new one arrives.
+    public int Kept { get; init; } = 100;
+
+    public int PerSessionPerMinute { get; init; } = 30;
+}
+
 // How far a check (`./check`, Checks/AppChecks) may go. Checks past a limit are refused, never queued: the
 // agent hears the limit's name and value and tells the person rather than waiting on somebody else's.
 public record AppCheckSettings

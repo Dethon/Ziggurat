@@ -20,6 +20,9 @@ public static class ConfigModule
             .AddSingleton(sp => new BuiltAppStore(settings, sp.GetRequiredService<TimeProvider>()))
             .AddSingleton<AppSessions>()
             .AddSingleton<AppViewers>()
+            // What an app's pages report went wrong, kept per app beside its repository.
+            .AddSingleton<AppErrorLog>()
+            .AddSingleton<AppErrorReports>()
             .AddAppPages(settings.Listeners)
             // A built app's reads, handed to the agent with this server's own credential (AgentReads).
             .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services

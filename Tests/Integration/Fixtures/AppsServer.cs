@@ -169,6 +169,30 @@ public sealed class AppsServer : IAsyncDisposable
         return response;
     }
 
+    // The client library reporting a runtime error from a page of that origin: its JSON POSTed to the
+    // origin's /_errors with the app session's cookie, the page's own Origin and its user agent, as the
+    // browser sends them. origin: another page's, as a sibling app's would send it.
+    public async Task<HttpResponseMessage> ReportAsync(
+        string host, string body, string? session, string? origin = null, string userAgent = "Mozilla/5.0 (Linux; Android 15) Test")
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, PagesAddress + AppErrors.OriginPath)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Host = host;
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("Origin", origin ?? $"https://{host}");
+        request.Headers.UserAgent.ParseAdd(userAgent);
+        if (session is not null)
+        {
+            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+        }
+
+        var response = await _browser.SendAsync(request);
+        await response.Content.LoadIntoBufferAsync();
+        return response;
+    }
+
     // An app session for this person on that origin, as the app sign-in would open one, its assertion
     // fresh.
     public string SessionFor(Account person, string host) =>

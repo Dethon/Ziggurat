@@ -161,6 +161,10 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     // `/<slug>/.checks/`.
     public string ChecksDirectory(BuiltApp app) => Path.Combine(AppDirectory(app), "checks");
 
+    // The runtime errors its pages reported (Serving/AppErrorLog), beside the repository for the same reason,
+    // newest first. The mount shows it read-only as `/<slug>/errors`.
+    public string ErrorsFile(BuiltApp app) => Path.Combine(AppDirectory(app), "errors");
+
     // The repository as a whole: its working tree and its history. A check's output is the server's,
     // replaced on every check, and spends nothing of the app's.
     public long SizeOf(BuiltApp app)
