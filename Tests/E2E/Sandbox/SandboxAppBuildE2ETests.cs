@@ -36,8 +36,8 @@ public class SandboxAppBuildE2ETests(SandboxE2EFixture fixture) : IAsyncLifetime
     // What a build leaves in dist/: pages, script and style the app's own (only local files, so publish
     // has no outside code to refuse), and the binary assets a bundler copies beside them. The script is
     // text with CRLF endings, characters outside ASCII and no final newline — text crosses the bridge
-    // as a string, which is where a byte could change. The image is larger than a chunk of the agent's
-    // transfers (256 KiB), so its bytes cross more than one buffer on every hop.
+    // as a string, which is where a byte could change. The image is a few hundred kilobytes, as a
+    // real one is: the bridge hands the mount each file whole, in one blob write.
     private static readonly IReadOnlyDictionary<string, byte[]> _dist = new Dictionary<string, byte[]>
     {
         ["index.html"] = Encoding.UTF8.GetBytes(

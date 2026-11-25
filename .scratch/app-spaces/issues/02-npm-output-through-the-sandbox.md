@@ -44,7 +44,7 @@ server refuses nobody). No production code changed: every case passed on arrival
 
 **Not covered:**
 - *The sandbox image has no Node.* `McpServerSandbox/Dockerfile` installs Python, git, curl and DuckDB,
-  but neither `node` nor `npm`, so "build the npm project in the sandbox" is not possible in the shipped
+  but neither `node` nor `npm` (checked in the built `mcp-sandbox:latest`: `command -v node npm` finds neither), so "build the npm project in the sandbox" is not possible in the shipped
   image as it stands. The spec's problem statement says a sandbox household "can run `npm`". The test
   therefore places the build output in the home and proves the copy, which is what this ticket is about.
   Whether the image gets Node (and which pinned version), or the skill (ticket 12) tells the agent to

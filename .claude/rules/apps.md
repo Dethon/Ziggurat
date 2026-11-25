@@ -400,8 +400,9 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in);
 `AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
-`HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `SandboxAppBuildE2ETests` (the sandbox E2E collection) a
-build's output copied in by a real sandbox command over the bridge, `node_modules` refused, published from `dist`; `AppReadsApiTests` the agent's
+`HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature;
+`SandboxAppBuildE2ETests` (the sandbox E2E collection) a build's output copied in by a real sandbox command
+over the bridge, `node_modules` refused, published from `dist`; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
 `AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsSpacesTests`
 who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing, `AppsSpacesTests`/`AppsReadsTests` a publish widening a shared app
