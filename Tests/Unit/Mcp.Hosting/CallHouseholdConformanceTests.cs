@@ -36,6 +36,9 @@ public class CallHouseholdConformanceTests
 
     private static readonly string _appsMount = Path.Combine("McpServerApps", "Vfs", "AppsFileSystem.cs");
 
+    // The apps mount's action catalog, where its check runs on the token the mount took.
+    private static readonly string _appsActions = Path.Combine("McpServerApps", "Vfs", "AppActions.cs");
+
     private static readonly string _domainTools = Path.Combine("Domain", "Tools") + Path.DirectorySeparatorChar;
 
     [Fact]
@@ -72,7 +75,7 @@ public class CallHouseholdConformanceTests
     [Fact]
     public void TheVerifiedToken_ReachesOnlyTheAppsMountsChecks() =>
         Sources()
-            .Where(file => file.Key != _turn && file.Key != _registrar && file.Key != _appsMount)
+            .Where(file => file.Key != _turn && file.Key != _registrar && file.Key != _appsMount && file.Key != _appsActions)
             .Where(file => _tokenHandedOn.IsMatch(file.Value))
             .Select(file => file.Key)
             .ShouldBeEmpty("the call's verified token is handed from the registrar to the apps mount alone; these files take it");
@@ -87,6 +90,7 @@ public class CallHouseholdConformanceTests
         _verifiedToken.IsMatch(sources[_turn]).ShouldBeTrue($"{_turn} should read the token the gate verified");
         _tokenHandedOn.IsMatch(sources[_registrar]).ShouldBeTrue($"{_registrar} should hand the verified token on");
         _tokenHandedOn.IsMatch(sources[_appsMount]).ShouldBeTrue($"{_appsMount} should take the verified token");
+        _tokenHandedOn.IsMatch(sources[_appsActions]).ShouldBeTrue($"{_appsActions} should run a check on the verified token");
         var search = sources[Path.Combine("McpServerIdealista", "McpTools", "McpPropertySearchTool.cs")];
         _toolCode.IsMatch(search).ShouldBeTrue("Idealista's search should read as tool code");
         search.ShouldContain("call.Household");

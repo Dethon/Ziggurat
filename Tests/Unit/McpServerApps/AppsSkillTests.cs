@@ -48,7 +48,7 @@ public class AppsSkillTests
     {
         var named = Regex.Matches(_body, @"`\./([a-z_-]+)").Select(m => m.Groups[1].Value).Distinct();
 
-        named.ShouldBe(AppsFileSystem.Actions, ignoreOrder: true);
+        named.ShouldBe(AppActions.Actions, ignoreOrder: true);
     }
 
     // A file tool is named as the model calls it; a wrong leaf passes the staleness walk, which only
@@ -158,7 +158,7 @@ public class AppsSkillTests
     public void WhatACheckLeaves_IsNamedAsTheMountShowsIt()
     {
         _body.ShouldContain($"`/apps/<slug>/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/`");
-        _body.ShouldContain($"`{AppsFileSystem.AssertionsDirectory}/*.js`");
+        _body.ShouldContain($"`{AppActions.AssertionsDirectory}/*.js`");
 
         Ticked(Paragraph($"- `{AppChecks.ReportFile}`"))
             .Where(t => t != AppChecks.ReportFile)

@@ -3,13 +3,11 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
-using Domain.DTOs.Household;
 using Domain.Tools;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Text;
 using McpServerApps.Checks;
-using McpServerApps.Publishing;
 using McpServerApps.Store;
 
 namespace McpServerApps.Vfs;
@@ -25,10 +23,6 @@ namespace McpServerApps.Vfs;
 public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string appsDomain) : FileSystemBackendBase
 {
     public const string Name = "apps";
-    public const string Publish = "publish";
-    public const string History = "history";
-    public const string Rollback = "rollback";
-    public const string Check = "check";
 
     // Where the mount shows what the app's last check saw (BuiltAppStore.ChecksDirectory), read-only.
     public const string ChecksOutput = ".checks";
@@ -36,21 +30,12 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     // Where the mount shows the runtime errors the app's pages reported (BuiltAppStore.ErrorsFile), read-only.
     public const string ErrorsOutput = "errors";
 
-    // Viewports a check may ask for, and how large: a screenshot is one image the model is shown.
-    private const int MaxViewports = 4;
-    private const int MinViewportSide = 240;
-    private const int MaxViewportSide = 3840;
-
-    // The app's own assertions (`checks/*.js` in its working tree), each run inside the page.
-    public const string AssertionsDirectory = "checks";
     // The longest slug whose preview label (`<slug>-<id>-preview`) is still one DNS label.
     public const int SlugLength = 40;
 
-    public static readonly IReadOnlyList<string> Actions = [Publish, History, Rollback, Check];
-
     // Names at an app's root the server keeps for what it produces itself (checks, runtime errors);
     // never the agent's to write, so a later release can serve them without colliding with a file.
-    private static readonly string[] _reserved = [.. Actions, ErrorsOutput, ChecksOutput];
+    private static readonly string[] _reserved = [.. AppActions.Actions, ErrorsOutput, ChecksOutput];
 
     // What the text read opens: the shared text list plus what a web app is made of besides.
     private static readonly string[] _textFiles =
@@ -60,6 +45,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     private string? _agentId;
     private ICallHousehold? _household;
     private string? _callToken;
+
+    private readonly AppActions _actions = new(store, checks, appsDomain);
 
     public override FileSystemBackendBase For(FileSystemCaller caller)
     {
@@ -102,15 +89,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     public override string DescribeCopy =>
         "Copy a file or directory into one of the person's apps, from the same app or another of theirs.";
 
-    public override string DescribeExec =>
-        $"Run an app's action in its directory: ./{Publish} commits the working tree and serves it, answering "
-        + "the app's link (refused while a served page loads outside code without an exact version and integrity hash); "
-        + $"./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
-        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] opens "
-        + "the preview in a headless browser as the person (a phone and a desktop unless named), runs each "
-        + $"{AssertionsDirectory}/*.js in the page (an async function body: returning passes, throwing fails) and "
-        + $"writes one PNG per viewport and report.json (console, failed requests, policy violations, an "
-        + $"accessibility snapshot, assertions) to {ChecksOutput}/latest/. Not a shell — anything else returns exit 127.";
+    public override string DescribeExec => AppActions.Describe;
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
@@ -126,7 +105,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
         var apps = await store.ListAsync(author.TenantId, author, ct);
         var candidates = apps.SelectMany(app => Listing(app).Select(c => (c.Path, c.IsDirectory))).ToList();
-        var actions = apps.SelectMany(app => Actions.Select(action => $"/{app.Slug}/{action}")).ToHashSet(StringComparer.Ordinal);
+        var actions = apps.SelectMany(app => AppActions.Actions.Select(action => $"/{app.Slug}/{action}")).ToHashSet(StringComparer.Ordinal);
         return Glob(
             pattern,
             () =>
@@ -205,7 +184,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         var files = (await store.ListAsync(author.TenantId, author, ct))
             .SelectMany(app => Listing(app).Where(c => !c.IsDirectory).Select(c => (App: app, c.Path, c.Full)))
             .Where(f => scope.Length == 0 || f.Path == scope || f.Path.StartsWith(scope + "/", StringComparison.Ordinal))
-            .Where(f => !Actions.Contains(Path.GetFileName(f.Path)) || f.Path.Count(c => c == '/') > 1)
+            .Where(f => !AppActions.Actions.Contains(Path.GetFileName(f.Path)) || f.Path.Count(c => c == '/') > 1)
             .Where(f => _textFiles.Contains(Path.GetExtension(f.Path).ToLowerInvariant()) && admits(Path.GetFileName(f.Path)))
             .OrderBy(f => f.Path, StringComparer.Ordinal)
             .ToList();
@@ -668,7 +647,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         if (app is null)
         {
             return Fail<FsExecResult>(ToolError.Codes.UnsupportedOperation,
-                $"exec runs an app's actions in its directory, /<slug>: ./{Publish}, ./{History}, ./{Rollback}, ./{Check} (got '{path}').");
+                $"exec runs an app's actions in its directory, /<slug>: ./{AppActions.Publish}, ./{AppActions.History}, ./{AppActions.Rollback}, ./{AppActions.Check} (got '{path}').");
         }
 
         var words = command.Trim().Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries)
@@ -676,219 +655,8 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             .ToList();
         var action = words.Count == 0 ? "" : WithoutDotSlash(words[0]);
         var args = words.Skip(1).ToList();
-        return action switch
-        {
-            Publish when args.Count == 0 => await PublishAsync(app, path, ct),
-            Publish => Exec(path, "", $"{Publish} takes no arguments: it commits the whole working tree and serves it.", 2),
-            History => await HistoryAsync(app, path, args, ct),
-            Rollback when args is [var revision] => await RollbackAsync(app, path, revision, ct),
-            Rollback => Exec(path, "", $"usage: ./{Rollback} <rev> — a commit from ./{History}.", 2),
-            Check => await CheckAsync(app, path, args, ct),
-            _ => Exec(path, "", $"command not found: {action}\navailable: {string.Join(", ", Actions)}", 127)
-        };
+        return await _actions.RunAsync(app, path, action, args, new AppActions.Caller(_agentId, _household, _callToken), ct);
     }
-
-    // The publish itself runs one at a time per household; what of it waits on an owner is asked after, of
-    // the household's spaces, so no other publish waits on the accounts service.
-    private async Task<FsResult<FsExecResult>> PublishAsync(BuiltApp app, string cwd, CancellationToken ct)
-    {
-        var (result, served) = await store.OneAtATimeAsync(app.HouseholdId, async () =>
-        {
-            var repository = store.Repository(app);
-            var manifestPath = Path.Combine(repository.WorkTree, AppManifest.FileName);
-            if (!File.Exists(manifestPath))
-            {
-                return (Exec(cwd, "", $"nothing published: {AppManifest.FileName} is missing.", 1), null);
-            }
-
-            AppManifest manifest;
-            switch (AppManifest.Parse(await File.ReadAllTextAsync(manifestPath, ct)))
-            {
-                case AppManifestParse.Refused { Problems: var problems }:
-                    return (Exec(cwd, "", $"nothing published: {AppManifest.FileName} breaks its rules:\n- {string.Join("\n- ", problems)}", 1), null);
-                case AppManifestParse.Valid { Manifest: var valid } when !Directory.Exists(Path.Combine(repository.WorkTree, valid.Root)):
-                    return (Exec(cwd, "", $"nothing published: the root '{valid.Root}' the manifest serves is not a directory of the app.", 1), null);
-                case AppManifestParse.Valid { Manifest: var valid }:
-                    manifest = valid;
-                    break;
-                default:
-                    throw new InvalidOperationException("A manifest is either valid or refused.");
-            }
-
-            var pinning = await OutsideCodePinning.CheckRootAsync(Path.Combine(repository.WorkTree, manifest.Root), ct);
-            if (pinning.Problems.Count > 0)
-            {
-                return (Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", pinning.Problems)}", 1), null);
-            }
-
-            var committed = await repository.CommitAllAsync($"Publish from a turn of {_agentId ?? app.BuildingAgent}", ct);
-            var head = (await repository.HeadAsync(ct))!;
-            var commit = await repository.ResolveAsync(head, ct);
-            // What passed is what the served policy loads, recorded with the commit so serving parses nothing.
-            await store.SaveAsync(app with
-            {
-                PublishedCommit = head,
-                Pinned = new Dictionary<string, PinnedCode>(app.Pinned) { [head] = pinning.Pinned }
-            }, ct);
-            var link = BuiltAppId.Link(app.Slug, app.Id, appsDomain);
-            return (Exec(cwd, committed is null
-                ? $"nothing changed since {commit!.Short}; serving it at {link}\n"
-                : $"published {commit!.Short}; the app is served at {link}\n", "", 0), (AppManifest?)manifest);
-        }, ct);
-
-        return served is not null && result is FsResult<FsExecResult>.Ok { Value: var answer }
-            ? new FsResult<FsExecResult>.Ok(answer with { Stdout = answer.Stdout + await WaitingOnAnOwnerAsync(app, served, ct) })
-            : result;
-    }
-
-    // While the household shares the app as a space, its published origin is granted no more than an owner
-    // approved: what the served manifest asks beyond that is named, for the agent to tell its person, since
-    // nothing else tells the author it is not granted. Nothing is said of an app nobody shares, or one asking
-    // no more; spaces that cannot be read say the check could not be made, and the publish stands.
-    private async Task<string> WaitingOnAnOwnerAsync(BuiltApp app, AppManifest served, CancellationToken ct)
-    {
-        if (_household is null)
-        {
-            return "";
-        }
-
-        var sharing = await AppSharing.OfAsync(_household, app, ct);
-        if (sharing is not AppSharing.Read { SharedAs: var space })
-        {
-            return "whether the household's owners approved what it reads and talks to could not be checked just now: while the "
-                   + "household shares the app as a space, it is granted no more than they approved\n";
-        }
-
-        if (space is null || AppReach.Of(served).Beyond(space.Approved) is not { IsEmpty: false } beyond)
-        {
-            return "";
-        }
-
-        var asked = beyond.Reads.Select(read => $"reading {read}")
-            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"));
-        return $"the household shares it as the space '{space.Name}', and an owner has not approved all it now asks: until one "
-               + $"approves it on the spaces page, it is not granted {string.Join(", ", asked)} — for anyone, you included. "
-               + "Tell the person, so they can ask an owner\n";
-    }
-
-    // The preview checked in the server's browser as the person whose turn this is, on this call's own
-    // token, which the agent believes for that person's reads while the check runs.
-    private async Task<FsResult<FsExecResult>> CheckAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)
-    {
-        if (CheckArguments(args) is not var (viewports, route))
-        {
-            return Exec(cwd, "",
-                $"usage: ./{Check} [--viewport WxH]... [--path /route] — at most {MaxViewports} viewports, each side "
-                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /.", 2);
-        }
-
-        if (_callToken is not { } callToken)
-        {
-            return Fail<FsExecResult>(ToolError.Codes.PermissionDenied,
-                "This call carries no token the agent signed, so nobody's reads could be shown in a check.");
-        }
-
-        var tree = store.Repository(app).WorkTree;
-        var manifestPath = Path.Combine(tree, AppManifest.FileName);
-        if (!File.Exists(manifestPath)
-            || AppManifest.Parse(await File.ReadAllTextAsync(manifestPath, ct)) is not AppManifestParse.Valid { Manifest: var manifest })
-        {
-            return Exec(cwd, "", $"nothing checked: {AppManifest.FileName} is missing or breaks its rules, so the preview serves nothing.", 1);
-        }
-
-        var assertionsDirectory = Path.Combine(tree, AssertionsDirectory);
-        var assertions = Directory.Exists(assertionsDirectory)
-            ? await Task.WhenAll(Directory.EnumerateFiles(assertionsDirectory, "*.js")
-                .Order(StringComparer.Ordinal)
-                .Select(async file => new CheckAssertion($"{AssertionsDirectory}/{Path.GetFileName(file)}", await File.ReadAllTextAsync(file, ct))))
-            : [];
-        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken), ct);
-        return outcome switch
-        {
-            CheckOutcome.Refused { Limit: var limit, Value: var value } => Quota<FsExecResult>(limit, value,
-                "Another check is running; tell the person, and check again once it has finished."),
-            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report),
-                report.Error ?? "", report.DeadlineHit || report.Error is not null || report.Viewports.Any(v => v.Assertions.Any(a => !a.Passed)) ? 1 : 0),
-            _ => throw new InvalidOperationException("A check runs or is refused.")
-        };
-    }
-
-    // `--viewport WxH` (repeatable) and `--path /route`, or null for anything else.
-    private static (IReadOnlyList<CheckViewport> Viewports, string Path)? CheckArguments(IReadOnlyList<string> args)
-    {
-        var viewports = new List<CheckViewport>();
-        var route = "/";
-        for (var i = 0; i < args.Count; i += 2)
-        {
-            if (i + 1 >= args.Count)
-            {
-                return null;
-            }
-
-            switch (args[i], args[i + 1])
-            {
-                case ("--viewport", var size) when size.Split('x') is [var w, var h]
-                                                  && int.TryParse(w, out var width) && int.TryParse(h, out var height)
-                                                  && width is >= MinViewportSide and <= MaxViewportSide
-                                                  && height is >= MinViewportSide and <= MaxViewportSide:
-                    viewports.Add(new CheckViewport(width, height));
-                    break;
-                case ("--path", var asked) when asked.StartsWith('/') && asked.Length <= 512 && !asked.Any(char.IsWhiteSpace):
-                    route = asked;
-                    break;
-                default:
-                    return null;
-            }
-        }
-
-        return viewports.Count > MaxViewports ? null : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route);
-    }
-
-    private static string CheckSummary(BuiltApp app, CheckReport report)
-    {
-        var lines = report.Viewports.Select(v =>
-            $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
-            + $"{v.PolicyViolations.Count} policy violations, assertions {v.Assertions.Count(a => a.Passed)} passed and "
-            + $"{v.Assertions.Count(a => !a.Passed)} failed{(v.Settled ? "" : " (the page never went quiet)")}");
-        var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
-        return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
-               + $"screenshots and {AppChecks.ReportFile} are in /{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}/ "
-               + "(file_read shows a screenshot)\n";
-    }
-
-    private async Task<FsResult<FsExecResult>> HistoryAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, CancellationToken ct)
-    {
-        var limit = 20;
-        if (args is not [] && !(args is ["--limit", var n] && int.TryParse(n, out limit) && limit is > 0 and <= 1000))
-        {
-            return Exec(cwd, "", $"usage: ./{History} [--limit N] — N from 1 to 1000.", 2);
-        }
-
-        var commits = await store.Repository(app).LogAsync(limit, ct);
-        if (commits.Count == 0)
-        {
-            return Exec(cwd, $"no commits yet: ./{Publish} makes the first\n", "", 0);
-        }
-
-        var lines = commits.Select(c =>
-            $"{(c.Sha == app.PublishedCommit ? "*" : " ")} {c.Short}  {c.At.UtcDateTime:yyyy-MM-dd HH:mm}Z  {c.Subject}"
-            + (c.Sha == app.PublishedCommit ? "  (served)" : ""));
-        return Exec(cwd, string.Join("\n", lines) + "\n", "", 0);
-    }
-
-    private async Task<FsResult<FsExecResult>> RollbackAsync(BuiltApp app, string cwd, string revision, CancellationToken ct) =>
-        await store.OneAtATimeAsync(app.HouseholdId, async () =>
-        {
-            if (await store.Repository(app).ResolveAsync(revision, ct) is not { } commit)
-            {
-                return Exec(cwd, "", $"no commit '{revision}' in this app: ./{History} lists them.", 1);
-            }
-
-            await store.SaveAsync(app with { PublishedCommit = commit.Sha }, ct);
-            return Exec(cwd,
-                $"serving {commit.Short} ({commit.Subject}) at {BuiltAppId.Link(app.Slug, app.Id, appsDomain)}; "
-                + $"history is unchanged, and ./{Publish} serves the working tree again\n", "", 0);
-        }, ct);
 
     private async Task<FsResult<FsCreateResult>> CreateAppAsync(
         Account author, string slug, string path, string manifest, CancellationToken ct)
@@ -930,7 +698,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
                 FilePath = path,
                 Size = System.Text.Encoding.UTF8.GetByteCount(manifest).ToString(),
                 Lines = manifest.Split('\n').Length,
-                Note = $"Created the app {slug} (id {app.Id}). Write its files under /apps/{slug}/, then run ./{Publish} there "
+                Note = $"Created the app {slug} (id {app.Id}). Write its files under /apps/{slug}/, then run ./{AppActions.Publish} there "
                        + $"to serve it at {BuiltAppId.Link(slug, app.Id, appsDomain)}."
             });
         }, ct);
@@ -1015,7 +783,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
                 "Remove what the app no longer needs (old build output, large images) before adding more.")
             : null;
 
-    private static FsResult<T> Quota<T>(string limit, long value, string hint) where T : class =>
+    internal static FsResult<T> Quota<T>(string limit, long value, string hint) where T : class =>
         Fail<T>(ToolError.Codes.PermissionDenied, $"Refused: the limit of {limit} is {value}, and this would pass it.", hint);
 
     private static FsResult<T>? WriteRefusal<T>(AppNode.Entry entry) where T : class
@@ -1029,7 +797,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         {
             return Fail<T>(ToolError.Codes.PermissionDenied,
                 "Nothing named .git is written into an app: its history is the apps server's, kept outside the working tree.",
-                $"./{History} lists the app's commits.");
+                $"./{AppActions.History} lists the app's commits.");
         }
 
         var top = entry.Relative.Split('/')[0];
@@ -1054,7 +822,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     {
         var tree = store.Repository(app).WorkTree;
         yield return (app.Slug, tree, true);
-        foreach (var action in Actions)
+        foreach (var action in AppActions.Actions)
         {
             yield return ($"{app.Slug}/{action}", "", false);
         }
@@ -1126,7 +894,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         {
             (null, _) => new AppNode.Missing(segments[0], relative),
             (_, [_]) => new AppNode.AppDirectory(app),
-            (_, [_, var action]) when Actions.Contains(action) => new AppNode.Action(app, action),
+            (_, [_, var action]) when AppActions.Actions.Contains(action) => new AppNode.Action(app, action),
             // What the server keeps beside the tree, shown where the agent looks for it: every write there is
             // refused as a reserved name's.
             (_, [_, ChecksOutput, ..]) => new AppNode.Entry(app, relative,
@@ -1160,12 +928,6 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
     private static FsResult<FsRemoveResult> Removed(string path, string message) =>
         new FsResult<FsRemoveResult>.Ok(new FsRemoveResult { Status = "deleted", Message = message, OriginalPath = path, TrashPath = "" });
-
-    private static FsResult<FsExecResult> Exec(string cwd, string stdout, string stderr, int exitCode) =>
-        new FsResult<FsExecResult>.Ok(new FsExecResult
-        {
-            Stdout = stdout, Stderr = stderr, ExitCode = exitCode, Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
-        });
 
     private static FsResult<T> NoSuchApp<T>(string slug) where T : class =>
         Fail<T>(ToolError.Codes.NotFound, $"The person has no app '{slug}'.",
