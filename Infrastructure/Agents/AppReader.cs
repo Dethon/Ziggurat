@@ -1,5 +1,7 @@
 using Domain.Apps;
 using Domain.Contracts;
+using Domain.DTOs.FileSystem;
+using Domain.Monitor;
 using Domain.Security;
 using Domain.Tools;
 using Domain.Tools.FileSystem.Bridge;
@@ -9,7 +11,11 @@ namespace Infrastructure.Agents;
 // A built app's read, for the viewer the accounts service vouches for and the app the apps server
 // names: through the building agent's mounts as a turn of it would see them, every call signed as the
 // viewer (ReadRegistryCache over AgentReadRegistries), each operation the file tool's own (AppRead).
-public sealed class AppReader(AssertionVerifier assertions, ReadRegistryCache registries, VfsBridgeSettings bridge)
+//
+// The household decides on every read whether the agent acts for the viewer at all, as for a turn
+// (HouseholdStanding): the assertion an app session holds may be five minutes old.
+public sealed class AppReader(
+    AssertionVerifier assertions, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge)
 {
     // Null where the assertion is not believed: none, a forgery, out of date, another channel's, the
     // guest's or nobody's. Who reads is its person, of its household, and nothing else the request says.
@@ -20,6 +26,11 @@ public sealed class AppReader(AssertionVerifier assertions, ReadRegistryCache re
             is not TurnAdmission.Admitted { Identity: { Account: not null } viewer })
         {
             return null;
+        }
+
+        if (await standing.RefusalAsync([viewer.TenantId], viewer, ct) is { } refusal)
+        {
+            return AppReadAnswer.Refused(Refused(refusal));
         }
 
         ReadLease lease;
@@ -41,4 +52,16 @@ public sealed class AppReader(AssertionVerifier assertions, ReadRegistryCache re
                 .RunAsync(operation, request.Arguments, ct);
         }
     }
+
+    private static ToolErrorResult Refused(StandingRefusal refusal) => refusal switch
+    {
+        StandingRefusal.Suspended => ToolError.PermissionDenied(
+            "The household is suspended, so its apps read nothing.", "Nothing to do here: the operator resumes a household."),
+        StandingRefusal.Disabled => ToolError.PermissionDenied(
+            "This person is disabled in the household, so the household's apps read nothing for them.",
+            "An owner of the household enables them again."),
+        _ => ToolError.TransientDependency(
+            "Whether the household lets this read through could not be read just now, so nothing was read.",
+            "Read again in a moment.")
+    };
 }

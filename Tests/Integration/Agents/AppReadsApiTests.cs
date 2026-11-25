@@ -259,6 +259,33 @@ public sealed class AppReadsApiTests
         await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her));
     }
 
+    // The household decides whether the agent acts for the viewer, as for a turn: a suspended household
+    // reads nothing, nor does a member an owner disabled, though their assertion still verifies — asked
+    // on every read, a registry already cached included. A standing that cannot be read refuses as
+    // unchecked, never let through.
+    [Fact]
+    public async Task ASuspendedHouseholdOrADisabledMember_ReadsNothing()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string> { ["a.md"] = "notes" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var app = _glucoseApp with { Reads = ["/notes"] };
+        var read = new JsonObject { ["filePath"] = "/notes/a.md" };
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+        await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her));
+
+        households.Change(SugaryServer.Her.TenantId, h => h with { Suspended = true });
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her), ToolError.Codes.PermissionDenied, "suspended");
+
+        households.Change(SugaryServer.Her.TenantId, h => h with { Suspended = false, DisabledPeople = [SugaryServer.Her.UserId] });
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her), ToolError.Codes.PermissionDenied, "disabled");
+        await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, TestAssertions.Of(SugaryServer.Him, AppChannels.Apps)));
+
+        households.Unreadable = true;
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app, read, her), ToolError.Codes.TransientDependency, "could not be read");
+    }
+
     // Neither half opens the route alone: the apps server's credential without a believable assertion,
     // or an assertion without the credential (another server's, or none), is refused before anything is
     // built or read.

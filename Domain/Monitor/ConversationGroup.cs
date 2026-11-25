@@ -71,6 +71,8 @@ internal sealed class ConversationGroup(
 
     private GroupState? _state;
 
+    private readonly HouseholdStanding _standing = new(households, standing, logger);
+
     // The one this group resolved. Cancelling is addressed at it, so a group that fails after
     // a /cancel already replaced it under the same key cannot tear its successor down.
     private ChatThreadContext? _context;
@@ -936,19 +938,6 @@ internal sealed class ConversationGroup(
         return true;
     }
 
-    // Why a household would not have the agent act on a message whose sender or delegation was believed:
-    // the operator suspended it, an owner disabled the person, or either could not be read just now.
-    private abstract record StandingRefusal(string HouseholdId)
-    {
-        public sealed record Suspended(string HouseholdId) : StandingRefusal(HouseholdId);
-
-        public sealed record Disabled(Account Account) : StandingRefusal(Account.TenantId);
-
-        public sealed record Unchecked(string HouseholdId) : StandingRefusal(HouseholdId);
-
-        public sealed record SugaryOff(string HouseholdId) : StandingRefusal(HouseholdId);
-    }
-
     // The Sugary app is one of the household's features: turned off, its server is withheld from every
     // agent of the household, the estimator included, whose rules (never a dose among them) that server
     // serves — so the app's turns are refused rather than estimated without them. Asked for every
@@ -973,70 +962,10 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // An assertion or a delegation says who a message is for as of when it was signed — an assertion
-    // Telegram kept for minutes, a delegation as old as its schedule — so the households it names are
-    // asked, for every message rather than when the group's agent is built (a group outlives its turns,
-    // so a household suspended mid-conversation has its next message refused), whether they run, and the
-    // person's whether it still lets the agent act for them. The guest and nobody are nobody an owner can
-    // disable. Each answer is the reader's, kept a minute and dropped the moment accounts announces a
-    // change. One that cannot be read refuses as unchecked — never as suspended or disabled, which it
-    // may not be, and never let through: the turn could not be built without that view anyway. Null
-    // when the message may go on.
-    private async Task<StandingRefusal?> StandingRefusalAsync(IReadOnlyList<string?> householdIds, IdentityClaims? person)
-    {
-        foreach (var householdId in householdIds.OfType<string>().Where(h => h.Length > 0).Distinct())
-        {
-            if (await SuspensionRefusalAsync(householdId) is { } refusal)
-            {
-                return refusal;
-            }
-        }
-
-        return person?.Account is { } account ? await DisablingRefusalAsync(account) : null;
-    }
-
-    // A host with no households' provider suspends nobody, as it has none of their defaults.
-    private async Task<StandingRefusal?> SuspensionRefusalAsync(string householdId)
-    {
-        if (households is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return (await households.ForHouseholdAsync(householdId, _groupCt)).Suspended
-                ? new StandingRefusal.Suspended(householdId)
-                : null;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "Could not read whether household {Household} is suspended", householdId);
-            return new StandingRefusal.Unchecked(householdId);
-        }
-    }
-
-    // A monitor built with no standing (a test harness) asks nobody; the agent's host registers it.
-    private async Task<StandingRefusal?> DisablingRefusalAsync(Account account)
-    {
-        if (standing is null)
-        {
-            return null;
-        }
-
-        try
-        {
-            return await standing.StandingAsync(account, _groupCt) == AccountStanding.Disabled
-                ? new StandingRefusal.Disabled(account)
-                : null;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "Could not read whether account {UserId} of household {Household} is enabled",
-                account.UserId, account.TenantId);
-            return new StandingRefusal.Unchecked(account.TenantId);
-        }
-    }
+    // Whether the households a message names let it through, and its person's whether it still lets the
+    // agent act for them (HouseholdStanding), on the group token.
+    private Task<StandingRefusal?> StandingRefusalAsync(IReadOnlyList<string?> householdIds, IdentityClaims? person) =>
+        _standing.RefusalAsync(householdIds, person, _groupCt);
 
     // Who it was for was believed, so the errors feed names the household and why, and a person waiting
     // is told the way a failed turn ends; a fire has nobody waiting, so the feed is where it is said.

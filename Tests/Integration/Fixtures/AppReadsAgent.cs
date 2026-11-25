@@ -182,8 +182,13 @@ public sealed class AgentHouseholds : IHouseholdConfiguration
     public void Change(string id, Func<AgentHouseholdConfig, AgentHouseholdConfig> change) =>
         _households[id] = change(_households[id]);
 
+    // The accounts service not answering: every household's configuration is an outage.
+    public bool Unreadable { get; set; }
+
     public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
-        Task.FromResult(_households[householdId]);
+        Unreadable
+            ? Task.FromException<AgentHouseholdConfig>(new HttpRequestException("the accounts service is down"))
+            : Task.FromResult(_households[householdId]);
 
     public Task<HouseholdSettings> SettingsAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         throw new NotSupportedException();
