@@ -33,482 +33,236 @@ paths:
 
 # Built apps: the apps server and `/apps`
 
-Spec: `.scratch/app-spaces/spec.md`. A **built app** is a web app an agent built, kept as a git
-repository by the apps server (`McpServerApps`, container `mcp-apps`); plain "app" means an app behind
-the proxy. Its **app manifest** is its `app.json`; its **preview** is its working tree.
+Spec: `.scratch/app-spaces/spec.md`. A **built app** is a web app an agent built, kept as a git repository
+by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest** is its `app.json`, its
+**preview** its working tree.
 
 ## The server
 
-- **A shared server, never in the tenant kit.** Listed in the agent's `sharedServers.apps`, named by the
-  jonas template, and withheld from every definition by the household's **`apps` feature**
-  (`FeaturesSection.Apps`), which is **off by default and the operator's alone**: an owner's features
-  save strips `apps` from what it sent and from its `loaded`, then keeps the stored value
-  (`HouseholdFeaturesAdmin`), because the server spends the deployment's shared storage. The operator
-  sets it from the dashboard's household list (`admin-operator.md`, "The apps feature").
-- **Each call acts for the call token's person** (`Principal.Of(caller.Conversation)?.Account`, as
-  Sugary's mount); their household is the account's tenant. A call naming nobody, or the guest, is
-  refused `permission_denied` on every operation, never shown an empty list.
+- **A shared server, never in the tenant kit** (`sharedServers.apps`), withheld by the household's **`apps`
+  feature**, off by default and the operator's alone: an owner's features save strips it
+  (`HouseholdFeaturesAdmin`), since the server spends the deployment's shared storage (`admin-operator.md`,
+  "The apps feature").
+- **Each call acts for the call token's person** (`Principal.Of(caller.Conversation)?.Account`); nobody or
+  the guest is `permission_denied` on every operation, never an empty list.
 - **Only the household's own agents create or change a manifest**: the turn's `AgentId` must be in the
-  household's `agent-names` view, read through `ICallHousehold.AgentNamesAsync` on the call token
-  (`InternalCallers.Apps`, `CALLERS__mcp-apps`). No fallback to a registered catalogue: no household
-  accessor is a refusal. A person's registered agent resolves for its owner alone, so nobody else could
-  read through an app it built.
-- **The volume** (`./volumes/apps`, chowned by `mcp-apps-volume`): `<household>/<id>/` holds
-  `app.meta.json` (`BuiltApp`: id, slug, household, author, building agent, served commit), `git/` and
-  `tree/`; `.removed/<id>` beside the households is a deleted app's tombstone. **The git directory is never inside the working tree**: everything in the tree is the agent's
-  to write, and a writable git directory runs code (hooks, config) on this server. Git runs through
-  `AppRepository` only: arguments as a list, no system or global config, no hooks, no signing, a fixed
-  identity, `--template=` empty, a deadline. What is committed is what was written: `add --all --force` (a tree's `.gitignore` names `dist/`) and `git/info/attributes` unsetting text, filter and ident conversion; a revision from the model is a hash prefix or `HEAD~N` and is
-  passed after `--end-of-options`.
-- **Ids** (`Domain/Apps/BuiltAppId`): six lowercase alphanumerics from a cryptographic generator, unique
-  across every household (the hostname names none). The repository is named by id, never slug, so a
-  renamed app keeps its links; the link is `https://<slug>-<id>.<AppsDomain>/`, the preview's `<slug>-<id>-preview`. `AppsDomain` is
-  per deployment (compose `x-apps-domain`, merged into `mcp-apps` and `caddy` so both read one value; a
-  placeholder until the domain exists; never under the session cookie's domain); quotas
-  (`Quotas:AppsPerHousehold`, `Quotas:BytesPerRepository`, the whole app directory) are the server's
-  appsettings. A refusal names the limit and its value.
-- **The `apps` skill** (`Domain/Prompts/Skills/apps.md`, handle `AppsSkill`) is served by this server
-  (`AddSkills`), so it reaches exactly the agents offered `/apps`; there is no prompt section. Every name
-  it teaches (actions, flags, library members, result keys, report and errors keys, CDNs) and its worked
-  manifest and pinned script are held to the code by `AppsSkillTests`: renaming any of them reddens it.
+  `agent-names` view (`ICallHousehold.AgentNamesAsync`); no accessor is a refusal, never a fallback to the
+  registered catalogue (a person's registered agent resolves for its owner alone).
+- **The git directory is never inside the working tree** (a writable git dir runs code here). Git runs
+  through `AppRepository` alone: argument lists, no system/global config, hooks or signing, empty
+  `--template=`, a deadline, `add --all --force` with conversions unset, a model's revision after
+  `--end-of-options`. The volume (`<household>/<id>/`: `app.meta.json`, `git/`, `tree/`, `checks/`,
+  `errors`) is laid out on `BuiltAppStore`; a deleted app leaves a `.removed/<id>` tombstone.
+- **Ids** (`BuiltAppId`): cryptographic, unique across households; the repository and the link
+  (`<slug>-<id>[-preview].<AppsDomain>`) are named by id, so a rename keeps links. `AppsDomain` (compose
+  `x-apps-domain`, shared by `mcp-apps` and `caddy`) is never under the session cookie's domain. A quota
+  refusal names the limit and its value.
+- **The `apps` skill** (`Domain/Prompts/Skills/apps.md`) is served by this server, so it reaches exactly the
+  agents offered `/apps`; `AppsSkillTests` holds every name it teaches to the code.
 - **Create, rename, delete, publish and rollback run one at a time per household**
-  (`BuiltAppStore.OneAtATimeAsync`), so a quota or a slug is never decided on a listing another call is
-  changing.
+  (`BuiltAppStore.OneAtATimeAsync`).
 
 ## The mount
 
-- **One filesystem, `apps`**, declared by overriding (`AppsFileSystem`): glob, info, read, search, text
-  create and edit, delete, move, copy, blob read and write, exec. Never a hand-written `fs_*` tool;
-  `FileSystemServerConformanceTests` pins the set.
-- **It lists the caller's own apps**, one directory per slug; another member's are not found, shared or
-  not. A slug is the slug rule, at most `AppsFileSystem.SlugLength` (the preview label must stay one DNS
-  label), unique per author.
-- **Creating an app is writing `/<slug>/app.json`.** The manifest (`AppManifest.Parse`) is judged
-  whole, every broken rule named in its own words, and **checked on every way in**: create, overwrite and
-  edit (applied in memory with `TextEditTool.Apply`, stored only if it passes); a blob write, copy or move
-  onto it is refused, and it cannot be deleted or moved away (removing the directory deletes the app).
-  `reads` are checked for shape only (`/` + a slug); `connect` entries are bare `https` origins.
-- **Text create takes any extension**, since a sandbox command's UTF-8 file arrives as a text create;
-  the text read and search open the shared text list plus web extensions. Binary build output arrives
-  through the ranged blob write a copy streams through.
-- **Refused writes**: anything under a `node_modules/` segment (its own hint: build in the sandbox, copy
-  the output), any `.git` segment (also hidden from listings), and the names the server keeps at an
-  app's root — the action files (`check` among them), `errors` (the runtime errors, below), `.checks`.
-- **Action files run on the mount** (a catalog, as `/timers`): `publish` (validates the manifest and its
-  `root`, commits the working tree if it changed, records `HEAD` as served, answers the link — and, for an
-  app space whose served manifest asks beyond the approved reach, which reach waits on an owner, read after
-  the household lock on the call token; unreadable spaces say the check could not be made and publish all
-  the same), `history
-  [--limit N]` (newest first, the served one marked `*`/`(served)`), `rollback <rev>` (moves the served
-  pointer in the metadata only; history is never rewritten), `check [--viewport WxH]... [--path /route]`
-  (below). Unknown is exit 127 naming the actions.
-- Moving `/<slug>` to `/<new-slug>` renames the app; other moves stay within one app; copies may go
-  between the caller's apps.
-- **Deleting an app the household shares as an app space is refused** `permission_denied`, naming the
-  space an owner removes first (`AppsFileSystem.SharedRefusalAsync`, the call's household's `spaces`
-  through `ICallHousehold.SpacesAsync`); spaces that cannot be read delete nothing (`transient_dependency`).
+- **One filesystem, `apps`** (`AppsFileSystem`), declared by overriding
+  (`FileSystemServerConformanceTests`). It lists **the caller's own apps** alone; another member's are not
+  found, shared or not. A slug is at most `AppsFileSystem.SlugLength` (one DNS label with the preview
+  suffix), unique per author.
+- **Creating an app is writing `/<slug>/app.json`**, and `AppManifest.Parse` judges it whole **on every way
+  in** (create, overwrite, edit applied in memory first); a blob write, copy or move onto it is refused, and
+  it goes only with its directory. `connect` entries are bare `https` origins.
+- Moving `/<slug>` to `/<new-slug>` renames the app; every other move stays within one app, and copies go
+  only between the caller's own apps.
+- **Refused writes**: under `node_modules/` (hint: build in the sandbox, copy the output), any `.git`
+  segment (hidden from listings too), and the reserved root names (the action files, `errors`, `.checks`).
+- **Action files** are a closed catalog (`AppActions`; unknown is exit 127): `publish`, `history`,
+  `rollback` (moves the served pointer only; history is never rewritten), `check` ("Checks"). A publish of
+  an app space asking beyond its approval says what waits on an owner, read after the household lock; spaces
+  unreadable or refused say it could not be checked, and the publish stands.
+- **Deleting an app the household shares as an app space is refused** `permission_denied`, naming the space;
+  spaces unreadable delete nothing (`transient_dependency`), refused delete nothing (`permission_denied`).
+  `AppSharing` is the one spaces reader for the delete, the publish and an origin's access.
 
 ## Serving built apps
 
-- **Two listeners** (`AppListeners`: `/mcp` 8080, app origins 8081; the image clears
-  `ASPNETCORE_HTTP_PORTS`). `AppPagesListener` keys on the arrival socket, never Host, and on the pages
-  listener serves app origins and nothing else, `/mcp` included. Caddy's one `*.{$APPSDOMAIN}` site sends
-  everything to `mcp-apps:8081` with **no `forward_auth`**, its wildcard certificate through
-  `tls_{$CADDY_TLS:cloudflare}`; nothing else of the deployment is on that domain (`DeploymentConformanceTests`).
-- **The app is the Host's label, by id** (`Domain/Apps/AppOrigin.Parse`): `<slug>-<id>` or `<slug>-<id>-preview`;
-  the slug is shape-checked and ignored, so a renamed app's old link opens it.
-- **Who opens what** (`AppPages.AccessAsync`, the one rule pages, reads and reports ask): the published
-  origin, its author and, while the household shares it as an app space (below), every member of the
-  app's household; the preview, its author alone. **The viewer is settled before the app is looked up**: a page
-  opened with no app session is sent to sign in whether or not its app exists; a signed-in viewer who
-  may not open it, an unknown label, a non-GET (but a read's POST to `/_vfs/*` and a report's to `/_errors`, below), anything but a page opened with no session, an app never
-  published (on its published origin) gets **one 404, byte for byte**, under `AppContentPolicy.Closed`.
-- **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie names one, which opens one
-  `AppOrigin` (published or preview, never both) until it expires (`Sessions:Lifetime`, 12 h), keeping
-  the accounts `sid` it was made from and the latest `apps` assertion. **Held in memory**, indexed by
-  person (`Account`: household and user): a Redis announcement missed while the server is down would
-  leave a stored session alive, while memory loses both at once; a restart costs a silent re-sign-in.
-- **What is served**: published, the served commit's files under that commit's manifest `root`, read
-  from git as bytes (`AppRepository.EntryAsync`, object named on stdin); preview, the working tree's
-  under the tree's manifest (no links followed). A directory without `/` is a 308 to it; a navigation
-  to a missing path is the root `index.html` (client routes); `.`/`..`/`.git` segments are 404.
-- **Every answer** carries `AppContentPolicy.For(manifest, Cdns, pinned)` (the origin's own manifest: commit or
-  tree; on the published origin of an app space, its `connect` no more than approved, "App spaces") —
-  **what was checked is what runs**: `script-src`, `style-src` and `font-src` name no CDN host whole, only
-  the origin's pinned code (`PinnedCode.Sources`): each pinned address's package version directory
-  (`https://cdn/npm/name@1.2.3/`, cut at the `ExactVersion` match, so a bundle's chunks, an esm.sh stub's
-  build and a stylesheet's relative fonts load) plus the address itself when the version ends it, on a
-  `Cdns` origin only, its query dropped and refused whole if its path could end a source or directive (`;`,
-  `,`, a quote, a space). Another package or version on the same CDN — a module's transitive import — is
-  refused. Exact URLs were too narrow (esm.sh's stub imports its own build; a stylesheet's fonts have no
-  pinned address). A redirect relaxes a source's path in the browser, so a pinned address that redirects
-  lands anywhere on that CDN host; the CDNs answer a pinned version's files directly, and the pinned load's
-  integrity still holds. A jsdelivr `/gh/` version is a git tag, which can move: its directory's other
-  files are not integrity-held. `img-src` keeps `Cdns` whole (an image runs nothing).
-  **Published**: the served commit's `BuiltApp.Pinned[commit]`, recorded at `./publish` from the same pass
-  that judged the pages, so serving parses nothing; a rollback serves that commit's own; a commit with
-  none recorded loads no outside code. **Preview**: the same rule, found from the working tree per answer
-  (`OutsideCodePinning.CheckRootAsync`), so a check shows a refused import as a policy violation before a
-  publish; `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the generated files
-  load; a page's own inline import maps by their hashes (`InlineImportMaps`), the one inline
-  script that runs — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
-- **The server's own files under `/_app/`** (`AppOriginFiles`), which no app file can shadow: the web
-  manifest (name, short name, colour, `id`/`start_url`/`scope` `/`), the icon (`SpaceIcon`, the
-  space icon's drawing, shared with WebChat's `/icon.svg`), the worker (`AppOriginFiles.Worker(version)`, below; `Service-Worker-Allowed: /`), its registration and the client
-  library (below). Every `.html` gets the three tags first in `<head>`, the manifest link
-  `crossorigin="use-credentials"` since the manifest is behind the session.
-- **The worker opens the shell from its cache** (story 19). A published origin's answers carry
-  `X-App-Version` (`AppOriginFiles.Version`: the served commit, the origin's base policy and this build's
-  generated files, hashed), and its worker embeds it: the app's own files are **cache first under that
-  version**, so a publish, an owner narrowing the approval (the kept page carries its policy) or a new
-  server build is new worker bytes, which the browser's update check installs, and the new worker drops
-  every other `app-files-*` cache. **A navigation still reaches the server first** (a sign-in, a closed
-  app, a removed page, a new version is never hidden behind a kept page); its answer is kept when served at
-  the worker's version, and the kept page (else the kept `/`, for a client route) answers only when the
-  network fails. A page served at another version than the worker's (a publish since it installed) loads
-  its files from the network until the new worker takes over (the worker remembers each window's version;
-  one it lost to a restart is taken for its own). The preview (no version) stays network first, the cache
-  only offline. `/_vfs/`, `/_errors`, `/_app/sign-in` and `/_app/sw.js` are never touched. Residual: a
-  shell opened offline after an approval narrowed runs under the old policy until the network returns.
-- **A deleted app's origin**, asked of nobody: navigations get a 410 "This app was removed" page, its
-  `/_app/sw.js` a worker that clears its caches, unregisters and reloads its windows. Its id stays
-  taken (`BuiltAppStore.IdTaken`), so no later app inherits that origin's storage.
-- **`./publish` pins outside code** (`Publishing/OutsideCodePinning`, AngleSharp): every page under the
-  served root whose outside script, module preload or stylesheet lacks an exact version or `integrity`,
-  or whose import map names an outside module (or prefix) without an integrity entry, refuses the
-  publish naming each; what passed (scripts, preloads and integrity-mapped modules as code, stylesheets as
-  styles) is the commit's `PinnedCode`. Imports inside JS modules are not read: the policy refuses any
-  outside them.
-- **Local name**: `apps.localhost` (smoke override, `scripts/run-local.sh` on 6019): loopback by name, and on
-  plain http a secure context in Chromium, which the `__Host-` cookie and the worker need (verified on http
-  only; through the smoke stack's Caddy on its untrusted local CA a browser may refuse the worker).
+- **Two listeners** (`AppListeners`: `/mcp` 8080, origins 8081). `AppPagesListener` keys on the arrival
+  socket, never Host; the pages listener serves app origins alone, never `/mcp`. Caddy's `*.{$APPSDOMAIN}`
+  site has **no `forward_auth`**, and nothing else of the deployment is on that domain
+  (`DeploymentConformanceTests`).
+- **The app is the Host's label, by id** (`AppOrigin.Parse`); the slug is ignored.
+- **Who opens what** (`AppPages.AccessAsync`, settled for pages, reads and reports alike by
+  `AppPages.SettleAsync`): the published origin to its author and, while an app space, every member of its
+  household; the preview to its author alone. **The viewer is settled before the app is looked up**, so a
+  sessionless page goes to sign in whether or not the app exists. Anyone who may not open it, an unknown
+  label, a non-GET (but the `/_vfs/*` and `/_errors` POSTs), an unpublished app: **one 404, byte for byte**,
+  under `AppContentPolicy.Closed`.
+- **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie opens one `AppOrigin` (never
+  published and preview both) until `Sessions:Lifetime`, keeping the accounts `sid` and the latest `apps`
+  assertion. **In memory**, indexed by person: a stored session could outlive a missed revocation; a restart
+  costs a re-sign-in.
+- **What is served**: published, the served commit's files under that commit's manifest `root`; preview, the
+  working tree under the tree's manifest, no links followed. `.`/`..`/`.git` segments are 404; a navigation
+  to a missing path is the root `index.html`.
+- **Every answer carries `AppContentPolicy.For(manifest, Cdns, pinned)`** for the origin's own manifest (an
+  app space's narrowed to its approval) — **what was checked is what runs**: `script-src`, `style-src` and
+  `font-src` name no CDN host whole, only the pinned code's package-version directories on a `Cdns` origin
+  (`PinnedCode.Sources`; a path that could end a source or directive is refused whole); another package or
+  version is refused. Published uses the commit's `BuiltApp.Pinned[commit]`, recorded at publish (none
+  recorded loads no outside code); the preview finds it per answer, so a check sees a refused import.
+  `img-src` keeps `Cdns` whole (an image runs nothing). Inline import maps by hash (`InlineImportMaps`) are
+  the one inline script; every answer also carries `nosniff` and `no-referrer`. Residuals: a pinned address
+  that redirects lands anywhere on that CDN host (integrity still holds); a jsdelivr `/gh/` tag can move.
+- **`./publish` pins outside code** (`OutsideCodePinning`): an outside script, module preload, stylesheet or
+  import-map entry without an exact version and `integrity` refuses the publish, naming each. Imports inside
+  JS modules are not read, since the policy refuses any outside the pinned set.
+- **`/_app/` is the server's** (`AppOriginFiles`: manifest, icon, worker with `Service-Worker-Allowed: /`,
+  registration, client library), never shadowed by an app file; every `.html` gets its tags first in
+  `<head>`, the manifest link `crossorigin="use-credentials"` since the manifest is behind the session.
+- **The worker**: a published origin's answers carry `X-App-Version` (served commit, base policy, this
+  build), embedded in the worker, which keeps the app's files **cache first under that version** — a
+  publish, a narrowed approval or a new build is new worker bytes, and the new worker drops every other
+  `app-files-*` cache. **A navigation reaches the server first**; the kept page answers only when the
+  network fails; a page served at another version loads from the network until the new worker takes over.
+  The preview is network first. `/_vfs/`, `/_errors`, `/_app/sign-in` and `/_app/sw.js` are never cached.
+  Residual: a shell opened offline after a narrowing runs the old policy until it is back online.
+- **A deleted app's origin**: navigations a 410, `/_app/sw.js` a worker that clears, unregisters and
+  reloads. Its id stays taken (`BuiltAppStore.IdTaken`), so no later app inherits its storage.
 
 ## App spaces
 
-An **app space** is a household space sharing a published app (`HouseholdSpace.AppId`;
-`.claude/rules/admin-owner-pages.md` for the owners' side, `chat-hub.md` for the hub's).
+An **app space** is a household space sharing a published app (`HouseholdSpace.AppId`; owners' side in
+`admin-owner-pages.md`, the hub's in `chat-hub.md`).
 
-- **The household's `spaces` section is the one truth** of which apps are shared; the apps server keeps
-  no copy. It reads the `spaces` view (`InternalCallers`: `mcp-apps` reads it beside `agent-names`) on a
-  call's token for a delete, and on **the viewer's own `apps` assertion** for an origin
-  (`CallHousehold.OfPerson`; `apps` is `mcp-apps`'s assertion channel), kept by the reader a minute or
-  until a save is heard on Redis — so removing the space closes the app within that.
-- **Access**: the author is opened whatever the read answers; anyone else must be of the app's household (`tid` equal to the
-  app's, so an id another household names opens nothing), on the published origin, holding an assertion
-  (a check's session never), and the app must be in the section. Spaces that cannot be read are a 503 (a
-  page `AccessUnchecked`, a read the `transient_dependency` envelope), never the 404 and never open; a
-  refusal is closed.
-- **A disabled member** is closed by the session ending: disabling revokes their sessions, announced as
-  `SessionsEnded` (`EndedAppSessionsListener` → `EndAll`), and a renewal answers nobody — within
-  `Sessions:AssertionKept` when the announcement is missed. Nothing in the section names them.
-- **The listing** `GET PublishedApps.Path` (`/internal/published-apps`, `Serving/PublishedAppsListing`)
-  on the **MCP listener**, outside `/mcp` and so outside the secret's gate: believed on an assertion for
-  **`AppChannels.PublishedApps`** naming an `owner` (`AdmitAsync`; 401 else, 403 a member), which only
-  the accounts service signs, for the owner its admin gate verified (`HouseholdAppsClient`). It answers
-  the assertion household's apps with a served commit (`BuiltAppStore.PublishedManifestAsync`): id,
-  slug, the commit's name, colour, description, `reads`, `connect`, the author's user id, the link;
-  `no-store`. `apps-browser` reaches this listener, but holds no such assertion; no Caddy route names it
-  (`DeploymentConformanceTests`), and the pages listener never answers it.
-- **A person's apps** `GET PersonsApps.Path` (`/internal/persons-apps?shared=<id>…`,
-  `Serving/PersonsAppsListing`), for WebChat's space switcher, on the same MCP listener under the same terms:
-  believed on an assertion for **`AppChannels.PersonsApps`** naming a person, which the accounts service
-  signs only for the chat hub's session refresh (`InternalCallers`: `mcp-channel-signalr` alone may name it).
-  It answers the assertion household's apps with a served commit that the person wrote (`Own`), and of the
-  ids `shared` names — the app spaces the hub read in the household's spaces — those the household has
-  published: id, the commit's name and colour, the link; `no-store`. A named id gives no more than its link
-  and name, which every member opens anyway while it is shared; the listing reads no spaces itself. The
-  hub's client is `PersonsAppsClient` (`APPSURL` on `mcp-channel-signalr`, conformance-checked with the route
-  off the proxy); `.claude/rules/chat-hub.md`, "Spaces".
-- **Outage vs refusal**: a reader's outage or its own timeout is unchecked (503 / `transient_dependency`), a
-  refusal closed.
-- **The owner's approval holds** (`HouseholdSpace.Approved`, an `AppReach`: `reads` and `connect`, in the
-  section beside `appId`). While shared, the published origin grants **every viewer, its author too**, the
-  served manifest's reach `Within` the approval (`AppPages.ServedAsync` narrows the manifest once, so both
-  policies of a page and the `/_vfs/*` reads' `AppReadScope` get it); what it asks `Beyond` is not granted
-  (a read of it is `AppRead`'s `permission_denied`, its hint naming an owner's approval). No approval
-  recorded grants nothing (no migration: app spaces existed only on the unmerged branch). The preview keeps
-  its manifest whole, being the author's alone. The author's published origin reads the spaces too (same
-  reader, same cache, so an outage costs it the reader's timeout), but **accounts never closes an author's
-  own app**: spaces unreadable or refused open it under its whole manifest, which reaches no one's data but
-  theirs — the one case it is granted more than approved.
-- **A member's runtime errors reach the author reduced** ("Runtime errors"), so an error is no channel past
-  the approved reach.
+- **The household's `spaces` section is the one truth**; the apps server keeps no copy. `mcp-apps` may read
+  that view and `agent-names` alone (`InternalCallers`), on the call token for the mount and on **the
+  viewer's own `apps` assertion** for an origin (`CallHousehold.OfPerson`), kept a minute or until a save is
+  heard.
+- **Access**: the author always; anyone else must be of the app's household (`tid` equal), on the published
+  origin, holding an assertion (a check's session never), with the app in the section. **Unreadable is
+  unchecked** (a page's 503, a read's `transient_dependency`), never the 404 and never open; **a refusal is
+  closed**.
+- **A disabled member** is closed by their sessions ending (`SessionsEnded` → `EndAll`) or, if that is
+  missed, by the next renewal answering nobody.
+- **The approval holds** (`HouseholdSpace.Approved`, an `AppReach`): while shared, the published origin
+  grants **every viewer, its author too**, only the served manifest's reach `Within` it
+  (`AppPages.ServedAsync` narrows once, for both policies and the reads); a read `Beyond` it is
+  `permission_denied` naming an owner's approval. No approval grants nothing. **Accounts never closes an
+  author's own app**: spaces unreadable or refused open it under its whole manifest (their own data only).
+- **The listing** `GET /internal/published-apps` (`PublishedAppsListing`) and **a person's apps** `GET
+  /internal/persons-apps` (`PersonsAppsListing`) sit on the MCP listener outside `/mcp`'s gate, never routed
+  by Caddy nor answered on the pages listener. Each believes only an assertion the accounts service signs
+  for its own channel: `AppChannels.PublishedApps` naming an `owner` (`HouseholdAppsClient`; 401 else, 403 a
+  member), `AppChannels.PersonsApps` for the chat hub's session refresh alone (`PersonsAppsClient`,
+  `APPSURL`). Each answers the assertion's household alone, `no-store`; a person's apps give a shared id no
+  more than its link and name, and read no spaces. `apps-browser` reaches this listener, so the assertion is
+  all that closes them.
 
 ## App sign-in
 
-How an app session is made (`AppViewers`; the wire spelled once in `Domain/Apps/AppSignIn`; the
-accounts side in `accounts.md`, "The app sign-in"):
+`AppViewers`; wire in `Domain/Apps/AppSignIn`; the accounts side in `accounts.md`, "The app sign-in".
 
-- **Sessionless page → the main host.** 302 to `{PublicBaseUrl}/accounts/app-sign-in?returnUrl=<this
-  address>&state=<fresh>`, the state also set as `__Host-app-sign-in` (10 min). The origin is the Host
-  with `X-Forwarded-Proto` (the proxy's) else the listener's scheme. Empty `PublicBaseUrl` (`PUBLICBASEURL`,
-  equal to the accounts service's, conformance-checked) sends nobody: the 404.
-- **The callback** `GET /_app/sign-in?code=&path=&state=` (under `/_app/`, before any session check):
-  the state must equal the cookie (**checked before the code is redeemed**, so a code sent to another
-  browser in a link is neither believed nor spent); the code is redeemed with this server's own
-  credential for **this origin** (`IAppSignIns.RedeemAsync`); the answer's assertion is verified for
-  `AppChannels.Apps` and **its claims alone** name the person, household and `sid`. Then the session is
-  opened, its cookie set, the state cookie cleared, and 303 to `AppSignIn.SamePath(path)` (one leading
-  `/`). A refused code is 400 and never redirected again (no loop between hosts); an outage, or an
-  assertion that does not verify, 503.
-- **Cookies**: `Secure; HttpOnly; Path=/; SameSite=Lax`, no `Domain` (`__Host-`). Lax because the
-  callback is a navigation another site started.
-- **Renewal**: once an app session's assertion has been held `Sessions:AssertionKept` (5 min, at most
-  half the accounts `AssertionLifetime`, conformance-checked), the next request asks the session refresh
-  on `apps` (`IAppSignIns.RenewAsync`), as the chat hub does per turn. Nobody (revoked, disabled), a
-  suspended household, or an assertion naming another person or `sid` **ends that app session**; an
-  outage or an unverifiable answer **serves 503 and ends nothing**. So a revoked session opens nothing
-  after at most `AssertionKept`, announcement or not.
-- **Ending**: `EndedAppSessionsListener` hears `SessionsEnded` on `accounts:sessions:ended`
-  (`REDISCONNECTIONSTRING`) and calls `EndAll(person)` — every app session of theirs, never asked
-  session by session. Empty Redis (a host run, a test) hears nothing; renewal still ends them.
-- **Wiring**: the same `CALLERS__mcp-apps` credential as the agent-names view, `ACCOUNTS__JWKSURL`
-  (`AddAssertionVerifier`), `PUBLICBASEURL`, Redis; `mcp-apps` depends on `redis`. A host run reads them
-  from `appsettings.Local.json`, the accounts service its `CALLERS__mcp-apps` from `run-local.sh`/launch.
+- **A sessionless page** is a 302 to `{PublicBaseUrl}/accounts/app-sign-in` with a fresh state, also set as
+  `__Host-app-sign-in`; the origin is the Host with the proxy's `X-Forwarded-Proto`. Empty `PublicBaseUrl`
+  sends nobody: the 404.
+- **The callback** `/_app/sign-in`: the state must equal the cookie **before the code is redeemed** (a code
+  sent to another browser is neither believed nor spent); the code is redeemed **for this origin**
+  (`IAppSignIns.RedeemAsync`) and **the verified assertion's claims alone** (`AppChannels.Apps`) name the
+  person, household and `sid`; then 303 to `AppSignIn.SamePath(path)`. A refused code is 400 and never
+  redirected again; an outage or an unverifiable assertion 503. Cookies are `Secure; HttpOnly; Path=/;
+  SameSite=Lax`, no `Domain`.
+- **Renewal** after `Sessions:AssertionKept` (at most half the accounts `AssertionLifetime`,
+  conformance-checked), via `IAppSignIns.RenewAsync`: nobody, a suspended household, or another person or
+  `sid` **ends the session**; an outage or unverifiable answer **is a 503 and ends nothing**.
+  `EndedAppSessionsListener` ends every session of a person on `SessionsEnded`.
 
 ## The app read API
 
-A built app reads the household as its viewer (the wire spelled once in `Domain/Apps/AppReads`):
+A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; the client library is
+`AppOriginFiles.Library`, whose refusal is `apps.ReadError` carrying the envelope).
 
-- **The client library** (`AppOriginFiles.Library`, `/_app/apps.js`): a classic script injected first,
-  so `globalThis.apps` exists before any of the app's scripts; `/_app/apps.mjs` is the same object as an
-  ES module (default and named exports). `read(filePath, {offset, limit})`, `glob(basePath, pattern)`,
-  `info(path)`, `search(query, {directoryPath | filePath, …})`, `query(path, sql, {maxRows})` answer the
-  file tools' JSON; `blob(path)` a `Blob`. A refusal throws `apps.ReadError` carrying the envelope
-  (`errorCode`, `message`, `retryable`, `hint`, `envelope`) and the `path`; the origin's 404 is
-  `authentication`, anything else unanswered `transient_dependency`. Dependency-free, one expression.
-- **`POST /_vfs/<operation>` on the origin** (`AppPages.ReadAsync`), the body the tool's arguments (one
-  JSON object, at most 64 KiB), **from a page of that origin alone** (the `Origin` header's authority is
-  the Host: every app shares the apps domain, so a sibling app's page is same-site and its POST carries
-  this origin's cookie): the viewer and app settled exactly as for a page — nobody, a viewer
-  who may not open the app (`AppPages.AccessAsync`; spaces that cannot be read, a 503 envelope), or another origin's page is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
-  the origin's own manifest** (the served commit's on the published origin, so a tree edit widens
-  nothing until published, and no more than an owner approved while it is an app space; the tree's on the
-  preview), the building agent from `app.meta.json`, and the
-  assertion the app session holds, renewed first if it was due. The answer goes back as it came, under the
-  origin's policy, `no-store`; an agent unreachable, or one that did not believe this server, is a 503
-  `transient_dependency` envelope.
-- **The agent's route** `POST /internal/app-reads/<operation>` (`AppReadsApi`, on the compose network
-  alone, never routed by Caddy): believes **the apps server's own credential** — the one the agent holds
-  for the apps server it dials (`sharedServers.apps` → `MCP__SECRETS__mcp-apps` = `MCP_SECRET_APPS`, the
-  apps server's `MCP__SHAREDSECRET`), so no secret exists for this alone and the agent API's secret,
-  which SexyTime's server holds, opens nothing here — for the app (id, building agent, reads), and **the
-  viewer's `apps` assertion** (`VerifyTurnAsync` for `AppChannels.Apps`, a person) for who reads — or,
-  from a check, the agent's own call token in `AppReads.CheckCallTokenHeader` ("Checks"), never both. No
-  other header is read. Then, per read: the household's standing (`HouseholdStanding`, the turn's rule:
-  suspended or disabled is `permission_denied`, unreadable `transient_dependency`), the registry
-  (`ReadRegistryCache` over `AgentReadRegistries`), and `AppRead` over the registry's `VfsCall`. 200 the
-  tool's JSON or the bytes, 422 the envelope, 401 not believed.
-- **What is read** (`AppRead`, Domain): each operation the file tool's own call (`VfsCall.ToolAsync`,
-  the tool's result shape on virtual paths), the blob the bridge's byte read (`VfsCall.ReadAsync`, so
-  `vfsBridge:maxFileBytes` applies). Refused with `permission_denied`: an operation not in
-  `AppReads.Operations` (nothing that changes anything is reachable), a path whose mount point — the
-  resolved one, else the path's first segment — is not in `reads` (checked per request: the cached
-  registry is shared by every app of that agent and viewer), and a tool the building agent is not offered
-  or whose whitelist would ask (`ReadRegistry.Permission`, `Offered`). A mount the app reads that is not
-  mounted while a household server is offline is `transient_dependency` naming the offline servers (a
-  server's mount point is known only once reached). A building agent the household no longer has refuses
-  every read, naming it.
-- **The cache** (`ReadRegistryCache`): one registry per (household, agent, person), built once
-  (single-flight), leased per read; every lease asks `IsStaleAsync` and a stale one is rebuilt; one nobody
-  leased for `appReads:registryIdle` (2 min, agent appsettings) is let go; an evicted one is disposed only
-  when its last lease ends; a failed build is never kept. Disposed with the host.
-- **Wiring**: `AGENTURL: http://agent:8080` on `mcp-apps` (empty answers every read unavailable; a host
-  run's `appsettings.Local.json` names 5000), conformance-checked with the credential pair and the route
-  off the proxy.
+- **`POST /_vfs/<operation>` on the origin** (`AppPages.ReadAsync`), one JSON object of the tool's arguments
+  (≤ 64 KiB), **from a page of that origin alone** (the `Origin` authority is the Host: sibling apps are
+  same-site and carry this cookie). Settled as a page is, then forwarded (`AgentReads`) with **the reads of
+  the origin's own manifest** — the served commit's, so a tree edit widens nothing until published, and no
+  more than approved while shared — the building agent from `app.meta.json`, and the session's assertion,
+  renewed first if due. Answered `no-store`; an agent unreachable or not believing this server is a 503
+  `transient_dependency`.
+- **The agent's route** `POST /internal/app-reads/<operation>` (`AppReadsApi`, never routed by Caddy)
+  believes **the apps server's own credential** (`MCP_SECRET_APPS`; the agent API's secret opens nothing
+  here) for the app, and for who reads **the viewer's `apps` assertion** (a person) or, from a check, the
+  agent's own call token (`AppReads.CheckCallTokenHeader`), never both; no other header. Then, per read
+  (`AppReader`), the household's standing as a turn's (`HouseholdStanding`: a refusal `permission_denied`,
+  unreadable `transient_dependency`), the registry, and `AppRead`. 200 the tool's JSON or the bytes, 422 the
+  envelope, 401 not believed — what `AgentReads` passes on.
+- **What is read** (`AppRead`): each operation the file tool's own call (`VfsCall.ToolAsync`), the blob the
+  bridge's byte read (`vfsBridge:maxFileBytes`). `permission_denied`: an operation outside
+  `AppReads.Operations` (nothing that writes is reachable), a mount point (resolved, else the first segment)
+  not in `reads` — **checked per request**, since the cached registry is shared by every app of that agent
+  and viewer — and a tool the agent is not offered or whose whitelist would ask (`ReadRegistry.Offered`,
+  `Permission`). A malformed argument is `invalid_argument` (`ToolError.CodeFor`); a read mount missing
+  while a household server is offline is `transient_dependency` naming it; an agent the household no longer
+  has refuses every read.
+- **The cache** (`ReadRegistryCache`): one registry per (household, agent, person), single-flight, leased
+  per read; a stale one (`IsStaleAsync`) is rebuilt, one idle `appReads:registryIdle` let go, an evicted one
+  disposed when its last lease ends, a failed build never kept.
+- **Wiring** (`AGENTURL`, the credential pair, the route off the proxy) is conformance-checked.
 
 ## Checks
 
-`./check` (`Checks/AppChecks`, the mount's `CheckAsync`): the preview opened in a headless Chromium of
-its own as the person whose turn ran it; in the deployment that browser runs in the `apps-browser`
-container, never in `mcp-apps`.
+`./check` (`AppChecks`) opens the preview in a headless Chromium of its own as the turn's person, in the
+`apps-browser` container, never in `mcp-apps` (whose image has the Playwright driver alone).
 
-- **Arguments**: `--viewport WxH` (repeatable, at most 4, each side 240–3840; default a phone `390x844`
-  and a desktop `1280x800`), `--path /route` (default `/`). Anything else is exit 2. The tree's
-  `app.json` must parse, or exit 1 with nothing checked.
-- **Who it reads as**: the call's own token (`call.VerifiedToken`, handed to the mount as
-  `FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps every other reader out). The check
-  opens an app session itself (`AppSessions.OpenCheck`, `ViewerProof.CheckCall`): the preview alone, never
-  renewed, expiring at the deadline, ended when the check does and by `EndAll`. Its `/_vfs/*` reads carry
-  the token in `AppReads.CheckCallTokenHeader` instead of an assertion (`AgentReads`), and the agent
-  believes it as **its own signature for the apps server it dials, naming a person**
-  (`CheckCallVerifier`: the agent's `SigningKeyStore`, audience `TokenAudiences.CallTo(sharedServers.apps)`,
-  the wall clock; the guest, nobody, another server's or both headers at once are 401). Nothing is minted
-  for a check: the token arrives with at least the agent's `callTokens:refreshMargin` (30 s) left, so
-  `Checks:Deadline` is at most that (`DeploymentConformanceTests`).
-- **The browser** (`Checks/CheckBrowser`, one options object for both ways of getting it): full Chromium
-  (`Channel = "chromium"`, new headless; the headless shell ignores the secure-origin flag), **one per
-  check**, **always in Chromium's own sandbox** (`ChromiumSandbox = true`; no fallback to `--no-sandbox`:
-  a host that cannot sandbox fails the check "the browser could not run"), launched with
-  `--host-resolver-rules=MAP *.<AppsDomain> <Checks:Browser:Pages>` (the app is reached at this server's
-  pages listener, never through DNS; empty is `127.0.0.1:<Listeners.Pages>`) and
-  `--unsafely-treat-insecure-origin-as-secure=http://<preview host>` (the `__Host-` cookie and the worker
-  need a secure context; the flag is per process, hence one browser each, and closing it is the
-  deadline). The session cookie is set host-only over CDP. **`Checks:Browser:Endpoint` empty launches it
-  here** (a host run, the tests); **set, it connects** to a Playwright browser server and sends the same
-  options in `x-playwright-launch-options`, and the server launches the browser for that connection
-  alone and closes it with the connection.
-- **`apps-browser`** (`DockerCompose/apps-browser`, compose; `DeploymentConformanceTests` pins all of it):
-  `node:22-bookworm-slim` + `playwright-core@<Microsoft.Playwright's version>` (the handshake refuses a
-  minor mismatch) + full Chromium alone, running `run-server --unsafe` (without `--unsafe` the server
-  drops `args` and `chromiumSandbox`) as `node` on **port 10080, one of Chromium's restricted ports**, so
-  no page, nor a compromised renderer's network stack, can dial the server that would launch anything.
-  It holds **no secret, setting, volume, port or capability** (`cap_drop: ALL`, `no-new-privileges`,
-  `read_only` with `/tmp` and `/home/node` in memory, `stdin_open` since the server exits when stdin
-  closes, `init`), and sits on the `apps-browser` network with `mcp-apps` alone, **`internal: true`**: no
-  route out of the host (not the LAN, the host's published ports, `host.docker.internal` nor the
-  internet); it reaches `mcp-apps` alone (8081, 8082, and 8080 behind the server's secret), and shares no
-  network with Redis, the agent or the accounts service. `mcp-apps` reaches it at
-  `CHECKS__BROWSER__ENDPOINT: ws://apps-browser:10080/` and is reached by it at `CHECKS__BROWSER__PAGES:
-  mcp-apps:8081` and `CHECKS__BROWSER__PROXY: mcp-apps:8082` (topology values; the service's DNS name,
-  which `compose run` does not give).
-- **The egress proxy is the browser's one way out** (`Checks/CheckEgress`, a hosted service only when
-  `Checks:Browser:Proxy` is set; `DeploymentConformanceTests` pins the internal network and the value).
-  The browser is launched with `--proxy-server=http://<Proxy>` and `--proxy-bypass-list=<-loopback>;*.<AppsDomain>`
-  (app origins direct to the pages listener by the `MAP` rule; loopback through the proxy, which Chromium
-  would otherwise send direct; the later rule wins, so a `.localhost` apps domain, loopback too, still goes
-  direct: `AppChecksTests` runs on `apps.localhost` as well). The proxy: **CONNECT alone** (everything a check page reaches outside is
-  https; anything else 405), the target resolved **once**, refused 403 unless **every** address it
-  answers is public (`EgressAddresses.IsPublic`: default deny, global unicast minus private, loopback,
-  link-local, CGNAT, benchmarking, documentation, multicast, reserved, Teredo/6to4/NAT64 judged by their
-  IPv4), then **dialled at a judged address, never the name again** (no DNS rebinding); bytes piped both
-  ways. A redirect's next hop is a new CONNECT, judged the same. **Bound on `mcp-apps`'s own address
-  facing the browser server** (the Endpoint host resolved, the local address the kernel would send from),
-  so no other container on `jackbot` gets a way out through it; loopback when the browser is launched
-  here. A raw listener (`Listeners.Egress`, 8082), outside the MCP gate and the pages listener. Why this
-  over squid's `dst` ACLs: squid judges a name on its own DNS cache and may resolve again to connect, so a
-  zero-TTL rebinding can slip between; this dials what it judged, one class with no image of its own to pin.
-  The host's public address, on a host that has one, is reached on its public ports alone, which the
-  internet reaches too. **The sandbox's syscall filter**
-  (`DockerCompose/seccomp/ziggurat-apps-browser.json`) is Docker 29.8.0's default (moby/profiles
-  `seccomp/v0.2.3`, as the sandbox's) plus `clone`/`unshare` for any namespace (the kernel still refuses
-  any but a user namespace without `CAP_SYS_ADMIN` over it) and `chroot` (the default's needs
-  `CAP_SYS_CHROOT`, which is dropped); `mount`, `setns`, `bpf` and the rest of `SYS_ADMIN`'s grant stay
-  refused. `chrome://sandbox` there says "adequately sandboxed" (verified on Docker Desktop's WSL2; a
-  host whose AppArmor or `kernel.apparmor_restrict_unprivileged_userns` refuses the container a user
-  namespace fails every check, and is fixed on the host, never with `--no-sandbox`). The `mcp-apps` image carries the
-  Playwright driver only (made executable in its publish stage), no browser.
-- **What the page reaches**: a context route lets through only the preview's origin, `Cdns` and the tree
-  manifest's `connect`; a request anywhere else (a navigation onto the deployment's network included) is
-  aborted and reported `blocked`. The route sees only a request's first URL, so an allowed origin can
-  still redirect the browser on: the egress proxy refuses every private hop, and **nothing is kept of a
-  page that is not the preview** — the
-  screenshot and snapshot are taken and kept only while the main frame is on the preview's origin, an
-  assertion runs only then (one that ends elsewhere fails "left the preview"), console entries are
-  recorded only then, and the viewport's `error` says it left. The policy is never bypassed, so its
-  violations are what the app would meet.
-- **Per viewport**, a context of its own: load, then up to `Checks:Settle` (5 s) for the network to go
-  quiet (`settled`), then the screenshot (the viewport, scale 1), the aria snapshot of `body`, then each
-  **assertion file** — `checks/*.js` at the tree's root, sorted, read here as text and evaluated in the
-  page as the body of an async function: returning passes (its value is the message), throwing fails
-  (the error's message), not parsing fails. Nothing of the app runs outside the page.
-- **Output**: a run directory (stale ones swept as the next check starts) under `BuiltAppStore.ChecksDirectory` (`<app>/checks/`, beside `git/` and
-  `tree/`, never committed or served, not counted in the repository's bytes), swapped in whole as
-  `latest/` when done. The mount shows it read-only at `/<slug>/.checks/latest/` (`<W>x<H>.png` per
-  viewport, `report.json`); the PNGs come through the byte read, so `file_read` shows them. `report.json`:
-  app, origin, path, times, `deadline`, `deadlineHit`, `error` (the browser would not run), and per
-  viewport `screenshot`, `settled`, `error` (navigation), `console` (type, text, location; `uncaught` for
-  a page error), `failedRequests` (status ≥ 400 or the failure), `policyViolations` (from
-  `securitypolicyviolation`), `accessibility`, `assertions` (file, passed, message); lists capped at 200.
-- **The answer**: a line per viewport (console errors, failed requests, violations, assertions) and where
-  the files are; exit 1 when an assertion failed, the deadline was hit or the browser would not run.
-- **Limits** (`Checks` in appsettings): `PerHousehold` (1) and `Total` (2) concurrent checks, refused
-  `permission_denied` naming the limit and value, never queued; `Deadline` (30 s) stops the check, closing
-  its browser, and the report and answer say so.
+- **It reads as the call's own token** (`FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps
+  every other reader out), on an app session of its own (`AppSessions.OpenCheck`): the preview only, never
+  renewed, ended with the check. The agent believes the token as **its own signature for the apps server,
+  naming a person** (`CheckCallVerifier`: its `SigningKeyStore`, audience
+  `TokenAudiences.CallTo(sharedServers.apps)`; the guest, nobody, another server's, or both headers are
+  401). Nothing is minted, so `Checks:Deadline` is at most the agent's `callTokens:refreshMargin`
+  (`DeploymentConformanceTests`).
+- **The browser** (`CheckBrowser`): full Chromium (the headless shell ignores the secure-origin flag), **one
+  per check**, **always in Chromium's sandbox** — no `--no-sandbox` fallback; a host that cannot sandbox
+  fails the check — with app origins mapped to the pages listener by a host-resolver rule, never DNS. An
+  empty `Checks:Browser:Endpoint` launches it here; set, it connects to the Playwright server.
+- **`apps-browser`** (`DeploymentConformanceTests` pins it): `run-server --unsafe` (without it the server
+  drops `args` and `chromiumSandbox`) on **port 10080, a Chromium-restricted port**, so no page can dial the
+  launcher; **no secret, setting, volume, port or capability**, read-only; on a network with `mcp-apps`
+  alone, **`internal: true`** — no route to the LAN, the host or the internet, nothing shared with Redis,
+  the agent or accounts. Its seccomp profile is Docker's default plus namespace `clone`/`unshare` and
+  `chroot`; a host refusing a user namespace is fixed on the host, never with `--no-sandbox`.
+- **The egress proxy is the browser's one way out** (`CheckEgress`): **CONNECT only**, the target resolved
+  **once** and refused unless **every** address is public (`EgressAddresses.IsPublic`, default deny), then
+  **dialled at a judged address, never the name again** (no DNS rebinding); a redirect's hop is a new
+  CONNECT. A raw listener (`Listeners.Egress`) outside the MCP gate and the pages listener, bound on
+  `mcp-apps`'s address facing the browser server, so no other container gets out through it. The bypass list
+  sends app origins direct and loopback through the proxy (the later rule wins, so a `.localhost` apps
+  domain still goes direct).
+- **What the page reaches**: a context route lets through the preview's origin, `Cdns` and the tree's
+  `connect` alone (else `blocked`), and **nothing is kept of a page that is not the preview** — screenshot,
+  snapshot, console and assertions only while the main frame is on it. The policy is never bypassed.
+  Assertion files (`checks/*.js`) are read here as text and evaluated in the page, so nothing of the app
+  runs outside the page.
+- **Output** goes under `BuiltAppStore.ChecksDirectory` (never committed, served or counted), swapped in
+  whole as `latest/`, shown read-only at `/<slug>/.checks/latest/`. Concurrency limits (`PerHousehold`,
+  `Total`) refuse `permission_denied`, never queue; the deadline closes the browser.
 
 ## Runtime errors
 
-What a page met in somebody's browser, for the agent to read when a person says the app is broken (the
-wire and shape spelled once in `Domain/Apps/AppErrors`):
+What a page met in somebody's browser (wire in `Domain/Apps/AppErrors`), for the agent to read.
 
-- **The client library reports** (`AppOriginFiles.Reader`, its listeners installed once with the library):
-  every uncaught error (`ErrorEvent`; a resource load failure is not one), unhandled rejection and failed
-  or refused read, as `POST /_errors` on the origin, `keepalive`, swallowing its own failures. A failed
-  read is reported as the read (operation, path, envelope) and its `ReadError` never again as the
-  rejection it becomes; an Error is its `name: message` and stack; a thrown or rejected value that is no
-  Error is named by its type alone, so what the app held never leaves the page. The same report goes once
-  a page, at most ten a minute.
-- **`POST /_errors`** (`AppPages.ReportAsync`, then `AppErrorReports`): a POST, so no app file shadows it,
-  and outside the worker. From a page of that origin alone, the viewer and app settled exactly as for a
-  read: nobody, a viewer who may not open it, another origin's session or a foreign page is the one 404. **The body is the page's word
-  only for what went wrong**, held strictly (`AppErrorReport.Parse`, 16 KiB, unknown fields refused):
-  `kind` (`error`, `rejection`, `read`), `message` (1–1000), `stack` (≤ 8000), `route` (the path alone,
-  no query or fragment, ≤ 1000), and for a read alone `read` (`operation` of `AppReads.Operations`, `path`,
-  `envelope` with a known `errorCode`, message, hint). Anything else is 400. **The server stamps the
-  rest**: `time` (its clock), `userAgent` (the header, cut at 500), `viewer` (the session's user id),
-  `origin` (`published`/`preview`), and the envelope's `retryable` from this side's taxonomy.
-  **At most `Errors:PerSessionPerMinute` (30) a session**, a fixed minute from its first, then 429 and
-  dropped. 204 when kept.
-- **Only the author's own report keeps the page's text.** Every word of a report is the page's (it may
-  POST `/_errors` itself, `pushState` its route, set a User-Agent in Firefox), and the author reads the
-  file, so another member's is kept **reduced** (`AppErrorReduction`, checked against what that origin
-  serves, `AppPages.ServedFiles.ServedPathAsync`, every kept path in the origin's own spelling, rebuilt
-  from its segments: the page's slashes are the page's word too): `kind`; `name`, a standard ECMAScript error type from the
-  message's prefix, else `Error`; `frames`, the stack's first `MaxFrames` (10) places on the report's
-  Host whose path is a served file (or `/_app/`'s), `/path:line:column`, no query; `route` only when it
-  names a served file or directory; a read's `operation`, `path` cut to its mount point only when the
-  origin's manifest reads it, and the envelope's code; `reduced` (`AppErrorReduction.Note`, telling the
-  agent to ask the person or `./check`). No message, stack, user agent, hint or envelope message. What
-  remains is a numeric channel (which frames, lines, columns, type, kind and served route), bounded by the
-  frame cap and the per-session minute.
-- **Kept** (`Store/AppErrorLog`): `<app>/errors` (`BuiltAppStore.ErrorsFile`, beside `git/` and `tree/`,
-  never committed, served or counted in `SizeOf`), one JSON object a line, **newest first by arrival**,
-  written unescaped (`UnsafeRelaxedJsonEscaping`: read by the agent, never served), the newest
-  `Errors:Kept` (100), rewritten whole one report at a time per app; a deleted app's report is
-  dropped, its directory never made again. The mount shows it read-only at **`/<slug>/errors`** once one
-  was reported (listed, read and searched as text; every write refused as a reserved name's).
-- **The operator sees a person's report** as an `ErrorEvent` (`Service` `mcp-apps`, `ErrorType`
-  `AppErrors.ErrorType` = `AppRuntimeError`, message `<slug>-<id>[-preview]: <kind>: <message>` for the
-  author's own and `…: <kind>: <name>` for a member's, never the stack nor a member's text) under **the app's own household** (`ForHousehold(app.HouseholdId)`), on the metrics feed the
-  apps server publishes to when it has Redis (`AddMetricsPublishing`, its heartbeat the health tile, so it
-  is no `HttpProbes` target; the shared filter's failed tool calls reach the feed too). **A check's
-  session's report is answered 204 and kept nowhere**, before its minute is counted: `report.json` already
-  shows the agent those page errors, every viewport of every check is a new page whose reports would push
-  people's out of `Errors:Kept`, and no person met them.
-- The author's own message is an Error's own text, held back by nothing but the shape and the caps (an
-  engine message may quote its input: Chromium's `JSON.parse` names the text it could not parse): it is
-  their own data, on their own app.
-
-## Tests
-
-`McpAppsServerTests` and `AppsPublishingTests` drive the server in process through its MCP tools
-(`AppsServer`, after `SugaryServer`, both listeners open); `AppsServingTests` its pages listener by Host
-with sessions the test opens (`SessionFor`, an assertion signed by `TestAssertions`), `AppsSignInTests`
-the sign-in against a real `AccountsServer` signing with the test key on its clock (handed to the apps
-server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the same in Chromium on
-`apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in, a
-pinned script and its package's file loading while another package's or version's import is refused, the
-shell's files from the worker's cache until a publish replaces them and offline, an ended session's reload
-sent to sign in); `AppsSpacesTests` also a narrowed approval and a publish each a new worker version;
-`AppsServingTests` also a rollback serving its commit's own pinned code;
-`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests` (pinned sources, hostile
-addresses), `OutsideCodePinningTests` (problems and what passed),
-`InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
-`HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature;
-`SandboxAppBuildE2ETests` (the sandbox E2E collection) a real npm build in the home (the image's pinned Node,
-`.claude/rules/sandbox.md`) and a build's output copied in by a real sandbox command over the bridge, `node_modules` refused, published from `dist`; `AppReadsApiTests` the agent's
-route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
-`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsSpacesTests`
-who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing,
-`AppsPersonsAppsTests` a person's apps and `PersonsAppsClientTests` the hub's client of it against a real
-accounts service, `AppSpacesE2ETests` (its own E2E collection: the WebChat stack runs `mcp-apps` and
-answers `*.apps.localhost` on https with Caddy's local certificate, which the collection's own Chromium maps
-to by a host-resolver rule; the app and its vault note are built over `/mcp` as the second household's
-`WebChatStack.AppReaderAgent`) a member opening a shared app from the switcher through the app sign-in,
-reading through `/_vfs/*`, and another household's 404, `AppsSpacesTests`/`AppsReadsTests` a publish widening a shared app
-(policy, read refused, the publish answer),
-`AppSpacesOverTheWireTests` an app space end to end on a real accounts service and Redis; `AppsRuntimeErrorsTests`
-`/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
-envelope, `Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's
-report kept nowhere, a member's report reduced with no text of the page's in the file or the event), a
-Chromium case the library's reporting; `AppChecksTests` the check
-in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
-turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
-deadline), launched in process and once on a local `run-server --unsafe` from the bundled driver
-(`PlaywrightBrowserServer`), a dead endpoint, and `chrome://sandbox` both ways; `CheckBrowserTests` that
-`Checks:Browser:Pages` reaches the `MAP` rule and `Proxy` the proxy flags; `CheckEgressTests` the proxy on an
-arranged network (a public origin tunnelled at its judged address, a redirect's private next hop refused by
-name or address with nothing dialled, a rebinding name never asked twice, plain http refused),
-`EgressAddressesTests` the classifier, `AppChecksTests` a check behind the proxy dialling no private address
-its route allows; `AppReadsApiTests` also the check's call token; the deployment and server tables
-(`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
+- **The client library reports** uncaught errors, rejections and failed reads to `POST /_errors`; a thrown
+  value that is no Error is named by its type alone, so what the app held never leaves the page.
+- **`POST /_errors`** (`AppErrorReports`): from a page of that origin alone, settled as a read (the one
+  404). **The body is the page's word only for what went wrong**, parsed strictly (`AppErrorReport.Parse`);
+  **the server stamps the rest** (time, user agent, viewer, origin, `retryable` from this side's taxonomy);
+  `Errors:PerSessionPerMinute`, then 429.
+- **Only the author's own report keeps the page's text.** A member's is **reduced** (`AppErrorReduction`):
+  kind, a standard error name, frames and route only where they name a file the origin serves (in the
+  origin's own spelling), a read's operation, mount point (only one the manifest reads) and code, and
+  `reduced` (`AppErrorReduction.Note`). No message, stack, user agent or hint: a bounded numeric channel, so
+  an error carries nothing past the approved reach.
+- **Kept** at `<app>/errors` (`AppErrorLog`: newest first, the newest `Errors:Kept`, written unescaped since
+  it is never served; never committed or counted; a deleted app's report is dropped), shown read-only at
+  `/<slug>/errors`.
+- **The operator sees** an `AppRuntimeError` `ErrorEvent` under **the app's own household** — a member's
+  without their text. **A check's report is answered 204 and kept nowhere** (`report.json` already shows
+  it).
