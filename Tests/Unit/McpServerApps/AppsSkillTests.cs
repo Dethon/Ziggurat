@@ -5,6 +5,7 @@ using Domain.Apps;
 using Domain.DTOs.FileSystem;
 using Domain.Prompts;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 using McpServerApps.Checks;
 using McpServerApps.Publishing;
 using McpServerApps.Serving;
@@ -50,11 +51,24 @@ public class AppsSkillTests
         named.ShouldBe(AppsFileSystem.Actions, ignoreOrder: true);
     }
 
+    // A file tool is named as the model calls it; a wrong leaf passes the staleness walk, which only
+    // refuses bare and fs_ names.
+    [Fact]
+    public void EveryFileToolItCalls_IsOneTheAgentIsOffered()
+    {
+        var named = Regex.Matches(_body, @"domain__filesystem__(\w+)").Select(m => m.Groups[1].Value).Distinct().ToList();
+
+        named.ShouldNotBeEmpty();
+        named.ShouldBeSubsetOf(FileTools());
+        named.ShouldAllBe(tool => _body.Contains(FileSystemToolFeature.Callable(tool)));
+    }
+
     // The flags an action takes, as the mount describes its exec.
     [Fact]
     public void EveryFlagItPasses_IsOneTheMountsActionsTake()
     {
-        var exec = Mount().DescribeExec;
+        using var provider = ConfiguredServer();
+        var exec = provider.GetRequiredService<AppsFileSystem>().DescribeExec;
 
         Regex.Matches(_body, @"--[a-z]+").Select(m => m.Value).Distinct()
             .Where(flag => !exec.Contains(flag + " ", StringComparison.Ordinal))
@@ -207,10 +221,21 @@ public class AppsSkillTests
             .Build()
             .Get<AppsSettings>()!;
 
-    private static AppsFileSystem Mount()
+    private static ServiceProvider ConfiguredServer()
     {
         var services = new ServiceCollection();
         McpServerRegistrations.Get("apps").Configure(services);
-        return services.BuildServiceProvider().GetRequiredService<AppsFileSystem>();
+        return services.BuildServiceProvider();
     }
+
+    // Every file tool the agent is offered, by the leaf its own class declares.
+    private static IReadOnlyList<string> FileTools() =>
+    [
+        .. typeof(VfsExecTool).Assembly.GetTypes()
+            .Where(t => t.Namespace == typeof(VfsExecTool).Namespace && t.Name.StartsWith("Vfs") && t.Name.EndsWith("Tool"))
+            .Select(t => t.GetField("Name", BindingFlags.Public | BindingFlags.Static))
+            .OfType<FieldInfo>()
+            .Where(f => f.IsLiteral)
+            .Select(f => (string)f.GetRawConstantValue()!)
+    ];
 }

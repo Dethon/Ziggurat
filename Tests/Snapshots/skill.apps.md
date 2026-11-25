@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1512 / 1600 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1559 / 1600 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -31,7 +31,7 @@ A built app is static files in a git repository at `/apps/<slug>/`, served on an
 
 ### The page's limits
 
-Scripts come from the app and three CDNs only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` and images reach the app's own origin, `data:`, `blob:` and the `connect` origins.
+Scripts come from the app and three CDNs only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` reaches the app's own origin and the `connect` origins, no others; images those, the CDNs, `data:` and `blob:`.
 
 Outside code is loaded from `https://cdn.jsdelivr.net`, `https://unpkg.com` or `https://esm.sh`, with an exact version in the URL and an `integrity` hash, or `./publish` refuses it:
 
@@ -71,7 +71,7 @@ if (meals.length === 0) throw new Error('no meals listed');
 return `${meals.length} meals`;
 ```
 
-Exit 1 means an assertion failed or the check did not finish. One check runs at a time per household.
+Exit 1 means an assertion failed or the check did not finish. A check past the household's limit is refused, never queued.
 
 ### Publishing and after
 
@@ -83,4 +83,4 @@ Exit 1 means an assertion failed or the check did not finish. One check runs at 
 
 ### When it breaks
 
-`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met, newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `viewer` and `origin` (`published` or `preview`). Read it, fix the cause, check, publish.
+`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met (the library reports uncaught errors, unhandled rejections and refused reads itself; an error the app catches and swallows never arrives), newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `viewer` and `origin` (`published` or `preview`). Read it, fix the cause, check, publish.

@@ -161,7 +161,10 @@ public class ChangeScopeTests
     // an edit of a body's words alone has to select the family that body teaches. A skill whose claims
     // no scenario tests yet (each an exemption, the apps skill's) has no family to select.
     public static TheoryData<string> SkillDocuments =>
-        [.. PromptDocuments.Skills.Where(d => d.Claims.Any(c => EvalSuite.All.Any(s => Tested(s).Contains(c.Id)))).Select(d => d.Name)];
+        [.. PromptDocuments.Skills.Where(IsTested).Select(d => d.Name)];
+
+    private static bool IsTested(PromptDocument skill) =>
+        skill.Claims.Any(c => EvalSuite.All.Any(s => Tested(s).Contains(c.Id)));
 
     [Theory]
     [MemberData(nameof(SkillDocuments))]
@@ -179,6 +182,21 @@ public class ChangeScopeTests
         selected.Select(s => s.Name).ShouldBe(
             EvalSuite.All.Where(s => Tested(s).Any(claims.Contains)).Select(s => s.Name),
             ignoreOrder: true);
+    }
+
+    // Its complement: a skill whose claims no scenario tests is still read by the same parser, and an
+    // edit of it selects nothing rather than failing the tier.
+    [Fact]
+    public void AgainstTheRealSuite_ASkillDocumentNoScenarioTests_SelectsNothing()
+    {
+        foreach (var name in PromptDocuments.Skills.Where(d => !IsTested(d)).Select(d => d.Name))
+        {
+            ChangeScope.Select(
+                    [$"Domain/Prompts/Skills/{name}.md"],
+                    file => File.ReadAllText(Path.Combine(RepositoryRoot.Path, file)),
+                    EvalSuite.All, PromptManifest.Claims)
+                .ShouldBeEmpty(name);
+        }
     }
 
     private static IEnumerable<string> Tested(Scenario scenario) =>
