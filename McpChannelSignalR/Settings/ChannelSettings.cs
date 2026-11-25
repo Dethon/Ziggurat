@@ -23,6 +23,12 @@ public record ChannelSettings : IMcpHostSettings
     // credential (Mcp:SharedSecret).
     public AccountsClientConfig Accounts { get; init; } = new();
 
+    // The apps server's MCP listener, where WebChat's space switcher asks a person's apps (APPSURL, a
+    // topology value compose sets); empty lists nobody's apps. A generic bound on that ask, so a slow apps
+    // server never holds the switcher.
+    public string AppsUrl { get; init; } = "";
+    public TimeSpan AppsTimeout { get; init; } = TimeSpan.FromSeconds(3);
+
     // The same block the Agent host binds, so the two processes writing topics agree about how
     // long a conversation lives and where the archive begins.
     public RetentionSettings Retention { get; init; } = new();

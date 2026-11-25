@@ -54,9 +54,14 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
     }
 
     // Named `apps`, since the credential asking may be several callers' at once (a host run's).
-    public async Task<ResolvedAccount?> RenewAsync(string userId, string sessionId, CancellationToken ct)
+    public Task<ResolvedAccount?> RenewAsync(string userId, string sessionId, CancellationToken ct) =>
+        SessionOnAsync(userId, sessionId, AppChannels.Apps, ct);
+
+    // A session's person on another channel the caller may ask about: the chat hub's on persons-apps, for
+    // the apps server's listing of their apps (PersonsAppsClient).
+    public async Task<ResolvedAccount?> SessionOnAsync(string userId, string sessionId, string channel, CancellationToken ct)
     {
-        using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId, AppChannels.Apps), ct);
+        using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId, channel), ct);
         return await PersonOrNobodyAsync(response, ct);
     }
 

@@ -63,6 +63,9 @@ public sealed class AppsServer : IAsyncDisposable
     // Where the proxy hands app origins: the second listener, which answers by Host and serves no /mcp.
     public string PagesAddress => $"http://127.0.0.1:{Settings.Listeners.Pages}";
 
+    // The MCP listener, where the deployment's own callers ask its listings.
+    public string McpAddress => $"http://localhost:{Settings.Listeners.Mcp}";
+
     // The server's app sessions, which the app sign-in opens; a test may open its own.
     public AppSessions Sessions => _app.Services.GetRequiredService<AppSessions>();
 

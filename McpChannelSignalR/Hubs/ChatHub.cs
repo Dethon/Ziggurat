@@ -187,6 +187,22 @@ public sealed class ChatHub(
     public async Task<IReadOnlyList<HouseholdSpace>> GetSpaces() =>
         SpaceListing.Ordered(await HouseholdSpacesAsync(Context.ConnectionAborted));
 
+    // Every place WebChat's space switcher offers the person (SpaceSwitcher): the household's spaces in
+    // its order, an app space among them with its app's link, then their own apps no space shares, marked
+    // private. GetSpaces stays the chat spaces alone, for installed clients from before. The apps are the
+    // apps server's to say, asked for the connection's session with the app ids the spaces name; when it
+    // could not be asked the chat spaces are answered all the same.
+    public async Task<IReadOnlyList<SwitcherEntry>> GetSpacesAndApps([FromServices] IPersonsApps personsApps)
+    {
+        var ct = Context.ConnectionAborted;
+        var spaces = (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+        IReadOnlyList<string> shared = [.. spaces.Where(s => s.IsApp).Select(s => s.AppId!)];
+        var apps = SignedIn.SessionId is { } session
+            ? await personsApps.ListAsync(SignedIn.UserId, session, shared, ct)
+            : null;
+        return SpaceSwitcher.Entries(spaces, apps);
+    }
+
     public async Task JoinSpace(string spaceSlug)
     {
         if (!SpaceConfig.IsValidSlug(spaceSlug))

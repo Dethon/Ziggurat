@@ -1256,6 +1256,25 @@ public class DeploymentConformanceTests
         }
     }
 
+    // WebChat's space switcher lists a person's apps, which only the apps server knows: the chat hub asks
+    // its listing on the apps server's MCP listener, on the compose network both sit on, with the accounts
+    // service's word for the connection's session on persons-apps — which only the hub may ask for — so no
+    // secret exists for this. The proxy sends nothing to that listener.
+    [Fact]
+    public void TheChatHub_AsksTheAppsServersListingOfAPersonsAppsOnItsMcpListener()
+    {
+        var compose = DeploymentFiles.Compose();
+        var hub = compose.Service("mcp-channel-signalr");
+        var mcpListener = new global::McpServerApps.Settings.AppListeners().Mcp;
+
+        hub.Environment.GetValueOrDefault("APPSURL").ShouldBe($"http://mcp-apps:{mcpListener}");
+        compose.Service("mcp-apps").Networks.ShouldContain(hub.Networks.ShouldHaveSingleItem());
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.PersonsApps.Path)?.Upstream.ShouldNotBe("mcp-apps:8080", host.Name);
+        }
+    }
+
     // The household import can make the operator and mint their link, so the accounts service admits
     // it by a credential nothing else holds — one the deployment leaves empty except for the run.
     [Fact]

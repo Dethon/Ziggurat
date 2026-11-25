@@ -128,6 +128,10 @@ services:
       # Where the accounts service publishes the keys its assertions verify with: this app believes
       # the person X-Ziggurat-Assertion names, never the plain headers beside it.
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
+      # Where WebChat's space switcher learns a person's apps: the apps server's listing on its MCP
+      # listener, asked with the accounts service's word for the session on persons-apps. No dependency:
+      # an apps server not up costs the switcher its apps, never the chat.
+      APPSURL: http://mcp-apps:8080
     networks:
       - jackbot
     depends_on:
