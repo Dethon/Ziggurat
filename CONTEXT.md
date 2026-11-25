@@ -681,6 +681,45 @@ own channel server is told its household's catalogue; a channel the deployment d
 household and is told the home's agents, never read as a household's list.
 _Avoid_: agent catalog (for a household's), registered catalogue (for a household's), agent list
 
+## Built apps
+
+**Built app**:
+A small web app an agent built for a person, kept by the apps server with its history and served on
+an origin of its own, reading the household as whoever is viewing it and changing nothing.
+_Avoid_: app (alone: that is an app behind the proxy, such as WebChat or Sugary), site, widget, mini-app
+
+**App manifest**:
+A built app's `app.json`: its name and colour, the directory it serves, the mount points it reads and
+the outside origins it fetches. Writing one is how a built app is created.
+_Avoid_: config, package.json, web manifest (the apps server makes that one from it)
+
+**Preview**:
+A built app's working tree as it stands, served on an origin of its own to its author alone, before
+anything is published.
+_Avoid_: draft, staging, dev build
+
+**Check**:
+One run of a built app's preview in the apps server's own browser, as the person whose turn asked for
+it, reported back into the app as screenshots, what the page logged and refused, and its own
+assertions.
+_Avoid_: test run, smoke test, lint
+
+**App space**:
+A household space whose page is a built app an owner shared, found by every member in the space
+switcher. It holds no conversations, and its app cannot be deleted while it is one.
+_Avoid_: shared app, public app, app topic
+
+**Approved reach**:
+The mount points and outside origins an owner approved when sharing a built app as an app space.
+While it is shared, the published app is granted what its manifest asks only within that reach; what
+a later publish asks beyond it waits on an owner.
+_Avoid_: permissions, grants, scopes (alone)
+
+**App sign-in**:
+The trip through the accounts service that gives a built app's origin a session of its own for the
+person signed in to Ziggurat, without a second passkey prompt.
+_Avoid_: handoff (web browsing's login handoff is another thing), SSO, login
+
 ## Outposts
 
 **Outpost**:
