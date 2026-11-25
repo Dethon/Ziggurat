@@ -934,6 +934,21 @@ public class DeploymentConformanceTests
         new global::McpServerApps.Settings.AppSessionSettings().AssertionKept.ShouldBe(kept);
     }
 
+    // A check's page reads on the token of the call that ran it, which the agent re-mints within its
+    // refresh margin of expiry, so it arrives with at least that margin left: a check stopped within it
+    // never reads on a token that has run out.
+    [Fact]
+    public void TheAppsServersCheckDeadline_EndsBeforeTheCallsTokenDoes()
+    {
+        var deadline = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Checks", "Deadline").GetString()!, CultureInfo.InvariantCulture);
+        var margin = TimeSpan.Parse(
+            ShippedSetting("Agent", "callTokens", "refreshMargin").GetString()!, CultureInfo.InvariantCulture);
+
+        deadline.ShouldBeLessThanOrEqualTo(margin);
+        new global::McpServerApps.Settings.AppCheckSettings().Deadline.ShouldBe(deadline);
+    }
+
     // A built app's reads go from the apps server to the agent on the compose network, believed on the
     // apps server's own credential: the one the agent already holds for the apps server it dials, so no
     // secret exists for this alone and holding the agent API's opens nothing here. The route is never
