@@ -39,7 +39,8 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   jonas template, and withheld from every definition by the household's **`apps` feature**
   (`FeaturesSection.Apps`), which is **off by default and the operator's alone**: an owner's features
   save strips `apps` from what it sent and from its `loaded`, then keeps the stored value
-  (`HouseholdFeaturesAdmin`), because the server spends the deployment's shared storage.
+  (`HouseholdFeaturesAdmin`), because the server spends the deployment's shared storage. The operator
+  sets it from the dashboard's household list (`admin-operator.md`, "The apps feature").
 - **Each call acts for the call token's person** (`Principal.Of(caller.Conversation)?.Account`, as
   Sugary's mount); their household is the account's tenant. A call naming nobody, or the guest, is
   refused `permission_denied` on every operation, never shown an empty list.

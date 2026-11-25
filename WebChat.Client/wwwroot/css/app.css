@@ -3683,6 +3683,10 @@ select:focus:not(:focus-visible) {
     accent-color: var(--accent);
 }
 
+.admin-toggle-fixed {
+    cursor: default;
+}
+
 .admin-toggle-text {
     display: flex;
     flex-direction: column;

@@ -40,6 +40,14 @@
                     </span>
                 </label>
             }
+            @* Shown, never sent: the operator's alone (HouseholdFeaturesAdmin keeps an owner's save off it). *@
+            <label class="admin-toggle admin-toggle-fixed">
+                <input type="checkbox" name="apps" checked="@_state.Features.Apps" disabled />
+                <span class="admin-toggle-text">
+                    <span class="admin-field-label">Apps</span>
+                    <span class="admin-field-hint">@FeatureHints.Apps</span>
+                </span>
+            </label>
             <div class="admin-actions">
                 <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
             </div>
