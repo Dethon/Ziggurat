@@ -16,6 +16,7 @@ public sealed record SharedServers
     public string? Timers { get; init; }
     public string? Sugary { get; init; }
     public string? Idealista { get; init; }
+    public string? Apps { get; init; }
 
     public IReadOnlyList<string> All => [.. Listed().Select(s => s.Address).OfType<string>()];
 
@@ -39,6 +40,7 @@ public sealed record SharedServers
         (Scheduling, f => f.Scheduling),
         (Timers, f => f.Timers),
         (Sugary, f => f.Sugary),
-        (Idealista, f => f.Idealista)
+        (Idealista, f => f.Idealista),
+        (Apps, f => f.Apps)
     ];
 }

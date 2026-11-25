@@ -41,7 +41,7 @@ document's problems name the field, never its value, which may be a key.
 | `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation) |
 | `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
 | `keys` | `KeysSection` | `openRouter`, `idealista`, `braveSearch`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
-| `features` | `FeaturesSection` | six bools; default all on but Idealista |
+| `features` | `FeaturesSection` | seven bools; default all on but Idealista and `apps`, which only the operator sets (an owner's save keeps the stored value, `HouseholdFeaturesAdmin`) |
 | `spaces` | `SpacesSection` | at least one space |
 
 - An owner changes only an agent's name and custom instructions (4c): a definition entry carrying a

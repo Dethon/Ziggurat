@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
+using Accounts.Configuration;
 using Domain.DTOs;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
@@ -99,6 +101,46 @@ public sealed class HouseholdFeaturesAdminTests(RedisFixture redis) : IClassFixt
         (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Problems.ShouldNotBeEmpty();
         (await FeaturesAsync(admin)).ShouldBe(new FeaturesSection());
         (await ChangesAsync(admin)).ShouldBeEmpty();
+    }
+
+    // The apps feature is the operator's alone: an owner's save never changes it, whichever way it
+    // sends it, and whatever the page loaded.
+    [Fact]
+    public async Task AnOwnersSave_NeverTurnsTheAppsFeatureOn()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var saved = await admin.PutAsync(AdminProtocol.Features, new { apps = true, memory = false });
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await saved.Content.ReadFromJsonAsync<AdminSaved<FeaturesSection>>())!.Value
+            .ShouldBe(new FeaturesSection { Memory = false });
+        (await FeaturesAsync(admin)).Apps.ShouldBeFalse();
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Changed the memory features"]);
+    }
+
+    [Fact]
+    public async Task AnOwnersSave_NeverTurnsTheAppsFeatureOff()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await server.Service<HouseholdConfigStore>().SaveAsync(
+            household, HouseholdSections.FeaturesSchema, new JsonObject { ["apps"] = true }, CancellationToken.None);
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var loaded = await FeaturesAsync(admin);
+        loaded.Apps.ShouldBeTrue();
+
+        var saved = await admin.PutAsync(AdminProtocol.Features, new
+        {
+            apps = false,
+            workers = false,
+            loaded = new { apps = true, workers = true }
+        });
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await FeaturesAsync(admin)).ShouldBe(new FeaturesSection { Apps = true, Workers = false });
     }
 
     [Fact]

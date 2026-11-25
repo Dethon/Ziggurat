@@ -17,7 +17,8 @@ public class HouseholdAgentsTests
         Scheduling = "http://mcp-scheduling:8080/mcp",
         Timers = "http://mcp-timers:8080/mcp",
         Sugary = "http://mcp-sugary:8080/mcp",
-        Idealista = "http://mcp-idealista:8080/mcp"
+        Idealista = "http://mcp-idealista:8080/mcp",
+        Apps = "http://mcp-apps:8080/mcp"
     };
 
     [Fact]
@@ -117,7 +118,21 @@ public class HouseholdAgentsTests
         var jonas = agents.Find("jonas")!;
         jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault", "sandbox", "websearch", "homeassistant", "library", "printer"]);
         jonas.EnabledFeatures.ShouldBe(["filesystem"]);
-        agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp", "http://mcp-idealista:8080/mcp"]);
+        agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp", "http://mcp-idealista:8080/mcp", "http://mcp-apps:8080/mcp"]);
+    }
+
+    // The apps server spends the deployment's shared storage and browser, so the operator turns it on
+    // household by household: a household that never said is off, and its agents never reach it.
+    [Fact]
+    public void TheAppsServer_IsWithheldUntilTheAppsFeatureIsOn()
+    {
+        var off = HouseholdAgents.Of(Household(new AgentsSection()), _shared);
+        var on = HouseholdAgents.Of(Household(new AgentsSection(), features: new FeaturesSection { Apps = true }), _shared);
+
+        off.Find("jonas")!.McpServerEndpoints.ShouldNotContain(_shared.Apps);
+        off.WithheldServers.ShouldContain(_shared.Apps);
+        on.Find("jonas")!.McpServerEndpoints.ShouldContain(_shared.Apps);
+        on.WithheldServers.ShouldNotContain(_shared.Apps);
     }
 
     // A person's own agent is offered what the household offers its own.
@@ -197,7 +212,7 @@ public class HouseholdAgentsTests
                     new HouseholdAgent { Id = "sugary", Template = "sugary", Name = "Sugary" }
                 ]
             },
-            features: new FeaturesSection { Scheduling = false, Idealista = true },
+            features: new FeaturesSection { Scheduling = false, Idealista = true, Apps = true },
             ownServers: ["vault", "printer", "voice"]), _shared);
 
         var named = agents.Agents.SelectMany(a => a.McpServerEndpoints).ToList();

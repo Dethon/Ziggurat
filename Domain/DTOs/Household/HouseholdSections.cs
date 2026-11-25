@@ -316,6 +316,10 @@ public sealed record FeaturesSection
     public bool Idealista { get; init; }
     public bool Memory { get; init; } = true;
     public bool Workers { get; init; } = true;
+
+    // The apps server: off until the operator turns it on, since it spends the deployment's shared
+    // storage and browser. Never an owner's to change (HouseholdFeaturesAdmin).
+    public bool Apps { get; init; }
 }
 
 // The household's chat-client spaces. A household that saved none has the one default space.

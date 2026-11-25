@@ -4,7 +4,7 @@
 #
 # Barebones on purpose: the deployment's shared servers, the tenant kit's own servers by name, and
 # the domain features, and none of the home's tuning. Which of the shared servers it reaches is the
-# household's features (scheduling, timers, Sugary, Idealista), and so are its memory and its
+# household's features (scheduling, timers, Sugary, Idealista, apps), and so are its memory and its
 # workers. Which of the own servers it reaches is what the household set up — a server name it holds
 # a live tunnel credential for — asked at every turn: one it never set up is left out of the turn
 # and never named, since a household told every turn that its vault is offline never had one. That
@@ -23,7 +23,7 @@ reasoning-effort: high
 # The home's jonas runs the same model: relace garbles images, morph drops a tool's ref after the
 # first call (2026-10).
 provider-routing: {"ignore": ["relace", "morph"]}
-servers: http://mcp-scheduling:8080/mcp, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp, http://mcp-idealista:8080/mcp, vault, sandbox, websearch, homeassistant, library, printer
+servers: http://mcp-scheduling:8080/mcp, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp, http://mcp-idealista:8080/mcp, http://mcp-apps:8080/mcp, vault, sandbox, websearch, homeassistant, library, printer
 features: filesystem, subagents, memory
 whitelist: domain__filesystem*, mcp__websearch*, mcp__mcp-idealista*, domain__subagents*, domain__memory*
 uses-outposts: true
