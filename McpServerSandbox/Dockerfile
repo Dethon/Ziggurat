@@ -53,6 +53,27 @@ RUN pip install --no-cache-dir --break-system-packages "duckdb==${DUCKDB_VERSION
  && rm /tmp/duckdb.zip \
  && chmod 0755 /usr/local/bin/duckdb
 
+# A built app (McpServerApps) is an npm project with a bundler where the household has a sandbox, so
+# a command runs npm here and copies the build's dist/ into /apps. Node's official build, pinned to an
+# LTS line that still bundles corepack (Node 25 dropped it), into /usr/local so node, npm, npx and
+# corepack are on a command's minimal PATH. --no-same-owner because the tarball's files belong to uid
+# 1000, which is commonly PUID: kept, the command user would own what every later command runs.
+# The checksums are nodejs.org's SHASUMS256.txt for that release (its signature checked against the
+# release keys when pinned); a version bump changes all three.
+ARG NODE_VERSION=24.22.3
+ARG NODE_SHA256_AMD64=061ec3e3062115705b56b51fa9cc330ab50d34b6969387d4e4b1a50c6809acc2
+ARG NODE_SHA256_ARM64=261af2af250dfd7e9f25cf151d1b2713a0adf8f10a9ad116c4947f68627affe8
+RUN arch="${TARGETARCH:-amd64}" \
+ && if [ "$arch" = arm64 ]; then node_arch=arm64; sum="$NODE_SHA256_ARM64"; else node_arch=x64; sum="$NODE_SHA256_AMD64"; fi \
+ && curl -fsSL -o /tmp/node.tar.gz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${node_arch}.tar.gz" \
+ && echo "$sum  /tmp/node.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 --no-same-owner \
+        --exclude="node-v${NODE_VERSION}-linux-${node_arch}/CHANGELOG.md" \
+        --exclude="node-v${NODE_VERSION}-linux-${node_arch}/LICENSE" \
+        --exclude="node-v${NODE_VERSION}-linux-${node_arch}/README.md" \
+ && rm /tmp/node.tar.gz
+
 # Commands run with the bounding set dropped and no-new-privs, so a setuid binary gains nothing;
 # fusermount3 is the one that would matter once the container holds SYS_ADMIN for FUSE, so it loses
 # the bit as well rather than relying on one guard alone.
