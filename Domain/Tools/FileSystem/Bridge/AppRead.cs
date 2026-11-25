@@ -11,7 +11,8 @@ namespace Domain.Tools.FileSystem.Bridge;
 // One read of a built app's, through the bridge's meaning layer: the third adapter over VfsCall, beside
 // the file tools and the sandbox's FUSE daemon. Each operation is the file tool's own call, answered with
 // the tool's result shape on virtual paths, and allowed only where the call would run unasked (VfsCall).
-// An app reads only the mount points its manifest's `reads` names, and nothing reachable here changes
+// An app reads only the mount points it is granted (`reads`: its manifest's, no more than an owner
+// approved while the household shares it), and nothing reachable here changes
 // anything: every other operation is refused with the permission envelope.
 // `offline`: the household's own servers the agent names that this build did not reach.
 public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnlyList<string> offline)
@@ -119,8 +120,9 @@ public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads, IReadOnly
         if (!reads.Contains(mountPoint, StringComparer.Ordinal))
         {
             return ToolError.PermissionDenied(
-                $"{path} is outside what this app reads: its manifest's reads are {(reads.Count == 0 ? "none" : string.Join(", ", reads))}.",
-                "Name the mount point in the manifest's reads and publish the app again.");
+                $"{path} is outside what this app reads: it is granted {(reads.Count == 0 ? "no reads" : string.Join(", ", reads))}.",
+                "Name the mount point in the manifest's reads and publish the app again. While the household shares the app as a "
+                + "space, a read beyond what an owner approved waits on an owner approving it on the spaces page.");
         }
 
         return mounted is null && offline.Count > 0

@@ -92,6 +92,38 @@ public sealed class AppsReadsTests : IAsyncLifetime
         refused["message"]!.GetValue<string>().ShouldContain("/notes");
     }
 
+    // An app shared before it read the household asks, once published to read /sugary, for more than an owner
+    // approved: every viewer of its published origin, its author too, is refused that read with the
+    // permission envelope, which says an owner approves it; its preview, its author's alone, reads it. Once
+    // an owner approves it, the household's members read it, each their own.
+    [Fact]
+    public async Task AReadASharedAppAsksBeyondWhatAnOwnerApproved_IsRefused_UntilTheyApproveIt()
+    {
+        var host = _apps.Published("glucose", _id);
+        var preview = _apps.Preview("glucose", _id);
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: AppReach.None);
+
+        using var his = await _apps.ReadAsync(host, AppReads.Operations.Query, _notes, _apps.SessionFor(AppsServer.Him, host));
+        using var hers = await _apps.ReadAsync(host, AppReads.Operations.Query, _notes, _apps.SessionFor(AppsServer.Her, host));
+        using var tree = await _apps.ReadAsync(preview, AppReads.Operations.Query, _notes, _apps.SessionFor(AppsServer.Her, preview));
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach { Reads = ["/sugary"] });
+        using var approved = await _apps.ReadAsync(host, AppReads.Operations.Query, _notes, _apps.SessionFor(AppsServer.Him, host));
+
+        foreach (var refused in new[] { his, hers })
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            var envelope = JsonNode.Parse(await refused.Content.ReadAsStringAsync())!;
+            envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+            envelope["message"]!.GetValue<string>().ShouldContain("/sugary");
+            envelope["hint"]!.GetValue<string>().ShouldContain("owner");
+        }
+
+        tree.StatusCode.ShouldBe(HttpStatusCode.OK);
+        approved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        JsonNode.Parse(await approved.Content.ReadAsStringAsync())!["rows"]!.AsArray()
+            .Select(row => row![0]!.GetValue<string>()).ShouldBe(["his paella"]);
+    }
+
     // Nobody signed in, and a signed-in person who may not open the app, are answered the one 404 a page
     // gets: nothing is forwarded for them.
     [Fact]
