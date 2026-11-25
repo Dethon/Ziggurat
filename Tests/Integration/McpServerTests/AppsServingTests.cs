@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using Domain.Apps;
 using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -379,6 +380,50 @@ public class AppsServingTests
 
         (await (await server.GetAsync(host, "/_app/sw.js", session)).Content.ReadAsStringAsync()).ShouldContain("caches.open");
         (await server.GetAsync(host, "/_app/mine.js", session)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // A removed app's origin still says what happened to whoever opens it, an installed copy included,
+    // with no session asked: its pages are a short page saying so, and its worker one that unregisters
+    // itself and forgets what it kept, so the installed app stops opening a copy of something gone.
+    [Fact]
+    public async Task ARemovedAppsOrigin_SaysSo_AndItsWorkerUnregistersItself()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" }, AppsServer.TurnOf(AppsServer.Her));
+
+        foreach (var host in new[] { server.Published("glucose", id), server.Preview("glucose", id) })
+        {
+            var page = await server.GetAsync(host, "/week/", navigate: true);
+            page.StatusCode.ShouldBe(HttpStatusCode.Gone, host);
+            page.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
+            (await page.Content.ReadAsStringAsync()).ShouldContain("This app was removed");
+            Policy(page).ShouldBe(AppContentPolicy.Closed);
+
+            var worker = await server.GetAsync(host, "/_app/sw.js");
+            worker.StatusCode.ShouldBe(HttpStatusCode.OK, host);
+            worker.Content.Headers.ContentType!.MediaType.ShouldBe("text/javascript");
+            worker.Headers.GetValues("Service-Worker-Allowed").ShouldBe(["/"]);
+            var script = await worker.Content.ReadAsStringAsync();
+            script.ShouldContain("self.registration.unregister()");
+            script.ShouldContain("caches.delete");
+
+            (await server.GetAsync(host, "/app.js")).StatusCode.ShouldBe(HttpStatusCode.NotFound, host);
+        }
+    }
+
+    // An id is never handed to a second app: its origin keeps what the first left in browsers.
+    [Fact]
+    public async Task ARemovedAppsId_IsNeverAnotherApps()
+    {
+        var (server, id) = await PublishedAsync();
+        await using var _ = server;
+        await server.CallAsync("fs_delete", new Dictionary<string, object?> { ["path"] = "/glucose" }, AppsServer.TurnOf(AppsServer.Her));
+
+        var store = server.Store;
+        store.IsRemoved(id).ShouldBeTrue();
+        store.IdTaken(id).ShouldBeTrue();
+        (await server.GlobAsync(AppsServer.Her, "*")).ShouldBeEmpty();
     }
 
     private static string Policy(HttpResponseMessage response) =>

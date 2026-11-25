@@ -98,6 +98,15 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
         }
     }
 
+    // A deleted app leaves its id behind, so its origin can still say it was removed (AppPages) and
+    // no later app is ever handed that origin, with whatever the first left in browsers there.
+    public bool IsRemoved(string id) => BuiltAppId.IsValid(id) && File.Exists(Path.Combine(Removed, id));
+
+    // Held by a live app in any household, or by a removed one.
+    public bool IdTaken(string id) =>
+        IsRemoved(id)
+        || (Directory.Exists(Root) && Directory.EnumerateDirectories(Root).Any(household => Directory.Exists(Path.Combine(household, id))));
+
     public async Task<IReadOnlyList<BuiltApp>> ListAsync(string householdId, Account author, CancellationToken ct) =>
         [.. (await ListAsync(householdId, ct)).Where(app => app.Author == author)];
 
@@ -106,9 +115,7 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     public async Task<BuiltApp> CreateAsync(
         string householdId, Account author, string buildingAgent, string slug, string manifest, CancellationToken ct)
     {
-        var id = Enumerable.Range(0, 16).Select(_ => BuiltAppId.Mint())
-            .First(candidate => !Directory.Exists(Root)
-                                || !Directory.EnumerateDirectories(Root).Any(household => Directory.Exists(Path.Combine(household, candidate))));
+        var id = Enumerable.Range(0, 16).Select(_ => BuiltAppId.Mint()).First(candidate => !IdTaken(candidate));
         var app = new BuiltApp
         {
             Id = id,
@@ -134,10 +141,13 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
         File.Move(temp, file, overwrite: true);
     }
 
-    // The metadata goes first, so an app half-deleted by a crash is no longer listed.
+    // The tombstone first, then the metadata, so an app half-deleted by a crash is no longer listed
+    // and its id is already kept from every later app.
     public Task DeleteAsync(BuiltApp app)
     {
         var directory = AppDirectory(app);
+        Directory.CreateDirectory(Removed);
+        File.WriteAllText(Path.Combine(Removed, app.Id), clock.GetUtcNow().ToString("O"));
         File.Delete(Path.Combine(directory, MetadataFile));
         Directory.Delete(directory, recursive: true);
         return Task.CompletedTask;
@@ -151,6 +161,9 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
         new DirectoryInfo(AppDirectory(app)).EnumerateFiles("*", SearchOption.AllDirectories).Sum(file => file.Length);
 
     private string Root => Path.GetFullPath(settings.StoragePath);
+
+    // Beside the households, under a name no household id can take (ids carry no dot).
+    private string Removed => Path.Combine(Root, ".removed");
 
     private string AppDirectory(BuiltApp app) => Path.Combine(HouseholdDirectory(app.HouseholdId), app.Id);
 

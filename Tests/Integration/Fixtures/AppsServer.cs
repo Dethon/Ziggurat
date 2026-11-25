@@ -9,6 +9,7 @@ using Domain.DTOs.Household;
 using McpServerApps.Modules;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
+using McpServerApps.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +56,8 @@ public sealed class AppsServer : IAsyncDisposable
 
     // The server's app sessions, which the app sign-in (ticket 04) will open; a test opens its own.
     public AppSessions Sessions => _app.Services.GetRequiredService<AppSessions>();
+
+    public BuiltAppStore Store => _app.Services.GetRequiredService<BuiltAppStore>();
 
     public static async Task<AppsServer> StartAsync(Func<AppsSettings, AppsSettings>? configure = null)
     {

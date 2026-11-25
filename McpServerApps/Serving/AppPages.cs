@@ -24,8 +24,16 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
     {
         var ct = context.RequestAborted;
         var request = context.Request;
-        if (AppOrigin.Parse(request.Host.Value ?? "", settings.AppsDomain) is not { } origin
-            || !(HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method))
+        var origin = AppOrigin.Parse(request.Host.Value ?? "", settings.AppsDomain);
+        var reading = HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method);
+        if (origin is not null && reading && store.IsRemoved(origin.Id))
+        {
+            await RemovedAsync(context);
+            return;
+        }
+
+        if (origin is null
+            || !reading
             || await store.FindAsync(origin.Id, ct) is not { } app
             || Viewer(request, origin) is not { } viewer
             || viewer != app.Author
@@ -88,6 +96,28 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
         }
 
         await AppAnswerAsync(context, policy, StatusCodes.Status200OK, type, bytes);
+    }
+
+    // Asked of nobody: a removed app holds nothing to protect, and whoever installed it must hear.
+    private static async Task RemovedAsync(HttpContext context)
+    {
+        var request = context.Request;
+        if (request.Path.Value == AppOriginFiles.WorkerPath)
+        {
+            context.Response.Headers["Service-Worker-Allowed"] = "/";
+            await AppAnswerAsync(context, AppContentPolicy.Closed, StatusCodes.Status200OK, "text/javascript; charset=utf-8",
+                Encoding.UTF8.GetBytes(AppOriginFiles.RemovedWorker));
+            return;
+        }
+
+        if (!IsNavigation(request))
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        await AppAnswerAsync(context, AppContentPolicy.Closed, StatusCodes.Status410Gone, "text/html; charset=utf-8",
+            Encoding.UTF8.GetBytes(AppOriginFiles.RemovedPage));
     }
 
     // The server's own files under /_app/, which no file of the app's can replace.
