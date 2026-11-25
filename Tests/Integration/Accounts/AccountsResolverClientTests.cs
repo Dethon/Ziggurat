@@ -1,8 +1,10 @@
+using Accounts.Apps;
 using Accounts.Links;
 using Accounts.Sessions;
 using Accounts.Store;
 using Domain.DTOs.Channel;
 using Domain.Exceptions;
+using Domain.Security;
 using Infrastructure.Clients.Accounts;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
@@ -250,13 +252,48 @@ public class AccountsResolverClientTests
             client.TelegramIdOfAsync(new Account("home", "fran"), CancellationToken.None));
     }
 
+    // The apps server's two questions: the code a browser brought back to an app's origin, which is
+    // its session's person once and for that origin alone, and the same session renewed on `apps`
+    // (asked by name, since this one credential is the chat hub's too) until it is revoked.
+    [Fact]
+    public async Task TheAppsServer_RedeemsACodeOnce_AndRenewsItsSessionOnApps_UntilItIsRevoked()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var sessions = server.Service<SessionStore>();
+        var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+        const string origin = "https://glucose-k3x9p2.apps.example";
+        var code = server.Service<AppSignInCodes>()
+            .Issue(new AppSignInCode(origin, fran.UserId, phone.Id));
+        var client = ClientFor(server, Credential);
+
+        var redeemed = await client.RedeemAsync(code, origin, CancellationToken.None);
+        var again = await client.RedeemAsync(code, origin, CancellationToken.None);
+        var renewed = await client.RenewAsync(fran.UserId, phone.Id, CancellationToken.None);
+        await sessions.RevokeAsync(fran.UserId, phone.Id, CancellationToken.None);
+        var revoked = await client.RenewAsync(fran.UserId, phone.Id, CancellationToken.None);
+
+        redeemed.ShouldNotBeNull().Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
+        var claims = (await server.VerifyAssertionAsync(redeemed.Assertion)).Claims.ShouldNotBeNull();
+        claims.ChannelId.ShouldBe(AppChannels.Apps);
+        claims.SessionId.ShouldBe(phone.Id);
+        again.ShouldBeNull();
+        (await server.VerifyAssertionAsync(renewed.ShouldNotBeNull().Assertion)).Claims.ShouldNotBeNull().ChannelId
+            .ShouldBe(AppChannels.Apps);
+        revoked.ShouldBeNull();
+        await Should.ThrowAsync<HttpRequestException>(() => ClientFor(server, "wrong").RedeemAsync(code, origin, CancellationToken.None));
+        await Should.ThrowAsync<HttpRequestException>(() => ClientFor(server, "wrong").RenewAsync(fran.UserId, phone.Id, CancellationToken.None));
+    }
+
     private static Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
         {
             Callers = new Dictionary<string, string>
             {
-                ["mcp-channel-signalr"] = Credential, ["mcp-channel-telegram"] = Credential, ["mcp-channel-voice"] = Credential
-            }
+                ["mcp-channel-signalr"] = Credential, ["mcp-channel-telegram"] = Credential, ["mcp-channel-voice"] = Credential,
+                ["mcp-apps"] = Credential
+            },
+            AppsDomain = "apps.example"
         });
 
     private static AccountsResolverClient ClientFor(AccountsServer server, string credential) =>

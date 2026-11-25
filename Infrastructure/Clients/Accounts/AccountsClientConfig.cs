@@ -31,7 +31,7 @@ public static class AccountsClientRegistration
 {
     // The credential is the server's own, the one its /mcp asks for: the accounts service lists
     // each caller by the credential it already holds, so no secret exists for this alone. One client
-    // answers both contracts; only the Telegram bot asks the second.
+    // answers every contract; only the Telegram bot asks ITelegramAccounts, only the apps server IAppSignIns.
     public static IServiceCollection AddAccountResolver(
         this IServiceCollection services, AccountsClientConfig config, string credential)
     {
@@ -45,7 +45,8 @@ public static class AccountsClientRegistration
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(AccountsResolverClient.ClientName), credential))
             .AddSingleton<IAccountResolver>(sp => sp.GetRequiredService<AccountsResolverClient>())
             .AddSingleton<ITelegramAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>())
-            .AddSingleton<ISessionAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>());
+            .AddSingleton<ISessionAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>())
+            .AddSingleton<IAppSignIns>(sp => sp.GetRequiredService<AccountsResolverClient>());
     }
 
     // A household's configuration as this host may read it, asked with its own credential: the

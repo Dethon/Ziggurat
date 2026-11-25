@@ -9,7 +9,7 @@ namespace Infrastructure.Clients.Accounts;
 
 // The accounts service's internal API, asked with the caller's own MCP credential: whose an identity
 // is, signed (the assertion a channel carries on the person's turn), the household's guest for a
-// satellite, the chat hub's person by the session its connection signed in with, and for the Telegram
+// satellite, the chat hub's person by the session its connection signed in with, the apps server's app sign-in and its renewals, and for the Telegram
 // bot the ways in it redeems. The service spells its requests and answers
 // for itself (it references no project here), so the wire shape is the records below and the
 // camelCase the web defaults give both ends. A refusal the service means is a status this maps to an
@@ -17,7 +17,7 @@ namespace Infrastructure.Clients.Accounts;
 // answer is a person — and any other is a failure, thrown, so a caller never mistakes an outage for a
 // stranger.
 public sealed class AccountsResolverClient(HttpClient http, string credential)
-    : IAccountResolver, ITelegramAccounts, ISessionAccounts
+    : IAccountResolver, ITelegramAccounts, ISessionAccounts, IAppSignIns
 {
     public const string ClientName = "accounts";
 
@@ -25,6 +25,7 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
     private const string GuestPath = "accounts/internal/guest";
     private const string SessionPath = "accounts/internal/session";
     private const string TelegramPath = "accounts/internal/telegram/";
+    private const string AppSignInPath = "accounts/internal/app-sign-in";
 
     public async Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
     {
@@ -43,14 +44,20 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
     public async Task<ResolvedAccount?> SessionAsync(string userId, string sessionId, CancellationToken ct)
     {
         using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId), ct);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return null;
-        }
+        return await PersonOrNobodyAsync(response, ct);
+    }
 
-        var answer = await ReadAsync<Answer>(response, ct);
-        return new ResolvedAccount(
-            new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion, answer.HouseholdSuspended);
+    public async Task<ResolvedAccount?> RedeemAsync(string code, string origin, CancellationToken ct)
+    {
+        using var response = await PostAsync(AppSignInPath, new AppSignInQuery(code, origin), ct);
+        return await PersonOrNobodyAsync(response, ct);
+    }
+
+    // Named `apps`, since the credential asking may be several callers' at once (a host run's).
+    public async Task<ResolvedAccount?> RenewAsync(string userId, string sessionId, CancellationToken ct)
+    {
+        using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId, AppChannels.Apps), ct);
+        return await PersonOrNobodyAsync(response, ct);
     }
 
     public async Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct)
@@ -127,6 +134,18 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
             : (await ReadAsync<OfAccount>(response, ct)).TelegramId;
     }
 
+    private static async Task<ResolvedAccount?> PersonOrNobodyAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        var answer = await ReadAsync<Answer>(response, ct);
+        return new ResolvedAccount(
+            new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion, answer.HouseholdSuspended);
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
@@ -152,7 +171,9 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
 
     private sealed record Query(string Channel, string Identity);
 
-    private sealed record SessionQuery(string UserId, string SessionId);
+    private sealed record SessionQuery(string UserId, string SessionId, string? Channel = null);
+
+    private sealed record AppSignInQuery(string Code, string Origin);
 
     private sealed record Answer(
         string TenantId, string UserId, string DisplayName, string Assertion, bool HouseholdSuspended = false);
