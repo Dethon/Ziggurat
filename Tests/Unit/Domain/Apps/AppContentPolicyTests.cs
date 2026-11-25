@@ -43,6 +43,16 @@ public class AppContentPolicyTests
         policy["font-src"].ShouldNotContain("example");
     }
 
+    // A page's own inline import maps run by their hashes, and nothing else inline does.
+    [Fact]
+    public void APagesImportMapHashes_AreTheOnlyInlineScriptItRuns()
+    {
+        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, ["sha256-abc=", "sha256-def="]));
+
+        policy["script-src"].ShouldBe("'self' 'sha256-abc=' 'sha256-def=' https://cdn.jsdelivr.net https://unpkg.com");
+        policy["style-src"].ShouldNotContain("sha256");
+    }
+
     // An answer that is no app's (an unknown label, a removed app's page): nothing loads but itself.
     [Fact]
     public void NoAppsAnswer_LoadsNothingFromAnywhere() =>

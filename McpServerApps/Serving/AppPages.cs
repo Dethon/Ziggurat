@@ -92,7 +92,9 @@ public sealed class AppPages(BuiltAppStore store, AppSessions sessions, AppsSett
 
         if (type == "text/html")
         {
-            bytes = Encoding.UTF8.GetBytes(AppOriginFiles.Inject(Encoding.UTF8.GetString(bytes)));
+            var html = Encoding.UTF8.GetString(bytes);
+            policy = AppContentPolicy.For(served.Manifest, settings.Cdns, InlineImportMaps.Hashes(html));
+            bytes = Encoding.UTF8.GetBytes(AppOriginFiles.Inject(html));
         }
 
         await AppAnswerAsync(context, policy, StatusCodes.Status200OK, type, bytes);

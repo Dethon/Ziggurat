@@ -49,6 +49,32 @@ public class AppsServingInABrowserTests
         violations.ShouldBeEmpty();
     }
 
+    // An import map is inline script to the policy, and the one inline script a built app may carry:
+    // the page's own maps are let through by their hashes, and a module imports through one.
+    [Fact]
+    public async Task APagesInlineImportMap_Resolves_UnderItsPolicy()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            "<!doctype html><html><head>\r\n<script type=\"importmap\">\r\n{ \"imports\": { \"chart\": \"/lib/chart.js\" } }\r\n</script>\r\n"
+            + "<script type=\"module\" src=\"/main.js\"></script></head><body></body></html>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/lib/chart.js", "export const drawn = 'drawn';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js", "import { drawn } from 'chart'; document.body.dataset.chart = drawn;");
+        var host = server.Preview("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var page = await (await browser.NewContextAsync()).NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        var violations = await ViolationsAsync(page);
+
+        await page.GotoAsync(origin + "/");
+
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-chart", "drawn");
+        violations.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ARemovedAppsInstalledWorker_TakesItselfAway()
     {
