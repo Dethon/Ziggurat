@@ -182,8 +182,11 @@ public sealed record AppErrorEntry
     // The viewer's person id (their account's user id; the household is the app's).
     public required string Viewer { get; init; }
 
-    // "published" or "preview": which of the app's origins the page was on.
+    // Published or Preview: which of the app's origins the page was on.
     public required string Origin { get; init; }
+
+    public const string Published = "published";
+    public const string Preview = "preview";
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AppErrorRead? Read { get; init; }

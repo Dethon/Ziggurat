@@ -42,15 +42,15 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     private const int MaxViewportSide = 3840;
 
     // The app's own assertions (`checks/*.js` in its working tree), each run inside the page.
-    private const string AssertionsDirectory = "checks";
+    public const string AssertionsDirectory = "checks";
     // The longest slug whose preview label (`<slug>-<id>-preview`) is still one DNS label.
     public const int SlugLength = 40;
 
-    private static readonly string[] _actions = [Publish, History, Rollback, Check];
+    public static readonly IReadOnlyList<string> Actions = [Publish, History, Rollback, Check];
 
     // Names at an app's root the server keeps for what it produces itself (checks, runtime errors);
     // never the agent's to write, so a later release can serve them without colliding with a file.
-    private static readonly string[] _reserved = [.. _actions, ErrorsOutput, ChecksOutput];
+    private static readonly string[] _reserved = [.. Actions, ErrorsOutput, ChecksOutput];
 
     // What the text read opens: the shared text list plus what a web app is made of besides.
     private static readonly string[] _textFiles =
@@ -126,7 +126,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
 
         var apps = await store.ListAsync(author.TenantId, author, ct);
         var candidates = apps.SelectMany(app => Listing(app).Select(c => (c.Path, c.IsDirectory))).ToList();
-        var actions = apps.SelectMany(app => _actions.Select(action => $"/{app.Slug}/{action}")).ToHashSet(StringComparer.Ordinal);
+        var actions = apps.SelectMany(app => Actions.Select(action => $"/{app.Slug}/{action}")).ToHashSet(StringComparer.Ordinal);
         return Glob(
             pattern,
             () =>
@@ -205,7 +205,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         var files = (await store.ListAsync(author.TenantId, author, ct))
             .SelectMany(app => Listing(app).Where(c => !c.IsDirectory).Select(c => (App: app, c.Path, c.Full)))
             .Where(f => scope.Length == 0 || f.Path == scope || f.Path.StartsWith(scope + "/", StringComparison.Ordinal))
-            .Where(f => !_actions.Contains(Path.GetFileName(f.Path)) || f.Path.Count(c => c == '/') > 1)
+            .Where(f => !Actions.Contains(Path.GetFileName(f.Path)) || f.Path.Count(c => c == '/') > 1)
             .Where(f => _textFiles.Contains(Path.GetExtension(f.Path).ToLowerInvariant()) && admits(Path.GetFileName(f.Path)))
             .OrderBy(f => f.Path, StringComparer.Ordinal)
             .ToList();
@@ -684,7 +684,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
             Rollback when args is [var revision] => await RollbackAsync(app, path, revision, ct),
             Rollback => Exec(path, "", $"usage: ./{Rollback} <rev> — a commit from ./{History}.", 2),
             Check => await CheckAsync(app, path, args, ct),
-            _ => Exec(path, "", $"command not found: {action}\navailable: {string.Join(", ", _actions)}", 127)
+            _ => Exec(path, "", $"command not found: {action}\navailable: {string.Join(", ", Actions)}", 127)
         };
     }
 
@@ -1068,7 +1068,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
     {
         var tree = store.Repository(app).WorkTree;
         yield return (app.Slug, tree, true);
-        foreach (var action in _actions)
+        foreach (var action in Actions)
         {
             yield return ($"{app.Slug}/{action}", "", false);
         }
@@ -1140,7 +1140,7 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         {
             (null, _) => new AppNode.Missing(segments[0], relative),
             (_, [_]) => new AppNode.AppDirectory(app),
-            (_, [_, var action]) when _actions.Contains(action) => new AppNode.Action(app, action),
+            (_, [_, var action]) when Actions.Contains(action) => new AppNode.Action(app, action),
             // What the server keeps beside the tree, shown where the agent looks for it: every write there is
             // refused as a reserved name's.
             (_, [_, ChecksOutput, ..]) => new AppNode.Entry(app, relative,

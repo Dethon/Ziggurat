@@ -64,7 +64,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
             Route = report.Route,
             UserAgent = userAgent.Length > MaxUserAgent ? userAgent[..MaxUserAgent] : userAgent,
             Viewer = session.Person.UserId,
-            Origin = session.Origin.Preview ? "preview" : "published",
+            Origin = session.Origin.Preview ? AppErrorEntry.Preview : AppErrorEntry.Published,
             Read = report.Read
         }, ct);
         _metrics.ForHousehold(app.HouseholdId).Publish(new ErrorEvent

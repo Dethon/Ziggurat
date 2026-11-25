@@ -30,7 +30,8 @@ public sealed record AppManifest
     public IReadOnlyList<string> Reads { get; init; } = [];
     public IReadOnlyList<string> Connect { get; init; } = [];
 
-    private static readonly string[] _fields =
+    // Every field app.json takes; any other is refused.
+    public static readonly IReadOnlyList<string> Fields =
         ["name", "shortName", "accentColor", "description", "root", "reads", "connect"];
 
     public static AppManifestParse Parse(string json)
@@ -55,8 +56,8 @@ public sealed record AppManifest
             var problems = new List<string>();
             var root = document.RootElement;
             problems.AddRange(root.EnumerateObject()
-                .Where(p => !_fields.Contains(p.Name, StringComparer.Ordinal))
-                .Select(p => $"unknown field '{p.Name}': {FileName} takes {string.Join(", ", _fields)}"));
+                .Where(p => !Fields.Contains(p.Name, StringComparer.Ordinal))
+                .Select(p => $"unknown field '{p.Name}': {FileName} takes {string.Join(", ", Fields)}"));
 
             var name = Text(root, "name", problems);
             var shortName = Text(root, "shortName", problems);

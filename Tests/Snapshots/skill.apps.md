@@ -61,7 +61,7 @@ Keep the project in the sandbox home (`~/apps/<slug>`) and install and build the
 `domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Then read `/apps/<slug>/.checks/latest/`:
 
 - `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like.
-- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a missing `connect` origin or blocked script shows here), `accessibility` (the page's text and structure) and `assertions`.
+- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `accessibility` (the page's text and structure) and `assertions`.
 
 Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.
 
