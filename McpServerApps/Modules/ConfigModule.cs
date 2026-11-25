@@ -20,6 +20,8 @@ public static class ConfigModule
             .AddSingleton<AppSessions>()
             .AddSingleton<AppViewers>()
             .AddAppPages(settings.Listeners)
+            // A built app's reads, handed to the agent with this server's own credential (AgentReads).
+            .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services
             .AddSingleton(sp => new AppsFileSystem(sp.GetRequiredService<BuiltAppStore>(), settings.AppsDomain))
             // The calling household's agent names, asked with this server's own credential on the
             // call's token: only the household's own agents build apps. A save is heard on Redis when

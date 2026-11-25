@@ -149,6 +149,26 @@ public sealed class AppsServer : IAsyncDisposable
         return response;
     }
 
+    // A built app's page reading the household through the client library: a POST to the origin's
+    // /_vfs/<operation> with the tool's own arguments, the app session's cookie sent as the browser sends it.
+    public async Task<HttpResponseMessage> ReadAsync(string host, string operation, JsonObject arguments, string? session)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{PagesAddress}{AppReads.OriginPath}/{operation}")
+        {
+            Content = new StringContent(arguments.ToJsonString(), System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Host = host;
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        if (session is not null)
+        {
+            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+        }
+
+        var response = await _browser.SendAsync(request);
+        await response.Content.LoadIntoBufferAsync();
+        return response;
+    }
+
     // An app session for this person on that origin, as the app sign-in would open one, its assertion
     // fresh.
     public string SessionFor(Account person, string host) =>

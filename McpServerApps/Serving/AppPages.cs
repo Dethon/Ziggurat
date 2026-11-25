@@ -1,6 +1,9 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Apps;
 using Domain.DTOs.Channel;
+using Domain.Tools;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using Microsoft.AspNetCore.Http;
@@ -14,7 +17,7 @@ namespace McpServerApps.Serving;
 // the served commit, to its author; the preview the working tree, to its author alone. Anyone else,
 // and anything that is no app, gets one answer, byte for byte, so a stranger cannot tell an app that
 // exists from one that does not.
-public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AppsSettings settings)
+public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads reads, AppsSettings settings)
 {
     private static readonly FileExtensionContentTypeProvider _types = new()
     {
@@ -30,6 +33,14 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AppsSettin
         if (origin is not null && reading && store.IsRemoved(origin.Id))
         {
             await RemovedAsync(context);
+            return;
+        }
+
+        if (origin is not null && HttpMethods.IsPost(request.Method)
+            && request.Path.StartsWithSegments(AppReads.OriginPath, out var operation)
+            && !store.IsRemoved(origin.Id))
+        {
+            await ReadAsync(context, origin, operation.Value?.TrimStart('/') ?? "");
             return;
         }
 
@@ -128,6 +139,92 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AppsSettin
         }
 
         await AppAnswerAsync(context, policy, StatusCodes.Status200OK, type, bytes);
+    }
+
+    // A page's read of the household (the client library's POST to /_vfs/<operation>): the viewer and the
+    // app settled as for a page — the one 404 for anyone who may not open it — then handed to the agent
+    // with the reads of the origin's own manifest (the served commit's, or the tree's on the preview) and
+    // the assertion the app session holds, renewed just now if it was due. Never kept by anyone between.
+    private async Task ReadAsync(HttpContext context, AppOrigin origin, string operation)
+    {
+        var ct = context.RequestAborted;
+        var viewer = await viewers.ViewerAsync(context.Request, origin, ct);
+        if (viewer == AppViewer.Unchecked)
+        {
+            await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
+                StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
+                    "Who is reading could not be checked just now, so nothing was read.", "Read again in a moment.")));
+            return;
+        }
+
+        if (viewer is not AppViewer.Person { Session: var session }
+            || await store.FindAsync(origin.Id, ct) is not { } app
+            || session.Person != app.Author
+            || await ServedAsync(app, origin, ct) is not { } served
+            || operation.Length == 0 || operation.Contains('/'))
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        var policy = AppContentPolicy.For(served.Manifest, settings.Cdns);
+        if (await ArgumentsAsync(context.Request, ct) is not { } arguments)
+        {
+            await ReadAnswerAsync(context, policy, AgentReadAnswer.Envelope(StatusCodes.Status400BadRequest,
+                ToolError.Result(ToolError.Codes.InvalidArgument,
+                    $"A read's body is one JSON object of the tool's arguments, at most {MaxArgumentBytes} bytes.")));
+            return;
+        }
+
+        var scope = new AppReadScope { Id = app.Id, Agent = app.BuildingAgent, Reads = served.Manifest.Reads };
+        await ReadAnswerAsync(context, policy, await reads.ReadAsync(operation, scope, arguments, session.Assertion, ct));
+    }
+
+    // A read's arguments are a path, a pattern or a statement: small. A body larger is never held.
+    private const int MaxArgumentBytes = 64 * 1024;
+
+    private static async Task<JsonObject?> ArgumentsAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (request.ContentLength > MaxArgumentBytes)
+        {
+            return null;
+        }
+
+        using var body = new MemoryStream();
+        var buffer = new byte[8192];
+        int read;
+        while ((read = await request.Body.ReadAsync(buffer, ct)) > 0)
+        {
+            if (body.Length + read > MaxArgumentBytes)
+            {
+                return null;
+            }
+
+            body.Write(buffer, 0, read);
+        }
+
+        try
+        {
+            return body.Length == 0 ? [] : JsonNode.Parse(body.ToArray()) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    // The agent's answer as it came, under the origin's policy, kept by nothing: a read is one viewer's.
+    private static async Task ReadAnswerAsync(HttpContext context, string policy, AgentReadAnswer answer)
+    {
+        var response = context.Response;
+        response.StatusCode = answer.Status;
+        response.Headers.ContentSecurityPolicy = policy;
+        response.Headers.XContentTypeOptions = "nosniff";
+        response.Headers.CacheControl = "no-store";
+        response.Headers["Referrer-Policy"] = "no-referrer";
+        response.ContentType = answer.ContentType;
+        response.ContentLength = answer.Body.Length;
+        await response.Body.WriteAsync(answer.Body, context.RequestAborted);
     }
 
     // Asked of nobody: a removed app holds nothing to protect, and whoever installed it must hear.

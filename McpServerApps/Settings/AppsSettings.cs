@@ -31,6 +31,10 @@ public record AppsSettings : IMcpHostSettings
     // session then stops only when its assertion comes due for renewal.
     public string RedisConnectionString { get; init; } = "";
 
+    // Where the agent answers a built app's reads (AppReads.AgentPath), on the deployment's network
+    // (AGENTURL). Empty reaches no agent: every read answers unavailable.
+    public string AgentUrl { get; init; } = "";
+
     public AppSessionSettings Sessions { get; init; } = new();
 
     public AppQuotas Quotas { get; init; } = new();
