@@ -22,7 +22,8 @@ namespace Accounts.Admin;
 // The apps server is asked which those are (HouseholdAppsClient) only for a household the operator gave
 // the apps feature, and its not answering costs only a new app space: the page still loads and saves. An
 // app space's name and colour are its app's, stamped from the apps server's answer and never the page's
-// word; what a space is — the app it shares, or that it shares none — is set when it is added.
+// word; what a space is — the app it shares, or that it shares none — is set when it is added. The reach an
+// owner approved for it (what it reads and talks to) is what the page sent, capped at what the app asks.
 public static class HouseholdSpacesAdmin
 {
     public static void Map(RouteGroupBuilder household)
@@ -83,9 +84,11 @@ public static class HouseholdSpacesAdmin
             }
 
             var added = sent.Spaces.Where(s => s.IsApp && before.Spaces.All(b => b.Slug != s.Slug)).ToList();
+            var approving = sent.Spaces.Where(s => s.IsApp && !Equals(s.Approved, before.Spaces.FirstOrDefault(b => b.Slug == s.Slug)?.Approved))
+                .Select(s => s.Slug).ToHashSet(StringComparer.Ordinal);
             // Asked whatever the save holds, since the answer is what the page shows next: the apps it may share.
             var published = await PublishedAsync(store, apps, caller, ct);
-            if (added.Count > 0 && published is null)
+            if ((added.Count > 0 || approving.Count > 0) && published is null)
             {
                 return Results.Json(new AdminRefusal(AdminSpaces.AppsUnavailableMessage, []),
                     statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -98,7 +101,10 @@ public static class HouseholdSpacesAdmin
                 return Results.BadRequest(new AdminRefusal("The spaces were not saved.", problems));
             }
 
-            sent = sent with { Spaces = [.. sent.Spaces.Select(space => Stamped(space, before, published))] };
+            sent = sent with
+            {
+                Spaces = [.. sent.Spaces.Select(space => Approved(Stamped(space, before, published), approving, before, published))]
+            };
 
             return await AdminSections.AnswerAsync(
                 await store.SaveAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(sent), ct),
@@ -165,6 +171,27 @@ public static class HouseholdSpacesAdmin
                 ? space with { Name = was.Name, AccentColor = was.AccentColor }
                 : space;
 
+    // An app space's approved reach is only ever what an owner's save sent, never what the app asks at the
+    // time of the save — a publish landing between the page loading and saving it is not approved unseen —
+    // and no more of it than the app asks now. A save leaving it as loaded leaves it as stored. Nothing
+    // approved is none.
+    private static HouseholdSpace Approved(
+        HouseholdSpace space, IReadOnlySet<string> approving, SpacesSection before, IReadOnlyList<PublishedApp>? published)
+    {
+        if (!approving.Contains(space.Slug))
+        {
+            return space;
+        }
+
+        if (published?.FirstOrDefault(app => app.Id == space.AppId) is not { } app)
+        {
+            return space with { Approved = before.Spaces.FirstOrDefault(b => b.Slug == space.Slug)?.Approved };
+        }
+
+        var approved = new AppReach { Reads = app.Reads, Connect = app.Connect }.Within(space.Approved);
+        return space with { Approved = approved.IsEmpty ? null : approved };
+    }
+
     // The household's published apps, none for a household without the apps feature (the apps server is
     // not asked), null when the apps server could not be.
     private static async Task<IReadOnlyList<PublishedApp>?> PublishedAsync(
@@ -222,5 +249,6 @@ public static class HouseholdSpacesAdmin
             ("name", before.Name != after.Name),
             ("colour", before.AccentColor != after.AccentColor),
             ("default agent", before.DefaultAgent != after.DefaultAgent),
-            ("order", before.Order != after.Order));
+            ("order", before.Order != after.Order),
+            ("approved reach", !Equals(before.Approved, after.Approved)));
 }

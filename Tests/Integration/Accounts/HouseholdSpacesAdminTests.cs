@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Accounts.Configuration;
 using Accounts.Settings;
+using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
@@ -339,10 +340,59 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         (await SpacesAsync(admin)).Spaces.ShouldBe([HouseholdSpace.Default, shared, kitchen]);
     }
 
-    // The apps server not answering costs only what needs it: the spaces still load (their app spaces as
-    // last saved) and save, and only adding an app space waits for it.
+    // An owner shares an app approving what the page showed of its reach, capped at what it asks. A later
+    // publish asking for more is shown as waiting on an owner; a save changing something else approves none of
+    // it, since the approval is only ever what the page sent, and a save of the space approving it grants it.
     [Fact]
-    public async Task AnAppsServerThatCannotBeAsked_StopsOnlyANewAppSpace()
+    public async Task AWiderPublish_IsShownPending_AndApprovedOnlyByASaveApprovingIt()
+    {
+        await using var apps = await AppsAsync();
+        await using var server = await StartAsync(apps);
+        var (household, ana) = await AppsHouseholdAsync(server);
+        var author = new Account(household, ana);
+        var id = await PublishedAsync(apps, author, "glucose");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        (await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection
+        {
+            Spaces =
+            [
+                HouseholdSpace.Default,
+                new HouseholdSpace { Slug = "glucose", Name = "Glucose today", AppId = id, Order = 1, Approved = new AppReach { Reads = ["/sugary", "/notes"] } }
+            ]
+        })).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var sharing = await SpacesAsync(admin);
+
+        await apps.CreateAsync(author, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"]}""",
+            overwrite: true);
+        await apps.ExecAsync(author, "/glucose", "./publish");
+        var widened = await SpacesAsync(admin);
+        var kitchen = new HouseholdSpace { Slug = "kitchen", Name = "Cocina", Order = 2 };
+        (await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection { Spaces = [HouseholdSpace.Default, widened.Spaces[1], kitchen] }))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        var untouched = await SpacesAsync(admin);
+        var app = widened.Apps.ShouldNotBeNull().ShouldHaveSingleItem();
+        var approving = await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection
+        {
+            Spaces = [HouseholdSpace.Default, untouched.Spaces[1] with { Approved = new AppReach { Reads = app.Reads, Connect = app.Connect } }, kitchen]
+        });
+        var approved = (await approving.Content.ReadFromJsonAsync<AdminSaved<AdminSpaces>>())!.Value;
+
+        sharing.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"] });
+        sharing.PendingOf(sharing.Spaces[1]).ShouldBe(AppReach.None);
+        var pending = new AppReach { Reads = ["/notes"], Connect = ["https://tracker.example.com"] };
+        widened.PendingOf(widened.Spaces[1]).ShouldBe(pending);
+        untouched.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"] });
+        untouched.PendingOf(untouched.Spaces[1]).ShouldBe(pending);
+        approved.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] });
+        approved.PendingOf(approved.Spaces[1]).ShouldBe(AppReach.None);
+        (await ChangesAsync(admin)).First().Summary.ShouldBe("Changed space glucose's approved reach");
+    }
+
+    // The apps server not answering costs only what needs it: the spaces still load (their app spaces as
+    // last saved) and save, and only adding an app space, or approving more of one's reach, waits for it.
+    [Fact]
+    public async Task AnAppsServerThatCannotBeAsked_StopsOnlyANewAppSpace_OrAnApproval()
     {
         await using var server = await StartAsync(appsUrl: DeadEnd.Url());
         var (household, ana) = await AppsHouseholdAsync(server);
@@ -359,11 +409,18 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
             Spaces = [HouseholdSpace.Default, shared, kitchen, new HouseholdSpace { Slug = "lights", Name = "Lights", AppId = "d4e5f6", Order = 3 }]
         });
 
+        var approving = await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection
+        {
+            Spaces = [HouseholdSpace.Default, shared with { Approved = new AppReach { Reads = ["/sugary"] } }, kitchen]
+        });
+
         loaded.Spaces.ShouldBe([HouseholdSpace.Default, shared]);
         loaded.Apps.ShouldBeNull();
         savedBeside.StatusCode.ShouldBe(HttpStatusCode.OK);
         added.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
         (await added.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldBe(AdminSpaces.AppsUnavailableMessage);
+        // What the app asks cannot be read, so no approval can be held to it.
+        approving.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
         (await SpacesAsync(admin)).Spaces.ShouldBe([HouseholdSpace.Default, shared, kitchen]);
     }
 
