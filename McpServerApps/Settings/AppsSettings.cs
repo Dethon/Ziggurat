@@ -96,7 +96,24 @@ public record AppCheckSettings
     // that polls never does.
     public TimeSpan Settle { get; init; } = TimeSpan.FromSeconds(5);
 
-    // Each runs its own Chromium, so these bound the server's memory as much as its fairness.
+    // Each runs its own Chromium, so these bound the browser's memory as much as their fairness.
     public int PerHousehold { get; init; } = 1;
     public int Total { get; init; } = 2;
+
+    public CheckBrowserSettings Browser { get; init; } = new();
+}
+
+// Where a check's Chromium runs. Either way it is launched for that check alone with the same options
+// (Checks/CheckBrowser), so a browser on a server is the browser launched here, moved elsewhere.
+public record CheckBrowserSettings
+{
+    // A Playwright browser server (`run-server --unsafe`, which launches a browser per connection with the
+    // options the connection sends): in the deployment the `apps-browser` container, so the agent's code
+    // never runs beside this server's credential, Redis and every household's repositories. Empty launches
+    // the browser on this machine (a host run, the tests).
+    public string Endpoint { get; init; } = "";
+
+    // Where that browser reaches this server's pages listener, `host:port`. Empty is this machine's
+    // loopback on Listeners.Pages, which is right for a browser on this machine and no other.
+    public string Pages { get; init; } = "";
 }

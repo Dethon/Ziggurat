@@ -10,18 +10,12 @@ using Microsoft.Playwright;
 
 namespace McpServerApps.Checks;
 
-// A check: a built app's preview opened in this server's own headless Chromium, as the person whose turn
+// A check: a built app's preview opened in a headless Chromium of its own (CheckBrowser: launched here,
+// or in the deployment on the browser server in the `apps-browser` container), as the person whose turn
 // ran `./check`, at each viewport asked, and what it saw written where the mount shows it
 // (`/<slug>/.checks/latest/`): one screenshot per viewport and a report of the console, failed requests,
 // content-policy violations, an accessibility snapshot and the app's own assertion files' outcomes.
 //
-// - **The browser reaches the app at this server**, never through public DNS: the apps domain resolves
-//   to the pages listener (`--host-resolver-rules`), and the page arrives by Host as any app origin's does.
-// - **The preview is a secure context**, as it is behind the proxy on https: its `__Host-` session cookie
-//   and its worker need one, and plain http under a real domain is none, so the browser is told to treat
-//   that one origin as secure. Only full Chromium honours that (the headless shell ignores it), and the
-//   flag is the process's, so each check launches a browser of its own; closing it is how the deadline
-//   stops everything at once.
 // - **It reads as the person whose turn ran it**: an app session this server opens itself for the
 //   preview (AppSessions.OpenCheck), its reads carrying the call's own token to the agent, ended with the
 //   check.
@@ -131,18 +125,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         try
         {
             using var playwright = await Playwright.CreateAsync().WaitAsync(stopped.Token);
-            await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
-            {
-                // Full Chromium in its new headless mode: the headless shell ignores the secure-origin flag.
-                Channel = "chromium",
-                Headless = true,
-                Timeout = (float)limits.Deadline.TotalMilliseconds,
-                Args =
-                [
-                    $"--host-resolver-rules=MAP *.{settings.AppsDomain} 127.0.0.1:{settings.Listeners.Pages}",
-                    $"--unsafely-treat-insecure-origin-as-secure={address}"
-                ]
-            });
+            await using var browser = await CheckBrowser.OpenAsync(playwright, limits.Browser, CheckBrowser.Options(settings, address));
             await using var closing = stopped.Token.Register(() => _ = browser.CloseAsync());
             foreach (var viewport in request.Viewports)
             {

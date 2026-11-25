@@ -4,12 +4,14 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
+using McpServerApps.Checks;
 using McpServerApps.Settings;
 using McpServerSugary.Store;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -19,7 +21,8 @@ namespace Tests.Integration.McpServerTests;
 // the apps server's own headless Chromium as the person whose turn ran it, and what it saw read back from
 // /apps/<slug>/.checks/latest/ with the file tools. Real Chromium, in process, on the fixture's apps
 // domain (apps.test, no .localhost name), so the secure context the check gives the preview is its own.
-public sealed class AppChecksTests
+// Launched here unless a case names a browser server: the deployment's runs in a container of its own.
+public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : IClassFixture<PlaywrightBrowserServer>
 {
     private static readonly string[] _defaultShots = ["1280x800.png", "390x844.png"];
 
@@ -289,6 +292,73 @@ public sealed class AppChecksTests
         var report = await ReportAsync(server, "glucose");
         report["deadlineHit"]!.GetValue<bool>().ShouldBeTrue();
         report["viewports"]!.AsArray().ShouldAllBe(v => v!["assertions"]!.AsArray().Count == 0);
+    }
+
+    // In the deployment the browser runs in a container of its own, on a Playwright browser server that
+    // launches it with what the check sends: the same browser, reaching this server's pages listener
+    // where it is told, the preview still a secure context with its session.
+    [Fact]
+    public async Task ACheck_RunsOnTheBrowserServerItIsGiven_AsTheBrowserItWouldLaunch()
+    {
+        await using var server = await StartAsync(s => s with
+        {
+            Checks = s.Checks with
+            {
+                Browser = new CheckBrowserSettings { Endpoint = browserServer.Endpoint, Pages = $"localhost:{s.Listeners.Pages}" }
+            }
+        });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            "<!doctype html><html lang=\"en\"><head><title>Glucose</title></head><body><h1>Glucose today</h1></body></html>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/secure.js",
+            "if (!isSecureContext) throw new Error('not a secure context'); return 'secure';");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]![0]!;
+        viewport["screenshot"]!.GetValue<string>().ShouldBe("800x600.png");
+        viewport["accessibility"]!.GetValue<string>().ShouldContain("heading \"Glucose today\" [level=1]");
+        viewport["assertions"]![0]!["message"]!.GetValue<string>().ShouldBe("secure");
+    }
+
+    // A browser server that does not answer is a check that could not run its browser, said in the report
+    // and the exit code, never a launch here instead.
+    [Fact]
+    public async Task ACheck_WhoseBrowserServerDoesNotAnswer_SaysItsBrowserCouldNotRun()
+    {
+        await using var server = await StartAsync(s => s with
+        {
+            Checks = s.Checks with { Browser = new CheckBrowserSettings { Endpoint = $"ws://127.0.0.1:{DeadEnd.Port}/" } }
+        });
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(1, ran.ToJsonString());
+        var report = await ReportAsync(server, "glucose");
+        report["error"]!.GetValue<string>().ShouldStartWith("the browser could not run the check");
+        report["viewports"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // The agent's code runs in the page, so the page runs in Chromium's own sandbox wherever the browser
+    // is: launched here, or on a browser server, which drops a sandbox it is not asked for.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AChecksBrowser_RunsInChromiumsSandbox(bool onAServer)
+    {
+        var settings = new AppsSettings { AppsDomain = AppsServer.AppsDomain };
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await CheckBrowser.OpenAsync(playwright,
+            new CheckBrowserSettings { Endpoint = onAServer ? browserServer.Endpoint : "" },
+            CheckBrowser.Options(settings, $"http://glucose-abc123-preview.{settings.AppsDomain}"));
+        var page = await browser.NewPageAsync();
+
+        await page.GotoAsync("chrome://sandbox");
+
+        (await page.Locator("body").InnerTextAsync()).ShouldContain("You are adequately sandboxed.");
     }
 
     // The viewports and the route are the agent's to name, and what a check leaves is the server's: the
