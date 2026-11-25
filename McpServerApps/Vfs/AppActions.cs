@@ -257,8 +257,8 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         }).ToList();
         var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
         return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
-               + $"screenshots and {AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ "
-               + "(file_read shows a screenshot)\n";
+               + $"screenshots, the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
+               + $"{AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ (file_read shows a picture)\n";
     }
 
     private const int MaxDetailLines = 12;

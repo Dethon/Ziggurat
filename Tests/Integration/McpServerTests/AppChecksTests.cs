@@ -50,7 +50,8 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
         ran["stdout"]!.GetValue<string>().ShouldContain("/glucose/.checks/latest/");
         (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest"))
-            .ShouldBe([.. _defaultShots.Select(s => $"/glucose/.checks/latest/{s}"), "/glucose/.checks/latest/report.json"]);
+            .ShouldBe([.. _defaultShots.Select(s => $"/glucose/.checks/latest/{s}"), "/glucose/.checks/latest/icon-512.png",
+                "/glucose/.checks/latest/icon-64.png", "/glucose/.checks/latest/report.json"], ignoreOrder: true);
         foreach (var shot in _defaultShots)
         {
             (await BytesAsync(server, $"/glucose/.checks/latest/{shot}"))[..8]
@@ -203,6 +204,35 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         viewport["failedRequests"]!.AsArray().ShouldBeEmpty();
     }
 
+    // What the app installs with is shown too, as a launcher draws it (the badge included): at full size and
+    // at launcher size, from the working tree, so a drawing the agent just wrote is what it sees.
+    [Fact]
+    public async Task ACheck_ShowsTheHomeScreenIcon_AtFullAndLauncherSize_AsItInstalls()
+    {
+        await using var server = await StartAsync();
+        await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","icon":"/icon.svg"}""");
+        await server.CreateAsync(AppsServer.Her, "/casa/index.html", "<!doctype html><title>Casa</title><h1>Casa</h1>");
+        await server.ExecAsync(AppsServer.Her, "/casa", "./check --viewport 390x844");
+        var accent = await BytesAsync(server, "/casa/.checks/latest/icon-512.png");
+        await server.CreateAsync(AppsServer.Her, "/casa/icon.svg",
+            """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8" fill="#1d4ed8"/></svg>""");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/casa", "./check --viewport 390x844");
+
+        ran["stdout"]!.GetValue<string>().ShouldContain("icon-512.png");
+        var full = await BytesAsync(server, "/casa/.checks/latest/icon-512.png");
+        var small = await BytesAsync(server, "/casa/.checks/latest/icon-64.png");
+        PngSize(accent).ShouldBe((512, 512));
+        PngSize(full).ShouldBe((512, 512));
+        PngSize(small).ShouldBe((64, 64));
+        full.ShouldNotBe(accent, "the app's own drawing, not the accent colour's");
+    }
+
+    private static (int Width, int Height) PngSize(byte[] png) =>
+        (System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(16, 4)),
+            System.Buffers.Binary.BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4)));
+
     // A read the household refused (the tools' envelope, 422) is the page's to handle, and one that handles
     // it is working: it is reported as a refused read naming what was asked and why, never as a console
     // error or a failed request. One the page leaves unhandled is still its uncaught error; an
@@ -316,7 +346,10 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         viewport["accessibility"]?.GetValue<string>().ShouldNotContain("secrets");
         viewport["screenshot"].ShouldBeNull(viewport.ToJsonString());
         viewport["error"]!.GetValue<string>().ShouldContain("left the preview");
-        (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest")).ShouldBe(["/glucose/.checks/latest/report.json"]);
+        // Only what the server drew of its own: the icon, never a screenshot of where the page went.
+        (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest")).ShouldBe(
+            ["/glucose/.checks/latest/icon-512.png", "/glucose/.checks/latest/icon-64.png", "/glucose/.checks/latest/report.json"],
+            ignoreOrder: true);
     }
 
     // In the deployment the check's browser has no way out but the apps server's egress proxy, which reaches
@@ -505,7 +538,8 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
 
         ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
         (await server.GlobAsync(AppsServer.Her, "*", "/glucose/.checks/latest"))
-            .ShouldBe(["/glucose/.checks/latest/600x400.png", "/glucose/.checks/latest/report.json"]);
+            .ShouldBe(["/glucose/.checks/latest/600x400.png", "/glucose/.checks/latest/icon-512.png", "/glucose/.checks/latest/icon-64.png",
+                "/glucose/.checks/latest/report.json"], ignoreOrder: true);
         var report = await ReportAsync(server, "glucose");
         report["path"]!.GetValue<string>().ShouldBe("/week");
         report["viewports"]![0]!["accessibility"]!.GetValue<string>().ShouldContain("heading \"/week\"");

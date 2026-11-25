@@ -124,7 +124,8 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   (an SVG the origin serves, `AppIcon`: put in as a data-URI picture, never markup) or else the accent
   colour's drawing. SVG only, one drawing for every size. `./publish` refuses an `icon` that is no file
   under the served root (a link counts as none) or no whole `<svg>` document of 256 KiB at most; a preview
-  whose file is not there yet draws the accent's.
+  whose file is not there yet draws the accent's. `./check` saves it as it installs (`icon-512.png`,
+  `icon-64.png`), drawn by its own browser from the working tree, so the agent sees it with no rasterizer.
 - **The worker**: a published origin's answers carry `X-App-Version` (served commit, base policy, this
   build), embedded in the worker, which keeps the app's files **cache first under that version** — a
   publish, a narrowed approval or a new build is new worker bytes, and the new worker drops every other

@@ -8,8 +8,9 @@ description-budget: 110
 # reduced: both change what the agent does, so both are taught. 1700 since a build left its old bundles to
 # publish and imported the library a bundler cannot resolve, and since a check's refused reads are reported
 # apart (measured 1,697 on 2026-11-25). 1730 since an app names its own icon, and an agent wrote a manifest
-# of its own that no browser read.
-body-budget: 1730
+# of its own that no browser read. 1750 since a check shows the icon as it installs, which two agents
+# had built a venv to rasterize.
+body-budget: 1750
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -70,7 +71,7 @@ Keep the project in the sandbox home (`~/apps/<slug>`) and install and build the
 
 `domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
-- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like.
+- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like; `icon-512.png`, `icon-64.png` the installed icon.
 - `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `accessibility` (the page's text and structure) and `assertions`.
 
 Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.

@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1728 / 1730 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1740 / 1750 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -60,7 +60,7 @@ Keep the project in the sandbox home (`~/apps/<slug>`) and install and build the
 
 `domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
-- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like.
+- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like; `icon-512.png`, `icon-64.png` the installed icon.
 - `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `accessibility` (the page's text and structure) and `assertions`.
 
 Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.

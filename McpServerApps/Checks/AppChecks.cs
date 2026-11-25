@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Apps;
@@ -29,6 +30,11 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
 {
     public const string LatestDirectory = "latest";
     public const string ReportFile = "report.json";
+
+    // The home screen icon as it installs, at full size and at launcher size.
+    public static readonly IReadOnlyList<int> IconSizes = [512, 64];
+
+    public static string IconFile(int size) => $"icon-{size}.png";
 
     // A phone and a desktop, when a check names none.
     public static readonly IReadOnlyList<CheckViewport> DefaultViewports = [new(390, 844), new(1280, 800)];
@@ -134,6 +140,8 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
                 viewports.Add(seen);
                 await ViewAsync(browser, seen, address + request.Path, session, reachable, request.Assertions, run, stopped.Token);
             }
+
+            await ShowIconAsync(browser, AppIcon.Svg(request.Manifest, IconDrawing(app, request.Manifest)), run, stopped.Token);
         }
         catch (Exception ex) when (stopped.IsCancellationRequested)
         {
@@ -289,6 +297,45 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
 
         await Task.WhenAll(seen.Refusals);
+    }
+
+    // The icon the preview would install with, drawn by the check's own browser from the server's own SVG
+    // (the badge included) as a picture in a page of nothing else: what a launcher shows, at each size.
+    private static async Task ShowIconAsync(IBrowser browser, string svg, string run, CancellationToken stopped)
+    {
+        await using var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            ViewportSize = new ViewportSize { Width = IconSizes.Max(), Height = IconSizes.Sum() }, DeviceScaleFactor = 1
+        });
+        var page = await context.NewPageAsync();
+        var source = $"data:image/svg+xml;base64,{Convert.ToBase64String(Encoding.UTF8.GetBytes(svg))}";
+        await page.SetContentAsync(
+            "<body style=\"margin:0\">"
+            + string.Concat(IconSizes.Select(size => $"<img id=\"icon-{size}\" src=\"{source}\" width=\"{size}\" height=\"{size}\" style=\"display:block\">"))
+            + "</body>", new PageSetContentOptions { Timeout = 0 });
+        await page.WaitForFunctionAsync("() => [...document.images].every(i => i.complete && i.naturalWidth > 0)", null,
+            new PageWaitForFunctionOptions { Timeout = 0 }).WaitAsync(stopped);
+        foreach (var size in IconSizes)
+        {
+            await page.Locator($"#icon-{size}").ScreenshotAsync(new LocatorScreenshotOptions
+            {
+                Path = Path.Combine(run, IconFile(size)), OmitBackground = true, Timeout = 0
+            });
+        }
+    }
+
+    // The drawing the working tree's manifest names, as the preview serves it: a file under its root, no link.
+    private byte[]? IconDrawing(BuiltApp app, AppManifest manifest)
+    {
+        if (manifest.Icon is not { } icon)
+        {
+            return null;
+        }
+
+        var file = Path.Combine(store.Repository(app).WorkTree, manifest.Root, AppIcon.Relative(icon));
+        return File.Exists(file) && new FileInfo(file).LinkTarget is null && new FileInfo(file).Length <= AppIcon.MaxBytes
+            ? File.ReadAllBytes(file)
+            : null;
     }
 
     // A read of the household the preview's library made (POST /_vfs/<operation>), on the preview itself.
