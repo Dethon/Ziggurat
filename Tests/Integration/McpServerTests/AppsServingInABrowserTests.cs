@@ -75,6 +75,67 @@ public class AppsServingInABrowserTests
         violations.ShouldBeEmpty();
     }
 
+    // A published app reads the household through the client library its origin serves, as its viewer:
+    // a query's rows and a text read's content rendered into the page, and a read outside its manifest
+    // handed to the app as a structured error carrying the tools' envelope.
+    [Fact]
+    public async Task APublishedApp_ReadsTheHouseholdThroughTheClientLibrary_AndRendersIt()
+    {
+        await using var sugary = await SugaryServer.StartAsync();
+        await using (var db = Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions
+                         .GetRequiredService<global::McpServerSugary.Store.SugaryStore>(sugary.Services).For(AppsServer.Her))
+        {
+            db.Meals.Add(new global::McpServerSugary.Store.Meal
+            {
+                Id = Guid.NewGuid(), EatenAt = DateTimeOffset.Parse("2026-10-11T12:00:00Z"), Notes = "her lentils",
+                Outcome = global::Domain.DTOs.Sugary.MealOutcome.High, FirstEstimate = new global::McpServerSugary.Store.Interval(30, 40, 55),
+                Items = [], CarbsLow = 30, Carbs = 40, CarbsHigh = 55
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var households = new AgentHouseholds();
+        households.Add(AppsServer.Her.TenantId, new global::Domain.DTOs.AgentDefinition
+        {
+            Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [sugary.Endpoint], EnabledFeatures = ["filesystem"],
+            WhitelistPatterns = ["domain__filesystem__*"]
+        });
+        await using var agent = await AppReadsAgent.StartAsync(households, new global::Domain.DTOs.SharedServers { Sugary = sugary.Endpoint });
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain, AgentUrl = agent.Address });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="meal"></p><p id="readme"></p><p id="refused"></p></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            import { query, read } from '/_app/apps.mjs';
+            const meals = await query('/sugary', 'select notes from meals');
+            document.getElementById('meal').textContent = meals.rows[0][0];
+            const readme = await globalThis.apps.read('/sugary/README.md');
+            document.getElementById('readme').textContent = readme.filePath;
+            try {
+              await read('/vault/a.md');
+            } catch (error) {
+              document.getElementById('refused').textContent =
+                `${error instanceof globalThis.apps.ReadError} ${error.errorCode} ${error.path} ${error.retryable}`;
+            }
+            """);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var page = await (await browser.NewContextAsync()).NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        var violations = await ViolationsAsync(page);
+
+        await page.GotoAsync(origin + "/");
+
+        await Assertions.Expect(page.Locator("#meal")).ToHaveTextAsync("her lentils");
+        await Assertions.Expect(page.Locator("#readme")).ToHaveTextAsync("/sugary/README.md");
+        await Assertions.Expect(page.Locator("#refused")).ToHaveTextAsync("true permission_denied /vault/a.md false");
+        violations.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ARemovedAppsInstalledWorker_TakesItselfAway()
     {

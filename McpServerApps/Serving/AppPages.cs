@@ -259,6 +259,7 @@ public sealed class AppPages(BuiltAppStore store, AppViewers viewers, AgentReads
             AppOriginFiles.WorkerPath => ("text/javascript", AppOriginFiles.Worker),
             AppOriginFiles.RegisterPath => ("text/javascript", AppOriginFiles.Register),
             AppOriginFiles.LibraryPath => ("text/javascript", AppOriginFiles.Library),
+            AppOriginFiles.ModulePath => ("text/javascript", AppOriginFiles.Module),
             _ => (null, null)
         };
         if (body is null)
