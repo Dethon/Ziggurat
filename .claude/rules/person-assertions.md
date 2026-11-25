@@ -53,6 +53,7 @@ which anything on the compose network could write.
 | Dashboard's usage route, `/api/usage` (`OperatorGate`) | `AppChannels.Usage`, signed by the accounts service itself for the owner its admin gate verified (`Assertions.Of(ForwardedAccount, channel)`), never by a proxy block | 401 | 403 without the `owner` role; answers the assertion's household alone |
 | `/api/agents*` (`AgentApi`, after the secret) | `AppChannels.SexyTime` | 401 | the secret alone opens nothing |
 | The accounts service's admin API, `/accounts/admin/*` (`AdminApi`'s gate) | `AppChannels.Admin` | 401 | verified against the service's own keys; 403 without the root's role or the admin client's header (`.claude/rules/admin.md`) |
+| A built app's origin (`AppViewers`, apps server) | `AppChannels.Apps`, from the app sign-in's redemption, never a header (no proxy block) | a page is sent to the app sign-in, anything else the 404 | verified once per sign-in and renewal, kept on the app session; whether they may open the app is the apps server's (`.claude/rules/apps.md`) |
 
 The channel is what keeps an assertion signed for one route from opening another: each Caddy
 `forward_auth` names its block's (`?channel=`), the session check signs it, the app checks it.

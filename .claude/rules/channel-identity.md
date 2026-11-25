@@ -12,6 +12,7 @@ paths:
   - "Tests/Integration/Accounts/IdentityResolutionTests.cs"
   - "Tests/Integration/Accounts/InternalCallersTests.cs"
   - "Tests/Integration/Accounts/SessionRefreshTests.cs"
+  - "Tests/Integration/Accounts/AppSignInRouteTests.cs"
   - "Tests/Integration/Accounts/SuspensionCoverageTests.cs"
   - "Tests/Integration/Accounts/TelegramLinkingTests.cs"
   - "Tests/Integration/Accounts/TelegramGateTests.cs"
@@ -32,11 +33,16 @@ project — so a route's shape and status codes are changed on both sides togeth
   displayName, assertion }`, 404 for nobody. Only `voice` (the account's id) and `telegram` (a
   `LinkedIdentity` row); any other channel is 400 — `signalr` included: the chat hub's person is a live
   session's, never an account named by id, which would let the hub's credential mint anybody.
-- **`session`** (`Internal/SessionRefresh`): the chat hub's (and Sugary's, before a pen reminder)
-  `{ userId, sessionId }` — the `sid` its connection's assertion named, with its person — → a fresh
-  assertion on the caller's channel naming that session while it is live, 404 once revoked, gone or not
-  that person's (`SessionStore.LiveAsync`); never an account by its id alone. The hub asks for every turn (`ISessionAccounts`), so revoking
-  a session stops its open chat client's next turn.
+- **`session`** (`Internal/SessionRefresh`): the chat hub's (Sugary's, before a pen reminder; the apps
+  server's, renewing an app session) `{ userId, sessionId, channel? }` — the `sid` its connection's
+  assertion named, with its person — → a fresh assertion naming that session while it is live, 404 once
+  revoked, gone or not that person's (`SessionStore.LiveAsync`); never an account by its id alone. The
+  channel is the one named, which the caller must be allowed (else 403), or with none the first of
+  `signalr`, `sugary`, `apps` it is; the apps server always names `apps`, since a host run's one shared
+  credential is the hub's too. The hub asks for every turn (`ISessionAccounts`), so revoking a session
+  stops its open chat client's next turn.
+- **`app-sign-in`** `{ code, origin }`: the apps server's redemption of an app sign-in code
+  (`IAppSignIns`, `accounts.md`, "The app sign-in").
 - **`guest`** `{ channel }` → `{ tenantId, assertion }` (`IdentityClaims.Guest`), `voice` alone (400
   otherwise): only a satellite hears somebody nobody sent.
 - **Telegram's ways in** (`/accounts/internal/telegram/`, `Internal/TelegramLinking` over
@@ -68,8 +74,9 @@ These routes are **server to server only**:
 - **Each caller asks about its own channel alone** (`Internal/InternalCallers`): signalr sessions,
   Telegram (`telegram`, the only caller of `/telegram/*`), voice (resolve and guest — the table keeps
   `mcp-channel-voice`, but the shipped compose gives it no entry: a household's voice server asks on its
-  back-call, below), Sugary (sessions on `sugary`; it resolves no identity). Anything else is 403 before a row is read, so one leaked channel credential mints that
-  channel's people and no other's. A credential several entries share is each of those callers at once.
+  back-call, below), Sugary (sessions on `sugary`; it resolves no identity), the apps server (`apps`:
+  app sign-in codes and sessions). Anything else is 403 before a row is read, so one leaked channel
+  credential mints that channel's people and no other's. A credential several entries share is each of those callers at once.
   Compose's caller names are held to the table
   (`DeploymentConformanceTests.EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf`); the
   same table gates household-config views (`.claude/rules/household-config.md`).

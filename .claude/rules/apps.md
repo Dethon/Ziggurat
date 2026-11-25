@@ -7,6 +7,8 @@ paths:
   - "Tests/Unit/Domain/Apps/**"
   - "Tests/Unit/McpServerApps/**"
   - "Accounts/Admin/HouseholdFeaturesAdmin.cs"
+  - "Accounts/Apps/**"
+  - "Accounts/Internal/AppSignInRedemption.cs"
   - "DockerCompose/caddy/Caddyfile"
 ---
 
@@ -85,13 +87,15 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 - **The app is the Host's label, by id** (`Domain/Apps/AppOrigin.Parse`): `<slug>-<id>` or `<slug>-<id>-preview`;
   the slug is shape-checked and ignored, so a renamed app's old link opens it.
 - **Who opens what** (`AppPages`): the published origin, its author (ticket 09 adds an app space's
-  members); the preview, its author alone. Anyone else, an unknown label, a non-GET, an app never
+  members); the preview, its author alone. **The viewer is settled before the app is looked up**: a page
+  opened with no app session is sent to sign in whether or not its app exists; a signed-in viewer who
+  may not open it, an unknown label, a non-GET, anything but a page opened with no session, an app never
   published (on its published origin) gets **one 404, byte for byte**, under `AppContentPolicy.Closed`.
 - **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie names one, which opens one
-  `AppOrigin` (published or preview, never both) until it expires, keeping the accounts `sid` it was made
-  from. **Held in memory**, indexed by person (`Account`: household and user), `EndAll(person)` for
-  `SessionsEnded`: a Redis announcement missed while the server is down would leave a stored session
-  alive, while memory loses both at once; a restart costs a silent re-sign-in.
+  `AppOrigin` (published or preview, never both) until it expires (`Sessions:Lifetime`, 12 h), keeping
+  the accounts `sid` it was made from and the latest `apps` assertion. **Held in memory**, indexed by
+  person (`Account`: household and user): a Redis announcement missed while the server is down would
+  leave a stored session alive, while memory loses both at once; a restart costs a silent re-sign-in.
 - **What is served**: published, the served commit's files under that commit's manifest `root`, read
   from git as bytes (`AppRepository.EntryAsync`, object named on stdin); preview, the working tree's
   under the tree's manifest (no links followed). A directory without `/` is a 308 to it; a navigation
@@ -117,13 +121,47 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   plain http a secure context in Chromium, which the `__Host-` cookie and the worker need (verified on http
   only; through the smoke stack's Caddy on its untrusted local CA a browser may refuse the worker).
 
+## App sign-in
+
+How an app session is made (`AppViewers`; the wire spelled once in `Domain/Apps/AppSignIn`; the
+accounts side in `accounts.md`, "The app sign-in"):
+
+- **Sessionless page → the main host.** 302 to `{PublicBaseUrl}/accounts/app-sign-in?returnUrl=<this
+  address>&state=<fresh>`, the state also set as `__Host-app-sign-in` (10 min). The origin is the Host
+  with `X-Forwarded-Proto` (the proxy's) else the listener's scheme. Empty `PublicBaseUrl` (`PUBLICBASEURL`,
+  equal to the accounts service's, conformance-checked) sends nobody: the 404.
+- **The callback** `GET /_app/sign-in?code=&path=&state=` (under `/_app/`, before any session check):
+  the state must equal the cookie (**checked before the code is redeemed**, so a code sent to another
+  browser in a link is neither believed nor spent); the code is redeemed with this server's own
+  credential for **this origin** (`IAppSignIns.RedeemAsync`); the answer's assertion is verified for
+  `AppChannels.Apps` and **its claims alone** name the person, household and `sid`. Then the session is
+  opened, its cookie set, the state cookie cleared, and 303 to `AppSignIn.SamePath(path)` (one leading
+  `/`). A refused code is 400 and never redirected again (no loop between hosts); an outage, or an
+  assertion that does not verify, 503.
+- **Cookies**: `Secure; HttpOnly; Path=/; SameSite=Lax`, no `Domain` (`__Host-`). Lax because the
+  callback is a navigation another site started.
+- **Renewal**: once an app session's assertion has been held `Sessions:AssertionKept` (5 min, at most
+  half the accounts `AssertionLifetime`, conformance-checked), the next request asks the session refresh
+  on `apps` (`IAppSignIns.RenewAsync`), as the chat hub does per turn. Nobody (revoked, disabled), a
+  suspended household, or an assertion naming another person or `sid` **ends that app session**; an
+  outage or an unverifiable answer **serves 503 and ends nothing**. So a revoked session opens nothing
+  after at most `AssertionKept`, announcement or not.
+- **Ending**: `EndedAppSessionsListener` hears `SessionsEnded` on `accounts:sessions:ended`
+  (`REDISCONNECTIONSTRING`) and calls `EndAll(person)` — every app session of theirs, never asked
+  session by session. Empty Redis (a host run, a test) hears nothing; renewal still ends them.
+- **Wiring**: the same `CALLERS__mcp-apps` credential as the agent-names view, `ACCOUNTS__JWKSURL`
+  (`AddAssertionVerifier`), `PUBLICBASEURL`, Redis; `mcp-apps` depends on `redis`. A host run reads them
+  from `appsettings.Local.json`, the accounts service its `CALLERS__mcp-apps` from `run-local.sh`/launch.
+
 ## Tests
 
 `McpAppsServerTests` and `AppsPublishingTests` drive the server in process through its MCP tools
 (`AppsServer`, after `SugaryServer`, both listeners open); `AppsServingTests` its pages listener by Host
-with sessions the test opens (`SessionFor`), `AppsServingInABrowserTests` the same in Chromium on
-`apps.localhost` (secure context, worker, manifest, no policy violation, removed worker);
-`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
+with sessions the test opens (`SessionFor`, an assertion signed by `TestAssertions`), `AppsSignInTests`
+the sign-in against a real `AccountsServer` signing with the test key on its clock (handed to the apps
+server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the same in Chromium on
+`apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in);
+`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
