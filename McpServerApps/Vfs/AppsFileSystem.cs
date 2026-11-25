@@ -708,9 +708,6 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
                     return (Exec(cwd, "", $"nothing published: {AppManifest.FileName} breaks its rules:\n- {string.Join("\n- ", problems)}", 1), null);
                 case AppManifestParse.Valid { Manifest: var valid } when !Directory.Exists(Path.Combine(repository.WorkTree, valid.Root)):
                     return (Exec(cwd, "", $"nothing published: the root '{valid.Root}' the manifest serves is not a directory of the app.", 1), null);
-                case AppManifestParse.Valid { Manifest: var valid }
-                    when await UnpinnedAsync(Path.Combine(repository.WorkTree, valid.Root), ct) is { Count: > 0 } unpinned:
-                    return (Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", unpinned)}", 1), null);
                 case AppManifestParse.Valid { Manifest: var valid }:
                     manifest = valid;
                     break;
@@ -718,10 +715,21 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
                     throw new InvalidOperationException("A manifest is either valid or refused.");
             }
 
+            var pinning = await OutsideCodePinning.CheckRootAsync(Path.Combine(repository.WorkTree, manifest.Root), ct);
+            if (pinning.Problems.Count > 0)
+            {
+                return (Exec(cwd, "", $"nothing published: outside code must be pinned by an exact version and its integrity hash:\n- {string.Join("\n- ", pinning.Problems)}", 1), null);
+            }
+
             var committed = await repository.CommitAllAsync($"Publish from a turn of {_agentId ?? app.BuildingAgent}", ct);
             var head = (await repository.HeadAsync(ct))!;
             var commit = await repository.ResolveAsync(head, ct);
-            await store.SaveAsync(app with { PublishedCommit = head }, ct);
+            // What passed is what the served policy loads, recorded with the commit so serving parses nothing.
+            await store.SaveAsync(app with
+            {
+                PublishedCommit = head,
+                Pinned = new Dictionary<string, PinnedCode>(app.Pinned) { [head] = pinning.Pinned }
+            }, ct);
             var link = BuiltAppId.Link(app.Slug, app.Id, appsDomain);
             return (Exec(cwd, committed is null
                 ? $"nothing changed since {commit!.Short}; serving it at {link}\n"
@@ -768,18 +776,6 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         return $"the household shares it as the space '{space.Name}', and an owner has not approved all it now asks: until one "
                + $"approves it on the spaces page, it is not granted {string.Join(", ", asked)} — for anyone, you included. "
                + "Tell the person, so they can ask an owner\n";
-    }
-
-    // Every page under the served root, by its path from there: a page outside it is the agent's
-    // source, never loaded by a person.
-    private static async Task<IReadOnlyList<string>> UnpinnedAsync(string root, CancellationToken ct)
-    {
-        var pages = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-            .Where(file => Path.GetExtension(file).ToLowerInvariant() is ".html" or ".htm")
-            .Order(StringComparer.Ordinal);
-        var problems = await Task.WhenAll(pages.Select(async page => OutsideCodePinning.Problems(
-            Path.GetRelativePath(root, page).Replace('\\', '/'), await File.ReadAllTextAsync(page, ct))));
-        return [.. problems.SelectMany(p => p)];
     }
 
     // The preview checked in the server's browser as the person whose turn this is, on this call's own

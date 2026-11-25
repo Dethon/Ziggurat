@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1596 / 1600 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1630 / 1650 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -31,7 +31,7 @@ A built app is static files in a git repository at `/apps/<slug>/`, served on an
 
 ### The page's limits
 
-Scripts come from the app and three CDNs only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` reaches the app's own origin and the `connect` origins, no others; images those, the CDNs, `data:` and `blob:`.
+Scripts come from the app and pinned CDN files only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` reaches the app's own origin and the `connect` origins, no others; images those, the CDNs, `data:` and `blob:`.
 
 Outside code is loaded from `https://cdn.jsdelivr.net`, `https://unpkg.com` or `https://esm.sh`, with an exact version in the URL and an `integrity` hash, or `./publish` refuses it:
 
@@ -39,7 +39,7 @@ Outside code is loaded from `https://cdn.jsdelivr.net`, `https://unpkg.com` or `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" integrity="sha256-dEAdc43T4D7l37O2hBIQ/ixOrYqWDEARykugt4qf2PM=" crossorigin="anonymous"></script>
 ```
 
-The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/packages/npm/<name>@<version>?structure=flat`; pin a file that list names (a `.min.js` it lacks is minified on the fly, with no listed hash). In a sandbox, hash the exact bytes instead. An import map gives every outside module its own `integrity` entry and maps no prefixes; imports inside a module are not checked, so map them. Fewer libraries is better: a chart is a few lines of SVG.
+The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/packages/npm/<name>@<version>?structure=flat`; pin a file that list names (a `.min.js` it lacks is minified on the fly, with no listed hash). In a sandbox, hash the exact bytes instead. An import map gives every outside module its own `integrity` entry and maps no prefixes. Only pinned files and their own `name@version/` directory load; another package or version is refused, so pin a bundled build (UMD, or jsdelivr's `+esm` of a dependency-free package). Fewer libraries is better: a chart is a few lines of SVG.
 
 ### Reading the household
 

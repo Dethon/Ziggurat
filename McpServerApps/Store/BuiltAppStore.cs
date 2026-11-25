@@ -23,6 +23,13 @@ public sealed record BuiltApp
 
     // What the app serves; null until the first publish.
     public string? PublishedCommit { get; init; }
+
+    // The outside code each published commit's pages were found pinned with at its publish, by commit: all
+    // the served policy lets them load from a CDN. A rollback moves only PublishedCommit, so each commit
+    // keeps its own; a commit with none recorded loads no outside code.
+    public IReadOnlyDictionary<string, PinnedCode> Pinned { get; init; } = new Dictionary<string, PinnedCode>();
+
+    public PinnedCode PinnedAt(string commit) => Pinned.GetValueOrDefault(commit) ?? PinnedCode.None;
 }
 
 // The volume: `<storage>/<household>/<id>/` holds an app's metadata (`app.meta.json`), its git

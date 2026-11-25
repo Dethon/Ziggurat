@@ -86,6 +86,29 @@ public class OutsideCodePinningTests
     public void AnImportMapThatIsNotJson_IsRefused() =>
         Check(Page("""<script type="importmap">{ imports: </script>""")).ShouldHaveSingleItem().ShouldContain("import map");
 
+    // What passed is what the page's policy loads, from the same pass that judged it: pinned scripts, module
+    // preloads and import-mapped modules as code, pinned stylesheets as styles, and nothing that failed.
+    [Fact]
+    public void WhatPassed_IsThePinnedCodeThePageLoads()
+    {
+        var outcome = OutsideCodePinning.Check("index.html", Page($$"""
+            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" integrity="{{Hash}}"></script>
+            <script src="https://cdn.jsdelivr.net/npm/unpinned/dist/x.js" integrity="{{Hash}}"></script>
+            <script src="https://cdn.jsdelivr.net/npm/nohash@1.0.0/x.js"></script>
+            <link rel="modulepreload" href="https://esm.sh/lit@3.1.0" integrity="{{Hash}}">
+            <link rel="stylesheet" href="https://unpkg.com/pico.css@2.0.6/css/pico.min.css" integrity="{{Hash}}">
+            <script type="importmap">
+            { "imports": { "preact": "https://esm.sh/preact@10.19.3" }, "integrity": { "https://esm.sh/preact@10.19.3": "{{Hash}}" } }
+            </script>
+            """));
+
+        outcome.Problems.Count.ShouldBe(2);
+        outcome.Pinned.Scripts.ShouldBe([
+            "https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js", "https://esm.sh/lit@3.1.0", "https://esm.sh/preact@10.19.3"
+        ]);
+        outcome.Pinned.Styles.ShouldBe(["https://unpkg.com/pico.css@2.0.6/css/pico.min.css"]);
+    }
+
     private static string Page(string body) =>
         $"<!doctype html><html><head><title>Glucose</title>{body}</head><body></body></html>";
 }

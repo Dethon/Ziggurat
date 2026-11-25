@@ -192,6 +192,60 @@ public class AppsServingInABrowserTests
         violations.ShouldBeEmpty();
     }
 
+    // What was checked is what runs: a published page loads from a CDN only the packages, at the versions,
+    // that ./publish found pinned on it — a pinned script and a file of its own package's version (a bundle's
+    // chunk, an esm.sh stub's build) load, while a module's import of another package, or of the same package
+    // at another version, from the very same CDN is refused by the policy and never leaves the browser.
+    [Fact]
+    public async Task APublishedPage_LoadsOnlyThePackagesItsPublishPinned_FromACdn()
+    {
+        const string umd = "globalThis.glanceUmd = 'drawn';";
+        var integrity = "sha384-" + Convert.ToBase64String(System.Security.Cryptography.SHA384.HashData(System.Text.Encoding.UTF8.GetBytes(umd)));
+        const string package = "https://cdn.jsdelivr.net/npm/glance@1.2.3";
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            $"""<!doctype html><html><head><script src="{package}/dist/glance.umd.js" integrity="{integrity}" crossorigin="anonymous"></script><script type="module" src="/main.js"></script></head><body></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            $$"""
+              document.body.dataset.umd = String(globalThis.glanceUmd);
+              const tried = await Promise.all([
+                '{{package}}/dist/chunk.mjs',
+                'https://cdn.jsdelivr.net/npm/unpinned@1.0.0/index.mjs',
+                'https://cdn.jsdelivr.net/npm/glance@9.9.9/dist/chunk.mjs'
+              ].map(address => import(address).then(() => 'loaded', () => 'refused')));
+              document.body.dataset.imports = tried.join(' ');
+              """);
+        (await server.ExecAsync(AppsServer.Her, "/glucose", "./publish"))["exitCode"]!.GetValue<int>().ShouldBe(0);
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var context = await browser.NewContextAsync();
+        var fetched = new ConcurrentQueue<string>();
+        await context.RouteAsync("https://cdn.jsdelivr.net/**", route =>
+        {
+            fetched.Enqueue(route.Request.Url);
+            return route.FulfillAsync(new RouteFulfillOptions
+            {
+                Status = 200, ContentType = "text/javascript", Headers = new Dictionary<string, string> { ["Access-Control-Allow-Origin"] = "*" },
+                Body = route.Request.Url.EndsWith("glance.umd.js", StringComparison.Ordinal) ? umd : "export const loaded = true;"
+            });
+        });
+        var page = await context.NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        var violations = await ViolationsAsync(page);
+
+        await page.GotoAsync(origin + "/");
+
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-imports", "loaded refused refused");
+        await Assertions.Expect(page.Locator("body")).ToHaveAttributeAsync("data-umd", "drawn");
+        fetched.ShouldBe([$"{package}/dist/glance.umd.js", $"{package}/dist/chunk.mjs"], ignoreOrder: true);
+        violations.ShouldContain(v => v.Contains("unpinned@1.0.0"));
+        violations.ShouldContain(v => v.Contains("glance@9.9.9"));
+        violations.ShouldAllBe(v => v.Contains("unpinned@1.0.0") || v.Contains("glance@9.9.9"));
+    }
+
     private static async Task<IReadOnlyList<System.Text.Json.Nodes.JsonNode>> ErrorsAsync(AppsServer server)
     {
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/glucose/errors" },

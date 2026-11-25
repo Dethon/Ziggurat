@@ -7,6 +7,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Tools;
 using Mcp.Hosting;
+using McpServerApps.Publishing;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using Microsoft.AspNetCore.Http;
@@ -109,7 +110,8 @@ public sealed class AppPages(
             return;
         }
 
-        var policy = AppContentPolicy.For(served.Manifest, settings.Cdns);
+        var pinned = await served.PinnedAsync(ct);
+        var policy = AppContentPolicy.For(served.Manifest, settings.Cdns, pinned);
         if (request.Path.StartsWithSegments(AppOriginFiles.Prefix.TrimEnd('/')))
         {
             await GeneratedAsync(context, policy, served.Manifest);
@@ -159,7 +161,7 @@ public sealed class AppPages(
         if (type == "text/html")
         {
             var html = Encoding.UTF8.GetString(bytes);
-            policy = AppContentPolicy.For(served.Manifest, settings.Cdns, InlineImportMaps.Hashes(html));
+            policy = AppContentPolicy.For(served.Manifest, settings.Cdns, pinned, InlineImportMaps.Hashes(html));
             bytes = Encoding.UTF8.GetBytes(AppOriginFiles.Inject(html));
         }
 
@@ -472,7 +474,7 @@ public sealed class AppPages(
         }
 
         return app.PublishedCommit is { } commit && await store.PublishedManifestAsync(app, ct) is { } published
-            ? new CommitFiles(sharedAs is null ? published : Granted(published, sharedAs.Approved), repository, commit)
+            ? new CommitFiles(sharedAs is null ? published : Granted(published, sharedAs.Approved), repository, commit, app.PinnedAt(commit))
             : null;
     }
 
@@ -537,6 +539,10 @@ public sealed class AppPages(
         // A path below the manifest's root, its segments already checked.
         public abstract Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct);
 
+        // The outside code its pages may load (AppContentPolicy): a commit's as its publish recorded it, the
+        // working tree's as a publish would find it now, so the check sees what publishing would serve.
+        public abstract Task<PinnedCode> PinnedAsync(CancellationToken ct);
+
         public async Task<CommittedEntry?> AtAsync(string path, CancellationToken ct) =>
             AppOriginFiles.Paths.Contains(path) ? new CommittedEntry.File([])
             : path.StartsWith(AppOriginFiles.Prefix, StringComparison.Ordinal) || Segments(path) is not { } segments ? null
@@ -561,10 +567,16 @@ public sealed class AppPages(
 
             return Directory.Exists(full) && new DirectoryInfo(full).LinkTarget is null ? new CommittedEntry.Directory() : null;
         }
+
+        public override async Task<PinnedCode> PinnedAsync(CancellationToken ct) =>
+            Directory.Exists(Root) ? (await OutsideCodePinning.CheckRootAsync(Root, ct)).Pinned : PinnedCode.None;
     }
 
-    internal sealed record CommitFiles(AppManifest Manifest, AppRepository Repository, string Commit) : ServedFiles(Manifest)
+    internal sealed record CommitFiles(AppManifest Manifest, AppRepository Repository, string Commit, PinnedCode Pinned)
+        : ServedFiles(Manifest)
     {
+        public override Task<PinnedCode> PinnedAsync(CancellationToken ct) => Task.FromResult(Pinned);
+
         public override Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct) =>
             Repository.EntryAsync(Commit, string.Join('/', new[] { Manifest.Root, relative }.Where(p => p.Length > 0)), ct);
     }

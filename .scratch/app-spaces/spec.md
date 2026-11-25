@@ -276,9 +276,12 @@ until an owner removes the space.
 - **Who may open what:** the published app — its author, and while it is an app space every member of
   its household who is not disabled; the preview — its author alone. Anyone else, and any unknown
   label, gets the same 404.
-- Every response carries a content policy built from the manifest: `default-src 'none'`;
-  `script-src 'self'` plus the fixed CDN list; `style-src` the same plus inline styles;
-  `img-src 'self' data: blob:` plus the CDN list and `connect`; `font-src 'self'` plus the CDN list;
+- Every response carries a content policy built from the manifest and the outside code its pages were
+  found pinned with: `default-src 'none'`; `script-src 'self'` plus, on the fixed CDN list, each pinned
+  file's package version directory (never a CDN host whole, so what was checked is what runs and a
+  module's import of another package is refused); `style-src` the same for pinned stylesheets plus inline
+  styles; `img-src 'self' data: blob:` plus the CDN list and `connect`; `font-src 'self'` plus the pinned
+  stylesheets' directories;
   `connect-src 'self'` plus `connect`; `frame-ancestors 'none'`; `base-uri 'none'`;
   `form-action 'none'`. The CDN list (jsdelivr, unpkg, esm.sh) is a setting of the apps server.
 - The server injects into every served HTML document under the root the manifest link, the service
@@ -289,7 +292,8 @@ until an owner removes the space.
   service worker with one that unregisters itself.
 - `./publish` refuses an app whose HTML under its root loads a script or stylesheet from outside the
   app without an exact version in the URL and an `integrity` attribute, or whose import map names an
-  outside module without an integrity entry.
+  outside module without an integrity entry. What passed is recorded with the published commit and is
+  all its policy loads from a CDN; the preview's policy is found the same way from the working tree.
 
 ### App sign-in
 

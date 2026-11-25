@@ -3,9 +3,9 @@ using Shouldly;
 
 namespace Tests.Unit.Domain.Apps;
 
-// What a built app's page may load and reach: its own origin, the fixed CDN list for code, styles and
-// fonts, and the outside origins its manifest names for fetches and images. Nothing else, no frame
-// around it, no base, no form posting anywhere.
+// What a built app's page may load and reach: its own origin, from the fixed CDN list the packages its
+// pages were found pinned with for code, styles and fonts, and the outside origins its manifest names for
+// fetches and images. Nothing else, no frame around it, no base, no form posting anywhere.
 public class AppContentPolicyTests
 {
     private static readonly IReadOnlyList<string> _cdns = ["https://cdn.jsdelivr.net", "https://unpkg.com"];
@@ -16,12 +16,12 @@ public class AppContentPolicyTests
     };
 
     [Fact]
-    public void AnAppConnectingNowhere_LoadsFromItselfAndTheCdnsAlone() =>
+    public void AnAppPinningNothingAndConnectingNowhere_RunsItsOwnCodeAlone() =>
         AppContentPolicy.For(Manifest(), _cdns).ShouldBe(
             "default-src 'none'; "
-            + "script-src 'self' https://cdn.jsdelivr.net https://unpkg.com; "
-            + "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com; "
-            + "font-src 'self' https://cdn.jsdelivr.net https://unpkg.com; "
+            + "script-src 'self'; "
+            + "style-src 'self' 'unsafe-inline'; "
+            + "font-src 'self'; "
             + "img-src 'self' data: blob: https://cdn.jsdelivr.net https://unpkg.com; "
             + "connect-src 'self'; "
             + "manifest-src 'self'; "
@@ -47,10 +47,47 @@ public class AppContentPolicyTests
     [Fact]
     public void APagesImportMapHashes_AreTheOnlyInlineScriptItRuns()
     {
-        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, ["sha256-abc=", "sha256-def="]));
+        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, scriptHashes: ["sha256-abc=", "sha256-def="]));
 
-        policy["script-src"].ShouldBe("'self' 'sha256-abc=' 'sha256-def=' https://cdn.jsdelivr.net https://unpkg.com");
+        policy["script-src"].ShouldBe("'self' 'sha256-abc=' 'sha256-def='");
         policy["style-src"].ShouldNotContain("sha256");
+    }
+
+    // What was checked is what runs: a pinned script or module lets its package's version directory load (a
+    // bundle's chunks, an esm.sh stub's build), and the address itself where the version ends it; a pinned
+    // stylesheet its directory for styles and fonts (its fonts load by relative path). Never a CDN whole.
+    [Fact]
+    public void PinnedCode_LoadsItsPackagesVersionDirectory_NeverTheWholeCdn()
+    {
+        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, new PinnedCode
+        {
+            Scripts = ["https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js", "https://unpkg.com/htmx.org@1.9.10?module",
+                "https://cdn.jsdelivr.net/npm/@kurkle/color@0.3.2/+esm"],
+            Styles = ["https://unpkg.com/katex@0.16.9/dist/katex.min.css"]
+        }));
+
+        policy["script-src"].ShouldBe("'self' https://cdn.jsdelivr.net/npm/chart.js@4.4.1/ https://unpkg.com/htmx.org@1.9.10/ "
+                                      + "https://unpkg.com/htmx.org@1.9.10 https://cdn.jsdelivr.net/npm/@kurkle/color@0.3.2/");
+        policy["style-src"].ShouldBe("'self' 'unsafe-inline' https://unpkg.com/katex@0.16.9/");
+        policy["font-src"].ShouldBe("'self' https://unpkg.com/katex@0.16.9/");
+        policy["img-src"].ShouldBe("'self' data: blob: https://cdn.jsdelivr.net https://unpkg.com");
+    }
+
+    // The addresses are the agent's text: one off the CDN list, or one a policy could not carry whole (a
+    // `;` or `,` ending the directive or the source, a quote, a space), lets nothing load.
+    [Theory]
+    [InlineData("https://evil.example/npm/x@1.0.0/x.js")]
+    [InlineData("https://cdn.jsdelivr.net/npm/x@1.0.0/x.js;script-src *")]
+    [InlineData("https://cdn.jsdelivr.net/npm/x@1.0.0/a,b.js")]
+    [InlineData("https://cdn.jsdelivr.net/npm/x@1.0.0/'unsafe-eval'.js")]
+    [InlineData("javascript:alert(1)")]
+    public void APinnedAddressOffTheCdnsOrThatAPolicyCannotCarry_LoadsNothing(string address)
+    {
+        var policy = Directives(AppContentPolicy.For(Manifest(), _cdns, new PinnedCode { Scripts = [address], Styles = [address] }));
+
+        policy["script-src"].ShouldBe("'self'");
+        policy["style-src"].ShouldBe("'self' 'unsafe-inline'");
+        policy.Keys.Count.ShouldBe(11);
     }
 
     // An answer that is no app's (an unknown label, a removed app's page): nothing loads but itself.

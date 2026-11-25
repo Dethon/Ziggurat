@@ -3,8 +3,10 @@ name: apps
 description: Built apps under `/apps` — a page or home-screen app showing the household's data ("an app with my glucose today and what I ate"): making one, changing, checking, publishing, rolling back, renaming or deleting it, or finding why it broke. The app.json manifest, the client library, static and npm builds, pinned CDN code, ./check, ./publish, ./history, ./rollback and the errors file.
 description-budget: 110
 # Everything an app takes, from the manifest to its errors, paid once by a conversation that builds
-# one: the apps server serves no prompt section, so nothing about building an app is standing.
-body-budget: 1600
+# one: the apps server serves no prompt section, so nothing about building an app is standing. 1650 since
+# the page's policy loads only the pinned packages (a bundled build is the way) and a member's errors arrive
+# reduced: both change what the agent does, so both are taught.
+body-budget: 1650
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -36,7 +38,7 @@ A built app is static files in a git repository at `/apps/<slug>/`, served on an
 
 ### The page's limits
 
-Scripts come from the app and three CDNs only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` reaches the app's own origin and the `connect` origins, no others; images those, the CDNs, `data:` and `blob:`.
+Scripts come from the app and pinned CDN files only: no inline script but an import map, no `onclick=` attributes; inline styles are fine. `fetch` reaches the app's own origin and the `connect` origins, no others; images those, the CDNs, `data:` and `blob:`.
 
 Outside code is loaded from `https://cdn.jsdelivr.net`, `https://unpkg.com` or `https://esm.sh`, with an exact version in the URL and an `integrity` hash, or `./publish` refuses it:
 
@@ -44,7 +46,7 @@ Outside code is loaded from `https://cdn.jsdelivr.net`, `https://unpkg.com` or `
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js" integrity="sha256-dEAdc43T4D7l37O2hBIQ/ixOrYqWDEARykugt4qf2PM=" crossorigin="anonymous"></script>
 ```
 
-The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/packages/npm/<name>@<version>?structure=flat`; pin a file that list names (a `.min.js` it lacks is minified on the fly, with no listed hash). In a sandbox, hash the exact bytes instead. An import map gives every outside module its own `integrity` entry and maps no prefixes; imports inside a module are not checked, so map them. Fewer libraries is better: a chart is a few lines of SVG.
+The hash is `sha256-` plus the file's `hash` in `https://data.jsdelivr.com/v1/packages/npm/<name>@<version>?structure=flat`; pin a file that list names (a `.min.js` it lacks is minified on the fly, with no listed hash). In a sandbox, hash the exact bytes instead. An import map gives every outside module its own `integrity` entry and maps no prefixes. Only pinned files and their own `name@version/` directory load; another package or version is refused, so pin a bundled build (UMD, or jsdelivr's `+esm` of a dependency-free package). Fewer libraries is better: a chart is a few lines of SVG.
 
 ### Reading the household
 

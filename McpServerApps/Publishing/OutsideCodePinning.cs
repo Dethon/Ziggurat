@@ -1,6 +1,6 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using AngleSharp.Html.Parser;
+using Domain.Apps;
 
 namespace McpServerApps.Publishing;
 
@@ -9,38 +9,71 @@ namespace McpServerApps.Publishing;
 // import map names an integrity entry for every outside module it maps. The CDN may serve anything
 // at an address later; the hash makes the browser refuse bytes the agent never saw. Every problem is
 // named, so one publish shows the agent all of them.
-public static partial class OutsideCodePinning
+public static class OutsideCodePinning
 {
     private static readonly HtmlParser _parser = new();
 
-    public static IReadOnlyList<string> Problems(string file, string html)
+    public static IReadOnlyList<string> Problems(string file, string html) => Check(file, html).Problems;
+
+    // What a page loads from outside, judged once: every problem, and every address that passed — the
+    // pinned code its policy lets it load (AppContentPolicy), so what is served is what was checked here.
+    public static PinningOutcome Check(string file, string html)
     {
         using var document = _parser.ParseDocument(html);
 
         var loads = document.QuerySelectorAll("script[src]")
             .Select(e => (Kind: "script", Address: e.GetAttribute("src")!, Integrity: e.GetAttribute("integrity")))
             .Concat(document.QuerySelectorAll("link[href]")
-                .Where(e => Rels(e.GetAttribute("rel")).Overlaps(["stylesheet", "modulepreload"]))
-                .Select(e => (Kind: "stylesheet or preload", Address: e.GetAttribute("href")!, Integrity: e.GetAttribute("integrity"))))
-            .Where(load => IsOutside(load.Address));
+                .Select(e => (Rels: Rels(e.GetAttribute("rel")), Element: e))
+                .Where(link => link.Rels.Overlaps(["stylesheet", "modulepreload"]))
+                .Select(link => (Kind: link.Rels.Contains("stylesheet") ? Stylesheet : "module preload",
+                    Address: link.Element.GetAttribute("href")!, Integrity: link.Element.GetAttribute("integrity"))))
+            .Where(load => IsOutside(load.Address))
+            .ToList();
 
         var loadProblems = loads.SelectMany(load => (string?[])
         [
-            ExactVersion().IsMatch(load.Address)
+            PinnedCode.HasExactVersion(load.Address)
                 ? null
                 : $"{file}: the {load.Kind} {load.Address} names no exact version: pin one in the address (name@1.2.3).",
             string.IsNullOrWhiteSpace(load.Integrity)
                 ? $"{file}: the {load.Kind} {load.Address} has no integrity attribute: add integrity=\"sha384-…\" for those exact bytes."
                 : null
         ]).OfType<string>();
+        var pinned = loads.Where(load => PinnedCode.HasExactVersion(load.Address) && !string.IsNullOrWhiteSpace(load.Integrity)).ToList();
 
-        var mapProblems = document.QuerySelectorAll("script[type=importmap]")
-            .SelectMany(map => ImportMapProblems(file, map.TextContent));
+        var maps = document.QuerySelectorAll("script[type=importmap]").Select(map => ImportMap(file, map.TextContent)).ToList();
 
-        return [.. loadProblems.Concat(mapProblems)];
+        return new PinningOutcome(
+            [.. loadProblems.Concat(maps.SelectMany(m => m.Problems))],
+            new PinnedCode
+            {
+                Scripts = [.. pinned.Where(l => l.Kind != Stylesheet).Select(l => l.Address.Trim()).Concat(maps.SelectMany(m => m.Pinned)).Distinct()],
+                Styles = [.. pinned.Where(l => l.Kind == Stylesheet).Select(l => l.Address.Trim()).Distinct()]
+            });
     }
 
-    private static IEnumerable<string> ImportMapProblems(string file, string json)
+    // Every page under a served root, by its path from there (a page outside it is the agent's source,
+    // never loaded by a person), judged together: what publish refuses, and what the root's policy loads.
+    public static async Task<PinningOutcome> CheckRootAsync(string root, CancellationToken ct)
+    {
+        var pages = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .Where(file => Path.GetExtension(file).ToLowerInvariant() is ".html" or ".htm" && new FileInfo(file).LinkTarget is null)
+            .Order(StringComparer.Ordinal);
+        var outcomes = await Task.WhenAll(pages.Select(async page =>
+            Check(Path.GetRelativePath(root, page).Replace('\\', '/'), await File.ReadAllTextAsync(page, ct))));
+        return new PinningOutcome(
+            [.. outcomes.SelectMany(o => o.Problems)],
+            new PinnedCode
+            {
+                Scripts = [.. outcomes.SelectMany(o => o.Pinned.Scripts).Distinct()],
+                Styles = [.. outcomes.SelectMany(o => o.Pinned.Styles).Distinct()]
+            });
+    }
+
+    private const string Stylesheet = "stylesheet";
+
+    private static (IReadOnlyList<string> Problems, IReadOnlyList<string> Pinned) ImportMap(string file, string json)
     {
         JsonDocument map;
         try
@@ -49,7 +82,7 @@ public static partial class OutsideCodePinning
         }
         catch (JsonException ex)
         {
-            return [$"{file}: an import map is not JSON: {ex.Message}"];
+            return ([$"{file}: an import map is not JSON: {ex.Message}"], []);
         }
 
         using (map)
@@ -57,7 +90,7 @@ public static partial class OutsideCodePinning
             var root = map.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
-                return [$"{file}: an import map must be a JSON object."];
+                return ([$"{file}: an import map must be a JSON object."], []);
             }
 
             var integrity = Members(root, "integrity").Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
@@ -68,7 +101,7 @@ public static partial class OutsideCodePinning
                 .ToList();
             // A prefix (a specifier ending in /) lets every module under it load, and no one integrity
             // entry can name them all.
-            return
+            return (
             [
                 .. outside.Where(m => m.Specifier.EndsWith('/'))
                     .Select(m => $"{file}: the import map maps the prefix {m.Specifier} to the outside {m.Module}, which no "
@@ -76,7 +109,7 @@ public static partial class OutsideCodePinning
                 .. outside.Where(m => !m.Specifier.EndsWith('/') && !integrity.Contains(m.Module))
                     .Select(m => $"{file}: the import map names the outside module {m.Module} with no integrity entry: "
                                  + "map each module by its full address and add its hash under \"integrity\".")
-            ];
+            ], [.. outside.Where(m => !m.Specifier.EndsWith('/') && integrity.Contains(m.Module)).Select(m => m.Module)]);
         }
     }
 
@@ -98,9 +131,7 @@ public static partial class OutsideCodePinning
         return trimmed.StartsWith("//", StringComparison.Ordinal)
                || (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https");
     }
-
-    // A whole version, major.minor.patch with an optional pre-release or build, as a path segment or
-    // after the package's @: never a range, a tag or a major alone.
-    [GeneratedRegex(@"[@/]v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?(?=[/?#]|$)", RegexOptions.CultureInvariant)]
-    private static partial Regex ExactVersion();
 }
+
+// A page's (or a root's) judgment: what refuses the publish, and the outside code that passed.
+public sealed record PinningOutcome(IReadOnlyList<string> Problems, PinnedCode Pinned);

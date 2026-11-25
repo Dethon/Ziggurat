@@ -132,9 +132,24 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   from git as bytes (`AppRepository.EntryAsync`, object named on stdin); preview, the working tree's
   under the tree's manifest (no links followed). A directory without `/` is a 308 to it; a navigation
   to a missing path is the root `index.html` (client routes); `.`/`..`/`.git` segments are 404.
-- **Every answer** carries `AppContentPolicy.For(manifest, Cdns)` (the origin's own manifest: commit or
+- **Every answer** carries `AppContentPolicy.For(manifest, Cdns, pinned)` (the origin's own manifest: commit or
   tree; on the published origin of an app space, its `connect` no more than approved, "App spaces") —
-  `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the generated files
+  **what was checked is what runs**: `script-src`, `style-src` and `font-src` name no CDN host whole, only
+  the origin's pinned code (`PinnedCode.Sources`): each pinned address's package version directory
+  (`https://cdn/npm/name@1.2.3/`, cut at the `ExactVersion` match, so a bundle's chunks, an esm.sh stub's
+  build and a stylesheet's relative fonts load) plus the address itself when the version ends it, on a
+  `Cdns` origin only, its query dropped and refused whole if its path could end a source or directive (`;`,
+  `,`, a quote, a space). Another package or version on the same CDN — a module's transitive import — is
+  refused. Exact URLs were too narrow (esm.sh's stub imports its own build; a stylesheet's fonts have no
+  pinned address). A redirect relaxes a source's path in the browser, so a pinned address that redirects
+  lands anywhere on that CDN host; the CDNs answer a pinned version's files directly, and the pinned load's
+  integrity still holds. A jsdelivr `/gh/` version is a git tag, which can move: its directory's other
+  files are not integrity-held. `img-src` keeps `Cdns` whole (an image runs nothing).
+  **Published**: the served commit's `BuiltApp.Pinned[commit]`, recorded at `./publish` from the same pass
+  that judged the pages, so serving parses nothing; a rollback serves that commit's own; a commit with
+  none recorded loads no outside code. **Preview**: the same rule, found from the working tree per answer
+  (`OutsideCodePinning.CheckRootAsync`), so a check shows a refused import as a policy violation before a
+  publish; `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the generated files
   load; a page's own inline import maps by their hashes (`InlineImportMaps`), the one inline
   script that runs — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
 - **The server's own files under `/_app/`** (`AppOriginFiles`), which no app file can shadow: the web
@@ -149,7 +164,9 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
 - **`./publish` pins outside code** (`Publishing/OutsideCodePinning`, AngleSharp): every page under the
   served root whose outside script, module preload or stylesheet lacks an exact version or `integrity`,
   or whose import map names an outside module (or prefix) without an integrity entry, refuses the
-  publish naming each. Imports inside JS modules are not read.
+  publish naming each; what passed (scripts, preloads and integrity-mapped modules as code, stylesheets as
+  styles) is the commit's `PinnedCode`. Imports inside JS modules are not read: the policy refuses any
+  outside them.
 - **Local name**: `apps.localhost` (smoke override, `scripts/run-local.sh` on 6019): loopback by name, and on
   plain http a secure context in Chromium, which the `__Host-` cookie and the worker need (verified on http
   only; through the smoke stack's Caddy on its untrusted local CA a browser may refuse the worker).
@@ -426,8 +443,11 @@ wire and shape spelled once in `Domain/Apps/AppErrors`):
 with sessions the test opens (`SessionFor`, an assertion signed by `TestAssertions`), `AppsSignInTests`
 the sign-in against a real `AccountsServer` signing with the test key on its clock (handed to the apps
 server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the same in Chromium on
-`apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in);
-`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests`, `OutsideCodePinningTests`,
+`apps.localhost` (secure context, worker, manifest, no policy violation, removed worker, the sign-in, a
+pinned script and its package's file loading while another package's or version's import is refused);
+`AppsServingTests` also a rollback serving its commit's own pinned code;
+`AppManifestTests`, `BuiltAppIdTests`, `AppOriginTests`, `AppSignInTests`, `AppContentPolicyTests` (pinned sources, hostile
+addresses), `OutsideCodePinningTests` (problems and what passed),
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature;
 `SandboxAppBuildE2ETests` (the sandbox E2E collection) a real npm build in the home (the image's pinned Node,

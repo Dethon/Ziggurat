@@ -82,3 +82,24 @@ restart (not reload) Caddy and compare the running Caddyfile with the host's. Th
 built here: the in-process server, the real `Program.cs` on the host, and `caddy validate` in the shipped
 caddy image were exercised. Until ticket 04 nobody holds an app session, so every app origin answers 404.
 
+**Follow-up: what was checked is what runs (story 46, branch `app-spaces`).** `script-src` allowed the CDN
+hosts whole, so a module's `import()` of an unpinned URL ran though publish never saw it. Now the policy names
+only the pinned code (`Domain/Apps/PinnedCode`): each pinned address's package version directory
+(`https://cdn/npm/name@1.2.3/`), plus the address itself when the version ends it, on a CDN origin only, for
+`script-src`, and the pinned stylesheets' directories for `style-src` and `font-src`. `img-src` keeps the CDNs
+whole. *Why directories, not exact URLs:* esm.sh's stub imports its own build under the same directory, and a
+stylesheet's fonts load by relative path with no pinned address. Another package, or the same package at
+another version, is refused. `OutsideCodePinning.Check` returns what passed from the same pass that judges the
+pages; `./publish` records it per commit in `app.meta.json` (`BuiltApp.Pinned`), so serving parses nothing and a
+rollback serves its own commit's. The preview uses the same rule, found from the working tree per answer, so a
+check shows a refused import as a policy violation. Known limits: a redirect relaxes a source's path in the
+browser (the CDNs answer a pinned version's files directly), and jsdelivr `/gh/` versions are movable tags.
+Tests: `AppsServingInABrowserTests.APublishedPage_LoadsOnlyThePackagesItsPublishPinned_FromACdn` (Chromium: a
+pinned UMD script and a file of its package load; another package and another version are refused and never
+fetched; red first), `AppsServingTests.AnOriginsPolicy_LoadsTheCodeItsOwnPagesPinned_AndARollbackServesItsCommitsOwn`,
+`AppContentPolicyTests` (directories, hostile addresses), `OutsideCodePinningTests` (what passed). The `apps`
+skill teaches a bundled build; its body budget went to 1650.
+
+**Deploying:** an app published before this build has no pinned code recorded and loads no outside code until
+it is published again (apps exist only on this unmerged branch).
+
