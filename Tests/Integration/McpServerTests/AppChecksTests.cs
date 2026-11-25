@@ -88,7 +88,10 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
                                    && c["text"]!.GetValue<string>() == "the glucose curve did not draw");
         // What went wrong is in the check's own output, so a fix needs no read of the report.
         var stdout = ran["stdout"]!.GetValue<string>();
-        stdout.ShouldContain("console error: the glucose curve did not draw");
+        // A console line says where it came from, the preview's own paths by path alone: Chromium's line for
+        // a failed load names no address in its text.
+        stdout.ShouldMatch(@"console error at /main\.js:\d+:\d+: the glucose curve did not draw");
+        stdout.ShouldMatch(@"console error at /data/missing\.json: Failed to load resource: [^\n]*404");
         stdout.ShouldContain("uncaught: ");
         stdout.ShouldContain("nothing to show");
         stdout.ShouldContain("failed request: GET ");

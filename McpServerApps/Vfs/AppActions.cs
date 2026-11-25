@@ -224,7 +224,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                          + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, assertions "
                          + $"{v.Assertions.Count(a => a.Passed)} passed and {v.Assertions.Count(a => !a.Passed)} failed"
                          + (v.Settled ? "" : " (the page never went quiet)");
-            var details = CheckDetails(v);
+            var details = CheckDetails(v, new Uri(report.Origin).Host);
             var same = details.Count == 0 ? null : detailed.FirstOrDefault(d => d.Lines.SequenceEqual(details)).Viewport;
             detailed.Add((v.Name, details));
             return same is not null ? [counts, $"  the same as {same}"] : (IEnumerable<string>)[counts, .. details];
@@ -238,11 +238,11 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
     private const int MaxDetailLines = 12;
     private const int MaxDetailLength = 240;
 
-    private static IReadOnlyList<string> CheckDetails(ViewportReport v)
+    private static IReadOnlyList<string> CheckDetails(ViewportReport v, string preview)
     {
         var all = v.Assertions.Where(a => !a.Passed).Select(a => $"failed: {a.File}: {a.Message}")
             .Concat(v.Console.Where(c => c.Type is "error" or "uncaught")
-                .Select(c => c.Type == "uncaught" ? $"uncaught: {c.Text}" : $"console error: {c.Text}"))
+                .Select(c => c.Type == "uncaught" ? $"uncaught: {c.Text}" : $"console error{Where(c.Location, preview)}: {c.Text}"))
             .Concat(v.FailedRequests.Select(r => $"failed request: {r.Method} {r.Url}: {(r.Status is { } status ? status : r.Error)}"))
             .Concat(v.PolicyViolations.Select(p => $"policy violation: {p.Directive} {p.BlockedUri ?? p.SourceFile ?? "inline"}"))
             .Concat(v.RefusedReads.Select(r => $"refused read: {r.Operation} {r.Path}: {r.ErrorCode ?? "unknown"}"
@@ -252,6 +252,21 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         return all.Count <= MaxDetailLines
             ? all
             : [.. all.Take(MaxDetailLines), $"  and {all.Count - MaxDetailLines} more in {AppChecks.ReportFile}"];
+    }
+
+    // Where a console line came from, before its text so clipping keeps it: Chromium's line for a failed
+    // load names the address only here. The preview's own addresses by path, a load's ":0:0" dropped.
+    private static string Where(string? location, string preview)
+    {
+        if (string.IsNullOrEmpty(location))
+        {
+            return "";
+        }
+
+        var at = location.EndsWith(":0:0", StringComparison.Ordinal) ? location[..^4] : location;
+        return Uri.TryCreate(at, UriKind.Absolute, out var uri) && string.Equals(uri.Host, preview, StringComparison.OrdinalIgnoreCase)
+            ? $" at {uri.PathAndQuery}"
+            : $" at {at}";
     }
 
     // One line of a detail: its first line only (an uncaught error's stack stays in the report), clipped.

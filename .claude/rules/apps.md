@@ -214,7 +214,8 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 `apps-browser` container, never in `mcp-apps` (whose image has the Playwright driver alone).
 
 - **What went wrong is in its output** (`AppActions.CheckSummary`): per viewport, the counts, then failed
-  assertions, console errors, failed requests, policy violations and refused reads, a line each (first line,
+  assertions, console errors (each led by where it came from, the preview's own by path: Chromium names a failed
+  load's address nowhere else), failed requests, policy violations and refused reads, a line each (first line,
   clipped, capped); a viewport that saw exactly what an earlier one saw names it instead. The agent reads
   `report.json` for the rest, never to learn what failed.
 - **A refused read is not a failure**: a `/_vfs/*` read on the preview answered 422 (the tools' envelope)
