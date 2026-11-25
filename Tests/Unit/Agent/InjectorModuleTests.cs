@@ -194,6 +194,30 @@ public class InjectorModuleTests
         provider.GetRequiredService<AgentReadRegistries>().ShouldBeSameAs(provider.GetRequiredService<AgentReadRegistries>());
     }
 
+    // A built app's reads are answered by the deployment's composition, over its read registries, kept
+    // for as long as the agent's settings say, and at the bridge's per-file ceiling.
+    [Fact]
+    public async Task ConfigureAgents_AnswersAppReads()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            Signing = TestSigningKeys.Settings(TestSigningKeys.Agent),
+            AppReads = new AppReadSettings { RegistryIdle = TimeSpan.FromMinutes(7) }
+        };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        services.RemoveAll<IAgentDefinitionProvider>();
+        services.AddSingleton(Mock.Of<IAgentDefinitionProvider>());
+        services.RemoveAll<IAccountStanding>();
+        services.AddSingleton(Mock.Of<IAccountStanding>());
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<AppReader>().ShouldBeSameAs(provider.GetRequiredService<AppReader>());
+        provider.GetRequiredService<AppReadSettings>().RegistryIdle.ShouldBe(TimeSpan.FromMinutes(7));
+    }
+
     // One set of credentials for the host: the one startup checked is the one every agent, worker
     // and channel connection is built with.
     [Fact]

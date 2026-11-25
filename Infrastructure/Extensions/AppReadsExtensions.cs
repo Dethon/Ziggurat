@@ -18,6 +18,7 @@ public static class AppReadsExtensions
     {
         services.TryAddSingleton(TimeProvider.System);
         return services
+            .AddSingleton(settings)
             .AddSingleton(sp => new ReadRegistryCache(
                 sp.GetRequiredService<AgentReadRegistries>(), sp.GetRequiredService<TimeProvider>(), settings))
             .AddSingleton(sp => new AppReader(

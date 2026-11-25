@@ -19,6 +19,7 @@ using Infrastructure.Clients;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Conversations;
+using Infrastructure.Extensions;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -178,6 +179,9 @@ public static class InjectorModule
                     sp.GetService<IOwnServers>(),
                     sp.GetService<CallTokens>(),
                     sp.GetService<ILoggerFactory>()))
+                // A built app's reads, through those registries, kept per reader while they are used and at
+                // the exec bridge's per-file ceiling (AppReadsApi).
+                .AddAppReads(settings.VfsBridge, settings.AppReads)
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
                 // Registered as a plain IHostedService singleton, not through AddHostedService:

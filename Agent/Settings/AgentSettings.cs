@@ -6,6 +6,7 @@ using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
@@ -75,6 +76,9 @@ public record AgentSettings
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
     public VfsBridgeSettings VfsBridge { get; init; } = new();
+
+    // How long a built app's read registry is kept with nobody reading through it.
+    public AppReadSettings AppReads { get; init; } = new();
 
     // Where a household server's back-calls reach beside the agent: the shared Lemonade.
     public required BackCallSettings BackCalls { get; init; }
