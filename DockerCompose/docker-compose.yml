@@ -23,9 +23,10 @@ x-cors-origins: &cors-origins
 # serves its wildcard site, the apps server parses its labels and the accounts service's app sign-in
 # returns a code only to an origin under it, so the three read one value. A second
 # domain, never a subdomain of this deployment's, so no cookie of its reaches app code. Set it to the
-# domain bought for the purpose; Caddy's Cloudflare token must be able to answer its DNS challenge.
+# domain bought for the purpose (ziggurat-apps.com); Caddy's Cloudflare token must be able to answer its
+# DNS challenge.
 x-apps-domain: &apps-domain
-  APPSDOMAIN: changeme
+  APPSDOMAIN: ziggurat-apps.com
 
 services:
   redis:
