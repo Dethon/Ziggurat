@@ -16,4 +16,8 @@ public static class BuiltAppId
 
     // The published app's origin: `<slug>-<id>` under the apps domain.
     public static string Link(string slug, string id, string appsDomain) => $"https://{slug}-{id}.{appsDomain}/";
+
+    // Its working tree's origin, the author's alone: the same label with -preview appended.
+    public static string PreviewLink(string slug, string id, string appsDomain) =>
+        $"https://{slug}-{id}{AppOrigin.PreviewSuffix}.{appsDomain}/";
 }
