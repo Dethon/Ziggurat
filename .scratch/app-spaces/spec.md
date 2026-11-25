@@ -314,8 +314,9 @@ until an owner removes the space.
   blob reads, with the tools' result shapes, on virtual paths. No operation that changes anything is
   reachable through it.
 - The apps server is its only caller. It serves `/_vfs/*` on each app origin, authenticates the viewer
-  by the app session, resolves the app, and forwards the read with **both** the agent API's secret
-  (the caller is the apps server, as the agent registration API believes SexyTime) **and** the
+  by the app session, resolves the app, and forwards the read with **both** the apps server's own
+  credential (the one the agent holds for it, `MCP_SECRET_APPS`; ticket 06 chose it over the agent API's
+  secret, which SexyTime's server also holds) **and** the
   viewer's current `apps` assertion (who it acts for). The app's id, building agent and `reads` travel
   with the secret's authority; the person and household only with the assertion's. The agent believes
   no other header.
