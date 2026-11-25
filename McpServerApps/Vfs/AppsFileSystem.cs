@@ -816,64 +816,54 @@ public sealed class AppsFileSystem(BuiltAppStore store, AppChecks checks, string
         relative.Split('/').Contains(segment, StringComparer.Ordinal);
 
     // Every path of an app as the mount lists it, mount-relative and without a leading slash, with where
-    // it is kept: the app's directory, its action files, its working tree (never a .git anywhere in it)
-    // and what its last check saw.
-    private IEnumerable<(string Path, string Full, bool IsDirectory)> Listing(BuiltApp app)
+    // it is kept: the app's directory, its action files, its working tree (never a .git anywhere in it),
+    // the runtime errors its pages reported and what its last check saw.
+    private IReadOnlyList<ListedPath> Listing(BuiltApp app)
     {
         var tree = store.Repository(app).WorkTree;
-        yield return (app.Slug, tree, true);
-        foreach (var action in AppActions.Actions)
-        {
-            yield return ($"{app.Slug}/{action}", "", false);
-        }
-
-        foreach (var entry in Entries(app.Slug, tree))
-        {
-            yield return entry;
-        }
-
         var errors = store.ErrorsFile(app);
-        if (File.Exists(errors))
-        {
-            yield return ($"{app.Slug}/{ErrorsOutput}", errors, false);
-        }
-
         var checksDirectory = store.ChecksDirectory(app);
         var latest = Path.Combine(checksDirectory, AppChecks.LatestDirectory);
-        if (Directory.Exists(latest))
-        {
-            yield return ($"{app.Slug}/{ChecksOutput}", checksDirectory, true);
-            yield return ($"{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}", latest, true);
-            foreach (var entry in Entries($"{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}", latest))
-            {
-                yield return entry;
-            }
-        }
+        var latestPath = $"{app.Slug}/{ChecksOutput}/{AppChecks.LatestDirectory}";
+        return
+        [
+            new ListedPath(app.Slug, tree, IsDirectory: true),
+            .. AppActions.Actions.Select(action => new ListedPath($"{app.Slug}/{action}", "", IsDirectory: false)),
+            .. Entries(app.Slug, tree),
+            .. File.Exists(errors) ? [new ListedPath($"{app.Slug}/{ErrorsOutput}", errors, IsDirectory: false)] : Array.Empty<ListedPath>(),
+            .. Directory.Exists(latest)
+                ? [
+                    new ListedPath($"{app.Slug}/{ChecksOutput}", checksDirectory, IsDirectory: true),
+                    new ListedPath(latestPath, latest, IsDirectory: true),
+                    .. Entries(latestPath, latest)
+                ]
+                : Array.Empty<ListedPath>()
+        ];
     }
 
-    private static IEnumerable<(string Path, string Full, bool IsDirectory)> Entries(string prefix, string tree)
+    // A walk that never descends into a .git, so a filter over a flat enumeration would not do.
+    private static IEnumerable<ListedPath> Entries(string prefix, string tree)
     {
         var pending = new Stack<string>([tree]);
         while (pending.TryPop(out var directory))
         {
-            foreach (var entry in new DirectoryInfo(directory).EnumerateFileSystemInfos())
+            foreach (var entry in new DirectoryInfo(directory).EnumerateFileSystemInfos().Where(entry => entry.Name != ".git"))
             {
-                if (entry.Name == ".git")
-                {
-                    continue;
-                }
-
-                var relative = $"{prefix}/{Path.GetRelativePath(tree, entry.FullName).Replace('\\', '/')}";
                 var isDirectory = entry is DirectoryInfo;
                 if (isDirectory)
                 {
                     pending.Push(entry.FullName);
                 }
 
-                yield return (relative, entry.FullName, isDirectory);
+                yield return new ListedPath(
+                    $"{prefix}/{Path.GetRelativePath(tree, entry.FullName).Replace('\\', '/')}", entry.FullName, isDirectory);
             }
         }
     }
+
+    // A path the mount lists (mount-relative, no leading slash) and where it is kept on disk ("" for an
+    // action file, which is kept nowhere).
+    private sealed record ListedPath(string Path, string Full, bool IsDirectory);
 
     private async Task<AppNode> ResolveAsync(string path, CancellationToken ct)
     {
