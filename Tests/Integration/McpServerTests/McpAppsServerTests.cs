@@ -126,6 +126,28 @@ public class McpAppsServerTests
         (await server.GlobAsync(AppsServer.Her, "**/node_modules/**")).ShouldBeEmpty();
     }
 
+    // An app's history is kept outside its working tree; nothing named .git is written into one, so no
+    // write can reach git's hooks or configuration.
+    [Theory]
+    [InlineData("/glucose/.git/config")]
+    [InlineData("/glucose/web/.git/HEAD")]
+    public async Task NothingNamedGit_IsWrittenIntoAnApp(string path)
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+
+        var text = await server.CreateAsync(AppsServer.Her, path, "[core]");
+        var binary = await server.CallAsync("fs_blob_write", new Dictionary<string, object?>
+        {
+            ["path"] = path, ["contentBase64"] = Convert.ToBase64String([1, 2, 3]),
+            ["offset"] = 0, ["overwrite"] = true, ["createDirectories"] = true
+        }, AppsServer.TurnOf(AppsServer.Her));
+
+        text["message"]!.GetValue<string>().ShouldContain("Nothing named .git");
+        binary["message"]!.GetValue<string>().ShouldContain("Nothing named .git");
+        (await server.GlobAsync(AppsServer.Her, "**")).ShouldNotContain(entry => entry.Contains(".git"));
+    }
+
     // Build output arrives a chunk at a time, as a copy from the sandbox streams it, and reads back
     // byte for byte.
     [Fact]

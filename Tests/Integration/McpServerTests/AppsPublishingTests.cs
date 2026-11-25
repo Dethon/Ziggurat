@@ -41,6 +41,21 @@ public class AppsPublishingTests
         Lines(await server.ExecAsync(AppsServer.Her, "/glucose", "./history")).Count.ShouldBe(1);
     }
 
+    // An npm project's .gitignore names its build output, which is exactly what the app serves.
+    [Fact]
+    public async Task Publish_CommitsWhatTheTreesOwnGitignoreNames()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/.gitignore", "dist/\n");
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await server.CreateAsync(AppsServer.Her, "/glucose/dist/index.html", "<h1>Built</h1>");
+
+        var published = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+
+        Stdout(published).ShouldStartWith("published ", customMessage: published.ToJsonString());
+    }
+
     [Fact]
     public async Task Rollback_ServesAnEarlierCommit_WithoutRewritingHistory()
     {

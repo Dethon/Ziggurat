@@ -132,15 +132,18 @@ public sealed class HouseholdFeaturesAdminTests(RedisFixture redis) : IClassFixt
         var loaded = await FeaturesAsync(admin);
         loaded.Apps.ShouldBeTrue();
 
-        var saved = await admin.PutAsync(AdminProtocol.Features, new
+        // A page that sends what it loaded beside its change, and one that sends the section whole.
+        var merged = await admin.PutAsync(AdminProtocol.Features, new
         {
             apps = false,
             workers = false,
             loaded = new { apps = true, workers = true }
         });
+        var whole = await admin.PutAsync(AdminProtocol.Features, new { apps = false, memory = false });
 
-        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
-        (await FeaturesAsync(admin)).ShouldBe(new FeaturesSection { Apps = true, Workers = false });
+        merged.StatusCode.ShouldBe(HttpStatusCode.OK);
+        whole.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await FeaturesAsync(admin)).ShouldBe(new FeaturesSection { Apps = true, Memory = false });
     }
 
     [Fact]

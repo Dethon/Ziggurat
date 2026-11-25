@@ -268,6 +268,7 @@ public class AgentAppSettingsTests
             .ToList();
 
         shared.All.ShouldBe(dialled, ignoreOrder: true);
+        shared.Apps.ShouldBe("http://mcp-apps:8080/mcp", "the apps feature withholds it by this address");
     }
 
     // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled

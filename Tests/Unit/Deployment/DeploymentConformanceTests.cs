@@ -813,6 +813,28 @@ public class DeploymentConformanceTests
         accounts.DependsOn.ShouldContain("accounts-volume");
     }
 
+    // Every household's built apps are git repositories in a volume of the apps server's own; nothing
+    // else mounts it, the one-shot step hands it to the server's user, and the server is told the
+    // apps domain it is required to know.
+    [Fact]
+    public void TheAppsServer_KeepsItsRepositoriesInAVolumeOfItsOwnThatItsUserOwns()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps");
+        var storage = new global::McpServerApps.Settings.AppsSettings { AppsDomain = "" }.StoragePath;
+        var volume = $"./volumes/apps:{storage}";
+
+        apps.Volumes.ShouldBe([volume]);
+        apps.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
+        apps.Environment.GetValueOrDefault("APPSDOMAIN").ShouldNotBeNullOrWhiteSpace();
+        compose.Service("mcp-apps-volume").Volumes.ShouldBe([volume]);
+        compose.Service("mcp-apps-volume").Dockerfile.ShouldBe("McpServerApps/Dockerfile");
+        apps.DependsOn.ShouldContain("mcp-apps-volume");
+        compose.Services.Values.Where(s => s.Name is not ("mcp-apps" or "mcp-apps-volume"))
+            .ShouldNotContain(s => s.Volumes.Any(v => v.StartsWith("./volumes/apps:", StringComparison.Ordinal)));
+        DeploymentFiles.Placeholders().Keys.ShouldContain("MCP_SECRET_APPS");
+    }
+
     // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
     // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
     [Fact]

@@ -56,4 +56,15 @@ tier's gated-server list (not run: the smoke tier was out of scope).
 - The apps domain is the compose literal `APPSDOMAIN: changeme` until the domain exists.
 - Not updated: `.vscode/launch.json`, `.zed/debug.json` (IDE launchers); `scripts/run-local.sh` was. The eval
   stack does not host the apps server, so the template's endpoint is dropped there as unhosted.
+- *Git sees the bytes written:* `add --all --force`, so a tree's own `.gitignore` (an npm project's names
+  `dist/`) never keeps the build out of what is served; `git/info/attributes` unsets text, filter and ident
+  conversion, outranking any `.gitattributes` in the tree.
+
+**Deploying this needs, before the agent restarts:** `MCP_SECRET_APPS` set in the deployment's `.env` — the agent
+refuses to start without a credential for a configured shared server (`InjectorModule`), and `sharedServers.apps`
+is now configured — and a real `APPSDOMAIN` in `docker-compose.yml`. The image (git installed by apt) was not
+built in this ticket; only the in-process server and the host's git were exercised.
+
+**Known gap:** `./publish` is not quota-checked, while history counts toward "bytes per repository"; an app that
+reaches the limit through its history can only be shrunk by deleting it. Left for a later ticket.
 

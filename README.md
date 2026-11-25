@@ -86,6 +86,7 @@ flowchart LR
             timers["mcp-timers"]
             sugary["mcp-sugary"]
             idealista["mcp-idealista"]
+            apps["mcp-apps"]
         end
         lemonade["lemonade<br/>STT · TTS · embeddings"]
         obs["observability"]
@@ -263,6 +264,7 @@ land.
 | `mcp-timers`        | `/timers`                 | deployment | Countdown timers per household; they ring on the satellites through voice's tunnel; `./dismiss` silences them |
 | `mcp-sugary`        | `/sugary`, `/watchers`    | deployment | A person's Sugary log as Parquet tables queried with DuckDB SQL (`query`); glucose watches share `/watchers` with the home's |
 | `mcp-idealista`     | —                         | deployment | Real-estate search on Idealista using the household's own key                                                |
+| `mcp-apps`          | `/apps`                   | deployment | A person's built apps, one git repository each: writing `app.json` creates one, `./publish`, `./history` and `./rollback` version it; offered once the operator turns the household's `apps` feature on |
 | outpost             | `outpost:<name>`          | any machine | A real machine's own files. See below                                                                        |
 
 **Outposts.** `McpServerOutpost` is a self-contained `linux-x64` binary. Run it on any machine and

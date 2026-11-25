@@ -21,13 +21,20 @@ public sealed partial class AppRepository(string gitDirectory, string workTree)
     {
         Directory.CreateDirectory(workTree);
         await GitAsync(ct, "init", "--quiet", "--template=", "--initial-branch=main");
+        // A .gitattributes in the tree is the agent's file; this one, in the git directory, outranks
+        // it, so what is committed and served is the bytes that were written.
+        Directory.CreateDirectory(Path.Combine(gitDirectory, "info"));
+        await File.WriteAllTextAsync(Path.Combine(gitDirectory, "info", "attributes"),
+            "* -text -filter -ident -working-tree-encoding\n", ct);
     }
 
     // Commits whatever the working tree holds now, or answers null when it holds what the last
     // commit holds (there is then nothing new to serve).
     public async Task<string?> CommitAllAsync(string message, CancellationToken ct)
     {
-        await GitAsync(ct, "add", "--all");
+        // Forced: a .gitignore in the tree (an npm project's names dist/) must not keep the build out
+        // of what is served. The tree holds nothing the agent did not mean to publish.
+        await GitAsync(ct, "add", "--all", "--force");
         var staged = await RunAsync(ct, "diff", "--cached", "--quiet");
         var hasHead = (await RunAsync(ct, "rev-parse", "--verify", "--quiet", "HEAD")).ExitCode == 0;
         if (staged.ExitCode == 0 && hasHead)

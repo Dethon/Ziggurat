@@ -823,8 +823,15 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
             return NodeModules<T>();
         }
 
+        if (IsUnder(entry.Relative, ".git"))
+        {
+            return Fail<T>(ToolError.Codes.PermissionDenied,
+                "Nothing named .git is written into an app: its history is the apps server's, kept outside the working tree.",
+                $"./{History} lists the app's commits.");
+        }
+
         var top = entry.Relative.Split('/')[0];
-        return IsUnder(entry.Relative, ".git") || _reserved.Contains(top)
+        return _reserved.Contains(top)
             ? Fail<T>(ToolError.Codes.PermissionDenied,
                 $"'{top}' at an app's root is the apps server's own, never a file of the app's.")
             : null;
@@ -891,7 +898,6 @@ public sealed class AppsFileSystem(BuiltAppStore store, string appsDomain) : Fil
             (null, _) => new AppNode.Missing(segments[0], relative),
             (_, [_]) => new AppNode.AppDirectory(app),
             (_, [_, var action]) when _actions.Contains(action) => new AppNode.Action(app, action),
-            _ when IsUnder(relative, ".git") => new AppNode.Missing(segments[0], relative),
             _ => new AppNode.Entry(app, relative, Path.Combine(store.Repository(app).WorkTree, relative))
         };
     }
