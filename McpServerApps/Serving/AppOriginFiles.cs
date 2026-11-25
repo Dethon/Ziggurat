@@ -329,8 +329,6 @@ public static partial class AppOriginFiles
         icons = new[] { new { src = IconPath, sizes = "any", type = "image/svg+xml", purpose = "any" } }
     });
 
-    public static string Icon(AppManifest manifest) => SpaceIcon.Svg(manifest.AccentColor);
-
     // The tags go first inside <head>, else right after <html>, else after the doctype, else first:
     // early enough that the library exists before any of the app's scripts runs.
     public static string Inject(string html)

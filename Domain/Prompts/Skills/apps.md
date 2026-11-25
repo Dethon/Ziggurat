@@ -7,8 +7,9 @@ description-budget: 110
 # the page's policy loads only the pinned packages (a bundled build is the way) and a member's errors arrive
 # reduced: both change what the agent does, so both are taught. 1700 since a build left its old bundles to
 # publish and imported the library a bundler cannot resolve, and since a check's refused reads are reported
-# apart (measured 1,697 on 2026-11-25).
-body-budget: 1700
+# apart (measured 1,697 on 2026-11-25). 1730 since an app names its own icon, and an agent wrote a manifest
+# of its own that no browser read.
+body-budget: 1730
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -33,8 +34,8 @@ A built app is static files in a git repository at `/apps/<slug>/`, served on an
    }
    ```
 
-   `reads` are the mount points the page may read; `connect` the bare https origins it may fetch, and no others. `root` is the served directory (default the repository root; `dist` for a build). `shortName` (12 at most) labels the home-screen icon.
-2. Write the pages under the root, `index.html` the entry: HTML, CSS and ES modules. The server adds the web manifest, icon, service worker and client library to every page.
+   `reads` are the mount points the page may read; `connect` the bare https origins it may fetch, and no others. `root` is the served directory (default the repository root; `dist` for a build). `shortName` (12 at most) labels the home-screen icon; `icon` the path it serves its own SVG icon at (a slash, then its file under `root`), else one is drawn.
+2. Write the pages under the root, `index.html` the entry: HTML, CSS and ES modules. The server adds the web manifest (never write one), icon, service worker and client library to every page.
 3. Check, look, fix, check again.
 4. `./publish` and give the person the link it answers.
 

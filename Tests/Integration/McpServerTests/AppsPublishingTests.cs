@@ -1,5 +1,7 @@
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -120,6 +122,53 @@ public class AppsPublishingTests
         stderr.ShouldContain("week/index.html: the import map names the outside module https://esm.sh/preact@10.19.3");
         stderr.ShouldNotContain("esm.sh/anything");
         Stdout(await server.ExecAsync(AppsServer.Her, "/glucose", "./history")).ShouldStartWith("no commits yet");
+    }
+
+    // The icon a manifest names is an SVG the published origin serves: one missing from the served root,
+    // or not an SVG at all, refuses the publish naming it, and nothing is committed.
+    [Theory]
+    [InlineData(null, "is not a file the app serves")]
+    [InlineData("<html><body>not a drawing</body></html>", "is not an SVG drawing")]
+    [InlineData("<svg xmlns=\"http://www.w3.org/2000/svg\"", "is not an SVG drawing")]
+    public async Task Publish_RefusesAnIconThatIsNoSvgItServes(string? content, string words)
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","root":"dist","icon":"/icon.svg"}""");
+        await server.CreateAsync(AppsServer.Her, "/casa/dist/index.html", "<h1>Casa</h1>");
+        // Outside the served root it is the agent's source, never served.
+        await server.CreateAsync(AppsServer.Her, "/casa/icon.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+        if (content is not null)
+        {
+            await server.CreateAsync(AppsServer.Her, "/casa/dist/icon.svg", content);
+        }
+
+        var refused = await server.ExecAsync(AppsServer.Her, "/casa", "./publish");
+
+        refused["exitCode"]!.GetValue<int>().ShouldBe(1, refused.ToJsonString());
+        refused["stderr"]!.GetValue<string>().ShouldStartWith("nothing published");
+        refused["stderr"]!.GetValue<string>().ShouldContain($"the icon /icon.svg {words}");
+        Stdout(await server.ExecAsync(AppsServer.Her, "/casa", "./history")).ShouldStartWith("no commits yet");
+    }
+
+    [Fact]
+    public async Task Publish_ServesTheIconsDrawingFromTheServedCommit()
+    {
+        await using var server = await AppsServer.StartAsync();
+        const string drawing = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\"><rect width=\"8\" height=\"8\"/></svg>";
+        var created = await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","icon":"/icon.svg"}""");
+        var id = AppsServer.IdIn(created["note"]!.GetValue<string>());
+        await server.CreateAsync(AppsServer.Her, "/casa/index.html", "<h1>Casa</h1>");
+        await server.CreateAsync(AppsServer.Her, "/casa/icon.svg", drawing);
+
+        var published = await server.ExecAsync(AppsServer.Her, "/casa", "./publish");
+        await server.CreateAsync(AppsServer.Her, "/casa/icon.svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"/>", overwrite: true);
+
+        published["exitCode"]!.GetValue<int>().ShouldBe(0, published.ToJsonString());
+        var host = server.Published("casa", id);
+        var icon = await server.GetAsync(host, "/_app/icon.svg", server.SessionFor(AppsServer.Her, host));
+        (await icon.Content.ReadAsStringAsync()).ShouldBe(SpaceIcon.Badged(Encoding.UTF8.GetBytes(drawing)));
     }
 
     [Fact]

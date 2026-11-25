@@ -84,6 +84,11 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                     throw new InvalidOperationException("A manifest is either valid or refused.");
             }
 
+            if (IconProblem(app, Path.Combine(repository.WorkTree, manifest.Root), manifest) is { } icon)
+            {
+                return (Exec(cwd, "", $"nothing published: {icon}", 1), null);
+            }
+
             var pinning = await OutsideCodePinning.CheckRootAsync(Path.Combine(repository.WorkTree, manifest.Root), ct);
             if (pinning.Problems.Count > 0)
             {
@@ -108,6 +113,27 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         return served is not null && result is FsResult<FsExecResult>.Ok { Value: var answer }
             ? new FsResult<FsExecResult>.Ok(answer with { Stdout = answer.Stdout + await WaitingOnAnOwnerAsync(app, served, caller.Household, ct) })
             : result;
+    }
+
+    // The icon the manifest names is what the published origin will install with: a file under the served
+    // root (never a link, which would serve whatever it points at), and an SVG drawing.
+    private static string? IconProblem(BuiltApp app, string root, AppManifest manifest)
+    {
+        if (manifest.Icon is not { } icon)
+        {
+            return null;
+        }
+
+        var file = Path.Combine(root, AppIcon.Relative(icon));
+        if (!File.Exists(file) || new FileInfo(file).LinkTarget is not null)
+        {
+            return $"the icon {icon} is not a file the app serves: put the SVG at /{string.Join('/', new[] { app.Slug, manifest.Root, AppIcon.Relative(icon) }.Where(part => part.Length > 0))} "
+                   + "(under the served root), or name the one it has.";
+        }
+
+        return AppIcon.IsDrawing(File.ReadAllBytes(file))
+            ? null
+            : $"the icon {icon} is not an SVG drawing: a whole <svg> document of the SVG namespace, at most {AppIcon.MaxBytes / 1024} KiB.";
     }
 
     // While the household shares the app as a space, its published origin is granted no more than an owner

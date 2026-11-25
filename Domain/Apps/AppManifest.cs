@@ -30,9 +30,13 @@ public sealed record AppManifest
     public IReadOnlyList<string> Reads { get; init; } = [];
     public IReadOnlyList<string> Connect { get; init; } = [];
 
+    // The SVG the app installs with, by the path its origin serves it at (/icon.svg); none is its accent
+    // colour's drawing. Its shape is checked here, the file itself at publish (AppIcon).
+    public string? Icon { get; init; }
+
     // Every field app.json takes; any other is refused.
     public static readonly IReadOnlyList<string> Fields =
-        ["name", "shortName", "accentColor", "description", "root", "reads", "connect"];
+        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon"];
 
     public static AppManifestParse Parse(string json)
     {
@@ -66,6 +70,7 @@ public sealed record AppManifest
             var served = Text(root, "root", problems) ?? "";
             var reads = Texts(root, "reads", problems);
             var connect = Texts(root, "connect", problems);
+            var icon = Text(root, "icon", problems);
 
             if (string.IsNullOrWhiteSpace(name) || name.Length > NameLength)
             {
@@ -101,6 +106,12 @@ public sealed record AppManifest
                 .Select(c => $"connect: '{c}' is no bare https origin: write https://host or https://host:port, with no path, no trailing slash and no wildcard."));
             problems.AddRange(Twice(connect).Select(c => $"connect: '{c}' is named twice."));
 
+            if (icon is not null && !AppIcon.IsServedPath(icon))
+            {
+                problems.Add($"icon '{icon}' must be the path the app serves an SVG drawing at, such as /icon.svg: starting with /, "
+                             + "ending in .svg, never under /_app/ (the server's own), never climbing out with ..");
+            }
+
             return problems.Count > 0
                 ? new AppManifestParse.Refused(problems)
                 : new AppManifestParse.Valid(new AppManifest
@@ -111,7 +122,8 @@ public sealed record AppManifest
                     Description = description!,
                     Root = served.TrimEnd('/'),
                     Reads = reads,
-                    Connect = connect
+                    Connect = connect,
+                    Icon = icon
                 });
         }
     }

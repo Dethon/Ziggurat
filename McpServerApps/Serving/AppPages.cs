@@ -102,7 +102,7 @@ public sealed class AppPages(
 
         if (request.Path.StartsWithSegments(AppOriginFiles.Prefix.TrimEnd('/')))
         {
-            await GeneratedAsync(context, policy, served.Manifest, version);
+            await GeneratedAsync(context, policy, served, version, ct);
             return;
         }
 
@@ -450,12 +450,13 @@ public sealed class AppPages(
     }
 
     // The server's own files under /_app/, which no file of the app's can replace.
-    private static async Task GeneratedAsync(HttpContext context, string policy, AppManifest manifest, string? version)
+    private static async Task GeneratedAsync(HttpContext context, string policy, ServedFiles served, string? version, CancellationToken ct)
     {
+        var manifest = served.Manifest;
         var (type, body) = context.Request.Path.Value switch
         {
             AppOriginFiles.ManifestPath => ("application/manifest+json", AppOriginFiles.Manifest(manifest)),
-            AppOriginFiles.IconPath => ("image/svg+xml", AppOriginFiles.Icon(manifest)),
+            AppOriginFiles.IconPath => ("image/svg+xml", AppIcon.Svg(manifest, await served.IconDrawingAsync(ct))),
             AppOriginFiles.WorkerPath => ("text/javascript", AppOriginFiles.Worker(version)),
             AppOriginFiles.RegisterPath => ("text/javascript", AppOriginFiles.Register),
             AppOriginFiles.LibraryPath => ("text/javascript", AppOriginFiles.Library),
@@ -558,6 +559,12 @@ public sealed class AppPages(
     {
         // A path below the manifest's root, its segments already checked.
         public abstract Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct);
+
+        // The bytes of the icon the manifest names, where this origin serves a file there.
+        public async Task<byte[]?> IconDrawingAsync(CancellationToken ct) =>
+            Manifest.Icon is { } icon && await EntryAsync(AppIcon.Relative(icon), ct) is CommittedEntry.File { Bytes: var bytes }
+                ? bytes
+                : null;
 
         // The outside code its pages may load (AppContentPolicy): a commit's as its publish recorded it, the
         // working tree's as a publish would find it now, so the check sees what publishing would serve.

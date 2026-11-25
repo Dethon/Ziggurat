@@ -119,6 +119,12 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
 - **`/_app/` is the server's** (`AppOriginFiles`: manifest, icon, worker with `Service-Worker-Allowed: /`,
   registration, client library), never shadowed by an app file; every `.html` gets its tags first in
   `<head>`, the manifest link `crossorigin="use-credentials"` since the manifest is behind the session.
+  That link comes first, so a manifest of the app's own is never the one installed.
+- **The icon** (`/_app/icon.svg`) is `SpaceIcon`'s frame with its corner badge, around the manifest's `icon`
+  (an SVG the origin serves, `AppIcon`: put in as a data-URI picture, never markup) or else the accent
+  colour's drawing. SVG only, one drawing for every size. `./publish` refuses an `icon` that is no file
+  under the served root (a link counts as none) or no whole `<svg>` document of 256 KiB at most; a preview
+  whose file is not there yet draws the accent's.
 - **The worker**: a published origin's answers carry `X-App-Version` (served commit, base policy, this
   build), embedded in the worker, which keeps the app's files **cache first under that version** — a
   publish, a narrowed approval or a new build is new worker bytes, and the new worker drops every other

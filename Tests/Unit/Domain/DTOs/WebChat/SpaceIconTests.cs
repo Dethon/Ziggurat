@@ -28,4 +28,22 @@ public class SpaceIconTests
         svg.Descendants().ShouldContain(e => (string?)e.Attribute("fill") == SpaceConfig.DefaultAccentColor);
         svg.Descendants().ShouldNotContain(e => e.Attribute("onload") != null);
     }
+
+    // An app's own drawing carries the same corner badge every app's icon does. It goes in as a picture,
+    // never as markup: an image runs no script and loads nothing, and its ids cannot collide with the
+    // badge's.
+    [Fact]
+    public void AnAppsOwnDrawing_IsShownWithTheBadge_AsAPictureNeverAsMarkup()
+    {
+        var own = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\" onload=\"alert(1)\"><rect id=\"cut\" width=\"10\" height=\"10\" fill=\"#123456\"/></svg>"u8.ToArray();
+
+        var svg = XDocument.Parse(SpaceIcon.Badged(own));
+
+        svg.Root!.Name.LocalName.ShouldBe("svg");
+        var picture = svg.Descendants().Where(e => e.Name.LocalName == "image").ShouldHaveSingleItem();
+        ((string?)picture.Attribute("href")).ShouldBe($"data:image/svg+xml;base64,{Convert.ToBase64String(own)}");
+        svg.Descendants().ShouldContain(e => (string?)e.Attribute("fill") == "#16192a");
+        svg.Descendants().ShouldNotContain(e => (string?)e.Attribute("fill") == "#123456");
+        svg.Descendants().ShouldNotContain(e => e.Attribute("onload") != null);
+    }
 }

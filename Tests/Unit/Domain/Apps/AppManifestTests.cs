@@ -15,7 +15,8 @@ public class AppManifestTests
                                    "description": "My glucose today beside what I ate.",
                                    "root": "dist",
                                    "reads": ["/sugary", "/ha"],
-                                   "connect": ["https://api.example.com", "https://tiles.example.org:8443"]
+                                   "connect": ["https://api.example.com", "https://tiles.example.org:8443"],
+                                   "icon": "/icons/glucose.svg"
                                  }
                                  """;
 
@@ -30,6 +31,7 @@ public class AppManifestTests
         manifest.Root.ShouldBe("dist");
         manifest.Reads.ShouldBe(["/sugary", "/ha"]);
         manifest.Connect.ShouldBe(["https://api.example.com", "https://tiles.example.org:8443"]);
+        manifest.Icon.ShouldBe("/icons/glucose.svg");
     }
 
     [Fact]
@@ -42,6 +44,7 @@ public class AppManifestTests
         manifest.Root.ShouldBe("");
         manifest.Reads.ShouldBeEmpty();
         manifest.Connect.ShouldBeEmpty();
+        manifest.Icon.ShouldBeNull();
     }
 
     [Theory]
@@ -60,6 +63,12 @@ public class AppManifestTests
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","connect":["https://*.example.com"]}""", "'https://*.example.com' is no bare https origin")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","connect":["https://api.example.com/v1"]}""", "'https://api.example.com/v1' is no bare https origin")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","connect":["https://api.example.com/"]}""", "'https://api.example.com/' is no bare https origin")]
+    // An icon is an SVG the origin serves, named by its path there; /_app/ is the server's own.
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"icon.svg"}""", "icon 'icon.svg'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/icon.png"}""", "icon '/icon.png'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/../icon.svg"}""", "icon '/../icon.svg'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/_app/icon.svg"}""", "icon '/_app/icon.svg'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"https://example.org/i.svg"}""", "icon 'https://example.org/i.svg'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","colour":"#abc"}""", "colour")]
     [InlineData("""[1, 2]""", "a JSON object")]
     [InlineData("""{"name":""", "not JSON")]

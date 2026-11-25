@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json.Nodes;
 using Domain.Apps;
 using Domain.DTOs.WebChat;
@@ -368,6 +369,28 @@ public class AppsServingTests
         var drawn = await server.GetAsync(host, "/_app/icon.svg", session);
         drawn.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
         (await drawn.Content.ReadAsStringAsync()).ShouldBe(SpaceIcon.Svg("#3a7d44"));
+    }
+
+    // An app that names its own SVG installs with that drawing, the badge in its corner, read from what the
+    // origin serves (here the preview's working tree): one whose file is not there yet keeps the colour's.
+    [Fact]
+    public async Task AnAppsOwnIcon_IsWhatItInstallsWith_BadgedLikeEveryAppsIcon()
+    {
+        await using var server = await AppsServer.StartAsync();
+        const string drawing = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#c2410c\"/></svg>";
+        var created = await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","root":"dist","icon":"/icons/casa.svg"}""");
+        var id = AppsServer.IdIn(created["note"]!.GetValue<string>());
+        var host = server.Preview("casa", id);
+        var session = server.SessionFor(AppsServer.Her, host);
+        var before = await (await server.GetAsync(host, "/_app/icon.svg", session)).Content.ReadAsStringAsync();
+        await server.CreateAsync(AppsServer.Her, "/casa/dist/icons/casa.svg", drawing);
+
+        var drawn = await server.GetAsync(host, "/_app/icon.svg", session);
+
+        before.ShouldBe(SpaceIcon.Svg("#c2410c"));
+        drawn.Content.Headers.ContentType!.MediaType.ShouldBe("image/svg+xml");
+        (await drawn.Content.ReadAsStringAsync()).ShouldBe(SpaceIcon.Badged(Encoding.UTF8.GetBytes(drawing)));
     }
 
     [Fact]
