@@ -163,13 +163,20 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
     listing (`HouseholdAppsClient`, `AccountsSettings.AppsUrl` = `APPSURL`, within `AppsTimeout`), asked on an
     assertion this service signs for the gate-verified owner on `AppChannels.PublishedApps` (as usage's), and
     only for a household with the `apps` feature (else none, nobody asked); null when it could not be asked,
-    which costs only a **new** app space (503 `AdminSpaces.AppsUnavailableMessage`): the page loads and saves.
+    which costs only a **new** app space or a changed approval (503 `AdminSpaces.AppsUnavailableMessage`): the
+    page loads and saves.
     A new app space must name one of the listed apps (400 naming the space); its **name and colour are stamped
     from the app** on every save and answer (as last saved when the server is down), never the page's word;
     **what a space is never changes under its slug** (an app space's app, a chat space never becoming one);
     one space per app, none opening on an agent, the default space never one (the section's rules). Ordered
     among chat spaces as any space. Removing it unshares the app; summaries name the app's id ("added space
     glucose, sharing app a1b2c3").
+  - **its approved reach** (`HouseholdSpace.Approved`, what the apps server grants it while shared,
+    `.claude/rules/apps.md`) is **only ever what the page sent**, never stamped from the listing — a publish
+    landing between load and save is not approved unseen — capped at what the app asks now (`AppReach.Within`;
+    nothing approved is none). A save leaving it as loaded leaves it as stored; changing it needs the listing
+    (503 `AppsUnavailableMessage`, as a new app space). `AdminSpaces.PendingOf(space)` is what the app asks
+    beyond it. Summaries say "changed space glucose's approved reach", never the reach.
 - **A removed space's topics are not moved** (`.claude/rules/chat-hub.md`, "Spaces"): the default space lists
   them read side, so a space added back under its slug has its conversations again.
 - **A removed space's phones** (`push:space@{tenant}:{slug}`) are left as they are: nothing pushes to a space
@@ -177,9 +184,11 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   every space's set.
 - **The pages**: `/admin/features` (`HouseholdFeaturesPage`) and `/admin/spaces` (`HouseholdSpacesPage`:
   Remove not offered for the default space; changes are the page's until "Save spaces" sends the list in
-  order; an app space shows its app's facts (`AppSharedFacts`) in place of name, colour and agent, and
+  order; an app space shows its app's facts (`AppSharedFacts`) in place of name, colour and agent — what is
+  approved, and apart from it what its published version asks beyond that, with "Approve what it asks"
+  (`SpaceDraft.Approve`; the draft carries the loaded approval back, or the merge would take it away) — and
   "Share an app" offers the listed apps no space shares yet (`SpaceDrafts.Shareable`/`Share`: the app's slug,
-  else the first free `<slug>-<n>`)). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
+  else the first free `<slug>-<n>`, approving the reach shown)). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
   turns read them).
 
 ## Own servers

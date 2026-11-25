@@ -361,6 +361,10 @@ until an owner removes the space.
 - The spaces admin page lets an owner add an app space by picking one of the household's published
   apps, showing each one's author, `reads` and `connect` first. Removing the space unshares the app;
   it stays its author's. The admin page asks the apps server for the household's published apps.
+- The space records the `reads` and `connect` the owner approved. While shared, the published origin
+  grants every viewer, its author too, only what the served manifest asks within that approval (policy
+  and reads); the page shows what a later publish asks beyond it, approved by saving the space again,
+  and `./publish` tells the author's agent what waits on an owner.
 - `GetSpaces` keeps answering chat spaces alone, for installed clients from before. A new hub method
   answers chat spaces, app spaces (with their URL) and the person's own published apps that are not
   app spaces, marked private; the switcher uses it, and picking an app opens its origin. The hub asks

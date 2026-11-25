@@ -100,8 +100,20 @@ revokes their sessions, `SessionsEnded` ends their app sessions (`EndAll`), and 
 When the announcement is missed, it arrives within `Sessions:AssertionKept` (5 min) at worst.
 
 **Known gaps:**
-- A later publish can widen `reads` or `connect` after the owner approved them. The owner sees only what the
-  served commit says now.
+- ~~A later publish can widen `reads` or `connect` after the owner approved them.~~ **Closed** (user: the
+  owner's consent must hold). The space records the reach approved (`HouseholdSpace.Approved`: `reads`,
+  `connect`), only ever what the page's save sent, capped at what the app asks then. While shared, the
+  published origin grants every viewer, its author too, the served manifest's reach within it, in the
+  policy's `connect-src`/`img-src` and in the reads `/_vfs/*` forwards; the preview keeps the manifest whole.
+  The spaces page shows what a publish asks beyond it ("Approve what it asks", then save); `./publish` names
+  what waits on an owner. No migration: an app space saved on this branch before has no approval and grants
+  nothing until an owner saves one. One exception, on purpose: spaces the author's own session cannot read
+  (or that are refused) open the author's app under its whole manifest, since an author's app never waits on
+  accounts and that reach is no one's data but theirs. `./rollback` serves an older commit under the same
+  rule but its answer does not name what waits. Tests: `AppsSpacesTests` (policy, publish answer),
+  `AppsReadsTests` (a read refused, then approved), `HouseholdSpacesAdminTests` (pending shown, an unrelated
+  save approving nothing, approval capped, 503 without the listing), `SpaceDraftsTests`,
+  `HouseholdSpacesProblemsTests`.
 - Without Redis, unsharing and the delete check lag by up to `Accounts:ConfigurationLifetime` (1 min).
 - Other members' runtime error messages now land in the author's `/apps/<slug>/errors`. This adds to
   ticket 08's "a message may carry data" gap: a shared app's error text can carry what another member read.

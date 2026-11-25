@@ -86,7 +86,10 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   the output), any `.git` segment (also hidden from listings), and the names the server keeps at an
   app's root — the action files (`check` among them), `errors` (the runtime errors, below), `.checks`.
 - **Action files run on the mount** (a catalog, as `/timers`): `publish` (validates the manifest and its
-  `root`, commits the working tree if it changed, records `HEAD` as served, answers the link), `history
+  `root`, commits the working tree if it changed, records `HEAD` as served, answers the link — and, for an
+  app space whose served manifest asks beyond the approved reach, which reach waits on an owner, read after
+  the household lock on the call token; unreadable spaces say the check could not be made and publish all
+  the same), `history
   [--limit N]` (newest first, the served one marked `*`/`(served)`), `rollback <rev>` (moves the served
   pointer in the metadata only; history is never rewritten), `check [--viewport WxH]... [--path /route]`
   (below). Unknown is exit 127 naming the actions.
@@ -121,8 +124,9 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   under the tree's manifest (no links followed). A directory without `/` is a 308 to it; a navigation
   to a missing path is the root `index.html` (client routes); `.`/`..`/`.git` segments are 404.
 - **Every answer** carries `AppContentPolicy.For(manifest, Cdns)` (the origin's own manifest: commit or
-  tree) — `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the
-  generated files load; a page's own inline import maps by their hashes (`InlineImportMaps`), the one inline
+  tree; on the published origin of an app space, its `connect` no more than approved, "App spaces") —
+  `style-src` allows inline styles as the spec says; `manifest-src`/`worker-src 'self'` so the generated files
+  load; a page's own inline import maps by their hashes (`InlineImportMaps`), the one inline
   script that runs — plus `nosniff`, `no-cache`, `no-referrer`. `Cdns` is appsettings.
 - **The server's own files under `/_app/`** (`AppOriginFiles`), which no app file can shadow: the web
   manifest (name, short name, colour, `id`/`start_url`/`scope` `/`), the icon (`SpaceIcon`, the
@@ -151,7 +155,7 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   call's token for a delete, and on **the viewer's own `apps` assertion** for an origin
   (`CallHousehold.OfPerson`; `apps` is `mcp-apps`'s assertion channel), kept by the reader a minute or
   until a save is heard on Redis — so removing the space closes the app within that.
-- **Access**: the author needs no read; anyone else must be of the app's household (`tid` equal to the
+- **Access**: the author is opened whatever the read answers; anyone else must be of the app's household (`tid` equal to the
   app's, so an id another household names opens nothing), on the published origin, holding an assertion
   (a check's session never), and the app must be in the section. Spaces that cannot be read are a 503 (a
   page `AccessUnchecked`, a read the `transient_dependency` envelope), never the 404 and never open; a
@@ -169,8 +173,17 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   (`DeploymentConformanceTests`), and the pages listener never answers it.
 - **Outage vs refusal**: a reader's outage or its own timeout is unchecked (503 / `transient_dependency`), a
   refusal closed.
-- Not held: a later publish may widen `reads` or `connect` past what an owner saw when sharing; every member's
-  runtime errors land in the author's `/<slug>/errors`, messages and all ("Runtime errors").
+- **The owner's approval holds** (`HouseholdSpace.Approved`, an `AppReach`: `reads` and `connect`, in the
+  section beside `appId`). While shared, the published origin grants **every viewer, its author too**, the
+  served manifest's reach `Within` the approval (`AppPages.ServedAsync` narrows the manifest once, so both
+  policies of a page and the `/_vfs/*` reads' `AppReadScope` get it); what it asks `Beyond` is not granted
+  (a read of it is `AppRead`'s `permission_denied`, its hint naming an owner's approval). No approval
+  recorded grants nothing (no migration: app spaces existed only on the unmerged branch). The preview keeps
+  its manifest whole, being the author's alone. The author reads the spaces too (same reader, same cache),
+  but **an author's own app never waits on accounts**: spaces unreadable or refused open it under its whole
+  manifest, which reaches no one's data but theirs — the one case it is granted more than approved.
+- Not held: every member's runtime errors land in the author's `/<slug>/errors`, messages and all ("Runtime
+  errors").
 
 ## App sign-in
 
@@ -221,7 +234,8 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
   this origin's cookie): the viewer and app settled exactly as for a page — nobody, a viewer
   who may not open the app (`AppPages.AccessAsync`; spaces that cannot be read, a 503 envelope), or another origin's page is the one 404 — then handed to the agent (`AgentReads`) with **the reads of
   the origin's own manifest** (the served commit's on the published origin, so a tree edit widens
-  nothing until published; the tree's on the preview), the building agent from `app.meta.json`, and the
+  nothing until published, and no more than an owner approved while it is an app space; the tree's on the
+  preview), the building agent from `app.meta.json`, and the
   assertion the app session holds, renewed first if it was due. The answer goes back as it came, under the
   origin's policy, `no-store`; an agent unreachable, or one that did not believe this server, is a 503
   `transient_dependency` envelope.
@@ -387,7 +401,8 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
 `AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppsSpacesTests`
-who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing,
+who opens a shared app (stand-in spaces, `AppsServer.Spaces`), `AppsPublishedListingTests` the listing, `AppsSpacesTests`/`AppsReadsTests` a publish widening a shared app
+(policy, read refused, the publish answer),
 `AppSpacesOverTheWireTests` an app space end to end on a real accounts service and Redis; `AppsRuntimeErrorsTests`
 `/_errors` by Host (kept and stamped, unescaped, the one 404, a foreign page, the shape and caps, a read's
 envelope, `Errors:Kept`, the per-session minute, the mount's read-only file, the operator's event, a check's

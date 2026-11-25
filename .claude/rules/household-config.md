@@ -42,7 +42,7 @@ document's problems name the field, never its value, which may be a key.
 | `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
 | `keys` | `KeysSection` | `openRouter`, `idealista`, `braveSearch`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
 | `features` | `FeaturesSection` | seven bools; default all on but Idealista and `apps`, which only the operator sets (an owner's save keeps the stored value, `HouseholdFeaturesAdmin`) |
-| `spaces` | `SpacesSection` | at least one space; an app space names a built app's id (`appId`): one space per app, opening on no agent, never the default space |
+| `spaces` | `SpacesSection` | at least one space; an app space names a built app's id (`appId`): one space per app, opening on no agent, never the default space; it may carry the reach an owner approved (`approved`: `reads` mount points, `connect` bare https origins, none on a chat space) |
 
 - An owner changes only an agent's name and custom instructions (4c): a definition entry carrying a
   `name`/`customInstructions` beside its definition is refused, so each has one place.
