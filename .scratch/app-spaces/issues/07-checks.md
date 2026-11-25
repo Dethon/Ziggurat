@@ -134,17 +134,20 @@ household's repositories. Now:
   read "You are adequately sandboxed" (PID and network namespaces, seccomp-BPF). No Chromium process in
   a running check had `--no-sandbox`.
 - *What it can reach:* the `apps-browser` network only, which it shares with `mcp-apps` alone. That gives
-  it `mcp-apps` 8081, and 8080 behind the server's secret. It also reaches the internet and the host's LAN
-  through the bridge's NAT; the check's route still bounds what a page may request, and the CDNs and
-  `connect` origins need the internet. It holds nothing: no secret, setting, volume, port or capability.
-  It cannot reach Redis, the agent or the accounts service.
+  it `mcp-apps` 8081, and 8080 behind the server's secret. Through the bridge's NAT it also reaches the
+  internet, the host's LAN and the host's published ports: Caddy's 443 and Lemonade on its LAN address,
+  but not Redis, which is published on loopback only. The check's route still bounds what a page may
+  request, and the CDNs and `connect` origins need the internet. It holds nothing: no secret, setting,
+  volume, port or capability. It is on no network with Redis, the agent or the accounts service. That is
+  shown by the compose file and pinned by `DeploymentConformanceTests`; no probe tried those services.
 - *Images:* `mcp-apps` went from 2.01 GB to 760 MB; it keeps only the Playwright driver, made executable
   at publish. `apps-browser` is 1.42 GB.
 - *Tests:*
   - `AppChecksTests` gained three cases: a check through a local `run-server --unsafe` from the bundled
     driver (`PlaywrightBrowserServer`) reaching the pages listener by `localhost`, secure context included;
     a dead endpoint, which reports "the browser could not run"; and `chrome://sandbox` launched here and
-    on a server.
+    on a server. `CheckBrowserTests` (unit) pins that `Pages` reaches the `MAP` rule, which the browser
+    cases cannot tell apart from the loopback default.
   - `DeploymentConformanceTests` pins the service:
     - no env, `env_file`, volume, port, device or added capability; `cap_drop: ALL`; not privileged;
     - exactly `no-new-privileges` and its filter;
@@ -155,7 +158,8 @@ household's repositories. Now:
 
   `DeploymentFiles` now reads `cap_add`, `cap_drop`, `security_opt` and `privileged`.
 - *Proved in Docker* with a throwaway harness: the real apps server module and `AppChecks`, built on the
-  `mcp-apps` image, running as uid 1654 with no home. Both default viewports came back with screenshots,
+  `mcp-apps` image, on that image's own Playwright driver, running as uid 1654 and again as an arbitrary
+uid with no home (4242, `HOME=/`), so `HOME=/tmp` was dropped. Both default viewports came back with screenshots,
   the aria snapshot, and an assertion reading `isSecureContext` true. The `mcp-apps` image has no
   `/ms-playwright` and no `chrome` anywhere. The real compose definition started the server from the
   repository root (the relative seccomp path resolved). The full stack, smoke tier and E2E were not run.

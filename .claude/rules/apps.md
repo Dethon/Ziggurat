@@ -253,8 +253,9 @@ container, never in `mcp-apps`.
   It holds **no secret, setting, volume, port or capability** (`cap_drop: ALL`, `no-new-privileges`,
   `read_only` with `/tmp` and `/home/node` in memory, `stdin_open` since the server exits when stdin
   closes, `init`), and sits on the `apps-browser` network with `mcp-apps` alone: it reaches `mcp-apps`
-  (8081, and 8080 behind the server's secret), the internet and whatever the host's NAT reaches, never
-  Redis, the agent or the accounts service. `mcp-apps` reaches it at `CHECKS__BROWSER__ENDPOINT:
+  (8081, and 8080 behind the server's secret), the internet and through NAT the host's LAN and published
+  ports (Caddy, Lemonade; Redis is on loopback), and shares no network with Redis, the agent or the
+  accounts service. `mcp-apps` reaches it at `CHECKS__BROWSER__ENDPOINT:
   ws://apps-browser:10080/` and is reached by it at `CHECKS__BROWSER__PAGES: mcp-apps:8081` (topology
   values; the service's DNS name, which `compose run` does not give). **The sandbox's syscall filter**
   (`DockerCompose/seccomp/ziggurat-apps-browser.json`) is Docker 29.8.0's default (moby/profiles
@@ -308,5 +309,6 @@ route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCa
 in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
 turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
 deadline), launched in process and once on a local `run-server --unsafe` from the bundled driver
-(`PlaywrightBrowserServer`), a dead endpoint, and `chrome://sandbox` both ways; `AppReadsApiTests` also the check's call token; the deployment and server tables
+(`PlaywrightBrowserServer`), a dead endpoint, and `chrome://sandbox` both ways; `CheckBrowserTests` that
+`Checks:Browser:Pages` reaches the `MAP` rule; `AppReadsApiTests` also the check's call token; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.
