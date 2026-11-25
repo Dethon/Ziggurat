@@ -158,9 +158,10 @@ public class ChangeScopeTests
     }
 
     // The same for skills: a skill's claims — its trigger claim first — moved into its document, so
-    // an edit of a body's words alone has to select the family that body teaches.
+    // an edit of a body's words alone has to select the family that body teaches. A skill whose claims
+    // no scenario tests yet (each an exemption, the apps skill's) has no family to select.
     public static TheoryData<string> SkillDocuments =>
-        [.. PromptDocuments.Skills.Where(d => d.Claims.Count > 0).Select(d => d.Name)];
+        [.. PromptDocuments.Skills.Where(d => d.Claims.Any(c => EvalSuite.All.Any(s => Tested(s).Contains(c.Id)))).Select(d => d.Name)];
 
     [Theory]
     [MemberData(nameof(SkillDocuments))]

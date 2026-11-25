@@ -72,6 +72,11 @@ public static class ClaimExemptions
             + "count is the contract's twelve plus what the spelled-out numbers exclusion is worth: the "
             + "check counts every word. A scenario whose subject is the limit needs a turn that tempts "
             + "a long answer."),
+        [AppsSkill.LoadsForAnAppRequest.Id] = new(ExemptionKind.Unwritten,
+            "Written on 2026-11-25 with the skill. The eval stack does not host the apps server (its "
+            + "endpoint is dropped there as unhosted), so no scenario can offer /apps yet; a scenario "
+            + "needs the server in the eval stack and a turn asking for an app, asserting the load "
+            + "before the first /apps write."),
         [VoicePrompt.NothingIsNarrated.Id] = new(ExemptionKind.Unwritten,
             "Checked negatively wherever a scenario names what the reply must not say — a diffuse "
             + "assertion no single scenario owns — but nothing checks the general rule: a scenario "

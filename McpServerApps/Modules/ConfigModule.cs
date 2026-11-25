@@ -1,3 +1,4 @@
+using Domain.Prompts;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Metrics;
 using Infrastructure.Utils;
@@ -58,7 +59,9 @@ public static class ConfigModule
         services
             .AddToolServer(settings, ToolResponse.Create)
             .AddFileSystemTools<AppsFileSystem>()
-            .AddFileSystemResource<AppsFileSystem>();
+            .AddFileSystemResource<AppsFileSystem>()
+            // How an app is built, checked and published, loaded on demand; offered only where /apps is.
+            .AddSkills(AppsSkill.Text);
 
         return services;
     }
