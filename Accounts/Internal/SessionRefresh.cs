@@ -22,14 +22,16 @@ public static class SessionRefresh
     public const string Path = "/session";
 
     // The channels whose people are kept by their session, in the order an unnamed ask is answered on.
-    private static readonly string[] _refreshed = [ChannelIds.SignalR, ChannelIds.Sugary, AppChannels.Apps];
+    // persons-apps is the hub's ask for the apps server's listing of a person's apps (WebChat's space
+    // switcher), always named, after signalr so an unnamed ask of the hub's stays on its own channel.
+    private static readonly string[] _refreshed = [ChannelIds.SignalR, ChannelIds.Sugary, AppChannels.Apps, AppChannels.PersonsApps];
 
     public static void Map(IEndpointRouteBuilder routes) =>
         routes.MapPost(Path, async (
             HttpContext http, SessionQuery query, SessionStore sessions, Assertions assertions, CancellationToken ct) =>
         {
-            // The chat hub's, Sugary's for a phone a session subscribed, or the apps server's for an app
-            // session: each answered on its own channel.
+            // The chat hub's (on its own channel, or for its space switcher on persons-apps), Sugary's for a
+            // phone a session subscribed, or the apps server's for an app session: each answered on its own channel.
             var channel = query.Channel is { } named
                 ? _refreshed.Contains(named) && InternalCallers.MayAskAbout(http, named) ? named : null
                 : _refreshed.FirstOrDefault(c => InternalCallers.MayAskAbout(http, c));

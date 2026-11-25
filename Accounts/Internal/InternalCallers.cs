@@ -59,7 +59,9 @@ public static class InternalCallers
 
     private static readonly Dictionary<string, string[]> _channels = new(StringComparer.Ordinal)
     {
-        [SignalR] = [ChannelIds.SignalR],
+        // The hub also asks for a session's person on persons-apps, the apps server's listing of their apps
+        // for WebChat's space switcher, which nothing else may ask for.
+        [SignalR] = [ChannelIds.SignalR, AppChannels.PersonsApps],
         [Telegram] = [TelegramLinks.Channel],
         [Voice] = [ChannelIds.Voice],
         [Agent] = [Tunnels],
