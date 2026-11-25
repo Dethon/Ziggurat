@@ -66,7 +66,8 @@ public sealed class AgentReadRegistries(
 
         return new ReadRegistry(
             session, reach, reached, HouseholdNow, household.AsBuilt(definition.Id), ReadRegistry.CallerFor(viewer, definition.Id),
-            new ToolPermission(new ToolPatternMatcher(definition.WhitelistPatterns).IsMatch));
+            new ToolPermission(new ToolPatternMatcher(definition.WhitelistPatterns).IsMatch),
+            FileSystemToolFeature.Offers(AgentSpecProjection.ExtractFilesystemEnabledTools(definition.EnabledFeatures)));
     }
 }
 
@@ -88,9 +89,10 @@ public sealed class ReadRegistry : IAsyncDisposable
     internal ReadRegistry(
         ThreadSession session, SessionReach reach, ServerReach reached,
         Func<CancellationToken, Task<HouseholdAgents>> household, AgentAsBuilt? builtFrom, ConversationContext caller,
-        ToolPermission permission)
+        ToolPermission permission, Func<string, bool> offered)
     {
         Permission = permission;
+        Offered = offered;
         _session = session;
         _reach = reach;
         _reached = reached;
@@ -108,10 +110,13 @@ public sealed class ReadRegistry : IAsyncDisposable
     // decides it. Nothing is remembered outside a conversation, so the whitelist is all there is.
     public ToolPermission Permission { get; }
 
+    // Whether the agent is offered a file tool, by its name: one it was never given is never run for it.
+    public Func<string, bool> Offered { get; }
+
     // One read's bridge call over these mounts, for this person, at the bridge's per-file ceiling. No
     // token: nothing finds it again, and it lives as long as the read.
     public VfsCall Call(long maxFileBytes) =>
-        new("", Registry, Permission, null, [.. Registry.GetMounts().Where(VfsCall.IsServed)], Caller, maxFileBytes);
+        new("", Registry, Permission, Offered, [.. Registry.GetMounts().Where(VfsCall.IsServed)], Caller, maxFileBytes);
 
     // The household's own servers named by the agent and not reached by this build.
     public IReadOnlyList<string> Offline => _reached.OwnServers.Offline;

@@ -6,6 +6,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.Security;
+using Domain.Tools;
 using McpServerSugary.Store;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
@@ -76,6 +77,95 @@ public sealed class AppReadsApiTests
         (await blob.Content.ReadAsStringAsync()).ShouldBe("not really a picture");
     }
 
+    // An app reads only the mount points its manifest names: a path anywhere else, though the agent
+    // mounts it, is refused with the permission envelope. The registry is shared by two apps of one agent
+    // and viewer, and each is held to its own reads.
+    [Fact]
+    public async Task AReadOutsideTheManifestsReads_IsRefusedWithThePermissionEnvelope()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string> { ["a.md"] = "notes" });
+        await using var vault = await TextFileServer.StartAsync("vault", new Dictionary<string, string> { ["a.md"] = "vault" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint, vault.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+        var notesApp = _glucoseApp with { Reads = ["/notes"] };
+        var vaultApp = _glucoseApp with { Id = "def456", Reads = ["/vault"] };
+
+        (await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, notesApp, new JsonObject { ["filePath"] = "/notes/a.md" }, her)))
+            ["content"]!.GetValue<string>().ShouldContain("notes");
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, notesApp, new JsonObject { ["filePath"] = "/vault/a.md" }, her),
+            ToolError.Codes.PermissionDenied, "/notes");
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Glob, notesApp, new JsonObject { ["basePath"] = "/", ["pattern"] = "*" }, her),
+            ToolError.Codes.PermissionDenied, "/notes");
+        (await JsonAsync(agent.ReadAsync(AppReads.Operations.Read, vaultApp, new JsonObject { ["filePath"] = "/vault/a.md" }, her)))
+            ["content"]!.GetValue<string>().ShouldContain("vault");
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, vaultApp, new JsonObject { ["filePath"] = "/notes/a.md" }, her),
+            ToolError.Codes.PermissionDenied, "/vault");
+    }
+
+    // Nothing that changes anything is reachable: every other operation, a file tool's or none, is
+    // refused with the permission envelope and the file is as it was.
+    [Theory]
+    [InlineData("text_create")]
+    [InlineData("create")]
+    [InlineData("edit")]
+    [InlineData("remove")]
+    [InlineData("move")]
+    [InlineData("copy")]
+    [InlineData("exec")]
+    [InlineData("write")]
+    public async Task AnOperationThatIsNoRead_IsRefusedWithThePermissionEnvelope(string operation)
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string> { ["a.md"] = "kept" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(notes.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+
+        await RefusedAsync(agent.ReadAsync(operation, _glucoseApp with { Reads = ["/notes"] }, new JsonObject
+        {
+            ["path"] = "/notes/a.md", ["filePath"] = "/notes/a.md", ["content"] = "changed", ["command"] = "rm a.md",
+            ["sourcePath"] = "/notes/a.md", ["destinationPath"] = "/notes/b.md"
+        }, TestAssertions.Of(SugaryServer.Her, AppChannels.Apps)), ToolError.Codes.PermissionDenied, operation);
+
+        (await File.ReadAllTextAsync(Path.Combine(notes.Directory, "a.md"))).ShouldBe("kept");
+        File.Exists(Path.Combine(notes.Directory, "b.md")).ShouldBeFalse();
+    }
+
+    // An app reads only what its building agent's own call would run unasked: its whitelist decides, as
+    // the approval client would, and a file tool the agent is not offered at all is refused too.
+    [Fact]
+    public async Task AReadTheBuildingAgentWouldAskAbout_IsRefusedWithThePermissionEnvelope()
+    {
+        await using var notes = await TextFileServer.StartAsync("notes", new Dictionary<string, string> { ["a.md"] = "notes" });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId,
+            Jonas(notes.Endpoint) with { WhitelistPatterns = ["domain__filesystem__glob", "domain__filesystem__file_info"] },
+            Jonas(notes.Endpoint) with
+            {
+                Id = "nabu",
+                Name = "Nabu",
+                EnabledFeatures = ["filesystem.glob"],
+                WhitelistPatterns = ["domain__filesystem__*"]
+            });
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var her = TestAssertions.Of(SugaryServer.Her, AppChannels.Apps);
+        var app = _glucoseApp with { Reads = ["/notes"] };
+
+        (await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, app, new JsonObject { ["basePath"] = "/notes", ["pattern"] = "*" }, her)))
+            ["entries"]!.AsArray().Count.ShouldBe(1);
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Read, app, new JsonObject { ["filePath"] = "/notes/a.md" }, her),
+            ToolError.Codes.PermissionDenied, "file_read");
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Blob, app, new JsonObject { ["path"] = "/notes/a.md" }, her),
+            ToolError.Codes.PermissionDenied, "file_read");
+
+        var nabu = app with { Agent = "nabu" };
+        (await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, nabu, new JsonObject { ["basePath"] = "/notes", ["pattern"] = "*" }, her)))
+            ["entries"]!.AsArray().Count.ShouldBe(1);
+        await RefusedAsync(agent.ReadAsync(AppReads.Operations.Info, nabu, new JsonObject { ["path"] = "/notes/a.md" }, her),
+            ToolError.Codes.PermissionDenied, "file_info");
+    }
+
     // Neither half opens the route alone: the apps server's credential without a believable assertion,
     // or an assertion without the credential (another server's, or none), is refused before anything is
     // built or read.
@@ -135,6 +225,18 @@ public sealed class AppReadsApiTests
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
         return [.. body["rows"]!.AsArray().Select(row => row![0]?.GetValue<string>())];
+    }
+
+    // The tools' envelope, answered 422, its message naming what it should.
+    private static async Task<JsonNode> RefusedAsync(Task<HttpResponseMessage> sent, string errorCode, string named)
+    {
+        using var response = await sent;
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, body.ToJsonString());
+        body["ok"]!.GetValue<bool>().ShouldBeFalse();
+        body["errorCode"]!.GetValue<string>().ShouldBe(errorCode, body.ToJsonString());
+        body["message"]!.GetValue<string>().ShouldContain(named);
+        return body;
     }
 
     private static async Task<JsonNode> JsonAsync(Task<HttpResponseMessage> sent)

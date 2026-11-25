@@ -73,6 +73,12 @@ public class FileSystemToolFeature(
         .Where(o => o.ToolKey is not null && o.Capability is not null)
         .ToDictionary(o => o.Capability!, o => o.ToolKey!, StringComparer.Ordinal);
 
+    // Whether a session whose filesystem feature enables these tool keys offers a tool, by its name: what
+    // the exec bridge and a built app's reads ask before an operation stands in for the tool. Null
+    // enables every tool.
+    public static Func<string, bool> Offers(IReadOnlySet<string>? enabledTools) => name =>
+        enabledTools is null || (_keysByName.TryGetValue(name, out var key) && enabledTools.Contains(key));
+
     public string? Prompt => BuildPrompt();
 
     public IEnumerable<AIFunction> GetTools(FeatureConfig config)
@@ -142,9 +148,7 @@ public class FileSystemToolFeature(
             // Carries where each call would run, read off this session's mounts, for the exec screen.
             (VfsExecTool.Key, () => ExecReach.Carried(
                 AIFunctionFactory.Create(
-                    new VfsExecTool(registry, bridge, name =>
-                        config.EnabledTools is null
-                        || (_keysByName.TryGetValue(name, out var key) && config.EnabledTools.Contains(key))).RunAsync,
+                    new VfsExecTool(registry, bridge, Offers(config.EnabledTools)).RunAsync,
                     new AIFunctionFactoryOptions
                     {
                         Name = $"domain__{Feature}__{VfsExecTool.Name}",

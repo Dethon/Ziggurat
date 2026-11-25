@@ -21,6 +21,6 @@ public sealed class AppReader(AssertionVerifier assertions, ReadRegistryCache re
         }
 
         await using var lease = await registries.LeaseAsync(viewer, request.App.Agent, ct);
-        return await new AppRead(lease.Registry.Call(bridge.MaxFileBytes)).RunAsync(operation, request.Arguments, ct);
+        return await new AppRead(lease.Registry.Call(bridge.MaxFileBytes), request.App.Reads).RunAsync(operation, request.Arguments, ct);
     }
 }

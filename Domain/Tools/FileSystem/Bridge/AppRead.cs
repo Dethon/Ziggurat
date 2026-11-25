@@ -8,13 +8,27 @@ namespace Domain.Tools.FileSystem.Bridge;
 
 // One read of a built app's, through the bridge's meaning layer: the third adapter over VfsCall, beside
 // the file tools and the sandbox's FUSE daemon. Each operation is the file tool's own call, answered with
-// the tool's result shape on virtual paths.
-public sealed class AppRead(VfsCall call)
+// the tool's result shape on virtual paths, and allowed only where the call would run unasked (VfsCall).
+// An app reads only the mount points its manifest's `reads` names, and nothing reachable here changes
+// anything: every other operation is refused with the permission envelope.
+public sealed class AppRead(VfsCall call, IReadOnlyList<string> reads)
 {
     public async Task<AppReadAnswer> RunAsync(string operation, JsonObject arguments, CancellationToken ct)
     {
+        if (!AppReads.Operations.All.Contains(operation))
+        {
+            return AppReadAnswer.Refused(ToolError.PermissionDenied(
+                $"{operation} is not a read, and a built app only reads.",
+                $"Read with one of: {string.Join(", ", AppReads.Operations.All)}."));
+        }
+
         try
         {
+            if (Outside(PathOf(operation, arguments)) is { } refusal)
+            {
+                return AppReadAnswer.Refused(refusal);
+            }
+
             return operation switch
             {
                 AppReads.Operations.Read => await ReadAsync(arguments, ct),
@@ -30,6 +44,27 @@ public sealed class AppRead(VfsCall call)
         {
             return AppReadAnswer.Refused(ToolError.Result(ToolError.Codes.InvalidArgument, ex.Message));
         }
+    }
+
+    // The path an operation reads, by the argument the tool takes it in.
+    private static string PathOf(string operation, JsonObject arguments) => operation switch
+    {
+        AppReads.Operations.Read => Required(arguments, VfsFileReadTool.FilePathParameter),
+        AppReads.Operations.Glob => Required(arguments, "basePath"),
+        AppReads.Operations.Search => Text(arguments, "filePath") ?? Text(arguments, "directoryPath")
+            ?? throw new InvalidOperationException("filePath or directoryPath is required."),
+        _ => Required(arguments, "path")
+    };
+
+    // The mount a path resolves to, or for a path nothing is mounted at, the mount point it names.
+    private ToolErrorResult? Outside(string path)
+    {
+        var mountPoint = call.MountPointOf(path) ?? "/" + path.Trim('/').Split('/')[0];
+        return reads.Contains(mountPoint, StringComparer.Ordinal)
+            ? null
+            : ToolError.PermissionDenied(
+                $"{path} is outside what this app reads: its manifest's reads are {(reads.Count == 0 ? "none" : string.Join(", ", reads))}.",
+                "Name the mount point in the manifest's reads and publish the app again.");
     }
 
     private async Task<AppReadAnswer> ReadAsync(JsonObject arguments, CancellationToken ct)
