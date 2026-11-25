@@ -101,6 +101,53 @@ public class AppsServingInABrowserTests
         (await page.EvaluateAsync<int>("caches.keys().then(k => k.length)")).ShouldBe(0);
     }
 
+    // The app sign-in as a browser walks it: a person signed in on the main host opens their app's link
+    // and lands on the page they asked for, signed in to the app, through the redirects there and back
+    // and the `__Host-` cookies the app's origin sets on the way (host-only, Secure on plain http under
+    // .localhost).
+    [Fact]
+    public async Task ASignedInPerson_OpensTheirAppsLink_AndLandsInIt()
+    {
+        await using var accounts = await AccountsServer.StartAsync(s => s with
+        {
+            AppsDomain = LocalAppsDomain,
+            Signing = new global::Domain.Security.Signing.SigningKeySettings { PrivateKey = TestSigningKeys.Accounts },
+            Callers = new Dictionary<string, string> { ["mcp-apps"] = McpTestSecret.Gate.SharedSecret }
+        });
+        var fran = await accounts.MintOperatorAsync("Fran");
+        var author = new global::Domain.DTOs.Channel.Account(fran.TenantId, fran.UserId);
+        await using var server = await AppsServer.StartAsync(
+            s => s with
+            {
+                AppsDomain = LocalAppsDomain,
+                PublicBaseUrl = accounts.Address.ToString().TrimEnd('/'),
+                Accounts = s.Accounts with { BaseUrl = accounts.Address.ToString() }
+            },
+            services => Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.Replace(services,
+                Microsoft.Extensions.DependencyInjection.ServiceDescriptor.Singleton<TimeProvider>(accounts.Clock)));
+        var id = AppsServer.IdIn(await server.AppAsync(author, "glucose"));
+        await server.CreateAsync(author, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.ExecAsync(author, "/glucose", "./publish");
+        var origin = $"http://{server.Published("glucose", id)}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var context = await browser.NewContextAsync();
+        await context.AddCookiesAsync([
+            new Cookie
+            {
+                Name = global::Accounts.Sessions.SessionCookie.Name, Value = await accounts.MintSessionAsync(fran.UserId),
+                Url = accounts.Address.ToString(), HttpOnly = true, Secure = true, SameSite = SameSiteAttribute.Lax
+            }
+        ]);
+        var page = await context.NewPageAsync();
+
+        await page.GotoAsync(origin + "/week");
+
+        await Assertions.Expect(page.Locator("h1")).ToHaveTextAsync("Glucose");
+        page.Url.ShouldBe(origin + "/week");
+        (await context.CookiesAsync([origin])).ShouldContain(c => c.Name == global::McpServerApps.Serving.AppSessions.CookieName);
+    }
+
     // The worker claims the page once active. A predicate is read synchronously (a Promise would count
     // as true at once), and one that never activates — refused by the policy or its scope — fails the
     // case at the wait's end rather than hanging it.

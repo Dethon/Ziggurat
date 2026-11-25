@@ -172,8 +172,8 @@ public sealed class AppViewers(
     }
 
     // Host-only and `__Host-`, so no other origin under the apps domain — another app's code — can set
-    // or read it. Lax, not Strict: every arrival on the callback ends a hop from the main host, another
-    // site, and a Strict cookie is not sent on such a navigation, nor on the one after it.
+    // or read it. Lax, not Strict: the callback is a navigation from the main host, another registrable
+    // domain, and a browser withholds a Strict cookie from a navigation another site started.
     private static CookieOptions Cookie(TimeSpan lifetime) => new()
     {
         HttpOnly = true,
