@@ -1,0 +1,31 @@
+@using Domain.DTOs.Admin
+
+@* What an owner sees of an app shared, or about to be shared, with the household: who made it, what of
+   the household it reads and which outside origins it talks to, as its published version says. *@
+<div class="admin-field">
+    <span class="admin-field-label">App</span>
+    <span>@Name, coloured @Colour</span>
+    @if (App is { } app)
+    {
+        <span class="admin-field-hint">@app.Description</span>
+        <span class="admin-field-hint">Made by @(app.AuthorName.Length > 0 ? app.AuthorName : "a former member")</span>
+        <span class="admin-field-hint">
+            Reads @(app.Reads.Count == 0 ? "nothing of the household" : string.Join(", ", app.Reads))
+        </span>
+        <span class="admin-field-hint">
+            Talks to @(app.Connect.Count == 0 ? "no outside origin" : string.Join(", ", app.Connect))
+        </span>
+        <a class="admin-field-hint" href="@app.Url" target="_blank" rel="noopener noreferrer">@app.Url</a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public AdminSpaceApp? App { get; set; }
+
+    [Parameter, EditorRequired]
+    public string Name { get; set; } = "";
+
+    [Parameter, EditorRequired]
+    public string Colour { get; set; } = "";
+}

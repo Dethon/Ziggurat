@@ -16,7 +16,8 @@
     <p class="admin-lede">
         Each space keeps its own conversations, under its own name and colour, and opens on the agent you pick
         for it unless a person picked another there. The conversations of a space you remove stay in the
-        default space. Changes are saved together.
+        default space. An app space shares one of the household's published apps with everyone in it, under
+        the app's name and colour; removing it shares the app no longer. Changes are saved together.
     </p>
 
     @if (_state.Notice is { } notice)
@@ -40,12 +41,22 @@
                             {
                                 <span class="admin-agent-default"> · the default space</span>
                             }
+                            @if (draft.AppId is not null)
+                            {
+                                <span class="admin-agent-default"> · a shared app</span>
+                            }
                             @if (draft.SavedName is null)
                             {
                                 <span class="admin-agent-default"> · not saved yet</span>
                             }
                         </span>
                     </header>
+                    @if (draft.AppId is { } appId)
+                    {
+                        <AppSharedFacts App="@saved.Apps?.FirstOrDefault(a => a.Id == appId)" Name="@draft.Name" Colour="@draft.AccentColor" />
+                    }
+                    else
+                    {
                     <label class="admin-field">
                         <span class="admin-field-label">Name</span>
                         <input name="spaceName" @bind="draft.Name" @bind:event="oninput" maxlength="@AdminSpaces.NameLength"
@@ -70,6 +81,7 @@
                             }
                         </select>
                     </label>
+                    }
                     <div class="admin-actions">
                         <button type="button" class="admin-secondary" disabled="@(index == 0)" @onclick="() => _drafts.Move(index, -1)">Move up</button>
                         <button type="button" class="admin-secondary" disabled="@(index == _drafts.All.Count - 1)"
@@ -105,6 +117,31 @@
                 <button type="submit" class="admin-secondary">Add space</button>
             </div>
         </form>
+
+        @if (saved.Apps is null)
+        {
+            <p class="admin-status">@AdminSpaces.AppsUnavailableMessage</p>
+        }
+        else if (_drafts.Shareable(saved.Apps) is { Count: > 0 } shareable)
+        {
+            var picked = shareable.FirstOrDefault(a => a.Id == _shareId) ?? shareable[0];
+            <form class="admin-form admin-agent-add" @onsubmit="() => Share(picked)" aria-labelledby="admin-space-share-heading">
+                <h2 id="admin-space-share-heading">Share an app</h2>
+                <label class="admin-field">
+                    <span class="admin-field-label">App</span>
+                    <select name="shareApp" @bind="_shareId">
+                        @foreach (var app in shareable)
+                        {
+                            <option value="@app.Id">@app.Name</option>
+                        }
+                    </select>
+                </label>
+                <AppSharedFacts App="picked" Name="@picked.Name" Colour="@picked.AccentColor" />
+                <div class="admin-actions">
+                    <button type="submit" class="admin-secondary">Share as a space</button>
+                </div>
+            </form>
+        }
     }
     else if (_state.Notice is null)
     {
@@ -117,6 +154,7 @@
     private SpaceDrafts _drafts = new([]);
     private string _newSlug = "";
     private string _newName = "";
+    private string _shareId = "";
 
     protected override void OnInitialized()
     {
@@ -141,6 +179,12 @@
     {
         _drafts.Add(_newSlug, _newName);
         (_newSlug, _newName) = ("", "");
+    }
+
+    private void Share(AdminSpaceApp app)
+    {
+        _drafts.Share(app);
+        _shareId = "";
     }
 
     private void Save() => Dispatcher.Dispatch(new SaveHouseholdSpaces(_drafts.ToSection(),
