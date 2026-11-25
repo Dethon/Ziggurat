@@ -17,6 +17,8 @@ paths:
   - "Tests/Integration/Fixtures/AppReadsAgent.cs"
   - "Tests/Integration/Agents/AppReadsApiTests.cs"
   - "Tests/Integration/Agents/ReadRegistryCacheTests.cs"
+  - "Domain/Security/CheckCallVerifier.cs"
+  - "Tests/Integration/McpServerTests/AppChecksTests.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -76,11 +78,12 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   through the ranged blob write a copy streams through.
 - **Refused writes**: anything under a `node_modules/` segment (its own hint: build in the sandbox, copy
   the output), any `.git` segment (also hidden from listings), and the names the server keeps at an
-  app's root — the action files, `check`, `errors`, `.checks` — for what later tickets produce.
+  app's root — the action files (`check` among them), `errors`, `.checks`.
 - **Action files run on the mount** (a catalog, as `/timers`): `publish` (validates the manifest and its
   `root`, commits the working tree if it changed, records `HEAD` as served, answers the link), `history
   [--limit N]` (newest first, the served one marked `*`/`(served)`), `rollback <rev>` (moves the served
-  pointer in the metadata only; history is never rewritten). Unknown is exit 127 naming the actions.
+  pointer in the metadata only; history is never rewritten), `check [--viewport WxH]... [--path /route]`
+  (below). Unknown is exit 127 naming the actions.
 - Moving `/<slug>` to `/<new-slug>` renames the app; other moves stay within one app; copies may go
   between the caller's apps.
 
@@ -184,7 +187,8 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
   for the apps server it dials (`sharedServers.apps` → `MCP__SECRETS__mcp-apps` = `MCP_SECRET_APPS`, the
   apps server's `MCP__SHAREDSECRET`), so no secret exists for this alone and the agent API's secret,
   which SexyTime's server holds, opens nothing here — for the app (id, building agent, reads), and **the
-  viewer's `apps` assertion** (`VerifyTurnAsync` for `AppChannels.Apps`, a person) for who reads. No
+  viewer's `apps` assertion** (`VerifyTurnAsync` for `AppChannels.Apps`, a person) for who reads — or,
+  from a check, the agent's own call token in `AppReads.CheckCallTokenHeader` ("Checks"), never both. No
   other header is read. Then, per read: the household's standing (`HouseholdStanding`, the turn's rule:
   suspended or disabled is `permission_denied`, unreadable `transient_dependency`), the registry
   (`ReadRegistryCache` over `AgentReadRegistries`), and `AppRead` over the registry's `VfsCall`. 200 the
@@ -207,6 +211,55 @@ A built app reads the household as its viewer (the wire spelled once in `Domain/
   run's `appsettings.Local.json` names 5000), conformance-checked with the credential pair and the route
   off the proxy.
 
+## Checks
+
+`./check` (`Checks/AppChecks`, the mount's `CheckAsync`): the preview opened in the apps server's own
+headless Chromium as the person whose turn ran it.
+
+- **Arguments**: `--viewport WxH` (repeatable, at most 4, each side 240–3840; default a phone `390x844`
+  and a desktop `1280x800`), `--path /route` (default `/`). Anything else is exit 2. The tree's
+  `app.json` must parse, or exit 1 with nothing checked.
+- **Who it reads as**: the call's own token (`call.VerifiedToken`, handed to the mount as
+  `FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps every other reader out). The check
+  opens an app session itself (`AppSessions.OpenCheck`, `ViewerProof.CheckCall`): the preview alone, never
+  renewed, expiring at the deadline, ended when the check does and by `EndAll`. Its `/_vfs/*` reads carry
+  the token in `AppReads.CheckCallTokenHeader` instead of an assertion (`AgentReads`), and the agent
+  believes it as **its own signature for the apps server it dials, naming a person**
+  (`CheckCallVerifier`: the agent's `SigningKeyStore`, audience `TokenAudiences.CallTo(sharedServers.apps)`,
+  the wall clock; the guest, nobody, another server's or both headers at once are 401). Nothing is minted
+  for a check: the token arrives with at least the agent's `callTokens:refreshMargin` (30 s) left, so
+  `Checks:Deadline` is at most that (`DeploymentConformanceTests`).
+- **The browser** is full Chromium (`Channel = "chromium"`, new headless; the headless shell ignores the
+  flag below), **one per check**, launched with `--host-resolver-rules=MAP *.<AppsDomain>
+  127.0.0.1:<Listeners.Pages>` (the app is reached at this server, never through DNS) and
+  `--unsafely-treat-insecure-origin-as-secure=http://<preview host>` (the `__Host-` cookie and the worker
+  need a secure context; the flag is per process, hence one browser each, and closing it is the deadline).
+  The session cookie is set host-only over CDP, as the tests set theirs. Playwright's own default is
+  `--no-sandbox`. The image installs it with the bundled driver (`cli.js install --with-deps --no-shell
+  chromium`, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`); compose runs the container with `init: true` so
+  its children are reaped.
+- **What the page reaches**: a context route lets through only the preview's origin, `Cdns` and the tree
+  manifest's `connect`; anything else (a navigation onto the deployment's network included) is aborted
+  and reported `blocked`. The policy is never bypassed, so its violations are what the app would meet.
+- **Per viewport**, a context of its own: load, then up to `Checks:Settle` (5 s) for the network to go
+  quiet (`settled`), then the screenshot (the viewport, scale 1), the aria snapshot of `body`, then each
+  **assertion file** — `checks/*.js` at the tree's root, sorted, read here as text and evaluated in the
+  page as the body of an async function: returning passes (its value is the message), throwing fails
+  (the error's message), not parsing fails. Nothing of the app runs outside the page.
+- **Output**: a run directory under `BuiltAppStore.ChecksDirectory` (`<app>/checks/`, beside `git/` and
+  `tree/`, never committed or served, not counted in the repository's bytes), swapped in whole as
+  `latest/` when done. The mount shows it read-only at `/<slug>/.checks/latest/` (`<W>x<H>.png` per
+  viewport, `report.json`); the PNGs come through the byte read, so `file_read` shows them. `report.json`:
+  app, origin, path, times, `deadline`, `deadlineHit`, `error` (the browser would not run), and per
+  viewport `screenshot`, `settled`, `error` (navigation), `console` (type, text, location; `uncaught` for
+  a page error), `failedRequests` (status ≥ 400 or the failure), `policyViolations` (from
+  `securitypolicyviolation`), `accessibility`, `assertions` (file, passed, message); lists capped at 200.
+- **The answer**: a line per viewport (console errors, failed requests, violations, assertions) and where
+  the files are; exit 1 when an assertion failed, the deadline was hit or the browser would not run.
+- **Limits** (`Checks` in appsettings): `PerHousehold` (1) and `Total` (2) concurrent checks, refused
+  `permission_denied` naming the limit and value, never queued; `Deadline` (30 s) stops the check, closing
+  its browser, and the report and answer say so.
+
 ## Tests
 
 `McpAppsServerTests` and `AppsPublishingTests` drive the server in process through its MCP tools
@@ -219,5 +272,8 @@ server's `TimeProvider`), Redis for the ending, `AppsServingInABrowserTests` the
 `InlineImportMapsTests` the pure rules; `AppsShippedSettingsTests` the shipped CDN list;
 `HouseholdAgentsTests` and `HouseholdFeaturesAdminTests` the feature; `AppReadsApiTests` the agent's
 route over the wire (`AppReadsAgent`, `TextFileServer`, Sugary), `ReadRegistryCacheTests` the cache,
-`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; the deployment and server tables
+`AppsReadsTests` the origin's forwarding to the real route, a Chromium case the library; `AppChecksTests` the check
+in real Chromium on `apps.test` (screenshots, console, failed requests, violations, assertions, reads as the
+turn's person through `AppReadsAgent`, the blocked navigation, quotas held open by a stub agent, the
+deadline); `AppReadsApiTests` also the check's call token; the deployment and server tables
 (`McpServerRegistrations`, `DeploymentConformanceTests`) know the service and its volume.

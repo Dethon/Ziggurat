@@ -338,6 +338,8 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerApps/Dockerfile
     restart: unless-stopped
+    # A check runs a Chromium per check (McpServerApps/Checks); an init reaps what a closed browser leaves.
+    init: true
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ./volumes/apps:/data

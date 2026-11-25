@@ -84,7 +84,9 @@ reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never
   `call.TryScope`); its principal is the identity the call token verified (`call.Identity`), never the
   one `_meta` claims. The household is `call.Household` (`Mcp.Hosting/CallHousehold.cs`), proven to the
   accounts service with the verified token, so a tool reads its own section of that household's
-  configuration and no other's (`.claude/rules/household-config.md`, "A shared server's accessor"). No
+  configuration and no other's (`.claude/rules/household-config.md`, "A shared server's accessor").
+  `call.VerifiedToken` is the token itself, handed back to the agent alone (the apps mount's checks;
+  `service-identity.md`, "Call tokens"). No
   server parses the raw `_meta` for the turn or the token (`CallTurnConformanceTests`; the token is read
   in `CallTokenGate.cs` alone); the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for that
   alone. A filesystem backend gets the caller through `FileSystemBackendBase.For(FileSystemCaller)` per
