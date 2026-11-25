@@ -694,8 +694,8 @@ the outside origins it fetches. Writing one is how a built app is created.
 _Avoid_: config, package.json, web manifest (the apps server makes that one from it)
 
 **Preview**:
-A built app's working tree as it stands, served on an origin of its own to its author alone, before
-anything is published.
+A built app's working tree as it stands, published or not, served on an origin of its own to its
+author alone.
 _Avoid_: draft, staging, dev build
 
 **Check**:

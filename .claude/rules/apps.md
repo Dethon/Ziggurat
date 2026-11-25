@@ -27,6 +27,8 @@ paths:
   - "Tests/Integration/McpServerTests/AppSpacesOverTheWireTests.cs"
   - "Infrastructure/Clients/Apps/**"
   - "Tests/E2E/WebChat/AppSpacesE2ETests.cs"
+  - "Domain/Prompts/Skills/apps.md"
+  - "Domain/Prompts/AppsSkill.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -65,6 +67,10 @@ the proxy. Its **app manifest** is its `app.json`; its **preview** is its workin
   placeholder until the domain exists; never under the session cookie's domain); quotas
   (`Quotas:AppsPerHousehold`, `Quotas:BytesPerRepository`, the whole app directory) are the server's
   appsettings. A refusal names the limit and its value.
+- **The `apps` skill** (`Domain/Prompts/Skills/apps.md`, handle `AppsSkill`) is served by this server
+  (`AddSkills`), so it reaches exactly the agents offered `/apps`; there is no prompt section. Every name
+  it teaches (actions, flags, library members, result keys, report and errors keys, CDNs) and its worked
+  manifest and pinned script are held to the code by `AppsSkillTests`: renaming any of them reddens it.
 - **Create, rename, delete, publish and rollback run one at a time per household**
   (`BuiltAppStore.OneAtATimeAsync`), so a quota or a slug is never decided on a listing another call is
   changing.
