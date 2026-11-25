@@ -1237,6 +1237,25 @@ public class DeploymentConformanceTests
         accounts.GetValueOrDefault("CALLERS__agent").ShouldBe(compose.Service("agent").Environment["AGENTAPI__SHAREDSECRET"]);
     }
 
+    // The spaces page lists the household's published apps, which only the apps server knows: the accounts
+    // service asks its listing on the apps server's MCP listener, on the compose network both sit on, with
+    // an assertion it signs itself, so no secret exists for this. The proxy sends nothing to that listener.
+    [Fact]
+    public void TheAccountsService_AsksTheAppsServersListingOnItsMcpListener()
+    {
+        var compose = DeploymentFiles.Compose();
+        var accounts = compose.Service("accounts");
+
+        accounts.Environment.GetValueOrDefault("APPSURL").ShouldBe(AccountsSettings.DefaultAppsUrl);
+        var mcpListener = new global::McpServerApps.Settings.AppListeners().Mcp;
+        AccountsSettings.DefaultAppsUrl.ShouldBe($"http://mcp-apps:{mcpListener}");
+        compose.Service("mcp-apps").Networks.ShouldContain(accounts.Networks.ShouldHaveSingleItem());
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.PublishedApps.Path)?.Upstream.ShouldNotBe("mcp-apps:8080", host.Name);
+        }
+    }
+
     // The household import can make the operator and mint their link, so the accounts service admits
     // it by a credential nothing else holds — one the deployment leaves empty except for the run.
     [Fact]

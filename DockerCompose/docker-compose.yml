@@ -719,6 +719,10 @@ services:
       # assertion this service signs for the owner, which the host verifies against this service's keys
       # as it verifies everything, so no secret exists for this.
       OBSERVABILITYURL: http://observability:8080
+      # Where the apps server answers on its MCP listener, for the spaces page's list of the household's
+      # published apps: asked with an assertion this service signs for the owner, which the apps server
+      # verifies against this service's keys, so no secret exists for this.
+      APPSURL: http://mcp-apps:8080
     networks:
       - jackbot
     depends_on:
