@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Accounts.Sessions;
 using Domain.Apps;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -18,6 +19,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
+using Shouldly;
 using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Fixtures;
@@ -75,14 +77,29 @@ public sealed class AppsServer : IAsyncDisposable
 
     // services: registrations over the shipped ones, as a test needs them (another clock, an accounts
     // service's own keys).
+    // mcpPort: the MCP listener's, for a server another was told of before this one started (the accounts
+    // service asks the listing there); a bind lost on it is retried elsewhere, as for any other.
     public static async Task<AppsServer> StartAsync(
-        Func<AppsSettings, AppsSettings>? configure = null, Action<IServiceCollection>? services = null)
+        Func<AppsSettings, AppsSettings>? configure = null, Action<IServiceCollection>? services = null, int? mcpPort = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
         var spaces = new StandInSpaces();
         Directory.CreateDirectory(directory);
         AppsSettings? settings = null;
         // Both listeners are taken together, and a bind lost to either is retried on two fresh ports.
+        var first = mcpPort;
+
+        int Next()
+        {
+            if (first is not { } reserved)
+            {
+                return TestPort.GetAvailable();
+            }
+
+            first = null;
+            return reserved;
+        }
+
         var (_, app) = await TestPort.StartWebAsync(mcp =>
         {
             if (settings is not null)
@@ -112,7 +129,7 @@ public sealed class AppsServer : IAsyncDisposable
             var built = builder.Build();
             built.MapMcp("/mcp");
             return built;
-        });
+        }, Next);
 
         var client = await McpClient.CreateAsync(McpTestSecret.Transport($"http://localhost:{settings!.Listeners.Mcp}/mcp"));
         return new AppsServer(app, client, settings, spaces);
@@ -202,6 +219,44 @@ public sealed class AppsServer : IAsyncDisposable
         var response = await _browser.SendAsync(request);
         await response.Content.LoadIntoBufferAsync();
         return response;
+    }
+
+    // The browser's round trip through a real accounts service up to its arrival back on the app's origin:
+    // the app's redirect, the accounts service's answer to this person's session cookie. The callback's path
+    // and query, and the state cookie the origin set on the way out.
+    public async Task<(string Callback, string State)> SignInCallbackAsync(
+        AccountsServer accounts, string host, string path, string session)
+    {
+        var toSignIn = await GetAsync(host, path, navigate: true);
+        toSignIn.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        var state = toSignIn.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem().Split(';')[0]
+            [(AppViewers.StateCookieName.Length + 1)..];
+        using var request = new HttpRequestMessage(HttpMethod.Get, toSignIn.Headers.Location);
+        request.Headers.Add("Cookie", $"{SessionCookie.Name}={session}");
+        request.Headers.Accept.ParseAdd("text/html");
+        var back = await accounts.Client().SendAsync(request);
+        back.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        var callback = back.Headers.Location.ShouldNotBeNull();
+        // The proxy's scheme, which the apps server names its origin by.
+        callback.Scheme.ShouldBe("https");
+        callback.Host.ShouldBe(host);
+        return (callback.PathAndQuery, state);
+    }
+
+    // The whole app sign-in of a person signed in to that accounts service: the app session's token, the
+    // cookie that set it and where the callback sent the browser on.
+    public async Task<(string Token, string SetCookie, string Location)> SignInThroughAsync(
+        AccountsServer accounts, string host, string path, string session)
+    {
+        var (callback, state) = await SignInCallbackAsync(accounts, host, path, session);
+        var arrived = await GetAsync(host, callback, navigate: true, signInState: state);
+        arrived.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        var setCookies = arrived.Headers.GetValues("Set-Cookie").ToList();
+        // The state is spent with the sign-in.
+        setCookies.ShouldContain(c => c.StartsWith($"{AppViewers.StateCookieName}=;", StringComparison.Ordinal));
+        var setCookie = setCookies.Single(c => c.StartsWith($"{AppSessions.CookieName}=", StringComparison.Ordinal));
+        var token = setCookie.Split(';')[0][(AppSessions.CookieName.Length + 1)..];
+        return (token, setCookie, arrived.Headers.Location.ShouldNotBeNull().OriginalString);
     }
 
     // An app session for this person on that origin, as the app sign-in would open one, its assertion

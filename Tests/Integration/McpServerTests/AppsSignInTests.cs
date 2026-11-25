@@ -24,9 +24,6 @@ namespace Tests.Integration.McpServerTests;
 // end. Whether that person may open that app is the apps server's own decision.
 public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
-    // The proxy's scheme, which the apps server names its origin by.
-    private const string Https = "https";
-
     [Fact]
     public async Task ASessionlessNavigation_IsSentToTheAppSignIn_CarryingWhereItWasGoing()
     {
@@ -63,7 +60,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var fran = await accounts.MintOperatorAsync("Fran");
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        var (callback, state) = await apps.SignInCallbackAsync(accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
 
         var noState = await apps.GetAsync(host, callback, navigate: true);
         var anotherState = await apps.GetAsync(host, callback, navigate: true, signInState: AppSignIn.NewState());
@@ -101,7 +98,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var host = await PublishedAsync(apps, author);
         var session = await accounts.MintSessionAsync(fran.UserId);
 
-        var cookie = await SignInAsync(apps, accounts, host, "/week?d=1", session);
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/week?d=1", session);
 
         cookie.Location.ShouldBe("/week?d=1");
         cookie.SetCookie.ShouldStartWith($"{AppSessions.CookieName}=");
@@ -126,7 +123,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
 
-        var cookie = await SignInAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(laura));
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/", await accounts.MintSessionAsync(laura));
 
         (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
@@ -140,7 +137,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var fran = await accounts.MintOperatorAsync("Fran");
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        var (callback, state) = await apps.SignInCallbackAsync(accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
         (await apps.GetAsync(host, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.SeeOther);
 
         var again = await apps.GetAsync(host, callback, navigate: true, signInState: state);
@@ -158,7 +155,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var fran = await accounts.MintOperatorAsync("Fran");
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var (callback, state) = await CallbackAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        var (callback, state) = await apps.SignInCallbackAsync(accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
         var preview = host.Insert(host.IndexOf('.'), AppOrigin.PreviewSuffix);
 
         (await apps.GetAsync(preview, callback, navigate: true, signInState: state)).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
@@ -175,7 +172,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var apps = await AppsFor(accounts, redis.ConnectionString);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
         var session = await accounts.MintSessionAsync(fran.UserId);
-        var cookie = await SignInAsync(apps, accounts, host, "/", session);
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/", session);
         (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         (await accounts.SignedIn(session).PostAsync("/accounts/account", "/accounts/sign-out")).StatusCode
@@ -196,7 +193,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
         var phone = (await accounts.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
-        var cookie = await SignInAsync(apps, accounts, host, "/", phone.Token);
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/", phone.Token);
         await accounts.Service<SessionStore>().RevokeAsync(fran.UserId, phone.Id, CancellationToken.None);
         (await apps.GetAsync(host, "/", cookie.Token, navigate: true)).StatusCode.ShouldBe(HttpStatusCode.OK,
             "until its assertion is due, nothing asks");
@@ -217,7 +214,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var apps = await AppsFor(accounts);
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
         var phone = (await accounts.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
-        var cookie = await SignInAsync(apps, accounts, host, "/", phone.Token);
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/", phone.Token);
         var origin = AppOrigin.Parse(host, AppsServer.AppsDomain)!;
         var first = ((global::McpServerApps.Serving.ViewerProof.Assertion)apps.Sessions.Find(cookie.Token, origin).ShouldNotBeNull().Proof).Token;
 
@@ -242,7 +239,7 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var apps = await AppsFor(accounts, configure: services => services.Replace(ServiceDescriptor.Singleton<IAppSignIns>(
             sp => outage.Over(sp.GetRequiredService<AccountsResolverClient>()))));
         var host = await PublishedAsync(apps, new Account(fran.TenantId, fran.UserId));
-        var cookie = await SignInAsync(apps, accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
+        var cookie = await apps.SignInThroughAsync(accounts, host, "/", await accounts.MintSessionAsync(fran.UserId));
         outage.Down = true;
 
         accounts.Clock.Advance(apps.Settings.Sessions.AssertionKept);
@@ -304,40 +301,5 @@ public class AppsSignInTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await apps.CreateAsync(author, "/glucose/index.html", "<h1>Glucose</h1>");
         await apps.ExecAsync(author, "/glucose", "./publish");
         return apps.Published("glucose", id);
-    }
-
-    // The browser's round trip up to its arrival back on the app's origin: the app's redirect, the
-    // accounts service's answer to this person's session cookie. The callback's path and query, and the
-    // state cookie the origin set on the way out.
-    private static async Task<(string Callback, string State)> CallbackAsync(
-        AppsServer apps, AccountsServer accounts, string host, string path, string session)
-    {
-        var toSignIn = await apps.GetAsync(host, path, navigate: true);
-        toSignIn.StatusCode.ShouldBe(HttpStatusCode.Redirect);
-        var state = toSignIn.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem().Split(';')[0]
-            [(AppViewers.StateCookieName.Length + 1)..];
-        using var request = new HttpRequestMessage(HttpMethod.Get, toSignIn.Headers.Location);
-        request.Headers.Add("Cookie", $"{SessionCookie.Name}={session}");
-        request.Headers.Accept.ParseAdd("text/html");
-        var back = await accounts.Client().SendAsync(request);
-        back.StatusCode.ShouldBe(HttpStatusCode.Redirect);
-        var callback = back.Headers.Location.ShouldNotBeNull();
-        callback.Scheme.ShouldBe(Https);
-        callback.Host.ShouldBe(host);
-        return (callback.PathAndQuery, state);
-    }
-
-    private static async Task<(string Token, string SetCookie, string Location)> SignInAsync(
-        AppsServer apps, AccountsServer accounts, string host, string path, string session)
-    {
-        var (callback, state) = await CallbackAsync(apps, accounts, host, path, session);
-        var arrived = await apps.GetAsync(host, callback, navigate: true, signInState: state);
-        arrived.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
-        var setCookies = arrived.Headers.GetValues("Set-Cookie").ToList();
-        // The state is spent with the sign-in.
-        setCookies.ShouldContain(c => c.StartsWith($"{AppViewers.StateCookieName}=;", StringComparison.Ordinal));
-        var setCookie = setCookies.Single(c => c.StartsWith($"{AppSessions.CookieName}=", StringComparison.Ordinal));
-        var token = setCookie.Split(';')[0][(AppSessions.CookieName.Length + 1)..];
-        return (token, setCookie, arrived.Headers.Location.ShouldNotBeNull().OriginalString);
     }
 }
