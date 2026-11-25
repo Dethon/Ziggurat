@@ -89,6 +89,81 @@ public sealed class AgentReadRegistriesTests
         read.Offline.ShouldBe(offline);
     }
 
+    // A household server going offline or coming back is seen by the next build, as by a turn's next
+    // start: the registry built before says it is stale, and the one built after reaches what is there.
+    [Fact]
+    public async Task AServerGoingOfflineOrComingBack_IsSeenByTheNextBuild()
+    {
+        await using var vault = await FileSystemServerAsync("vault");
+        var households = new FakeHouseholds();
+        households.Add(Household, Agents(Jonas("vault")), ownServers: ["vault"]);
+        var online = new Dictionary<string, string> { ["vault"] = vault.Endpoint };
+        var registries = Registries(households, new SharedServers(), online);
+
+        await using var connected = await registries.BuildAsync(Viewer(Fran), "jonas", CancellationToken.None);
+        Mounts(connected).ShouldBe(["/vault"]);
+        (await connected.IsStaleAsync(CancellationToken.None)).ShouldBeFalse();
+
+        online.Remove("vault");
+        (await connected.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+        await using var offline = await registries.BuildAsync(Viewer(Fran), "jonas", CancellationToken.None);
+        Mounts(offline).ShouldBeEmpty();
+        offline.Offline.ShouldBe(["vault"]);
+
+        online["vault"] = vault.Endpoint;
+        (await offline.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+        await using var back = await registries.BuildAsync(Viewer(Fran), "jonas", CancellationToken.None);
+        Mounts(back).ShouldBe(["/vault"]);
+        back.Offline.ShouldBeEmpty();
+    }
+
+    // A turn of an agent offered no filesystem tools mounts nothing, whatever its servers publish.
+    [Fact]
+    public async Task AnAgentOfferedNoFilesystemTools_MountsNothing()
+    {
+        await using var notes = await FileSystemServerAsync("notes");
+        var households = new FakeHouseholds();
+        households.Add(Household, Agents(Jonas(notes.Endpoint) with { EnabledFeatures = [] }));
+
+        await using var read = await Registries(households, new SharedServers())
+            .BuildAsync(Viewer(Fran), "jonas", CancellationToken.None);
+
+        Mounts(read).ShouldBeEmpty();
+    }
+
+    // Only the household's own agents: a person's registered agent is found for its owner alone.
+    [Fact]
+    public async Task AnAgentTheHouseholdDoesNotHave_IsRefused_NamingIt()
+    {
+        var households = new FakeHouseholds();
+        households.Add(Household, Agents(Jonas()));
+        var custom = new CustomAgentRegistry();
+        await custom.AddAsync(Fran, Jonas() with { Id = "custom-1" });
+        var registries = new AgentReadRegistries(
+            new AgentDefinitionProvider(new HouseholdAgentSource(households, new SharedServers()), custom),
+            McpTestSecret.Credentials, callTokens: McpTestSecret.CallTokens);
+
+        foreach (var agent in new[] { "nabu", "custom-1" })
+        {
+            (await Should.ThrowAsync<AgentNotFoundException>(() => registries.BuildAsync(Viewer(Fran), agent, CancellationToken.None)))
+                .AgentId.ShouldBe(agent);
+        }
+    }
+
+    // A registry is read by a person: the guest and nobody are no viewer of a household's data.
+    [Fact]
+    public async Task TheGuestAndNobody_ReadNothing()
+    {
+        var households = new FakeHouseholds();
+        households.Add(Household, Agents(Jonas()));
+        var registries = Registries(households, new SharedServers());
+
+        foreach (var viewer in new[] { IdentityClaims.Guest(Household, AppChannels.Apps), IdentityClaims.Nobody(AppChannels.Apps) })
+        {
+            await Should.ThrowAsync<ArgumentException>(() => registries.BuildAsync(viewer, "jonas", CancellationToken.None));
+        }
+    }
+
     // The meals' notes the person's registry reads at /sugary, every call signed as they are.
     private static async Task<IReadOnlyList<string?>> NotesAsync(AgentReadRegistries registries, Account person)
     {
@@ -100,6 +175,14 @@ public sealed class AgentReadRegistriesTests
         var answer = query.ShouldBeOfType<FsResult<FsQueryResult>.Ok>(query is FsResult<FsQueryResult>.Err e ? e.Error.Message : null).Value;
         return [.. answer.Rows.Select(row => row[0]?.GetValue<string>())];
     }
+
+    private static AgentDefinition Jonas(params string[] endpoints) => new()
+    {
+        Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = endpoints, EnabledFeatures = ["filesystem"]
+    };
+
+    private static IReadOnlyList<string> Mounts(ReadRegistry read) =>
+        [.. read.Registry.GetMounts().Select(m => m.MountPoint).Order()];
 
     // A turn of the agent for her, as the household's conversation would run it.
     private static async Task TurnAsync(
