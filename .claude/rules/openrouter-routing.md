@@ -84,3 +84,7 @@ on a 200) is not retried by anything.
   `HostRoutingChatClient` to `LemonadeChatClient` with `providerRouting: null`, so no `provider` node and
   no advisories. Every failure is one `LemonadeChatHostException`, thrown from the wire so the retry
   policy never re-sends the turn, and worded so WebChat's transient-error filter cannot swallow it.
+
+## DeepSeek's markup calls
+
+**A reply that is one whole DSML calls block is read back as its calls** (`DsmlToolCalls.RepairAsync`, around every OpenRouter stream): DeepSeek now and then writes a tool call as text in its own markup (`<｜DSML｜ calls>…`) instead of calling — on Baidu, Novita, Wafer and Together alike, so no provider pin avoids it. Words before the marker stream as they come; from the marker the rest is held until the end, then sent as calls (finish `ToolCalls`) or, anything but a whole block, as the text it was. `string="false"` values are JSON. `OpenRouterChatClientDsmlTests`.

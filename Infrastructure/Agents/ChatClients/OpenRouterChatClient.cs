@@ -180,7 +180,8 @@ public sealed class OpenRouterChatClient : IChatClient
 
         UsageContent? usage = null;
 
-        await foreach (var update in _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct))
+        await foreach (var update in DsmlToolCalls.RepairAsync(
+                           _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), ct))
         {
             // The Responses adapter leaves MessageId empty where the chat wire stamped the
             // completion id, and everything that reassembles a streamed turn keys on it. The
