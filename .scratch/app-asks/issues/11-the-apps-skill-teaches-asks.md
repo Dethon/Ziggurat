@@ -119,3 +119,45 @@ One Chromium case proves the served library end to end.
   their fixture (each case 1 ms: the stack, rebuilt because `McpServerApps` changed, did not come up) and
   `PersonsAppsClientTests.AnAppsServerThatDoesNotAnswer_IsNoApps` (111 ms); their messages were not kept, and
   neither came back in two further full runs (0 failed, ~1 m 21 s) or alone. Not diagnosed: watch for it.
+
+**Smoke pass 22 fixes (2026-11-26).** The four defects of `~/.cache/ziggurat-manual-driver/p22/findings.md`, each red
+first, then green; no paid calls.
+
+- **D1, an ask planting a later turn** (user's decision: always counts as asked). Withholding the delegation alone
+  does not close it: the schedule is still stored, `CreatedBy` naming the viewer (which `redelegate` offers the
+  operator to re-sign), it still fires the app's text as nobody on the household's agent, and the model tells the
+  person "Done". So one predicate, `DelegatedWrites.Delegates` (schedules, both `/watchers` members, now also over a
+  resolved path, a union asking its members), drives three layers: the approval client refuses a call declaring
+  `StartsLaterTurns` (file create, edit, move and copy onto such a path; `web_login` by name, as the transport
+  delegates it) under `AsksNobodyKey` whatever the whitelist says, with `UnaskableResultFor` and counted toward the
+  bound; `McpFileSystemBackend` refuses such a write for an `apps` identity (`DelegatedWrites.MayBeLeftBy`) before
+  anything is sent, however it arrives (a sandbox command's through the bridge included); and
+  `SigningClientTransport` signs an `apps` identity no delegation at all. Ordinary turns unchanged. Not refused:
+  `run_now`, which fires a schedule the person wrote as its own delegation says (no app text in it). Tests:
+  `AppTurnAgentTests` (an ask's schedule write and `web_login` refused, put to nobody, never run; the same calls in
+  the person's own turn run unasked, the schedule delegated; a non-delegating write in an ask runs as the viewer),
+  `ScheduleDelegationTests` (an `apps` turn's create, edit and move refused at the mount and nothing stored; a raw
+  write asking for a delegation as an `apps` identity is stored with none), `DelegatedWritesTests`.
+- **D2, a schema the provider refused reported as retryable.** `OpenRouterChatClient` fails a 400 to a strict-format
+  request as `ResponseFormatRefusedException` (the provider's words kept); `AppAsks.Refusal` answers it 422
+  `invalid_argument`, not retryable (`AppAsks.SchemaRefused`, hint: fix the schema), the preview still carrying
+  `failure`. A 400 with no schema, a 404 with one, and every other failure stay as they were (Sugary's estimates
+  untouched: `RefusalAnswers.CodeOf` does not know it). Tests: `AppTurnAgentTests` (theory), `AppAsksTests`,
+  `AppsAsksTests`.
+- **D3, three refusals in one round ending the ask unread.** The bound counts model rounds holding a refused call
+  (`RefusingRoundsPerUnaskedTurn`, keyed by `FunctionInvocationContext.Iteration`), so calls written together are
+  read and answered; three rounds still end it. The fake model can now write several calls in one message
+  (`FakeOpenRouter.CallingToolsNamed`). Tests: `AppTurnAgentTests` (one round of three refusals answers; the
+  three-round case renamed, unchanged).
+- **D4, .NET internals in `invalid_argument`.** `AppAskRequest.Parse` reads the body by hand: "unknown field 'x'",
+  "text must be a string", "names the field 'x' twice", "not JSON (line, byte)", for the JSON body and the multipart
+  `ask` field alike; names still match regardless of case, as the serializer's did. Tests: `AppAsksTests`,
+  `AppsAsksTests` (both body shapes over the wire).
+- **The Capabilities chip** draws `Icons.Sparkles`; `DrawnIconConformanceTests` exempts no file now.
+- Rules: `channels.md` (app-turn bullet), `delegations.md`, `apps.md`, `openrouter-routing.md`,
+  `blazor-client-ui.md`. Skill: an ask may not write a schedule or a watch; `invalid_argument` includes a schema the
+  provider refused (body budget 2495 -> 2530, measured 2,524; snapshot regenerated).
+- **Verified**: `dotnet build Ziggurat.sln` 0 warnings; full `dotnet test` 11,991 passed, 0 failed, 223 skipped
+  (2 m 6 s), with the smoke stack running beside it. An earlier filtered run failed
+  `WebChatPageE2ETests.TheComposerControls_AreDrawnAsIconsRatherThanWords` at its fixture (1 ms, while the WebChat
+  image rebuilt); it passed alone and in the full run.
