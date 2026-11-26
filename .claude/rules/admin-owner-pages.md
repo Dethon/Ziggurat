@@ -257,7 +257,7 @@ the credential shown once (only its hash is kept); a revoke answers `AdminSaved<
 ## Usage
 
 `AdminProtocol.Usage` (`HouseholdUsageAdmin`) → `AdminUsage`: the caller's household's tokens and cost per
-agent and per person (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a month of UTC days. No
+agent, per person and per app asked (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a month of UTC days. No
 `?month=` is the current month on `AccountsClock`; a `month` not `yyyy-MM` is 400. A read: nothing recorded.
 
 - **The figures are the Observability host's**, which this service otherwise never reads:
@@ -272,6 +272,10 @@ agent and per person (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a
 - **Per person is by account** (`TokenUsageEvent.UserId`), labelled here with the member's display name now
   (`MemberStore.ListAsync`) over Observability's `UsageLine.Id`; a call with no account is a line under its
   `Sender` with no id. Per agent is by id under its latest name (`MetricsQueryService.AgentLabels`).
+- **Per app is an app ask's** (`TokenUsageEvent.AppId`, counted on channel `apps`; the same calls are in the
+  person's and the agent's lines too), labelled here with the household's published listing's name now
+  (`HouseholdPublishedApps`, asked only when an app was); an app it does not list, or a listing that could not
+  be read, keeps the id. The page shows the table only when an app was asked.
 - **History is a month deep** (daily roll-ups expire after thirty days); the page, `/admin/usage`
   (`HouseholdUsagePage`), says so.
 - The operator reads every household's figures on the dashboard (`HouseholdPicker`,

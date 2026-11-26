@@ -14,7 +14,8 @@
 <section class="admin-section" aria-labelledby="admin-usage-heading">
     <h1 id="admin-usage-heading">Usage</h1>
     <p class="admin-lede">
-        What the household's agents used in a month: tokens and what they cost, by agent and by person, and what
+        What the household's agents used in a month: tokens and what they cost, by agent and by person, what the
+        household's apps cost when they asked the assistant (counted under the person who asked, too), and what
         its voice and memory asked of the deployment's speech and memory models. Days are counted in UTC, and the
         deployment keeps each day's figures for thirty days, so a month further back shows only the days still kept.
     </p>
@@ -37,6 +38,11 @@
     {
         <UsageTable Caption="Per agent" Heading="Agent" Lines="usage.Agents" />
         <UsageTable Caption="Per person" Heading="Person" Lines="usage.People" />
+        @* Only a household whose apps asked the assistant has a line here, and its asks are in the tables above too. *@
+        @if (usage.Apps.Count > 0)
+        {
+            <UsageTable Caption="Per app" Heading="App" Lines="usage.Apps" />
+        }
 
         <section class="admin-member admin-usage-lemonade" aria-label="Speech and memory">
             <h2>Speech and memory</h2>

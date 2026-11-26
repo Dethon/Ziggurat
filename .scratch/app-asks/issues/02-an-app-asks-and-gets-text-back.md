@@ -110,3 +110,11 @@ Spec: `.scratch/app-asks/spec.md` ("Solution"; "The apps server becomes a channe
   case, `apps.ask` from the module and the script, an `AskError`), the server table row (dual-role,
   gate-on-live), `AppsShippedSettingsTests`.
 
+
+**Usage read back (2026-11-26, story 25).** The counted `Channel`/`AppId` are now read: the owner's usage
+(`/admin/usage`) has a "Per app" table, keyed by `TokenUsageEvent.AppId` in `MetricsQueryService.GetHouseholdUsageAsync`
+(`HouseholdUsage.Apps` → `AdminUsage.Apps`), named by the household's published listing now in
+`HouseholdUsageAdmin` (the apps server asked only when an app was; an unlisted app keeps its id). An ask's cost
+stays in the asker's and the agent's lines too. Not built: a channel dimension on the operator's dashboard
+(`TokenDimension`), which would also need the truncation grouping to answer it. Tests:
+`HouseholdUsageAdminTests` (two cases), `HouseholdUsageE2ETests`.
