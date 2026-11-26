@@ -177,16 +177,29 @@ public class SugaryWidgetApiTests
 
         var token = await MintAsync(server);
 
+        // Read once: SQLite removes its -shm and -wal files as connections close, so one listed a moment
+        // ago may be gone by the time it is opened, and a second enumeration would list them again.
         var stored = Directory.GetFiles(server.Directory, "sugary.db*")
-            .Select(file =>
-            {
-                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var copy = new MemoryStream();
-                stream.CopyTo(copy);
-                return Encoding.Latin1.GetString(copy.ToArray());
-            });
+            .Select(ReadIfStillThere)
+            .OfType<string>()
+            .ToList();
         stored.ShouldNotBeEmpty();
         stored.ShouldAllBe(contents => !contents.Contains(token));
+    }
+
+    private static string? ReadIfStillThere(string file)
+    {
+        try
+        {
+            using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var copy = new MemoryStream();
+            stream.CopyTo(copy);
+            return Encoding.Latin1.GetString(copy.ToArray());
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
     }
 
     [Fact]
