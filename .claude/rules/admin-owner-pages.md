@@ -6,6 +6,14 @@ paths:
   - "Accounts/Admin/HouseholdMembersAdmin.cs"
   - "Accounts/Admin/HouseholdFeaturesAdmin.cs"
   - "Accounts/Admin/HouseholdSpacesAdmin.cs"
+  - "Accounts/Admin/HouseholdAppAsksAdmin.cs"
+  - "Domain/DTOs/Admin/AdminAppAsks.cs"
+  - "WebChat.Client/Pages/Admin/HouseholdAppsPage.razor"
+  - "WebChat.Client/State/Admin/HouseholdAppAsksStore.cs"
+  - "WebChat.Client/State/Admin/AppCapDrafts.cs"
+  - "WebChat.Client/State/Effects/HouseholdAppAsksEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdAppAsksAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdAppsE2ETests.cs"
   - "Accounts/Admin/HouseholdServersAdmin.cs"
   - "Accounts/Admin/HouseholdUsageAdmin.cs"
   - "Accounts/Admin/HouseholdUsageClient.cs"
@@ -65,8 +73,8 @@ See also: `admin.md` (routes, gate, answers, merging stale saves, change log, th
 
 Route paths are spelled once in `AdminProtocol` (`Domain/DTOs/Admin/`), shared by the service and both
 clients; request and answer shapes are the DTOs beside it. Verbs: `GET` reads; `POST` adds, mints, restores,
-disables, enables and revokes; `PUT` edits an agent, a member, the voice choice, features or spaces; `DELETE`
-removes an agent. Every summary these routes record names ids,
+disables, enables and revokes; `PUT` edits an agent, a member, the voice choice, features, spaces or app caps;
+`DELETE` removes an agent. Every summary these routes record names ids,
 server names and which fields changed — never a person's or agent's name, instructions, a link, a
 credential or a value.
 
@@ -192,6 +200,27 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   "Share an app" offers the listed apps no space shares yet (`SpaceDrafts.Shareable`/`Share`: the app's slug,
   else the first free `<slug>-<n>`, approving the reach shown)). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
   turns read them).
+
+## Apps
+
+`HouseholdAppAsksAdmin` (`AdminProtocol.AppAsks`, `Domain/DTOs/Admin/AdminAppAsks.cs`) reads `AdminAppAsks` (the
+`app-asks` section beside the household's published apps, `AdminCappedApp`, from the same listing as the
+spaces page, `HouseholdSpacesAdmin.PublishedAsync`: none without the `apps` feature, null when the apps server
+could not be asked) and saves the section whole, merged per app id (`admin.md`, "Two owners"). What an
+ask does with it is `.claude/rules/apps.md`, "The daily cap".
+
+- **Bounds are the section's rules** (0–`AppAsksSection.MaxDailyCap`, a built app's id), so the operator's
+  `set-household-config` is held to them too.
+- **An app's own cap is set only for one of the household's published apps**, checked for the caps a save
+  **sets or changes** against what it holds now (400 naming the app); one left as loaded is never checked
+  again, so a deleted app's cap blocks no other save, and removing one needs nothing. A cap set or changed
+  with the listing unavailable is 503 `AdminSpaces.AppsUnavailableMessage`; the household's default and a
+  removal still save.
+- **Summaries** name the household's cap and apps by id ("Set app a1b2c3's daily cap"), never a value.
+- **The page** is `/admin/apps` (`HouseholdAppsPage`): the household's "asks per day, each app, whole household"
+  (empty: the deployment's), then each published app's own (empty: the household's), then any cap kept for
+  an app not listed, by id, offered only for removal (`AppCapDrafts`). `HouseholdAppsE2ETests` saves in the
+  stack's second household (a cap of the home's is read by its app turns).
 
 ## Own servers
 

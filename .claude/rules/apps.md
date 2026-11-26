@@ -147,7 +147,7 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
 `admin-owner-pages.md`, the hub's in `chat-hub.md`).
 
 - **The household's `spaces` section is the one truth**; the apps server keeps no copy. `mcp-apps` may read
-  that view and `agent-names` alone (`InternalCallers`), on the call token for the mount and on **the
+  that view, `app-asks` and `agent-names` alone (`InternalCallers`), on the call token for the mount and on **the
   viewer's own `apps` assertion** for an origin (`CallHousehold.OfPerson`), kept a minute or until a save is
   heard.
 - **Access**: the author always; anyone else must be of the app's household (`tid` equal), on the published
@@ -230,8 +230,13 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   delivered; a conversation it opened is forgotten too, `OpenConversations.Forget`): an ask past the cap
   opens no conversation, and one never delivered keeps none. Counts live at `<app>/asks` (the minutes still
   counting, JSON), durable across restarts, gone with the app, never listed, committed or counted toward
-  the quota. The limit is `AskCaps.LimitAsync`'s alone: `Asks:DailyCap` (200) today, the one seam an
-  owner's household default and app override go behind. A check's ask is refused before counting.
+  the quota. **The limit is `AskCaps.LimitAsync`'s alone**, read at each ask from the household's `app-asks`
+  view (`ICallHousehold.AppAsksAsync`, on the viewer's `apps` assertion; a check's would be its call token),
+  kept a minute or until a save is heard: the app's own cap, else the household's `dailyCap`, else
+  `Asks:DailyCap` (200) (`AppAsksSection.LimitOf`). **Never lifted**: unreadable is 503
+  `transient_dependency` (`AppAsks.CapUnreadable`), refused 422 `permission_denied` (`CapRefused`), both
+  before counting or sending, never the deployment's value. Owners set the caps on `/admin/apps`
+  (`admin-owner-pages.md`, "Apps"). A check's ask is refused before counting.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
   file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
   `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a

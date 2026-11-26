@@ -66,6 +66,11 @@ public interface IAdminService
 
     Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces, SpacesSection? loaded = null);
 
+    // The household's daily caps on its apps' asks, beside its published apps a cap may be set for; saved whole.
+    Task<AdminAnswer<AdminAppAsks>> GetAppAsksAsync();
+
+    Task<AdminAnswer<AdminAppAsks>> SaveAppAsksAsync(AppAsksSection caps, AppAsksSection? loaded = null);
+
     // The household's own servers; a minted credential is in its answer alone, never read back.
     Task<AdminAnswer<AdminServers>> GetServersAsync();
 
