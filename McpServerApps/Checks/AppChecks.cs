@@ -358,8 +358,8 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     // it failed). Anything else answered there (no session's 404) stays a failed request.
     private static async Task<FailedAsk?> FailedAskAsync(IResponse response, ViewportRun seen)
     {
-        var body = await BodyAsync(response);
-        if (ToolErrorResult.FromEnvelope(body) is { } failed)
+        var (body, failed) = await EnvelopeAsync(response);
+        if (failed is not null)
         {
             seen.EnvelopeUrls.Enqueue(response.Url);
             return new FailedAsk(response.Status, AskedText(response.Request.PostData), failed.ErrorCode, failed.Message,
@@ -373,17 +373,19 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     private static string? TextAt(JsonNode? body, string name) =>
         body?[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 
-    // Null for a body that is no JSON (the origin's 404 page) or one the page went away before it was read
-    // (Playwright throws): either way there is no envelope, and the answer is a failed request.
-    private static async Task<JsonNode?> BodyAsync(IResponse response)
+    // No envelope for a body that is no JSON (the origin's 404 page), one whose fields are not the envelope's
+    // types (FromEnvelope reads them as strings), or one the page went away before it was read (Playwright
+    // throws): each is a failed request, not a failed ask.
+    private static async Task<(JsonNode? Body, ToolErrorResult? Envelope)> EnvelopeAsync(IResponse response)
     {
         try
         {
-            return JsonNode.Parse(await response.TextAsync());
+            var body = JsonNode.Parse(await response.TextAsync());
+            return (body, ToolErrorResult.FromEnvelope(body));
         }
-        catch (Exception ex) when (ex is PlaywrightException or JsonException)
+        catch (Exception ex) when (ex is PlaywrightException or JsonException or InvalidOperationException)
         {
-            return null;
+            return (null, null);
         }
     }
 

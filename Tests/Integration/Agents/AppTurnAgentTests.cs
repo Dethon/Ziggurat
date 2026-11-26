@@ -522,8 +522,9 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
     }
 
-    // An ask's images are fetched on the apps channel, which keeps them for the household, signed for the
-    // viewer the ask was admitted as, and the model is sent each as a picture beside the words.
+    // An ask's images are fetched on the apps channel, which keeps them for the household and the ask's
+    // conversation, signed for the viewer the ask was admitted as and for that conversation, and the model is
+    // sent each as a picture beside the words.
     [Fact]
     public async Task AnAsksImages_AreFetchedOnTheAppsChannelForTheViewer_AndSentToTheModel()
     {
@@ -532,6 +533,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         var fetched = apps.Fetches.ShouldHaveSingleItem();
         fetched.Id.ShouldBe(_plate.Id);
         fetched.Turn!.Identity!.Account.ShouldBe(_viewer);
+        fetched.Turn.ConversationId.ShouldBe(Ask().ConversationId);
         ImagesIn(RequestFor(AskText)).ShouldBe([Convert.ToBase64String(_plateBytes)]);
         AnswerOf(apps, "ask-turn").ShouldNotBeEmpty();
     }
@@ -552,6 +554,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
 
         ImagesIn(RequestFor(followUpText)).ShouldBe([Convert.ToBase64String(_plateBytes)]);
         apps.Fetches.Select(f => f.Turn!.Identity!.Account).Distinct().ShouldBe([_viewer]);
+        apps.Fetches.Select(f => f.Turn!.ConversationId).Distinct().ShouldBe([conversation]);
         AnswerOf(apps, "follow-up-turn").ShouldNotBeEmpty();
     }
 

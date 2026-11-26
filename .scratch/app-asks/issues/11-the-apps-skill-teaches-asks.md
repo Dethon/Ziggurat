@@ -101,9 +101,21 @@ One Chromium case proves the served library end to end.
   `AppAskSchema.MaxNameLength` and `AppAsksSection.Apps` say why. The rest of the diff's one-line comments were read
   and kept (they state a why, or what a null or a constant means on a wire).
 - **Rules** (`172fe7dab`): `channels.md`'s app-turn bullet and `apps.md`'s "App asks" trimmed to contracts and
-  pointers (1,266 → ~820 words in apps.md), checked bullet by bullet against the old text; the new contracts
+  pointers (1,266 → ~830 words in apps.md), compared against the old text with a second pass restoring four
+  contracts the first had dropped (the uploads directory's name, the shipped image types, never a host and port,
+  a person's own no ending a turn); the new contracts
   (fires refused, images per conversation, `AppViewerCredential`) stated; `mcp-hosting.md` and
   `person-assertions.md` follow.
 - **Spec** (`f0d543ceb`): an unapproved server is left out, not refused (error list and story 22); outposts are
   never offered to an ask; the preview's `failure` field is described.
-- **Verified**: `dotnet build Ziggurat.sln` 0 warnings; full `dotnet test` 11,951 passed, 0 failed, 224 skipped (3 m 28 s).
+- **Second pass**: `AppTurnAgentTests`' image cases now pin that the real agent signs each fetch for the ask's own
+  conversation (the positive half of the per-conversation rule); `admin-owner-pages.md` points at
+  `HouseholdPublishedApps.ReadAsync`; a check reading an envelope whose fields are not strings records a failed
+  request, as before the `FromEnvelope` refactor, rather than throwing. Two refactors change behaviour without a
+  test of their own: a check's reads now act on the `apps` channel (as its asks did), and an envelope with no
+  `errorCode` is a failed ask coded `internal_error` (it was a failed request).
+- **Verified**: `dotnet build Ziggurat.sln` 0 warnings; full `dotnet test` 11,951 passed, 0 failed, 224 skipped
+  (3 m 28 s), and after the second pass three more full runs. One of those failed the WebChat E2E collections at
+  their fixture (each case 1 ms: the stack, rebuilt because `McpServerApps` changed, did not come up) and
+  `PersonsAppsClientTests.AnAppsServerThatDoesNotAnswer_IsNoApps` (111 ms); their messages were not kept, and
+  neither came back in two further full runs (0 failed, ~1 m 21 s) or alone. Not diagnosed: watch for it.

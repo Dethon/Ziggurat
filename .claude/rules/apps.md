@@ -188,17 +188,17 @@ Spec `.scratch/app-asks/spec.md`; wire `Domain/Apps/AppAsks`; the library's `app
 - **Images** (`apps.ask(text, { files })`): a `multipart/form-data` of exactly one `ask` field (the same
   JSON) and a `files` part each (`AppAsks.AskField`, `FilesField`). Anything else in the form, more than
   `Asks:MaxImages`, empty or over `Asks:MaxImageBytes`, or **bytes** of no type in `Asks:ImageTypes`
-  (`AppAskImages.Sniff`; the page's type is never believed, the sniffed one is sent; the code's default takes none) is 400
+  (`AppAskImages.Sniff`; the page's type is never believed, the sniffed one is sent; the code's default takes none, the shipped file names JPEG, PNG, WebP, GIF) is 400
   `invalid_argument` **before any turn or count**; the body is bounded to the JSON plus the images' bounds.
   Kept only once counted and the conversation settled, in the upload store (`AskUploads`,
-  `<volume>/.uploads`) **for the app's household under the ask's conversation**, named on `Attachments` in
+  `<volume>/.uploads`, a name no household id takes) **for the app's household under the ask's conversation**, named on `Attachments` in
   order; taken back (`UploadStore.Remove`) when nobody listened; swept after `attachmentRetention`. Handed
   only to a fetch for a turn of that conversation in that household (`mcp-hosting.md`, `AddUploadStore`); a
   follow-up sends none and its history hydrates the first ask's. Nothing checks the model sees images.
 - **The message**: `AgentId` from `app.meta.json`; the session's `apps` assertion (renewed if due) or, from a
   check's session, its call token as `CheckCallToken`, never both; label principal `("apps", user id,
   Account)`; `AppTurn` with the origin's own manifest's instructions and `asks` (servers **by configured
-  name**: a `sharedServers` key or a household server's own name, shape `TunnelCredentialProtocol.IsServerName`)
+  name**: a `sharedServers` key or a household server's own name, never a host and port; shape `TunnelCredentialProtocol.IsServerName`)
   — the served commit's, the preview the tree's; on a shared app those `Within` its approval for every
   viewer, an unapproved server left out, never the ask refused. The page's schema is `ResponseFormat`
   (strict, ADR 0044), the manifest's `model` (`vendor/name` shape) `ConfigPatch.Model`; absent, neither is

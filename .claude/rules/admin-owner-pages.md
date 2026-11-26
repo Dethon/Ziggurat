@@ -205,7 +205,7 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
 
 `HouseholdAppAsksAdmin` (`AdminProtocol.AppAsks`, `Domain/DTOs/Admin/AdminAppAsks.cs`) reads `AdminAppAsks` (the
 `app-asks` section beside the household's published apps, `AdminCappedApp`, from the same listing as the
-spaces page, `HouseholdSpacesAdmin.PublishedAsync`: none without the `apps` feature, null when the apps server
+spaces page, `HouseholdPublishedApps.ReadAsync`: none without the `apps` feature, null when the apps server
 could not be asked) and saves the section whole, merged per app id (`admin.md`, "Two owners"). What an
 ask does with it is `.claude/rules/apps.md`, "The daily cap".
 
