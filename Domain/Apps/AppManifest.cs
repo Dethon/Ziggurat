@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 
 namespace Domain.Apps;
 
@@ -40,9 +41,14 @@ public sealed record AppManifest
     // (AppAsks.MaxInstructionsBytes).
     public string? Instructions { get; init; }
 
+    // The servers whose tools the app's asks may use, by the name the building agent's tools carry them
+    // under (mcp__<name>__…). Checked for shape alone, as reads are: one the building agent lacks is simply
+    // not offered. None, and an ask is offered no tools.
+    public IReadOnlyList<string> Asks { get; init; } = [];
+
     // Every field app.json takes; any other is refused.
     public static readonly IReadOnlyList<string> Fields =
-        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon", "instructions"];
+        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon", "instructions", "asks"];
 
     public static AppManifestParse Parse(string json)
     {
@@ -78,6 +84,7 @@ public sealed record AppManifest
             var connect = Texts(root, "connect", problems);
             var icon = Text(root, "icon", problems);
             var instructions = Text(root, "instructions", problems);
+            var asks = Texts(root, "asks", problems);
 
             if (string.IsNullOrWhiteSpace(name) || name.Length > NameLength)
             {
@@ -126,6 +133,10 @@ public sealed record AppManifest
                              + "never climbing out with .., never under node_modules or .git.");
             }
 
+            problems.AddRange(asks.Where(a => !ServerAddress.IsQualifier(a))
+                .Select(a => $"asks: '{a}' is no server's name: write the name its tools carry, as in mcp__<name>__<tool>, such as vault."));
+            problems.AddRange(Twice(asks).Select(a => $"asks: '{a}' is named twice."));
+
             return problems.Count > 0
                 ? new AppManifestParse.Refused(problems)
                 : new AppManifestParse.Valid(new AppManifest
@@ -138,7 +149,8 @@ public sealed record AppManifest
                     Reads = reads,
                     Connect = connect,
                     Icon = icon,
-                    Instructions = instructions
+                    Instructions = instructions,
+                    Asks = asks
                 });
         }
     }

@@ -17,7 +17,8 @@ public class AppManifestTests
                                    "reads": ["/sugary", "/ha"],
                                    "connect": ["https://api.example.com", "https://tiles.example.org:8443"],
                                    "icon": "/icons/glucose.svg",
-                                   "instructions": "asks/instructions.md"
+                                   "instructions": "asks/instructions.md",
+                                   "asks": ["vault", "mcp-sugary-8080", "tools.example.org"]
                                  }
                                  """;
 
@@ -34,6 +35,7 @@ public class AppManifestTests
         manifest.Connect.ShouldBe(["https://api.example.com", "https://tiles.example.org:8443"]);
         manifest.Icon.ShouldBe("/icons/glucose.svg");
         manifest.Instructions.ShouldBe("asks/instructions.md");
+        manifest.Asks.ShouldBe(["vault", "mcp-sugary-8080", "tools.example.org"]);
     }
 
     [Fact]
@@ -48,6 +50,7 @@ public class AppManifestTests
         manifest.Connect.ShouldBeEmpty();
         manifest.Icon.ShouldBeNull();
         manifest.Instructions.ShouldBeNull();
+        manifest.Asks.ShouldBeEmpty();
     }
 
     [Theory]
@@ -83,6 +86,15 @@ public class AppManifestTests
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"node_modules/x/README.md"}""", "instructions 'node_modules/x/README.md'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":""}""", "instructions ''")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":7}""", "instructions must be a string")]
+    // The servers an ask may use, by the name their tools carry (mcp__<name>__…), each named once.
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["mcp__vault"]}""", "asks: 'mcp__vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["Vault"]}""", "asks: 'Vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["http://mcp-vault:8080/mcp"]}""", "asks: 'http://mcp-vault:8080/mcp' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["-vault"]}""", "asks: '-vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["a..b"]}""", "asks: 'a..b' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":[""]}""", "asks: '' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["vault","vault"]}""", "asks: 'vault' is named twice")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":"vault"}""", "asks must be a list of strings")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","colour":"#abc"}""", "colour")]
     [InlineData("""[1, 2]""", "a JSON object")]
     [InlineData("""{"name":""", "not JSON")]

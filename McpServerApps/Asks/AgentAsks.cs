@@ -14,8 +14,8 @@ namespace McpServerApps.Asks;
 // A built app's ask (POST /_ask), already settled as a read is: sent to the app's building agent as a turn
 // on this server's own channel, answered by the instructions of the origin's own manifest — the served
 // commit's, so an edit in the tree changes nothing a viewer sees until published; the preview the tree's —
-// and acting for the viewer on their app session's `apps` assertion. The page waits on the whole reply;
-// its giving up, or the wait running out, cancels the turn.
+// and acting for the viewer on their app session's `apps` assertion, with the tools of that same manifest's
+// `asks` servers. The page waits on the whole reply; its giving up, or the wait running out, cancels the turn.
 //
 // The clock is the wait's alone: the inbox decides whether the agent is listening on the server's own, and
 // a test moving this one must not make an agent polling in real time look gone.
@@ -83,7 +83,7 @@ public sealed class AgentAsks(
             Principal = new Principal(AppChannels.Apps, viewer.UserId, viewer),
             Assertion = assertion,
             Content = text,
-            AppTurn = new AppTurn { AppId = app.Id, Instructions = instructions, Servers = [] },
+            AppTurn = new AppTurn { AppId = app.Id, Instructions = instructions, Servers = served.Manifest.Asks },
             Timestamp = clock.GetUtcNow()
         }, settings.Asks.Timeout, clock, ct);
 

@@ -92,6 +92,37 @@ public sealed class AppsAsksTests : IAsyncLifetime
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // The servers an ask may use are its origin's own manifest's: the served commit's on the published
+    // origin, so a tree edit widens nothing a viewer's asks reach until published; the tree's on the preview.
+    [Fact]
+    public async Task TheServersAnAskMayUse_AreItsOriginsOwnManifests()
+    {
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", asks: """["vault","mcp-sugary-8080"]"""), overwrite: true);
+        await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", asks: """["vault","homeassistant"]"""), overwrite: true);
+
+        var published = await ServersAskedFromAsync(_apps.Published("glucose", _id));
+        var preview = await ServersAskedFromAsync(_apps.Preview("glucose", _id));
+
+        published.ShouldBe(["vault", "mcp-sugary-8080"]);
+        preview.ShouldBe(["vault", "homeassistant"]);
+    }
+
+    // A shared app's asks reach no more than an owner approved, for every viewer, its author too; an approval
+    // says nothing of asks yet, so they are granted no server.
+    [Fact]
+    public async Task ASharedAppsAsks_AreGrantedNoServerAnOwnerDidNotApprove()
+    {
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", asks: """["vault"]"""), overwrite: true);
+        await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach { Reads = ["/sugary"] });
+
+        (await ServersAskedFromAsync(_apps.Published("glucose", _id))).ShouldBeEmpty();
+    }
+
     // An app whose manifest names no instructions cannot ask: refused before anything is sent.
     [Fact]
     public async Task AnAppWithoutInstructions_IsRefusedPermissionDenied_BeforeAnyTurn()
@@ -283,8 +314,17 @@ public sealed class AppsAsksTests : IAsyncLifetime
         await NothingAskedAsync();
     }
 
-    private static string Manifest(string instructions) =>
-        $$"""{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"{{instructions}}"}""";
+    private static string Manifest(string instructions, string asks = "[]") =>
+        $$"""{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"{{instructions}}","asks":{{asks}}}""";
+
+    private async Task<IReadOnlyList<string>> ServersAskedFromAsync(string host)
+    {
+        var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, host));
+        var turn = await NextTurnAsync(_agent);
+        await ReplyAsync(turn, "Hello there.");
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+        return turn.AppTurn!.Servers;
+    }
 
     // An app whose published instructions are Published, and its tree's since edited to Tree.
     private static async Task<string> InstructedAppAsync(AppsServer apps)

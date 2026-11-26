@@ -540,7 +540,8 @@ public sealed class AppPages(
     private static AppManifest Granted(AppManifest manifest, AppReach? approved)
     {
         var granted = AppReach.Of(manifest).Within(approved);
-        return manifest with { Reads = granted.Reads, Connect = granted.Connect };
+        // An approval names no server an ask may use, so a shared app's asks are granted none.
+        return manifest with { Reads = granted.Reads, Connect = granted.Connect, Asks = [] };
     }
 
     // The path's segments, or null for one that tries to leave the root or reach git.
