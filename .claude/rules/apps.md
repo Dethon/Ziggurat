@@ -199,7 +199,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   (the apps server reads no catalogue, and the agent does not check a third time): one that cannot is sent
   them anyway.
 - **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
-  (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
+  (renewed first if due) — or, from a check's session, **its call token as `CheckCallToken` in the
+  assertion's place**, never both (Checks, below) — a label
   principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's
   instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
   a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
@@ -209,7 +210,7 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   `ResponseFormat` (strict, as written: ADR 0044), and the same manifest's **`model`** (a model id's shape
   alone, `vendor/name`) its `ConfigPatch.Model`; neither is sent when absent. Whether the agent may be
   patched to that model is the agent's (`channels.md`): off its `patchableModels` the ask runs on its own. Sent by `AgentTurns` under its own
-  key, waited on for `Asks:Timeout`; the page giving up or the wait running out cancels the turn **naming
+  key, waited on for `Asks:Timeout` (a check's, no longer than its session has left); the page giving up or the wait running out cancels the turn **naming
   the agent** (the agent groups by conversation and agent).
 - **Conversations** (`AskConversations` over `OpenConversations`, keyed by app id and viewer `Account`,
   carrying the building agent): an ask naming none opens one; one naming a `conversation` is a turn on it
@@ -231,12 +232,12 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   opens no conversation, and one never delivered keeps none. Counts live at `<app>/asks` (the minutes still
   counting, JSON), durable across restarts, gone with the app, never listed, committed or counted toward
   the quota. **The limit is `AskCaps.LimitAsync`'s alone**, read at each ask from the household's `app-asks`
-  view (`ICallHousehold.AppAsksAsync`, on the viewer's `apps` assertion; a check's would be its call token),
+  view (`ICallHousehold.AppAsksAsync`, on the viewer's `apps` assertion; a check's on its call's own household, `call.Household`, carried on `ViewerProof.CheckCall`),
   kept a minute or until a save is heard: the app's own cap, else the household's `dailyCap`, else
   `Asks:DailyCap` (200) (`AppAsksSection.LimitOf`). **Never lifted**: unreadable is 503
   `transient_dependency` (`AppAsks.CapUnreadable`), refused 422 `permission_denied` (`CapRefused`), both
   before counting or sending, never the deployment's value. Owners set the caps on `/admin/apps`
-  (`admin-owner-pages.md`, "Apps"). A check's ask is refused before counting.
+  (`admin-owner-pages.md`, "Apps"). A check's asks count as anyone's.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
   file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
   `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
@@ -248,10 +249,13 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   not retryable; **its words ride as `reply` on the preview alone**, `AppAsks.InvalidReply`, clipped, since
   the published origin's viewers may be any member), 422 `permission_denied` (no instructions, a refusal:
   `RefusalAnswers.CodeOf`'s sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
-  turn whose words are the agent's exception (logged, never shown) or no answer (an ask ended on its refused
+  turn whose words are the agent's exception (logged; shown on the preview alone, below) or no answer (an ask ended on its refused
   calls with no text is one), 410 `conversation_expired` (not retryable: ask without it), 429
   `quota_exceeded` past the daily cap (not retryable; names the limit, and `freesAt` when an ask is next
-  counted, absent for a cap of none: `AppAsks.Capped`), 503 nobody polling, 504 `timeout`.
+  counted, absent for a cap of none: `AppAsks.Capped`), 503 nobody polling, 504 `timeout`. **On the preview
+  alone** a failed turn's own words (the agent's exception, often a provider's body: a strict schema or a
+  model it refused) ride as `failure` (`AppAsks.Failed`, clipped as `reply`), so its author can fix it; the
+  published origin's viewers never read them, and the log keeps them either way.
 
 ## App sign-in
 
@@ -310,20 +314,31 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 
 - **What went wrong is in its output** (`AppActions.CheckSummary`): per viewport, the counts, then failed
   assertions, console errors (each led by where it came from, the preview's own by path: Chromium names a failed
-  load's address nowhere else), failed requests, policy violations and refused reads, a line each (first line,
+  load's address nowhere else), failed requests, policy violations, refused reads and failed asks, a line each (first line,
   clipped, capped); a viewport that saw exactly what an earlier one saw names it instead. The agent reads
   `report.json` for the rest, never to learn what failed.
 - **A refused read is not a failure**: a `/_vfs/*` read on the preview answered 422 (the tools' envelope)
   is a `refusedReads` entry (operation, path, code, message), and Chromium's console line for that address
   is dropped, since the page may well have shown it as it should. Any other answer of 400 or worse there
   (no session, nobody answering) stays a failed request.
+- **Nor is a failed ask**: a `/_ask` on the preview answered 400 or worse **with the tools' envelope** (any
+  status: 400, 410, 422, 429, 503, 504) is a `failedAsks` entry (status, the ask's `text` when sent as JSON,
+  code, message, hint, and the preview's `reply` or `failure`), its console line dropped, a summary line
+  `failed ask: <code>: <message>` with what the agent said or the reply beside it; an answer that is no
+  envelope (the origin's 404) stays a failed request. Neither changes the exit code.
+- **A check's asks are real turns** (`AppTurnAgentTests`, `AppsAsksTests`): the page asks as the check's
+  person on its call token, against the tree's manifest and instructions, counted toward the app's cap,
+  each waited on no longer than the check has left (`Checks:Settle` and every viewport reloading the page
+  mean an ask made on load is made once per viewport).
 
-- **It reads as the call's own token** (`FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps
-  every other reader out), on an app session of its own (`AppSessions.OpenCheck`): the preview only, never
+- **It reads and asks as the call's own token** (`FileSystemCaller.CallToken`; `CallHouseholdConformanceTests` keeps
+  every other reader out), on an app session of its own (`AppSessions.OpenCheck`, with the call's
+  `call.Household` for its asks' cap; a call proving no household runs no check): the preview only, never
   renewed, ended with the check. The agent believes the token as **its own signature for the apps server,
   naming a person** (`CheckCallVerifier`: its `SigningKeyStore`, audience
   `TokenAudiences.CallTo(sharedServers.apps)`; the guest, nobody, another server's, or both headers are
-  401). Nothing is minted, so `Checks:Deadline` is at most the agent's `callTokens:refreshMargin`
+  401 for a read; for an ask, both together, or any of those, is refused `not-verified`,
+  `person-assertions.md`, "The one exception"). Nothing is minted, so `Checks:Deadline` is at most the agent's `callTokens:refreshMargin`
   (`DeploymentConformanceTests`).
 - **The browser** (`CheckBrowser`): full Chromium (the headless shell ignores the secure-origin flag), **one
   per check**, **always in Chromium's sandbox** — no `--no-sandbox` fallback; a host that cannot sandbox

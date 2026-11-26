@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Domain.Apps;
+using Domain.Contracts;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
@@ -123,7 +124,8 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         Sweep(checks);
         var run = Path.Combine(checks, $"run-{Guid.NewGuid():N}");
         Directory.CreateDirectory(run);
-        var session = sessions.OpenCheck(app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, started + limits.Deadline);
+        var session = sessions.OpenCheck(
+            app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, request.Household, started + limits.Deadline);
         var reachable = new HashSet<string>([address, .. settings.Cdns, .. request.Manifest.Connect], StringComparer.OrdinalIgnoreCase);
         using var deadline = new CancellationTokenSource(limits.Deadline, clock);
         using var stopped = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
@@ -227,10 +229,14 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
                 : failed.Failure));
         page.Response += (_, response) =>
         {
-            if (response.Status == StatusCodes.Status422UnprocessableEntity && IsRead(response.Url, preview))
+            if (response.Status == StatusCodes.Status422UnprocessableEntity && IsOn(response.Url, preview, $"{AppReads.OriginPath}/"))
             {
-                seen.RefusedUrls.Enqueue(response.Url);
+                seen.EnvelopeUrls.Enqueue(response.Url);
                 seen.Refusals.Enqueue(RefusedAsync(response));
+            }
+            else if (response.Status >= 400 && IsOn(response.Url, preview, AppAsks.OriginPath))
+            {
+                seen.FailedAsks.Enqueue(FailedAskAsync(response, seen));
             }
             else if (response.Status >= 400)
             {
@@ -297,6 +303,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
 
         await Task.WhenAll(seen.Refusals);
+        await Task.WhenAll(seen.FailedAsks);
     }
 
     // The icon the preview would install with, drawn by the check's own browser from the server's own SVG
@@ -338,10 +345,53 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             : null;
     }
 
-    // A read of the household the preview's library made (POST /_vfs/<operation>), on the preview itself.
-    private static bool IsRead(string url, string preview) =>
+    // A read of the household (POST /_vfs/<operation>) or an ask (POST /_ask) the preview's library made, on
+    // the preview itself.
+    private static bool IsOn(string url, string preview, string path) =>
         string.Equals(OriginOf(url), preview, StringComparison.OrdinalIgnoreCase)
-        && new Uri(url).AbsolutePath.StartsWith($"{AppReads.OriginPath}/", StringComparison.Ordinal);
+        && new Uri(url).AbsolutePath.StartsWith(path, StringComparison.Ordinal);
+
+    // An ask answered with the tools' envelope is the page's to handle, as a refused read is: what it asked, why
+    // it failed, and on the preview what fixes it (the reply that was no JSON, the agent's own words for a turn
+    // it failed). Anything else answered there (no session's 404) stays a failed request.
+    private static async Task<FailedAsk?> FailedAskAsync(IResponse response, ViewportRun seen)
+    {
+        try
+        {
+            using var envelope = JsonDocument.Parse(await response.TextAsync());
+            var root = envelope.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False
+                && Text(root, "errorCode") is { } code)
+            {
+                seen.EnvelopeUrls.Enqueue(response.Url);
+                return new FailedAsk(response.Status, AskedText(response.Request.PostData), code, Text(root, "message"),
+                    Text(root, "hint"), Text(root, AppAsks.ReplyField), Text(root, AppAsks.FailureField));
+            }
+        }
+        catch (Exception ex) when (ex is PlaywrightException or JsonException)
+        {
+        }
+
+        seen.Failed.Enqueue(new FailedRequest(response.Request.Method, response.Url, response.Status, null));
+        return null;
+    }
+
+    private const int MaxAskedText = 200;
+
+    // What the page asked, when it asked in JSON (an ask with images is a form, its text left unsaid), clipped.
+    private static string? AskedText(string? body)
+    {
+        try
+        {
+            using var read = JsonDocument.Parse(body ?? "");
+            var text = Text(read.RootElement, "text");
+            return text is { Length: > MaxAskedText } ? $"{text[..MaxAskedText]}…" : text;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     // What a refused read asked (its operation, and the path its arguments name) and why it was refused,
     // off the tools' envelope; a page gone before the body was read leaves the why unsaid.
@@ -468,7 +518,10 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public ConcurrentQueue<FailedRequest> Failed { get; } = new();
         public ConcurrentQueue<PolicyViolation> Violations { get; } = new();
         public ConcurrentQueue<Task<RefusedRead>> Refusals { get; } = new();
-        public ConcurrentQueue<string> RefusedUrls { get; } = new();
+        public ConcurrentQueue<Task<FailedAsk?>> FailedAsks { get; } = new();
+
+        // The addresses answered with the tools' envelope: a refused read's, a failed ask's.
+        public ConcurrentQueue<string> EnvelopeUrls { get; } = new();
         public List<AssertionOutcome> Assertions { get; } = [];
         public string? Screenshot { get; set; }
         public string? Accessibility { get; set; }
@@ -476,10 +529,10 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public string? Error { get; set; }
 
         // Chromium logs every answer of 400 or worse as an error, at the address asked ("<url>:0:0"); for a
-        // refused read the page may well have handled, that line says nothing the refused read does not.
+        // refused read or a failed ask the page may well have handled, that line says nothing the entry does not.
         private bool IsRefusalsOwn(ConsoleEntry entry) =>
             entry is { Type: "error", Location: { } at }
-            && RefusedUrls.Any(url => at.StartsWith(url + ":", StringComparison.Ordinal));
+            && EnvelopeUrls.Any(url => at.StartsWith(url + ":", StringComparison.Ordinal));
 
         public ViewportReport Report() => new()
         {
@@ -493,6 +546,10 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             FailedRequests = [.. Failed.Take(MaxEntries)],
             PolicyViolations = [.. Violations.Take(MaxEntries)],
             RefusedReads = [.. Refusals.Where(refusal => refusal.IsCompletedSuccessfully).Select(refusal => refusal.Result).Take(MaxEntries)],
+            FailedAsks =
+            [
+                .. FailedAsks.Where(ask => ask.IsCompletedSuccessfully).Select(ask => ask.Result).OfType<FailedAsk>().Take(MaxEntries)
+            ],
             Accessibility = Accessibility,
             Assertions = [.. Assertions]
         };
@@ -509,10 +566,11 @@ public sealed record CheckViewport(int Width, int Height)
 public sealed record CheckAssertion(string File, string Source);
 
 // What to check: the route opened, at each viewport, the manifest it is served under, the app's assertion
-// files, and the token of the call that asked, which the page reads with.
+// files, and the token of the call that asked, which the page reads and asks with, and the household that
+// call proved, which its asks' cap is read on.
 public sealed record CheckRequest(
     IReadOnlyList<CheckViewport> Viewports, string Path, AppManifest Manifest, IReadOnlyList<CheckAssertion> Assertions,
-    string CallToken);
+    string CallToken, ICallHousehold Household);
 
 public abstract record CheckOutcome
 {
@@ -554,6 +612,9 @@ public sealed record ViewportReport
 
     // Reads of the household refused with the tools' envelope: the page's to handle, so not a failure.
     public required IReadOnlyList<RefusedRead> RefusedReads { get; init; }
+
+    // Asks answered with the tools' envelope: the page's to handle too, so not a failure either.
+    public required IReadOnlyList<FailedAsk> FailedAsks { get; init; }
     public string? Accessibility { get; init; }
     public required IReadOnlyList<AssertionOutcome> Assertions { get; init; }
 }
@@ -564,6 +625,12 @@ public sealed record ConsoleEntry(string Type, string Text, string? Location);
 public sealed record FailedRequest(string Method, string Url, int? Status, string? Error);
 
 public sealed record RefusedRead(string Operation, string? Path, string? ErrorCode, string? Message);
+
+// An ask answered with the tools' envelope: its status, what it asked (Text, when it was JSON), the envelope's
+// code, message and hint, and on the preview the reply that was no JSON (Reply) or the agent's own words for
+// a turn it failed (Failure).
+public sealed record FailedAsk(
+    int Status, string? Text, string ErrorCode, string? Message, string? Hint, string? Reply, string? Failure);
 
 public sealed record PolicyViolation(string Directive, string? BlockedUri, string? SourceFile, int? Line, string? Sample);
 

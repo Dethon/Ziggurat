@@ -472,6 +472,34 @@ public sealed class AppsAsksTests : IAsyncLifetime
         body.ShouldNotContain("credits");
     }
 
+    // What the agent said of a turn it failed — often the provider's own body, a strict schema it refused
+    // among them — is the exception it caught, kept from a viewer; its author sees it on the preview alone, so
+    // a check can say why and the schema be fixed.
+    [Fact]
+    public async Task AFailedTurnsWords_RideOnThePreviewAlone()
+    {
+        const string said = "An error occurred: Provider returned 400: {\"error\":\"invalid schema: 'minimum' is not supported\"}";
+
+        async Task<JsonNode> FailedFromAsync(string host)
+        {
+            var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, host));
+            var turn = await NextTurnAsync(_agent);
+            await SendAsync(turn, ReplyContentType.Error, said);
+            await SendAsync(turn, ReplyContentType.StreamComplete, "", isComplete: true);
+            using var response = await answer;
+            response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        }
+
+        var previewed = await FailedFromAsync(_apps.Preview("glucose", _id));
+        var published = await FailedFromAsync(_apps.Published("glucose", _id));
+
+        previewed["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.TransientDependency);
+        previewed[AppAsks.FailureField]!.GetValue<string>().ShouldBe(said);
+        published.AsObject().ContainsKey(AppAsks.FailureField).ShouldBeFalse();
+        published.ToJsonString().ShouldNotContain("invalid schema");
+    }
+
     // The page never waits on a turn without end: past the server's wait it is told so, and the turn is
     // cancelled, naming the agent, since the agent groups an app's messages under it.
     [Fact]
@@ -532,21 +560,72 @@ public sealed class AppsAsksTests : IAsyncLifetime
         envelope["retryable"]!.GetValue<bool>().ShouldBeTrue();
     }
 
-    // A check's session holds no `apps` assertion, only the call token that ran it, and an ask is never
-    // sent unsigned.
+    // A check's page asks as the person whose turn ran `./check`, on the preview: its session holds no `apps`
+    // assertion, only that call's own token, which goes in the assertion's place for the agent to believe, and
+    // never beside one.
     [Fact]
-    public async Task AnAskFromACheck_IsRefused_BeforeAnyTurn()
+    public async Task AnAskFromACheck_IsSentOnItsCallToken_InPlaceOfAnAssertion_WithThePreviewsInstructions()
     {
         var preview = _apps.Preview("glucose", _id);
-        var session = _apps.Sessions.OpenCheck(AppsServer.Her, AppOrigin.Parse(preview, AppsServer.AppsDomain)!, "a-call-token",
-            _apps.Clock.GetUtcNow().AddMinutes(1));
+        var session = _apps.CheckSessionFor(AppsServer.Her, preview, "a-call-token", _apps.Clock.GetUtcNow().AddMinutes(1));
 
-        using var response = await _apps.AskAsync(preview, """{"text":"Hi"}""", session);
+        var answer = _apps.AskAsync(preview, """{"text":"Hi"}""", session);
+        var turn = await NextTurnAsync(_agent);
+        await ReplyAsync(turn, "Hello there.");
 
-        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
-        JsonNode.Parse(await response.Content.ReadAsStringAsync())!["errorCode"]!.GetValue<string>()
-            .ShouldBe(ToolError.Codes.PermissionDenied);
-        await NothingAskedAsync();
+        turn.CheckCallToken.ShouldBe("a-call-token");
+        turn.Assertion.ShouldBeNull();
+        turn.AgentId.ShouldBe("jonas");
+        turn.Principal.ShouldBe(new Principal(AppChannels.Apps, AppsServer.Her.UserId, AppsServer.Her));
+        turn.AppTurn!.Instructions.ShouldBe(Tree);
+        using var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+    }
+
+    // A check's asks are real turns, so they count toward the app's cap as anyone's do, read on the check's own
+    // proof: past it, the check's page is refused as a viewer's would be, and its author viewing the published app too.
+    [Fact]
+    public async Task AChecksAsks_CountTowardTheAppsCap()
+    {
+        await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
+        var agent = await apps.AgentAsync();
+        var id = await InstructedAppAsync(apps);
+        var preview = apps.Preview("glucose", id);
+        var host = apps.Published("glucose", id);
+        var check = apps.CheckSessionFor(AppsServer.Her, preview, "a-call-token", apps.Clock.GetUtcNow().AddMinutes(1));
+
+        await AnsweredAsync(apps, agent, preview, check);
+        using var checkedAgain = await apps.AskAsync(preview, """{"text":"Hi"}""", check);
+        using var viewed = await apps.AskAsync(host, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Her, host));
+
+        await ShouldBeCappedAsync(checkedAgain, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        await ShouldBeCappedAsync(viewed, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        await NothingAskedAsync(agent);
+    }
+
+    // A check is stopped at its deadline and its call token is good no longer, so its ask waits no longer than
+    // the check has left, however long an ask may otherwise wait.
+    [Fact]
+    public async Task AnAskFromACheck_WaitsNoLongerThanTheCheckHasLeft()
+    {
+        var clock = new ArmedClock();
+        await using var apps = await AppsServer.StartAsync(services: s =>
+            s.AddSingleton(sp => ActivatorUtilities.CreateInstance<AgentAsks>(sp, (TimeProvider)clock)));
+        var agent = await apps.AgentAsync();
+        var id = await InstructedAppAsync(apps);
+        var preview = apps.Preview("glucose", id);
+        var left = TimeSpan.FromSeconds(30);
+        var check = apps.CheckSessionFor(AppsServer.Her, preview, "a-call-token", clock.GetUtcNow() + left);
+
+        var answer = apps.AskAsync(preview, """{"text":"Hi"}""", check);
+        var turn = await NextTurnAsync(agent);
+        await clock.AdvancePastAsync(left);
+
+        using var response = await answer;
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.ShouldBe(HttpStatusCode.GatewayTimeout, body);
+        JsonNode.Parse(body)!["message"]!.GetValue<string>().ShouldContain("within 30 seconds");
+        (await NextTurnAsync(agent)).ConversationId.ShouldBe(turn.ConversationId);
     }
 
     // The cap is the household's on one app: every ask sent to the agent counts, and past the limit an ask is

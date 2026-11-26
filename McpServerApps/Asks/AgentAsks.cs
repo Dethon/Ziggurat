@@ -16,8 +16,8 @@ namespace McpServerApps.Asks;
 // A built app's ask (POST /_ask), already settled as a read is: sent to the app's building agent as a turn
 // on this server's own channel, answered by the instructions of the origin's own manifest — the served
 // commit's, so an edit in the tree changes nothing a viewer sees until published; the preview the tree's —
-// and acting for the viewer on their app session's `apps` assertion, with the tools of that same manifest's
-// `asks` servers, on its `model`. A schema the page sends is the turn's response format, and the reply's JSON
+// and acting for the viewer on their app session's `apps` assertion (a check's page: on the call token of the
+// call that ran it, as its person), with the tools of that same manifest's `asks` servers, on its `model`. A schema the page sends is the turn's response format, and the reply's JSON
 // the answer. An ask naming an earlier answer's conversation continues it, if this app and viewer opened it
 // within the window (AskConversations), with that ask's own schema or none. Every ask sent counts toward
 // the app's daily cap (AskCounts, AskCaps), and one past it is refused before anything is sent. The page
@@ -44,12 +44,17 @@ public sealed class AgentAsks(
     internal async Task<OriginAnswer> AskAsync(
         HttpRequest request, BuiltApp app, AppSession session, AppPages.ServedFiles served, CancellationToken ct)
     {
-        if (session.Proof is not ViewerProof.Assertion { Token: var assertion })
+        // Who the agent is to believe it is for, and the household its cap is read on: the viewer's own `apps`
+        // assertion; or a check's call token, never both, and its wait never past the check's end, when the
+        // token is good no longer.
+        var (assertion, checkCall, household, wait) = session.Proof switch
         {
-            return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, ToolError.PermissionDenied(
-                "A check's page cannot ask its assistant yet, so nothing was asked.",
-                "Open the preview yourself to try the app's asks."));
-        }
+            ViewerProof.Assertion { Token: var token } =>
+                (token, null, CallHousehold.OfPerson(app.HouseholdId, token, households), settings.Asks.Timeout),
+            ViewerProof.CheckCall { Token: var token, Household: var proved } =>
+                ((string?)null, token, (ICallHousehold)proved, Min(settings.Asks.Timeout, session.ExpiresAt - clock.GetUtcNow())),
+            _ => throw new InvalidOperationException("A session is proved by an assertion or a check's call token.")
+        };
 
         byte[] body;
         IReadOnlyList<AppAskUpload> sent;
@@ -111,7 +116,7 @@ public sealed class AgentAsks(
         // them grows no faster than the caps let; given back if the ask goes no further, since only an ask
         // sent is counted.
         int limit;
-        switch (await caps.LimitAsync(app, CallHousehold.OfPerson(app.HouseholdId, assertion, households), ct))
+        switch (await caps.LimitAsync(app, household, ct))
         {
             case AskLimit.Read read:
                 limit = read.Limit;
@@ -164,16 +169,18 @@ public sealed class AgentAsks(
             ConversationId = conversation,
             AgentId = app.BuildingAgent,
             Sender = viewer.UserId,
-            // A label only: the agent believes the assertion, renewed with the session if it was due.
+            // A label only: the agent believes the assertion, renewed with the session if it was due, or the
+            // check's call token.
             Principal = new Principal(AppChannels.Apps, viewer.UserId, viewer),
             Assertion = assertion,
+            CheckCallToken = checkCall,
             Content = ask.Text,
             Attachments = attachments.Count > 0 ? attachments : null,
             AppTurn = new AppTurn { AppId = app.Id, Instructions = instructions, Servers = served.Manifest.Asks },
             ResponseFormat = ask.Schema is { } schema ? new ResponseFormat { Name = schema.Name, Schema = schema.Schema } : null,
             ConfigPatch = served.Manifest.Model is { } model ? new AgentConfigPatch { Model = model } : null,
             Timestamp = clock.GetUtcNow()
-        }, settings.Asks.Timeout, clock, ct);
+        }, wait, clock, ct);
 
         // Never delivered: neither the count, a conversation opened for it nor its images are kept, so a page
         // retrying while nobody listens spends nothing and fills no table or volume.
@@ -199,11 +206,13 @@ public sealed class AgentAsks(
                 _ => OriginAnswer.Json(StatusCodes.Status422UnprocessableEntity,
                     AppAsks.InvalidReply(session.Origin.Preview ? answer : null))
             },
-            // AgentTurns logged the agent's own words; the page is told only what a refusal says.
-            TurnReply.Failed { Reason: var reason } => OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.Refusal(reason)),
+            // AgentTurns logged the agent's own words; the page is told only what a refusal says, but for the
+            // preview, which its author alone opens, so a check can say why a turn failed.
+            TurnReply.Failed { Reason: var reason } =>
+                OriginAnswer.Json(StatusCodes.Status422UnprocessableEntity, AppAsks.Failed(reason, session.Origin.Preview)),
             TurnReply.Unanswered => OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.Unanswered),
             TurnReply.NotListening => OriginAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, AppAsks.NotListening),
-            TurnReply.TimedOut => OriginAnswer.Envelope(StatusCodes.Status504GatewayTimeout, AppAsks.TimedOut(settings.Asks.Timeout)),
+            TurnReply.TimedOut => OriginAnswer.Envelope(StatusCodes.Status504GatewayTimeout, AppAsks.TimedOut(wait)),
             _ => throw new InvalidOperationException($"A turn's reply is answered, failed, unanswered, unheard or timed out: {reply}.")
         };
     }
@@ -280,6 +289,8 @@ public sealed class AgentAsks(
 
         public sealed record Refused(string Problem) : AskBody;
     }
+
+    private static TimeSpan Min(TimeSpan one, TimeSpan other) => one <= other ? one : other;
 
     private static OriginAnswer Answered(AppAskAnswer answer) =>
         new(StatusCodes.Status200OK, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(answer, JsonSerializerOptions.Web));

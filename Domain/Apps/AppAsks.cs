@@ -29,6 +29,9 @@ public static class AppAsks
     // The envelope's field carrying a reply that did not parse, on the preview alone (InvalidReply).
     public const string ReplyField = "reply";
 
+    // The envelope's field carrying what the agent said of a turn it failed, on the preview alone (Failed).
+    public const string FailureField = "failure";
+
     // The envelope's field carrying when a capped app's next ask is counted (Capped), ISO 8601; absent when
     // none ever is.
     public const string FreesAtField = "freesAt";
@@ -52,6 +55,20 @@ public static class AppAsks
         _ => ToolError.PermissionDenied(agentAnswer.Trim(),
             "Nothing the app can do changes this: show it to the person, who may ask an owner or whoever runs this deployment.")
     };
+
+    // A refused or failed turn, as the page reads it. A failure's own words (the exception the agent caught,
+    // often a provider's body: a strict schema it would not take, a model it does not offer) ride beside it
+    // where the author alone asks, the preview, so a check can say what to fix; a viewer never reads them.
+    public static JsonObject Failed(string agentAnswer, bool preview)
+    {
+        var envelope = Refusal(agentAnswer).ToNode();
+        if (preview && RefusalAnswers.CodeOf(agentAnswer) is null)
+        {
+            envelope[FailureField] = agentAnswer.Length > MaxReplyShown ? agentAnswer[..MaxReplyShown] : agentAnswer;
+        }
+
+        return envelope;
+    }
 
     public static readonly ToolErrorResult NoInstructions = ToolError.PermissionDenied(
         "This app has no instructions, so it cannot ask its assistant.",

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using McpServerApps.Settings;
 
@@ -10,15 +11,16 @@ namespace McpServerApps.Serving;
 public sealed record AppSession(
     Account Person, AppOrigin Origin, ViewerProof Proof, DateTimeOffset RenewAt, DateTimeOffset ExpiresAt);
 
-// What the agent is handed with a read to believe who it is for: a signed-in viewer's `apps` assertion,
-// with the accounts session it was made from (so ending that ends this), or a check's call token, the
-// agent's own for the tool call that ran `./check`.
+// What the agent is handed with a read or an ask to believe who it is for: a signed-in viewer's `apps`
+// assertion, with the accounts session it was made from (so ending that ends this), or a check's call token,
+// the agent's own for the tool call that ran `./check`, with the household that call proved (call.Household),
+// which a check's ask reads its cap on.
 public abstract record ViewerProof
 {
     public sealed record Assertion(string Token, string SessionId) : ViewerProof;
 
     // Never renewed: a check ends before its call token does.
-    public sealed record CheckCall(string Token) : ViewerProof;
+    public sealed record CheckCall(string Token, ICallHousehold Household) : ViewerProof;
 }
 
 // The app sessions this server holds, named to the browser by a host-only `__Host-` cookie on the
@@ -42,10 +44,10 @@ public sealed class AppSessions(TimeProvider clock, AppsSettings settings)
         Open(new AppSession(person, origin, new ViewerProof.Assertion(assertion, sessionId),
             clock.GetUtcNow() + settings.Sessions.AssertionKept, expiresAt));
 
-    // A check's session: its preview alone, read as the person on the call token of the call that ran it,
-    // until its deadline.
-    public string OpenCheck(Account person, AppOrigin origin, string callToken, DateTimeOffset expiresAt) =>
-        Open(new AppSession(person, origin, new ViewerProof.CheckCall(callToken), expiresAt, expiresAt));
+    // A check's session: its preview alone, read and asked as the person on the call token of the call that
+    // ran it, until its deadline.
+    public string OpenCheck(Account person, AppOrigin origin, string callToken, ICallHousehold household, DateTimeOffset expiresAt) =>
+        Open(new AppSession(person, origin, new ViewerProof.CheckCall(callToken, household), expiresAt, expiresAt));
 
     private string Open(AppSession session)
     {

@@ -280,6 +280,83 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         stdout.ShouldContain("refused read: query /sugary: permission_denied");
     }
 
+    // A check's page asks for real, as the person whose turn ran it, on that call's own token. An ask answered
+    // with the tools' envelope is the page's to handle, as a refused read is: reported as a failed ask with its
+    // code and message — and on the preview, what the author needs to fix it: the reply that was no JSON, the
+    // agent's own words for a turn it failed — never as a console error or a failed request.
+    [Fact]
+    public async Task AFailedAsk_IsReportedAsAFailedAsk_WithWhatFixesIt_NotAsAConsoleErrorOrAFailedRequest()
+    {
+        const string providerSaid = "An error occurred: Provider returned 400: invalid schema: 'minimum' is not supported";
+        await using var server = await StartAsync();
+        var agent = await server.AgentAsync();
+        var turns = new List<ChannelMessage>();
+        var answering = Task.Run(async () =>
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            await foreach (var turn in agent.Messages.WithCancellation(cts.Token))
+            {
+                turns.Add(turn);
+                var (type, words) = turn.Content == "carbs" ? (ReplyContentType.Error, providerSaid) : (ReplyContentType.Text, "Twelve grams.");
+                await agent.SendReplyAsync(new SendReplyParams
+                {
+                    ConversationId = turn.ConversationId, Content = words, ContentType = type, IsComplete = false, TurnKey = turn.TurnKey,
+                    MessageId = "resp_1"
+                }, cts.Token);
+                await agent.SendReplyAsync(new SendReplyParams
+                {
+                    ConversationId = turn.ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true,
+                    TurnKey = turn.TurnKey, MessageId = "resp_1"
+                }, cts.Token);
+                if (turns.Count == 2)
+                {
+                    return;
+                }
+            }
+        });
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose","accentColor":"#e9601f","description":"Mine.","instructions":"asks/glucose.md"}""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/asks/glucose.md", "Answer with grams of carbohydrate.");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><p id="state">loading</p></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            const schema = { name: 'carbs', schema: { type: 'object', properties: { grams: { type: 'number', minimum: 0 } } } };
+            const codes = [];
+            for (const text of ['carbs', 'carbs again']) {
+              try {
+                await apps.ask(text, { schema });
+              } catch (e) {
+                codes.push(e.errorCode);
+              }
+            }
+            document.getElementById('state').textContent = codes.join(' ');
+            """);
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+        await answering;
+
+        // Asked as the person on the check's call token, never an assertion.
+        turns.ShouldAllBe(turn => turn.CheckCallToken != null && turn.Assertion == null);
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
+        viewport["failedRequests"]!.AsArray().ShouldBeEmpty(viewport.ToJsonString());
+        viewport["console"]!.AsArray().ShouldNotContain(c => c!["type"]!.GetValue<string>() == "error", viewport.ToJsonString());
+        viewport["accessibility"]!.GetValue<string>().ShouldContain("transient_dependency invalid_reply");
+        var failed = viewport["failedAsks"]!.AsArray();
+        failed.Count.ShouldBe(2, viewport.ToJsonString());
+        var refused = failed.Single(a => a!["errorCode"]!.GetValue<string>() == "transient_dependency")!;
+        refused["status"]!.GetValue<int>().ShouldBe(422);
+        refused["text"]!.GetValue<string>().ShouldBe("carbs");
+        refused["failure"]!.GetValue<string>().ShouldBe(providerSaid);
+        var unread = failed.Single(a => a!["errorCode"]!.GetValue<string>() == "invalid_reply")!;
+        unread["reply"]!.GetValue<string>().ShouldBe("Twelve grams.");
+        var stdout = ran["stdout"]!.GetValue<string>();
+        stdout.ShouldContain("2 failed asks");
+        stdout.ShouldContain($"failed ask: transient_dependency: The assistant could not answer this ask. (the agent said: {providerSaid})");
+        stdout.ShouldContain("failed ask: invalid_reply: ");
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+    }
+
     // The check's browser sits on the deployment's network, and what it shows comes back to the agent as a
     // screenshot: a page reaches only its own origin, the CDNs and its manifest's connect origins. A
     // navigation anywhere else — an internal service here — is aborted and reported, never shown.

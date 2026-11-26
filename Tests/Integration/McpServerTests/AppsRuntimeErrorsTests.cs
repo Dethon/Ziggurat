@@ -273,8 +273,7 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
             services => services.AddSingleton<IMetricsPublisher>(metrics));
         var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
         var host = apps.Preview("glucose", id);
-        var check = apps.Sessions.OpenCheck(AppsServer.Her, AppOrigin.Parse(host, AppsServer.AppsDomain)!, "call-token",
-            apps.Clock.GetUtcNow().AddSeconds(30));
+        var check = apps.CheckSessionFor(AppsServer.Her, host, "call-token", apps.Clock.GetUtcNow().AddSeconds(30));
 
         using var first = await apps.ReportAsync(host, Uncaught, check);
         using var second = await apps.ReportAsync(host, """{"kind":"error","message":"again","route":"/"}""", check);

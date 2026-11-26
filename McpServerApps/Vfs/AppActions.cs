@@ -192,10 +192,10 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /.", 2);
         }
 
-        if (caller.CallToken is not { } callToken)
+        if (caller.CallToken is not { } callToken || caller.Household is not { } household)
         {
             return FsError.Fail<FsExecResult>(ToolError.Codes.PermissionDenied,
-                "This call carries no token the agent signed, so nobody's reads could be shown in a check.");
+                "This call carries no token the agent signed for a person, so nobody's reads or asks could be shown in a check.");
         }
 
         var tree = store.Repository(app).WorkTree;
@@ -212,7 +212,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 .Order(StringComparer.Ordinal)
                 .Select(async file => new CheckAssertion($"{AssertionsDirectory}/{Path.GetFileName(file)}", await File.ReadAllTextAsync(file, ct))))
             : [];
-        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken), ct);
+        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken, household), ct);
         return outcome switch
         {
             CheckOutcome.Refused { Limit: var limit, Value: var value } => AppsFileSystem.Quota<FsExecResult>(limit, value,
@@ -262,7 +262,8 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         var lines = report.Viewports.SelectMany(v =>
         {
             var counts = $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
-                         + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, assertions "
+                         + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, "
+                         + $"{v.FailedAsks.Count} failed asks, assertions "
                          + $"{v.Assertions.Count(a => a.Passed)} passed and {v.Assertions.Count(a => !a.Passed)} failed"
                          + (v.Settled ? "" : " (the page never went quiet)");
             var details = CheckDetails(v, new Uri(report.Origin).Host);
@@ -288,6 +289,9 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
             .Concat(v.PolicyViolations.Select(p => $"policy violation: {p.Directive} {p.BlockedUri ?? p.SourceFile ?? "inline"}"))
             .Concat(v.RefusedReads.Select(r => $"refused read: {r.Operation} {r.Path}: {r.ErrorCode ?? "unknown"}"
                                                + (r.Message is { } why ? $": {why}" : "")))
+            .Concat(v.FailedAsks.Select(a => $"failed ask: {a.ErrorCode}" + (a.Message is { } why ? $": {why}" : "")
+                                             + (a.Failure is { } said ? $" (the agent said: {said})" : "")
+                                             + (a.Reply is { } reply ? $" (its reply: {reply})" : "")))
             .Select(line => $"  {Clip(line)}")
             .ToList();
         return all.Count <= MaxDetailLines

@@ -343,6 +343,13 @@ public sealed class AppsServer : IAsyncDisposable
             TestAssertions.Of(person, AppChannels.Apps, now: Clock.GetUtcNow(), sessionId: "accounts-session-1"),
             Clock.GetUtcNow().AddHours(1));
 
+    // A check's session for this person on that origin, as `./check` opens one, on its call token, reading the
+    // household's configuration on that token (the stand-in reader believes any proof), until it ends.
+    public string CheckSessionFor(Account person, string host, string callToken, DateTimeOffset expiresAt) =>
+        Sessions.OpenCheck(person, AppOrigin.Parse(host, Settings.AppsDomain)!, callToken,
+            Mcp.Hosting.CallHousehold.OfPerson(person.TenantId, callToken, _app.Services.GetRequiredService<IHouseholdConfiguration>()),
+            expiresAt);
+
     // A chat-client turn of this person's on one of the household's agents, its principal as the hub
     // stamps it; the test transport signs the call for that person.
     public static ConversationContext TurnOf(Account person, string agentId = "jonas") => new(
