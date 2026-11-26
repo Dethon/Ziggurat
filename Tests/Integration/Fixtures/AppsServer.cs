@@ -460,7 +460,8 @@ public sealed class StandInSpaces
 }
 
 // Each household's app asks section, none set until a test sets one; Down makes every read fail as an
-// accounts service that cannot be asked does, Refuses as one that will not answer this server does.
+// accounts service that cannot be asked does, Refuses as one that will not answer this server does, TimesOut
+// as the reader giving up on one too slow.
 public sealed class StandInAppAsks
 {
     private readonly ConcurrentDictionary<string, AppAsksSection> _saved = new(StringComparer.Ordinal);
@@ -469,10 +470,14 @@ public sealed class StandInAppAsks
 
     public volatile bool Refuses;
 
+    // Every read runs out of time, as the reader's HttpClient times out: a cancellation nobody asked for.
+    public volatile bool TimesOut;
+
     public void Set(string householdId, AppAsksSection section) => _saved[householdId] = section;
 
     public AppAsksSection Read(string householdId) =>
         Down ? throw new HttpRequestException("the accounts service is down")
         : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
+        : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
         : _saved.GetValueOrDefault(householdId) ?? new AppAsksSection();
 }

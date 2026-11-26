@@ -51,6 +51,8 @@ default, else the deployment's.
   (empty: the household's), then any cap of an app no longer listed, by id, disabled with "Remove its limit".
   Number inputs, no icons. Logic in `AppCapDrafts` (unit-tested); store `HouseholdAppAsksStore`, effect
   `HouseholdAppAsksEffect`, `IAdminService.GetAppAsksAsync`/`SaveAppAsksAsync`.
+- **Left**: the Apps page shows for every owner, a household without the `apps` feature reading "no published
+  apps yet" (its caps still save). The rules name a check's call-token read of the view, which ticket 10 wires.
 - **Not shown**: the deployment's own value (`Asks:DailyCap` is the apps server's; the accounts service does
   not know it), so the page says "the deployment's limit" rather than a number.
 - **Tests**: `HouseholdAppAsksProblemsTests` (bounds, ids, resolution), `HouseholdConfigurationTests`
@@ -58,10 +60,11 @@ default, else the deployment's.
   (owner saves and the apps server's reader hears it, member 403, bounds, unknown app, listing unavailable,
   two owners merging per app and a 409 for one app capped two ways), `AppsAsksTests`
   (`TheLimit_IsTheAppsOwnCap_ElseItsHouseholds_ElseTheDeployments`,
-  `CapsThatCannotBeRead_RefuseTheAsk_SendingAndCountingNothing` for down and refused),
+  `CapsThatCannotBeRead_RefuseTheAsk_SendingAndCountingNothing` for down, the reader's timeout and refused),
   `AppAskCapsOverTheWireTests` (real accounts + Redis, both servers on a standing clock: the household's
   default answers, a saved app cap is heard and read again, then caps), `AppCapDraftsTests`,
-  `AdminServiceEditTests.SavingAppCaps_SendsTheCapsThePageLoaded`, `HouseholdAppsE2ETests` (saves in the
-  stack's second household). The fixture's `HouseholdConfigFromAccounts` (was `AppSpacesOverTheWireTests`'
+  `AdminServiceEditTests.SavingAppCaps_SendsTheCapsThePageLoaded`, `HouseholdAppsE2ETests` (the household's
+  limit saved in the stack's second household and put back; the per-app rows, a stale cap's removal and the
+  PUT's body against a routed answer, since the stack publishes no apps). The fixture's `HouseholdConfigFromAccounts` (was `AppSpacesOverTheWireTests`'
   private `SpacesFromAccounts`) forwards spaces and app asks to the real reader; `AppsServer.AskCaps` is the
   stand-in.

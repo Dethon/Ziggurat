@@ -685,6 +685,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
     // proof a denial. Neither sends nor counts anything.
     [Theory]
     [InlineData("down", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
+    [InlineData("slow", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
     [InlineData("refused", HttpStatusCode.UnprocessableEntity, ToolError.Codes.PermissionDenied)]
     public async Task CapsThatCannotBeRead_RefuseTheAsk_SendingAndCountingNothing(string how, HttpStatusCode status, string code)
     {
@@ -694,6 +695,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         var session = apps.SessionFor(AppsServer.Her, host);
         apps.AskCaps.Down = how == "down";
         apps.AskCaps.Refuses = how == "refused";
+        apps.AskCaps.TimesOut = how == "slow";
 
         using var response = await apps.AskAsync(host, """{"text":"Hi"}""", session);
 
@@ -702,7 +704,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         JsonNode.Parse(body)!["errorCode"]!.GetValue<string>().ShouldBe(code);
         response.Headers.CacheControl!.NoStore.ShouldBeTrue();
         await NothingAskedAsync(agent);
-        apps.AskCaps.Down = apps.AskCaps.Refuses = false;
+        apps.AskCaps.Down = apps.AskCaps.Refuses = apps.AskCaps.TimesOut = false;
         await AnsweredAsync(apps, agent, host, session);
     }
 

@@ -219,8 +219,9 @@ ask does with it is `.claude/rules/apps.md`, "The daily cap".
 - **Summaries** name the household's cap and apps by id ("Set app a1b2c3's daily cap"), never a value.
 - **The page** is `/admin/apps` (`HouseholdAppsPage`): the household's "asks per day, each app, whole household"
   (empty: the deployment's), then each published app's own (empty: the household's), then any cap kept for
-  an app not listed, by id, offered only for removal (`AppCapDrafts`). `HouseholdAppsE2ETests` saves in the
-  stack's second household (a cap of the home's is read by its app turns).
+  an app not listed, by id, offered only for removal (`AppCapDrafts`). `HouseholdAppsE2ETests` saves the household's in the
+  stack's second household (a cap of the home's is read by its app turns), put back after, and the per-app rows
+  against a routed answer (`page.RouteAsync`: the stack publishes no apps).
 
 ## Own servers
 
