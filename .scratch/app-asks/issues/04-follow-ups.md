@@ -26,7 +26,7 @@ conversation with its history, for the same app and viewer only, within a follow
   another viewer's, past `Asks:FollowUpWindow` after its last turn, after an apps-server restart, evicted at the
   ceiling, or **opened on a building agent the app no longer has** (the agent keeps history per conversation
   and agent; `BuildingAgent` is never reassigned today, so that case is pinned on `AskConversationsTests`
-  alone). Checked last before the turn (after body, instructions), so a refused ask never restarts a window.
+  alone). Checked last before the turn (after body, instructions), since continuing restarts the window.
   The client library needed no change: `apps.ask(text, { conversation })` already sends it and the
   envelope becomes `AskError`.
 - **The bound**: `OpenConversations` now takes a `ceiling` (Sugary's `OpenEstimates` and `AskConversations`
@@ -43,6 +43,8 @@ conversation with its history, for the same app and viewer only, within a follow
   `AppTurnAgentTests.AFollowUp_SeesTheEarlierExchange_AndCarriesItsOwnFormatOrNone` (a real
   `RedisThreadStateStore` for that case alone: the fixture's mock store keeps no history, which the other
   cases' one-request-per-text assertions rely on; passed on first run, red with the mock).
+- **The ceiling is deployment-wide**: until 07's cap, one app asking in a loop can push other households'
+  conversations out (they then get `conversation_expired` and start afresh); 07 should bound that.
 - **Left / noted**: published and preview are one app id, so the author can continue a published
   conversation from the preview under the tree's instructions (within "same app, same viewer"). Two
   simultaneous asks on one conversation are possible (Sugary has the same exposure). Images rehydrating on a

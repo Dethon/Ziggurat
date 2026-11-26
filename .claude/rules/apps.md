@@ -201,8 +201,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   agent; a changed one holds none, so the app starts afresh). Anything else — never minted, another app's
   or viewer's (published and preview are one app), past the window, after a restart (**in memory by
   design**), evicted at the table's ceiling (`AskConversations.Ceiling`: the one longest without a turn
-  goes) — is one answer, 410 `conversation_expired`, **before any turn**, checked last so a refused ask
-  never restarts the window. Each ask carries its own `schema`: a follow-up with none is answered in text.
+  goes) — is one answer, 410 `conversation_expired`, **before any turn**, checked after the ask's every
+  other refusal, since continuing restarts the window. Each ask carries its own `schema`: a follow-up with none is answered in text.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
   file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
   `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
