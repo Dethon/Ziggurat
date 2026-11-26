@@ -388,6 +388,29 @@ public sealed class AppReadsApiTests
         body["rows"]!.AsArray().Select(row => row![0]!.GetValue<string>()).ShouldBe(["his paella"]);
     }
 
+    // A check's reads act on the apps channel, as a viewer's would: the server a read reaches is told the
+    // person is on `apps`, never on the channel of the turn whose tool call ran the check.
+    [Fact]
+    public async Task ACheck_ReadsOnTheAppsChannel_NotTheChannelItsTurnCameOn()
+    {
+        await using var channels = await InMemoryMcpServer.StartAsync(services =>
+        {
+            services.AddSingleton(new ChannelMount());
+            services.AddToolServer(new ProbeSettings()).AddFileSystemTools<ChannelMount>().AddFileSystemResource<ChannelMount>();
+        });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(channels.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var app = _glucoseApp with { Reads = ["/channel"] };
+
+        var seen = await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, app,
+            new JsonObject { ["basePath"] = "/channel", ["pattern"] = "*" },
+            assertion: null, callToken: TestCheckCalls.Of(IdentityClaims.Person(
+                SugaryServer.Her.UserId, SugaryServer.Her.TenantId, "telegram", ["member"]))));
+
+        seen["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe([$"/channel/{AppChannels.Apps}"]);
+    }
+
     // The call token is believed as the agent signed it and for nothing else: its own key, in date, for the
     // apps server it dials, naming a person; and never beside an assertion, which would leave two answers
     // to who reads.
@@ -487,5 +510,18 @@ public sealed class AppReadsApiTests
 
         public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
             Task.FromResult(Glob([.. caller?.Conversation?.Identity?.Roles ?? []]));
+    }
+
+    // Names the channel the call token says the caller is on.
+    private sealed class ChannelMount(FileSystemCaller? caller = null) : FileSystemBackendBase
+    {
+        public override string FilesystemName => "channel";
+
+        public override string DescribeMount => "Which channel the caller is on.";
+
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new ChannelMount(caller);
+
+        public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+            Task.FromResult(Glob([caller?.Conversation?.Identity?.ChannelId ?? "none"]));
     }
 }
