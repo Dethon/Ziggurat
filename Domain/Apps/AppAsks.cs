@@ -79,6 +79,16 @@ public static class AppAsks
         return envelope;
     }
 
+    // The household's caps on its apps' asks could not be read just now: never asked as though none were set,
+    // which could lift a cap an owner set lower.
+    public static readonly ToolErrorResult CapUnreadable = ToolError.TransientDependency(
+        "This app's daily limit could not be checked just now, so nothing was asked.", "Ask again in a moment.");
+
+    // The accounts service would not read the household's caps for this viewer.
+    public static readonly ToolErrorResult CapRefused = ToolError.PermissionDenied(
+        "This app's daily limit could not be checked for this person, so nothing was asked.",
+        "Show that the app cannot ask just now; signing in again may help.");
+
     public static readonly ToolErrorResult Unanswered = ToolError.TransientDependency(
         "The assistant ended its turn with no answer.", "Ask again.");
 

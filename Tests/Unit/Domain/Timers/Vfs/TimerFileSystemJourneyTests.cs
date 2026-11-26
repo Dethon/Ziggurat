@@ -214,6 +214,8 @@ public class TimerFileSystemJourneyTests
 
         public Task<SpacesSection> SpacesAsync(CancellationToken ct) => Task.FromResult(new SpacesSection());
 
+        public Task<AppAsksSection> AppAsksAsync(CancellationToken ct) => Task.FromResult(new AppAsksSection());
+
         public Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct) =>
             Task.FromResult(new HouseholdSugaryPeople([]));
     }

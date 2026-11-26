@@ -17,6 +17,7 @@ public static partial class HouseholdSections
     public const string Keys = "keys";
     public const string Features = "features";
     public const string Spaces = "spaces";
+    public const string AppAsks = "app-asks";
 
     public static readonly SectionSchema<HouseholdSettings> SettingsSchema = new(
         Settings, [SectionSteps.Unversioned], SettingsProblems);
@@ -34,8 +35,11 @@ public static partial class HouseholdSections
     public static readonly SectionSchema<SpacesSection> SpacesSchema = new(
         Spaces, [SectionSteps.Unversioned], SpacesProblems);
 
+    public static readonly SectionSchema<AppAsksSection> AppAsksSchema = new(
+        AppAsks, [SectionSteps.Unversioned], AppAsksProblems);
+
     public static IReadOnlyList<SectionSchema> All { get; } =
-        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema];
+        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema, AppAsksSchema];
 
     public static SectionSchema? Named(string name) => All.FirstOrDefault(s => s.Name == name);
 
@@ -237,6 +241,27 @@ public static partial class HouseholdSections
         }
     }
 
+    // An owner reads these on the apps page, beside the caps they name.
+    private static IEnumerable<string> AppAsksProblems(AppAsksSection section)
+    {
+        if (section.DailyCap is { } household && !AppAsksSection.IsCap(household))
+        {
+            yield return $"The household's daily cap must be 0–{AppAsksSection.MaxDailyCap} asks.";
+        }
+
+        foreach (var (app, cap) in section.Apps)
+        {
+            if (!BuiltAppId.IsValid(app))
+            {
+                yield return $"'{app}' is no built app's id, so it has no daily cap.";
+            }
+            else if (!AppAsksSection.IsCap(cap))
+            {
+                yield return $"The app {app}'s daily cap must be 0–{AppAsksSection.MaxDailyCap} asks.";
+            }
+        }
+    }
+
     [GeneratedRegex("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant)]
     private static partial Regex LanguageTag();
 }
@@ -393,4 +418,26 @@ public sealed record HouseholdSpace
 
     [JsonIgnore]
     public bool IsApp => AppId is not null;
+}
+
+// How many asks a day the household's built apps may send their assistant (.claude/rules/apps.md, "The daily
+// cap"): a default for every app of the household and a cap of each app's own, both its owners'. What
+// neither sets is the deployment's (the apps server's Asks:DailyCap). None of an app is a cap of no asks.
+[PublicAPI]
+public sealed record AppAsksSection
+{
+    // Each ask is a model's turn on the household's key, and a day has 1,440 minutes: a page asking several
+    // times a minute all day long is no app's need, and a cap above it bounds nothing.
+    public const int MaxDailyCap = 10_000;
+
+    public int? DailyCap { get; init; }
+
+    // Keyed by the app's id.
+    public IReadOnlyDictionary<string, int> Apps { get; init; } = new Dictionary<string, int>();
+
+    public static bool IsCap(int cap) => cap is >= 0 and <= MaxDailyCap;
+
+    // The limit an app's asks meet: its own cap, else the household's, else the deployment's.
+    public int LimitOf(string appId, int deployment) =>
+        Apps.TryGetValue(appId, out var own) ? own : DailyCap ?? deployment;
 }

@@ -73,6 +73,9 @@ public sealed class HouseholdConfigurationClient(
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         SectionAsync<SpacesSection>(HouseholdConfigProtocol.SpacesView, householdId, proof, ct);
 
+    public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        SectionAsync<AppAsksSection>(HouseholdConfigProtocol.AppAsksView, householdId, proof, ct);
+
     public Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         SectionAsync<HouseholdAgentNames>(HouseholdConfigProtocol.AgentNamesView, householdId, proof, ct);
 

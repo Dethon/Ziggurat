@@ -106,6 +106,9 @@ public static class AdminProtocol
     public const string Features = Household + "/features";
     public const string Spaces = Household + "/spaces";
 
+    // The household's daily caps on its built apps' asks (AdminAppAsks read, the app asks section saved whole).
+    public const string AppAsks = Household + "/app-asks";
+
     // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
     // one revoked, which closes the tunnel it opened.
     public const string Servers = Household + "/servers";

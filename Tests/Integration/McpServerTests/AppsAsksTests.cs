@@ -4,6 +4,7 @@ using Domain.Apps;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -652,6 +653,59 @@ public sealed class AppsAsksTests : IAsyncLifetime
 
     private static readonly DateTimeOffset _capStart = new(2026, 11, 26, 12, 0, 0, TimeSpan.Zero);
 
+    // An owner's caps stand before the deployment's: an app's own cap first, else its household's default,
+    // else Asks:DailyCap — here 0 for one app, 1 for the household's other app, the deployment's 2 for the
+    // neighbour's app, whose household set none.
+    [Fact]
+    public async Task TheLimit_IsTheAppsOwnCap_ElseItsHouseholds_ElseTheDeployments()
+    {
+        await using var apps = await CappedAsync(2, new FakeTimeProvider(_capStart));
+        var agent = await apps.AgentAsync();
+        var ownId = await InstructedAppAsync(apps);
+        var own = apps.Published("glucose", ownId);
+        var households = apps.Published("carbs", await InstructedAppAsync(apps, "carbs"));
+        var neighbours = apps.Published("glucose", await InstructedAppAsync(apps, author: AppsServer.Neighbour));
+        apps.AskCaps.Set(AppsServer.Her.TenantId, new AppAsksSection { DailyCap = 1, Apps = new Dictionary<string, int> { [ownId] = 0 } });
+
+        using var none = await apps.AskAsync(own, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Her, own));
+        await AnsweredAsync(apps, agent, households, apps.SessionFor(AppsServer.Her, households));
+        using var one = await apps.AskAsync(households, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Her, households));
+        await AnsweredAsync(apps, agent, neighbours, apps.SessionFor(AppsServer.Neighbour, neighbours));
+        await AnsweredAsync(apps, agent, neighbours, apps.SessionFor(AppsServer.Neighbour, neighbours));
+        using var two = await apps.AskAsync(neighbours, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Neighbour, neighbours));
+
+        await ShouldBeCappedAsync(none, 0, freesAt: null);
+        await ShouldBeCappedAsync(one, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        await ShouldBeCappedAsync(two, 2, freesAt: _capStart + TimeSpan.FromDays(1));
+        await NothingAskedAsync(agent);
+    }
+
+    // A household's caps that cannot be read refuse the ask, never fall back to the deployment's, which
+    // could lift a cap an owner set lower: an outage is a transient dependency, a refusal of the viewer's
+    // proof a denial. Neither sends nor counts anything.
+    [Theory]
+    [InlineData("down", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
+    [InlineData("refused", HttpStatusCode.UnprocessableEntity, ToolError.Codes.PermissionDenied)]
+    public async Task CapsThatCannotBeRead_RefuseTheAsk_SendingAndCountingNothing(string how, HttpStatusCode status, string code)
+    {
+        await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+        apps.AskCaps.Down = how == "down";
+        apps.AskCaps.Refuses = how == "refused";
+
+        using var response = await apps.AskAsync(host, """{"text":"Hi"}""", session);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.ShouldBe(status, body);
+        JsonNode.Parse(body)!["errorCode"]!.GetValue<string>().ShouldBe(code);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+        await NothingAskedAsync(agent);
+        apps.AskCaps.Down = apps.AskCaps.Refuses = false;
+        await AnsweredAsync(apps, agent, host, session);
+    }
+
     // An ask's images are kept on the apps server for the app's household and named on the message by
     // reference, each the type its bytes are, whatever the page called it. The agent fetches them on the apps
     // channel, signed as it signs the turn's calls: anyone of the household is handed them, another
@@ -817,7 +871,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
-    private static async Task ShouldBeCappedAsync(HttpResponseMessage response, int limit, DateTimeOffset freesAt)
+    private static async Task ShouldBeCappedAsync(HttpResponseMessage response, int limit, DateTimeOffset? freesAt)
     {
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests, body);
@@ -825,7 +879,14 @@ public sealed class AppsAsksTests : IAsyncLifetime
         envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.QuotaExceeded);
         envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
         envelope["message"]!.GetValue<string>().ShouldContain($"daily limit of {limit} asks");
-        envelope[AppAsks.FreesAtField]!.GetValue<DateTimeOffset>().ShouldBe(freesAt);
+        if (freesAt is { } at)
+        {
+            envelope[AppAsks.FreesAtField]!.GetValue<DateTimeOffset>().ShouldBe(at);
+        }
+        else
+        {
+            envelope.AsObject().ContainsKey(AppAsks.FreesAtField).ShouldBeFalse();
+        }
         response.Headers.CacheControl!.NoStore.ShouldBeTrue();
     }
 

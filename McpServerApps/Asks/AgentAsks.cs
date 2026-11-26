@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Apps;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Tools;
@@ -26,7 +27,7 @@ namespace McpServerApps.Asks;
 // a test moving this one must not make an agent polling in real time look gone.
 public sealed class AgentAsks(
     AgentTurns turns, AskConversations conversations, AskCaps caps, AskCounts counts, UploadStore uploads,
-    TimeProvider clock, AppsSettings settings)
+    IHouseholdConfiguration households, TimeProvider clock, AppsSettings settings)
 {
     // What a form's part carries besides its bytes (its boundary and headers), generously.
     private const int PartOverhead = 1024;
@@ -109,11 +110,25 @@ public sealed class AgentAsks(
         // Counted before the conversation is looked at, so an ask past the cap opens none, and the table of
         // them grows no faster than the caps let; given back if the ask goes no further, since only an ask
         // sent is counted.
-        AskCount.Counted counted;
-        switch (await counts.TryCountAsync(app, await caps.LimitAsync(app, session, ct), ct))
+        int limit;
+        switch (await caps.LimitAsync(app, CallHousehold.OfPerson(app.HouseholdId, assertion, households), ct))
         {
-            case AskCount.Capped { Limit: var limit, FreesAt: var freesAt }:
-                return OriginAnswer.Json(StatusCodes.Status429TooManyRequests, AppAsks.Capped(limit, freesAt));
+            case AskLimit.Read read:
+                limit = read.Limit;
+                break;
+            case AskLimit.Unreadable:
+                return OriginAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, AppAsks.CapUnreadable);
+            case AskLimit.Refused:
+                return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.CapRefused);
+            default:
+                throw new InvalidOperationException("An app's limit is read, unreadable or refused.");
+        }
+
+        AskCount.Counted counted;
+        switch (await counts.TryCountAsync(app, limit, ct))
+        {
+            case AskCount.Capped { Limit: var reached, FreesAt: var freesAt }:
+                return OriginAnswer.Json(StatusCodes.Status429TooManyRequests, AppAsks.Capped(reached, freesAt));
             case AskCount.Gone:
                 return OriginAnswer.Envelope(StatusCodes.Status404NotFound, ToolError.Result(ToolError.Codes.NotFound,
                     "This app was deleted, so nothing was asked."));

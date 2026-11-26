@@ -46,17 +46,22 @@ public sealed class AppsServer : IAsyncDisposable
     private readonly HttpClient _browser = new(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false });
     private readonly List<McpChannelConnection> _agents = [];
 
-    private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces)
+    private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces, StandInAppAsks appAsks)
     {
         _app = app;
         _client = client;
         Settings = settings;
         Spaces = spaces;
+        AskCaps = appAsks;
     }
 
     // The households' spaces as the accounts service's spaces view would answer them: which apps each
     // shares as an app space. A test sets them, or makes them unreadable.
     public StandInSpaces Spaces { get; }
+
+    // The households' daily caps on their apps' asks as the accounts service's app asks view would answer
+    // them: none set until a test sets them, or makes them unreadable.
+    public StandInAppAsks AskCaps { get; }
 
     public AppsSettings Settings { get; }
 
@@ -91,6 +96,7 @@ public sealed class AppsServer : IAsyncDisposable
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
         var spaces = new StandInSpaces();
+        var appAsks = new StandInAppAsks();
         Directory.CreateDirectory(directory);
         AppsSettings? settings = null;
         // Both listeners are taken together, and a bind lost to either is retried on two fresh ports.
@@ -131,7 +137,7 @@ public sealed class AppsServer : IAsyncDisposable
             });
             builder.Services.ConfigureApps(settings);
             builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents, spaces: spaces.Read)));
+                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents, spaces: spaces.Read, appAsks: appAsks.Read)));
             // The accounts service's test key, which a test's own accounts service signs with too.
             builder.Services.Replace(ServiceDescriptor.Singleton(sp => TestAssertions.Verifier(sp.GetRequiredService<TimeProvider>())));
             services?.Invoke(builder.Services);
@@ -141,7 +147,7 @@ public sealed class AppsServer : IAsyncDisposable
         }, Next);
 
         var client = await McpClient.CreateAsync(McpTestSecret.Transport($"http://localhost:{settings!.Listeners.Mcp}/mcp"));
-        return new AppsServer(app, client, settings, spaces);
+        return new AppsServer(app, client, settings, spaces, appAsks);
     }
 
     // The id a created app's note names, and the label its published origin and preview answer to.
@@ -451,4 +457,22 @@ public sealed class StandInSpaces
         : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
         : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
         : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
+}
+
+// Each household's app asks section, none set until a test sets one; Down makes every read fail as an
+// accounts service that cannot be asked does, Refuses as one that will not answer this server does.
+public sealed class StandInAppAsks
+{
+    private readonly ConcurrentDictionary<string, AppAsksSection> _saved = new(StringComparer.Ordinal);
+
+    public volatile bool Down;
+
+    public volatile bool Refuses;
+
+    public void Set(string householdId, AppAsksSection section) => _saved[householdId] = section;
+
+    public AppAsksSection Read(string householdId) =>
+        Down ? throw new HttpRequestException("the accounts service is down")
+        : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
+        : _saved.GetValueOrDefault(householdId) ?? new AppAsksSection();
 }

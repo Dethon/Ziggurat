@@ -193,8 +193,8 @@ public static class HouseholdSpacesAdmin
     }
 
     // The household's published apps, none for a household without the apps feature (the apps server is
-    // not asked), null when the apps server could not be.
-    private static async Task<IReadOnlyList<PublishedApp>?> PublishedAsync(
+    // not asked), null when the apps server could not be. The apps page's too (HouseholdAppAsksAdmin).
+    internal static async Task<IReadOnlyList<PublishedApp>?> PublishedAsync(
         HouseholdConfigStore store, HouseholdAppsClient apps, AdminCaller caller, CancellationToken ct) =>
         await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct) is { Apps: true }
             ? await apps.PublishedAsync(caller.Person, ct)

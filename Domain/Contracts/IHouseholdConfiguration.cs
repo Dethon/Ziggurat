@@ -30,6 +30,11 @@ public interface IHouseholdConfiguration
 
     Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 
+    // The household's daily caps on its built apps' asks: the apps server's alone. A reader that is not the
+    // apps server's has none set.
+    Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult(new AppAsksSection());
+
     // The household's agents by id and name, and its default: what a person picks among on a channel.
     Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 

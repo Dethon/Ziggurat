@@ -32,6 +32,9 @@ public interface ICallHousehold
     // The household's spaces: the apps server reads which of its built apps the household shares as app
     // spaces (HouseholdSpace.AppId).
     Task<SpacesSection> SpacesAsync(CancellationToken ct);
+
+    // The household's daily caps on its built apps' asks: the apps server reads the limit an app's ask meets.
+    Task<AppAsksSection> AppAsksAsync(CancellationToken ct);
 }
 
 public static class CallHouseholds

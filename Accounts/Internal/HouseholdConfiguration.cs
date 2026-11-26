@@ -54,6 +54,8 @@ public static class HouseholdConfiguration
             SectionAsync(store, household, HouseholdSections.SettingsSchema, ct));
         MapShared(routes, HouseholdConfigProtocol.SpacesView, (store, household, ct) =>
             SectionAsync(store, household, HouseholdSections.SpacesSchema, ct));
+        MapShared(routes, HouseholdConfigProtocol.AppAsksView, (store, household, ct) =>
+            SectionAsync(store, household, HouseholdSections.AppAsksSchema, ct));
         MapShared(routes, HouseholdConfigProtocol.IdealistaView, async (store, household, ct) =>
             (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Idealista);
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>

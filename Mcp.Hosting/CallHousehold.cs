@@ -38,6 +38,8 @@ public sealed class CallHousehold : ICallHousehold
 
     public Task<SpacesSection> SpacesAsync(CancellationToken ct) => _configuration().SpacesAsync(Id, _proof, ct);
 
+    public Task<AppAsksSection> AppAsksAsync(CancellationToken ct) => _configuration().AppAsksAsync(Id, _proof, ct);
+
     // A person the server's own app serves, on the assertion the proxy's session check signed for its
     // channel (Sugary's /api), or the accounts service signed for a built app's viewer (the apps server).
     public static CallHousehold OfPerson(string householdId, string assertion, IHouseholdConfiguration configuration) =>

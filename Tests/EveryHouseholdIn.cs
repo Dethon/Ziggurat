@@ -13,13 +13,15 @@ namespace Tests;
 // one, or throw for an accounts service that cannot answer. `braveKeys` are the households' search keys
 // by id; with none every household holds a placeholder, for a stack whose Brave is a fake. `spaces` each
 // household's spaces section, asked each time so a test can share or unshare an app (the one default
-// space by default), or throw for an accounts service that cannot answer.
+// space by default), or throw for an accounts service that cannot answer. `appAsks` each household's daily
+// caps on its apps' asks, asked each time likewise (none set by default).
 internal sealed class EveryHouseholdIn(
     TimeZoneInfo zone, IReadOnlyList<HouseholdAgentName>? agents = null,
     IReadOnlyDictionary<string, TimeZoneInfo>? zones = null, HouseholdSugaryPeople? sugaryPeople = null,
     Func<HouseholdsWithSugaryOff>? sugaryOff = null,
     IReadOnlyDictionary<string, BraveSearchKey>? braveKeys = null,
-    Func<string, SpacesSection>? spaces = null) : IHouseholdConfiguration
+    Func<string, SpacesSection>? spaces = null,
+    Func<string, AppAsksSection>? appAsks = null) : IHouseholdConfiguration
 {
     public Task<BraveSearchKey?> BraveSearchKeyAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         Task.FromResult(braveKeys is null ? new BraveSearchKey("stand-in") : braveKeys.GetValueOrDefault(householdId));
@@ -38,6 +40,9 @@ internal sealed class EveryHouseholdIn(
 
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         Task.FromResult(spaces?.Invoke(householdId) ?? new SpacesSection());
+
+    public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult(appAsks?.Invoke(householdId) ?? new AppAsksSection());
 
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<HouseholdTelegramBot>>([]);

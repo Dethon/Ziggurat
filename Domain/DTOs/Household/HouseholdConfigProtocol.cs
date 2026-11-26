@@ -28,6 +28,10 @@ public static class HouseholdConfigProtocol
     // The chat hub's: the household's spaces.
     public const string SpacesView = "spaces";
 
+    // The apps server's, on the `apps` assertion of the person asking (a check's call token for its own):
+    // the household's daily caps on its apps' asks.
+    public const string AppAsksView = "app-asks";
+
     // The Telegram server's: every household's bots at once, since it polls them from startup,
     // before any call names a household.
     public const string TelegramBotsView = "telegram-bots";
