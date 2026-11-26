@@ -110,7 +110,7 @@ public class MemoryDreamingService(
         {
             return await households.PeopleAsync(ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogError(ex, "Could not read the households and their people; nobody is dreamt for tonight");
@@ -142,7 +142,7 @@ public class MemoryDreamingService(
                     return null;
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogError(ex, "Could not read household {Household}; its people are not dreamt for tonight", householdId);

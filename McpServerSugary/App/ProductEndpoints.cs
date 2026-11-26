@@ -45,7 +45,7 @@ public static class ProductEndpoints
                 "The product database is busy. Try again in a moment, or take a photo of the nutrition table.",
                 statusCode: StatusCodes.Status502BadGateway);
         }
-        catch (Exception e) when (e is HttpRequestException or SocketException or IOException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        catch (Exception e) when (e is HttpRequestException or SocketException || (e is TaskCanceledException && !ct.IsCancellationRequested))
         {
             return Results.Problem(
                 "The product database could not be reached.", statusCode: StatusCodes.Status502BadGateway);

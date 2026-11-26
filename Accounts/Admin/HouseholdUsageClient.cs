@@ -38,7 +38,7 @@ public sealed class HouseholdUsageClient(
 
             return await response.Content.ReadFromJsonAsync<HouseholdUsage>(asking.Token);
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or JsonException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException
                                        || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "The Observability host could not be asked for household {Household}'s usage", owner.TenantId);

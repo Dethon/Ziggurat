@@ -54,7 +54,7 @@ public sealed class PersonsAppsClient(
 
             return (await response.Content.ReadFromJsonAsync<PersonsAppList>(asking.Token))?.Apps;
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or JsonException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException
                                        || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "Account {UserId}'s apps could not be asked for", userId);

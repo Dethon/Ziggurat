@@ -166,7 +166,7 @@ public class MemoryExtractionWorker(
                     return null;
             }
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogError(ex, "Could not read household {Household}; nothing is extracted for user {UserId}",
@@ -197,7 +197,7 @@ public class MemoryExtractionWorker(
             var owner = request.TenantId is { Length: > 0 } tenant ? new Account(tenant, request.UserId) : null;
             return await agentDefinitionProvider.GetByIdAsync(request.AgentId, request.TenantId, owner, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read agent {AgentId} of household {Household}; extracting as for an unknown agent",

@@ -208,7 +208,7 @@ public sealed class ApprovalCallbackRouter
             await botClient.AnswerCallbackQuery(callbackQuery.Id, TelegramGate.SuspendedAnswer, cancellationToken: cancellationToken);
             return true;
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {
             await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,

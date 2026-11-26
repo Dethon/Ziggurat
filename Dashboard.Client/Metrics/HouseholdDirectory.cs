@@ -32,7 +32,7 @@ public sealed class HouseholdDirectory(HouseholdsAdminService admin)
                 ? new HouseholdNames(answered.Value, Answered: true)
                 : new HouseholdNames([], Answered: false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or JsonException or NotSupportedException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException or NotSupportedException or TaskCanceledException)
         {
             return new HouseholdNames([], Answered: false);
         }

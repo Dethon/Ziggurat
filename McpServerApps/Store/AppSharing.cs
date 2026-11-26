@@ -27,7 +27,7 @@ public abstract record AppSharing
             var spaces = await household.SpacesAsync(ct);
             return new Read(spaces.Spaces.FirstOrDefault(space => space.AppId == app.Id));
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        catch (Exception ex) when (ex is HttpRequestException or SocketException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             return new Unreadable(ex);
         }

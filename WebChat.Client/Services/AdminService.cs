@@ -170,7 +170,7 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 _ => new AdminAnswer<T>.Unreachable()
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException)
         {
             return new AdminAnswer<T>.Unreachable();
         }

@@ -59,7 +59,8 @@ public sealed partial class AccountsServer : IAsyncDisposable
     public static readonly string MasterKey = Convert.ToBase64String(SealingKey.Generate().Export());
 
     public static async Task<AccountsServer> StartAsync(
-        Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null)
+        Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null,
+        Action<IServiceCollection>? services = null)
     {
         var ownsDirectory = directory is null;
         directory ??= Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
@@ -84,6 +85,7 @@ public sealed partial class AccountsServer : IAsyncDisposable
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
             builder.Services.AddAccounts(settings, new AccountsClock(clock));
+            services?.Invoke(builder.Services);
             // The model diff EF makes on every migration is asked once, by MigrationsMatchTheModelTests;
             // a store copied from the template has nothing left to migrate.
             builder.Services.ConfigureDbContext<AccountsDbContext>(options =>

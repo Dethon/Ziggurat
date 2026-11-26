@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json.Nodes;
+using Accounts.Admin;
 using Accounts.Configuration;
 using Accounts.Settings;
 using Domain.Apps;
@@ -149,6 +151,26 @@ public sealed class HouseholdAppAsksAdminTests(RedisFixture redis) : IClassFixtu
         caps.Apps.ShouldBe(new Dictionary<string, int> { ["a1b2c3"] = 4 });
     }
 
+    // A reset connection now and then surfaces from HttpClient as a bare SocketException, never wrapped: the
+    // apps server is as unreachable as when it is down, so an app's cap is refused as one that cannot be
+    // checked (503), never an error of this service's own.
+    [Fact]
+    public async Task AnAppsServerWhoseConnectionFailsBare_CannotBeAsked()
+    {
+        await using var server = await StartAsync(services: s =>
+            s.AddHttpClient(nameof(HouseholdAppsClient)).ConfigurePrimaryHttpMessageHandler(() => new FailsBare()));
+        var (_, ana) = await AppsHouseholdAsync(server);
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var loaded = await CapsAsync(admin);
+        var capped = await admin.PutAsync(AdminProtocol.AppAsks,
+            AdminEdit.Of(loaded.Caps with { Apps = new Dictionary<string, int> { ["a1b2c3"] = 4 } }, loaded.Caps));
+
+        loaded.Apps.ShouldBeNull();
+        capped.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable, await capped.Content.ReadAsStringAsync());
+        (await capped.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldBe(AdminSpaces.AppsUnavailableMessage);
+    }
+
     // Two owners with the page open together: one sets an app's cap and removes another's, the other sets a
     // third app's and the household's default, and every change stands; both changing one app's cap to
     // different values is refused naming it, nothing saved.
@@ -194,7 +216,7 @@ public sealed class HouseholdAppAsksAdminTests(RedisFixture redis) : IClassFixtu
     private Task<AccountsServer> StartAsync(AppsServer apps) => StartAsync($"http://localhost:{apps.Settings.Listeners.Mcp}");
 
     // appsUrl: where the apps server listens; none is one that would never be asked.
-    private Task<AccountsServer> StartAsync(string? appsUrl = null) =>
+    private Task<AccountsServer> StartAsync(string? appsUrl = null, Action<IServiceCollection>? services = null) =>
         AccountsServer.StartAsync(s => s with
         {
             Callers = new Dictionary<string, string> { ["mcp-apps"] = AppsCredential },
@@ -202,7 +224,7 @@ public sealed class HouseholdAppAsksAdminTests(RedisFixture redis) : IClassFixtu
             // The suite's accounts key, which the apps server's verifier holds (TestAssertions).
             Signing = new SigningKeySettings { PrivateKey = TestSigningKeys.Accounts },
             AppsUrl = appsUrl ?? DeadEnd.Url()
-        });
+        }, services: services);
 
     // A household the operator gave the apps feature, and its owner.
     private static async Task<(string Household, string Owner)> AppsHouseholdAsync(AccountsServer server)
@@ -224,6 +246,12 @@ public sealed class HouseholdAppAsksAdminTests(RedisFixture redis) : IClassFixtu
     // The apps server's own reader, keeping what it read for longer than any test runs.
     private HouseholdConfigurationClient AppsReader(AccountsServer server) =>
         new(server.Client(), AppsCredential, null, redis.Connection, TimeProvider.System, TimeSpan.FromMinutes(10));
+
+    private sealed class FailsBare : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new SocketException((int)SocketError.ConnectionReset);
+    }
 
     private static async Task<AdminAppAsks> CapsAsync(AccountsServer.AdminClient admin) =>
         (await (await admin.GetAsync(AdminProtocol.AppAsks)).Content.ReadFromJsonAsync<AdminAppAsks>())!;

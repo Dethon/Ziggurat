@@ -79,7 +79,7 @@ public sealed class ChannelAgentCatalogs(
         {
             _current[key] = (await households.ForAsync(key == Home ? null : key, ct)).Agents;
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException or TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException or TaskCanceledException
                                    && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,

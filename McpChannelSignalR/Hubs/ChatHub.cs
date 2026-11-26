@@ -250,7 +250,7 @@ public sealed class ChatHub(
         {
             return await view(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException)
         {
             logger.LogWarning(ex, "Could not read the {What} of household {TenantId}", what, SignedIn.TenantId);
             throw new HubException(refusal);

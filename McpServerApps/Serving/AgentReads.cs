@@ -55,7 +55,7 @@ public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<A
                 response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
                 await response.Content.ReadAsByteArrayAsync(ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not reach the agent for app {AppId}'s {Operation} read", app.Id, operation);
             return Unavailable("the agent could not be reached");

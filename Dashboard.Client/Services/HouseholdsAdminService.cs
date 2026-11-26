@@ -79,7 +79,7 @@ public sealed class HouseholdsAdminService(HttpClient http)
                 _ => new HouseholdsAnswer<T>.Unreachable()
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException)
         {
             return new HouseholdsAnswer<T>.Unreachable();
         }
