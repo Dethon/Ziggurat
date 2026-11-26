@@ -22,12 +22,13 @@ internal static class E2EPhase
             Console.WriteLine($"[e2e] {fixtureName}: {phase} finished in {elapsed.Elapsed.TotalSeconds:0.0}s");
             E2ETrace.Write($"phase:{phase}", elapsed.Elapsed.TotalSeconds, fixtureName);
         }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        // Testcontainers answers a readiness wait whose token was cancelled with a bare TimeoutException.
+        catch (Exception e) when (e is OperationCanceledException or TimeoutException && cts.IsCancellationRequested)
         {
             throw new TimeoutException(
                 $"{fixtureName}: '{phase}' did not finish within its {budget.TotalMinutes:0.#} minute budget "
                 + $"(gave up after {elapsed.Elapsed.TotalSeconds:0}s). Run with the other E2E collection "
-                + "filtered out to see whether it was queued behind that fixture's image builds.");
+                + "filtered out to see whether it was queued behind that fixture's image builds.", e);
         }
     }
 }

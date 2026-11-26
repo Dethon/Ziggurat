@@ -476,6 +476,37 @@ internal sealed partial class WebChatStack
         return result.Stdout + result.Stderr;
     }
 
+    // Testcontainers reports a readiness wait cut short (the phase's budget running out) as a bare
+    // TimeoutException that names no container, so a start that never finished names itself and what it
+    // last logged.
+    private static async Task ReadyAsync(IReadOnlyList<(string Name, Task Started, IContainer Container)> starts)
+    {
+        try
+        {
+            await Task.WhenAll(starts.Select(start => start.Started));
+        }
+        catch (Exception e) when (e is TimeoutException or OperationCanceledException)
+        {
+            var unready = starts.Where(start => !start.Started.IsCompletedSuccessfully).ToList();
+            var said = await Task.WhenAll(unready.Select(async start => $"--- {start.Name} ({start.Container.State}):\n{await LogTailAsync(start.Container)}"));
+            throw new TimeoutException(
+                $"Never ready: {string.Join(", ", unready.Select(start => start.Name))}.\n{string.Join('\n', said)}", e);
+        }
+    }
+
+    private static async Task<string> LogTailAsync(IContainer container)
+    {
+        try
+        {
+            var (stdout, stderr) = await container.GetLogsAsync();
+            return string.Join('\n', (stdout + stderr).Split('\n').TakeLast(25));
+        }
+        catch (Exception e)
+        {
+            return e.Message;
+        }
+    }
+
     private async Task<string> CaddyDiagnosisAsync()
     {
         var said = new StringBuilder();
@@ -1018,7 +1049,8 @@ internal sealed partial class WebChatStack
             // itself: each is asked.
             throw new TimeoutException($"Caddy never answered sign-in through port {_caddyPort}. {await CaddyDiagnosisAsync()}", e);
         }
-        await Task.WhenAll(agentStarted, vaultStarted, sugaryStarted, appsStarted);
+        await ReadyAsync([("agent", agentStarted, _agent), ("vault", vaultStarted, _mcpVault),
+            ("sugary", sugaryStarted, _mcpSugary), ("apps", appsStarted, _mcpApps)]);
 
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
         // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
