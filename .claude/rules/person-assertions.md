@@ -97,7 +97,7 @@ this person's turn asked for it, good for the check's deadline (`ChatMonitor`'s 
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`
 the id of the connection the message came on (`WrongChannel`), and a person or the guest — an
 assertion naming nobody is refused (`NamesNobody`), though `TokenVerifier` alone would pass it. It
-answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. The group adds two for a built app's ask (`NotAPerson`, `NotAnAppTurn`; `.claude/rules/channels.md`). Its clock is the registered `TimeProvider`.
+answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. The group adds three for a built app's ask (`NotAPerson`, `NotAnAppTurn`, `BothAnAssertionAndACheck`; `.claude/rules/channels.md`). Its clock is the registered `TimeProvider`.
 
 **Where**: `ConversationGroup`'s message pump, as each message arrives and before it is queued — never
 when its turn comes up, or a turn queued behind a long one would be refused for the minutes it

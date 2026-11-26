@@ -54,7 +54,7 @@ public sealed class AgentTurns(ChannelNotificationEmitter emitter, ILogger<Agent
         {
             var reply = await turn.Reply.WaitAsync(timeout, clock, ct);
             // The agent's reason is the exception it caught, often with the provider's own body, and
-            // in English: kept here for whoever looks into it, never handed on to a person's screen.
+            // in English: kept here for whoever looks into it; what reaches a page is the server's to say.
             if (reply is TurnReply.Failed failed)
             {
                 logger.LogWarning("The agent failed turn {TurnKey} of {ConversationId}: {Reason}",

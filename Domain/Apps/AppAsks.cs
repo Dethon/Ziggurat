@@ -46,7 +46,7 @@ public static class AppAsks
 
     // What the agent's answer to a refused or failed turn is to the app. A refusal names why in the
     // agent's sentence (RefusalAnswers), which the author reads; anything else it said is the exception
-    // it caught, often a provider's own body, and stays in the server's log.
+    // it caught, often a provider's own body, which a viewer never reads (Failed: the preview's alone).
     public static ToolErrorResult Refusal(string agentAnswer) => RefusalAnswers.CodeOf(agentAnswer) switch
     {
         "unchecked" => ToolError.TransientDependency(agentAnswer.Trim(), "Ask again in a moment."),

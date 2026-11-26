@@ -37,7 +37,11 @@ reported to the app's runtime errors, reduced for a member.
 - **`failure`** (`AppAsks.FailureField`, `AppAsks.Failed`): a failed turn's own words (not a `RefusalAnswers`
   sentence: the agent's exception, often a provider body such as a strict-schema refusal) ride on the envelope
   **on the preview alone**, clipped like `reply`. This changes the earlier "logged, never shown" rule for the
-  preview only (the author's own; chat already shows a person their own failed turn's words).
+  preview only (the author's own; chat already shows a person their own failed turn's words). **A deviation the
+  user may veto**: the ticket asked for it "at least in report.json"; it rides on the preview's envelope, which
+  is how the check's browser sees it. Pinned at the agent seam that a provider's 400 reason reaches the apps
+  channel's `Error` (`AppTurnAgentTests.AProviderRefusingAnAsk_FailsItWithTheProvidersOwnReason`, on
+  `FakeOpenRouter.Refuse(status, message)`); a real provider's strict-schema wording is not verified.
 - **Check report**: `viewports[].failedAsks` = `{status, text?, errorCode, message?, hint?, reply?, failure?}` for a
   `/_ask` on the preview answered with the envelope at any status (a non-envelope answer stays a failed request);
   its console line dropped. Summary: `N failed asks` in the counts and

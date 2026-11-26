@@ -22,6 +22,7 @@ public sealed class FakeOpenRouter : IAsyncDisposable
     private readonly ConcurrentQueue<string> _unhandled = new();
     private readonly ConcurrentQueue<Func<JsonObject, string>> _scripted = new();
     private volatile int _refusing;
+    private volatile string _refusal = "";
     private WebApplication _app = null!;
     private int _port;
 
@@ -70,8 +71,13 @@ public sealed class FakeOpenRouter : IAsyncDisposable
         FakeResponsesWire.Stream(new FakeModelReplies.Reply(null, new FakeModelReplies.Text([text], TimeSpan.Zero)));
 
     // Answers every request from now on with this status and OpenRouter's error body, as it answers a
-    // key it does not take (401) or one out of credit (402).
-    public void Refuse(HttpStatusCode status) => _refusing = (int)status;
+    // key it does not take (401), one out of credit (402), or a request a provider will not take (400:
+    // a strict schema it does not support), saying why in the message.
+    public void Refuse(HttpStatusCode status, string message = "No auth credentials found")
+    {
+        _refusing = (int)status;
+        _refusal = message;
+    }
 
     // On every address when a container asks it, which reaches this process through the host's gateway.
     public static async Task<FakeOpenRouter> StartAsync(bool forContainers = false)
@@ -109,7 +115,8 @@ public sealed class FakeOpenRouter : IAsyncDisposable
             http.Response.StatusCode = _refusing;
             http.Response.ContentType = "application/json";
             await http.Response.WriteAsync(
-                $$$"""{"error":{"message":"No auth credentials found","code":{{{_refusing}}}}}""", Encoding.UTF8, ct);
+                new JsonObject { ["error"] = new JsonObject { ["message"] = _refusal, ["code"] = _refusing } }.ToJsonString(),
+                Encoding.UTF8, ct);
             return;
         }
 

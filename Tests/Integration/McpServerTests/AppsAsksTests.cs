@@ -627,7 +627,9 @@ public sealed class AppsAsksTests : IAsyncLifetime
     [Fact]
     public async Task AnAskFromACheck_WaitsNoLongerThanTheCheckHasLeft()
     {
-        var clock = new ArmedClock();
+        // Ahead of the server's real clock, so the check's session stays open on it however long the setup takes,
+        // while what it has left is exactly the span on the asks' own clock.
+        var clock = new ArmedClock(DateTimeOffset.UtcNow.AddHours(1));
         await using var apps = await AppsServer.StartAsync(services: s =>
             s.AddSingleton(sp => ActivatorUtilities.CreateInstance<AgentAsks>(sp, (TimeProvider)clock)));
         var agent = await apps.AgentAsync();

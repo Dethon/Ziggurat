@@ -293,6 +293,24 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         apps.AskedApprovals.ShouldBeEmpty();
     }
 
+    // A provider refusing an ask's request — a strict schema it does not support — fails the turn with the
+    // provider's own reason in the Error the apps channel is sent, which the apps server shows the author on
+    // the preview alone (AppAsks.Failed), so a check can say what to fix.
+    [Fact]
+    public async Task AProviderRefusingAnAsk_FailsItWithTheProvidersOwnReason()
+    {
+        const string reason = "Invalid schema for response_format 'carbs': 'minimum' is not supported";
+        _model.Refuse(System.Net.HttpStatusCode.BadRequest, reason);
+
+        var (apps, _) = await RunAsync(Ask(turnKey: "ask-a") with
+        {
+            ResponseFormat = new ResponseFormat { Name = "carbs", Schema = System.Text.Json.JsonDocument.Parse("""{"type":"object"}""").RootElement }
+        });
+
+        apps.SentReplies.Where(r => r.TurnKey == "ask-a" && r.ContentType == ReplyContentType.Error)
+            .ShouldHaveSingleItem().Content.ShouldContain(reason);
+    }
+
     // A check's page asks as the person whose turn ran `./check`, on that tool call's own token handed back by the
     // apps server in place of an assertion: the agent's own signature for the apps server, naming a person. It
     // is an ask like any other — counted on the apps channel under that person, its calls signed as them on it.

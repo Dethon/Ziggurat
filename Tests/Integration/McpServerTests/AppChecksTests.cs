@@ -293,7 +293,7 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         var turns = new List<ChannelMessage>();
         var answering = Task.Run(async () =>
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+            using var cts = new CancellationTokenSource(_generous);
             await foreach (var turn in agent.Messages.WithCancellation(cts.Token))
             {
                 turns.Add(turn);
@@ -336,8 +336,10 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
         await answering;
 
-        // Asked as the person on the check's call token, never an assertion.
+        // Asked as the person on the check's call token, never an assertion: one the agent believes for her.
         turns.ShouldAllBe(turn => turn.CheckCallToken != null && turn.Assertion == null);
+        (await TestCheckCalls.Verifier().VerifyAsync(turns[0].CheckCallToken, CancellationToken.None))
+            .ShouldBeOfType<global::Domain.Security.TurnAdmission.Admitted>().Identity.Subject.ShouldBe(AppsServer.Her.UserId);
         var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
         viewport["failedRequests"]!.AsArray().ShouldBeEmpty(viewport.ToJsonString());
         viewport["console"]!.AsArray().ShouldNotContain(c => c!["type"]!.GetValue<string>() == "error", viewport.ToJsonString());
