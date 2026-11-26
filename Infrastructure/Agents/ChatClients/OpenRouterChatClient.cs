@@ -8,6 +8,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.Exceptions;
 using Domain.Extensions;
 using Domain.Skills;
 using Infrastructure.Agents.Mcp;
@@ -195,7 +196,7 @@ public sealed class OpenRouterChatClient : IChatClient
             var answered = false;
 
             await foreach (var update in DsmlToolCalls.RepairAsync(
-                               _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), ct))
+                               SchemaRefusalsAsync(_client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), options, ct), ct))
             {
                 // The Responses adapter leaves MessageId empty where the chat wire stamped the
                 // completion id, and everything that reassembles a streamed turn keys on it. The
@@ -258,9 +259,7 @@ public sealed class OpenRouterChatClient : IChatClient
     // schema keeps the adapter's handling, which is what memory's lenient readers were built on.
     private static ChatOptions? WithVerbatimStrictSchema(ChatOptions? options)
     {
-        if (options is not { ResponseFormat: ChatResponseFormatJson { Schema: { } schema } json } ||
-            options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) != true ||
-            strict is not true)
+        if (!AsksStrictFormat(options) || options!.ResponseFormat is not ChatResponseFormatJson { Schema: { } schema } json)
         {
             return options;
         }
@@ -280,6 +279,41 @@ public sealed class OpenRouterChatClient : IChatClient
         };
         return verbatim;
     }
+
+    // A request carrying a strict schema that the provider answers 400 is refused for the schema more often than
+    // not, and the same request fails alike every time: said as that refusal, so a channel whose caller wrote the
+    // schema (a built app's ask) tells it to fix the schema rather than to ask again. The provider's words ride
+    // along. Any other status, or a 400 to a request with no schema, is the failure it was.
+    private static async IAsyncEnumerable<ChatResponseUpdate> SchemaRefusalsAsync(
+        IAsyncEnumerable<ChatResponseUpdate> updates, ChatOptions? options, [EnumeratorCancellation] CancellationToken ct)
+    {
+        var strict = AsksStrictFormat(options);
+        await using var reading = updates.GetAsyncEnumerator(ct);
+        while (true)
+        {
+            bool more;
+            try
+            {
+                more = await reading.MoveNextAsync();
+            }
+            catch (ClientResultException ex) when (strict && ex.Status == 400)
+            {
+                throw new ResponseFormatRefusedException(ex.Message, ex);
+            }
+
+            if (!more)
+            {
+                yield break;
+            }
+
+            yield return reading.Current;
+        }
+    }
+
+    private static bool AsksStrictFormat(ChatOptions? options) =>
+        options is { ResponseFormat: ChatResponseFormatJson { Schema: not null } }
+        && options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) == true
+        && strict is true;
 
     // Set by McpAgent on a turn whose message asked for a format. Deliberately not the adapter's
     // own `strict` key: that one is a single switch for the format and every tool, and a strict

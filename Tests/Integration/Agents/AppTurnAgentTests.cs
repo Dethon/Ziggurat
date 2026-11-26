@@ -8,6 +8,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
+using Domain.Exceptions;
 using Domain.Judgments;
 using Domain.Memory;
 using Domain.Monitor;
@@ -297,22 +298,29 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         apps.AskedApprovals.ShouldBeEmpty();
     }
 
-    // A provider refusing an ask's request — a strict schema it does not support — fails the turn with the
-    // provider's own reason in the Error the apps channel is sent, which the apps server shows the author on
-    // the preview alone (AppAsks.Failed), so a check can say what to fix.
-    [Fact]
-    public async Task AProviderRefusingAnAsk_FailsItWithTheProvidersOwnReason()
+    // A provider refusing an ask's request for its schema — a strict schema it does not support — fails the turn
+    // as that refusal, with the provider's own reason, in the Error the apps channel is sent: the apps server
+    // answers it as no retry and shows the author the reason on the preview alone (AppAsks.Failed), so a check
+    // can say what to fix. A refusal of a request with no schema, or any other status, is the failure it was.
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.BadRequest, true, true)]
+    [InlineData(System.Net.HttpStatusCode.BadRequest, false, false)]
+    [InlineData(System.Net.HttpStatusCode.NotFound, true, false)]
+    public async Task AProviderRefusingAnAsk_FailsItWithTheProvidersOwnReason_AsTheSchemasRefusalOnlyWhenItIsOne(
+        System.Net.HttpStatusCode status, bool withSchema, bool schemaRefused)
     {
         const string reason = "Invalid schema for response_format 'carbs': 'minimum' is not supported";
-        _model.Refuse(System.Net.HttpStatusCode.BadRequest, reason);
+        _model.Refuse(status, reason);
 
-        var (apps, _) = await RunAsync(Ask(turnKey: "ask-a") with
-        {
-            ResponseFormat = new ResponseFormat { Name = "carbs", Schema = System.Text.Json.JsonDocument.Parse("""{"type":"object"}""").RootElement }
-        });
+        var ask = Ask(turnKey: "ask-a");
+        var (apps, _) = await RunAsync(withSchema
+            ? ask with { ResponseFormat = new ResponseFormat { Name = "carbs", Schema = System.Text.Json.JsonDocument.Parse("""{"type":"object"}""").RootElement } }
+            : ask);
 
-        apps.SentReplies.Where(r => r.TurnKey == "ask-a" && r.ContentType == ReplyContentType.Error)
-            .ShouldHaveSingleItem().Content.ShouldContain(reason);
+        var failed = apps.SentReplies.Where(r => r.TurnKey == "ask-a" && r.ContentType == ReplyContentType.Error)
+            .ShouldHaveSingleItem().Content;
+        failed.ShouldContain(reason);
+        ResponseFormatRefusedException.Answers(failed).ShouldBe(schemaRefused);
     }
 
     // A check's page asks as the person whose turn ran `./check`, on that tool call's own token handed back by the

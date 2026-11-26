@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Domain.Exceptions;
 using Domain.Monitor;
 using Domain.Tools;
 
@@ -47,14 +48,17 @@ public static class AppAsks
     // What the agent's answer to a refused or failed turn is to the app. A refusal names why in the
     // agent's sentence (RefusalAnswers), which the author reads; anything else it said is the exception
     // it caught, often a provider's own body, which a viewer never reads (Failed: the preview's alone).
-    public static ToolErrorResult Refusal(string agentAnswer) => RefusalAnswers.CodeOf(agentAnswer) switch
-    {
-        RefusalAnswers.Codes.Unchecked => ToolError.TransientDependency(agentAnswer.Trim(), "Ask again in a moment."),
-        null => ToolError.TransientDependency(
-            "The assistant could not answer this ask.", "Ask again in a moment."),
-        _ => ToolError.PermissionDenied(agentAnswer.Trim(),
-            "Nothing the app can do changes this: show it to the person, who may ask an owner or whoever runs this deployment.")
-    };
+    // The provider refusing the schema is the one failure known to recur on every ask, so it is no retry.
+    public static ToolErrorResult Refusal(string agentAnswer) => ResponseFormatRefusedException.Answers(agentAnswer)
+        ? SchemaRefused
+        : RefusalAnswers.CodeOf(agentAnswer) switch
+        {
+            RefusalAnswers.Codes.Unchecked => ToolError.TransientDependency(agentAnswer.Trim(), "Ask again in a moment."),
+            null => ToolError.TransientDependency(
+                "The assistant could not answer this ask.", "Ask again in a moment."),
+            _ => ToolError.PermissionDenied(agentAnswer.Trim(),
+                "Nothing the app can do changes this: show it to the person, who may ask an owner or whoever runs this deployment.")
+        };
 
     // A refused or failed turn, as the page reads it. A failure's own words (the exception the agent caught,
     // often a provider's body: a strict schema it would not take, a model it does not offer) ride beside it
@@ -69,6 +73,13 @@ public static class AppAsks
 
         return envelope;
     }
+
+    // The provider refused the ask's request for its schema: asked again, it fails alike and still counts, so the
+    // page is told it is no retry, and the author reads the provider's words on the preview (Failed).
+    public static readonly ToolErrorResult SchemaRefused = ToolError.Result(ToolError.Codes.InvalidArgument,
+        "The model's provider refused this ask's schema, so nothing was answered.",
+        "Asking again fails the same way: the app's author fixes the schema (strict mode: every object "
+        + "additionalProperties false, every property required) or the model; on the preview the failure says what the provider objected to.");
 
     public static readonly ToolErrorResult NoInstructions = ToolError.PermissionDenied(
         "This app has no instructions, so it cannot ask its assistant.",

@@ -233,7 +233,7 @@ Spec `.scratch/app-asks/spec.md`; wire `Domain/Apps/AppAsks`; the library's `app
   and at each ask. The bound is a constant: 16,000 bytes keep `app_instructions` within its 4,000-token
   budget (`AppAsksTests`).
 - **Answers**: 200 `{ conversation, text }` or, with a schema, `{ conversation, value }` (the text parsed
-  whole, `AppAsks.ReadReply`; never both). Else the envelope: 400 `invalid_argument`; 422 `invalid_reply`
+  whole, `AppAsks.ReadReply`; never both). Else the envelope: 400 `invalid_argument`; 422 `invalid_argument` (the provider refused the schema: a 400 to a strict-format request, which the agent says as `ResponseFormatRefusedException`, `AppAsks.SchemaRefused`, no retry since it recurs); 422 `invalid_reply`
   (not retryable); 422 `permission_denied` (no instructions; a refusal, its `RefusalAnswers` sentence as the
   message, `RefusalAnswers.Codes.Unchecked` as `transient_dependency`); 422 `transient_dependency` (a failed
   turn, or none answered — an ask ended on refused calls); 410 `conversation_expired`; 429 `quota_exceeded`

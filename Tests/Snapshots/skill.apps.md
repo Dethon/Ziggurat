@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 2503 / 2510 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 2524 / 2530 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -67,7 +67,7 @@ Each ask is a turn of the agent that built the app, for the viewer, paid from th
 - `conversation`: an earlier answer's, to follow up within a day of its last turn (same app and viewer), its turns and images kept.
 - `signal`: an `AbortSignal`; aborting stops the turn. An answer takes up to 2 minutes: show the wait.
 
-A refused ask throws `apps.AskError`, carrying `errorCode`, `message`, `retryable`, `hint`, `reply` and `envelope` (the whole answer). Show it in the page as a sentence; ask again only if `retryable` (`transient_dependency`, `timeout`), once or on the person's tap, never in a loop: a sent ask counts even when it fails. `invalid_argument`: a malformed ask; `permission_denied`: no instructions, or refused for this viewer or app; `invalid_reply`: the reply was no JSON; `conversation_expired`: ask afresh without it; `quota_exceeded`: the household's limit on this app (200 a day unless an owner sets another), free again at `envelope.freesAt`; `authentication`: reload to sign in.
+A refused ask throws `apps.AskError`, carrying `errorCode`, `message`, `retryable`, `hint`, `reply` and `envelope` (the whole answer). Show it in the page as a sentence; ask again only if `retryable` (`transient_dependency`, `timeout`), once or on the person's tap, never in a loop: a sent ask counts even when it fails. `invalid_argument`: a malformed ask, or a schema the model's provider refused (fix it: the preview's `failure` says why); `permission_denied`: no instructions, or refused for this viewer or app; `invalid_reply`: the reply was no JSON; `conversation_expired`: ask afresh without it; `quota_exceeded`: the household's limit on this app (200 a day unless an owner sets another), free again at `envelope.freesAt`; `authentication`: reload to sign in.
 
 ### An npm build (a household with a sandbox)
 

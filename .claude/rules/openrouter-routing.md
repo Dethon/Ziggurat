@@ -30,7 +30,9 @@ template's (`provider-routing:`), a person's registered agent.
 - **A strict schema requires providers that honour it**: a body with a strict `json_schema` format
   (`docs/adr/0044`) gets `require_parameters: true` in its `provider` node — created if routing is unset,
   still naming no `sort`/`order`. Memory's schemas are not strict and get nothing. `LemonadeChatClient`
-  removes `provider` before the body reaches the box.
+  removes `provider` before the body reaches the box. A 400 to such a request fails the turn as
+  `ResponseFormatRefusedException` (the provider's words kept), since it recurs on every ask: a built app's
+  ask answers it as no retry (`AppAsks.SchemaRefused`).
 
 ## Cache and sessions
 

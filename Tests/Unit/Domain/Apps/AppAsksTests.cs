@@ -1,5 +1,6 @@
 using System.Text;
 using Domain.Apps;
+using Domain.Exceptions;
 using Domain.Monitor;
 using Domain.Prompts;
 using Domain.Tools;
@@ -49,6 +50,30 @@ public class AppAsksTests
         (envelope.Message == answer).ShouldBe(shown);
         envelope.Hint.ShouldNotBeNullOrWhiteSpace();
     }
+
+    // A provider refusing the ask's schema fails the same way however often it is asked: no retry, and a hint
+    // that says what to fix; the provider's words are kept from the page (the preview's failure carries them).
+    [Fact]
+    public void AProviderRefusingTheSchema_IsAMalformedAsk_NotARetry()
+    {
+        var said = TurnFailure.Answer(new ResponseFormatRefusedException("HTTP 400 (: ) Invalid JSON schema at \"#/properties/a/type\""));
+
+        var envelope = AppAsks.Refusal(said);
+
+        envelope.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
+        envelope.Retryable.ShouldBeFalse();
+        envelope.Message.ShouldNotContain("Invalid JSON schema");
+        envelope.Hint.ShouldNotBeNull().ShouldContain("schema");
+        AppAsks.Failed(said, preview: true)[AppAsks.FailureField]!.GetValue<string>().ShouldBe(said);
+        AppAsks.Failed(said, preview: false).ContainsKey(AppAsks.FailureField).ShouldBeFalse();
+    }
+
+    // Any other failure the agent caught stays a failure worth asking again: only the schema's refusal is known
+    // to fail alike every time.
+    [Fact]
+    public void AnyOtherFailure_StaysRetryable() =>
+        AppAsks.Refusal(TurnFailure.Answer(new InvalidOperationException("HTTP 400 (: ) context too long")))
+            .ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
 
     [Fact]
     public void ARefusalNamingTheAgent_NamesItToTheApp() =>

@@ -5,6 +5,7 @@ using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.Exceptions;
 using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -517,6 +518,35 @@ public sealed class AppsAsksTests : IAsyncLifetime
         previewed[AppAsks.FailureField]!.GetValue<string>().ShouldBe(said);
         published.AsObject().ContainsKey(AppAsks.FailureField).ShouldBeFalse();
         published.ToJsonString().ShouldNotContain("invalid schema");
+    }
+
+    // A provider refusing the ask's schema fails alike however often it is asked, so the page is told it is no
+    // retry and why in the author's terms; the provider's words ride on the preview alone, as any failure's.
+    [Fact]
+    public async Task AProviderRefusingTheSchema_IsNoRetry_AndItsWordsRideOnThePreviewAlone()
+    {
+        var said = TurnFailure.Answer(new ResponseFormatRefusedException("HTTP 400 (: ) Invalid JSON schema at \"#/properties/a/type\""));
+
+        async Task<JsonNode> FailedFromAsync(string host)
+        {
+            var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, host));
+            var turn = await NextTurnAsync(_agent);
+            await SendAsync(turn, ReplyContentType.Error, said);
+            await SendAsync(turn, ReplyContentType.StreamComplete, "", isComplete: true);
+            using var response = await answer;
+            response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            return JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        }
+
+        var previewed = await FailedFromAsync(_apps.Preview("glucose", _id));
+        var published = await FailedFromAsync(_apps.Published("glucose", _id));
+
+        previewed["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        previewed["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        previewed[AppAsks.FailureField]!.GetValue<string>().ShouldBe(said);
+        published["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        published.AsObject().ContainsKey(AppAsks.FailureField).ShouldBeFalse();
+        published.ToJsonString().ShouldNotContain("Invalid JSON schema");
     }
 
     // The page never waits on a turn without end: past the server's wait it is told so, and the turn is
