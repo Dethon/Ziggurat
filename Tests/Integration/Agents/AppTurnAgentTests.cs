@@ -17,6 +17,7 @@ using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Memory;
+using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -83,10 +84,13 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         {
             services.AddSingleton(_kitCalls);
             services.AddSingleton(new MachineMount(_kitCalls));
+            services.AddSingleton(new ScheduleMount(_kitCalls));
             services.AddToolServer(new KitSettings())
                 .WithTools<KitTools>()
                 .AddFileSystemTools<MachineMount>()
-                .AddFileSystemResource<MachineMount>();
+                .AddFileSystemResource<MachineMount>()
+                .AddFileSystemTools<ScheduleMount>()
+                .AddFileSystemResource<ScheduleMount>();
         });
     }
 
@@ -433,6 +437,62 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             .ShouldBe(1, "the model was asked again after the person said no");
     }
 
+    // What an ask leaves behind must not start a turn of its own later: a schedule's prompt — app text, which
+    // may carry fetched web text — would run as a full turn of the viewer, with the persona, every tool and
+    // their memories, outside every bound an ask has. So a write a later turn acts on (a schedule, a watch,
+    // a login handoff) counts as asked in an ask whatever the whitelist says: refused at once with the ask's
+    // own words, put to nobody, nothing written and nothing signed to act later as the viewer. The same
+    // calls on the person's own turn run unasked, the schedule delegated to them.
+    [Fact]
+    public async Task AWriteALaterTurnActsOn_IsRefusedInAnAsk_AsACallThatWouldBeAsked_AndRunsInThePersonsOwnTurn()
+    {
+        Func<JsonObject, string>[] calls =
+        [
+            FakeOpenRouter.CallingToolNamed("text_create", ScheduleWrite),
+            FakeOpenRouter.CallingToolNamed("web_login", """{"url":"https://bank.example.com/login"}""")
+        ];
+        _model.Script(calls);
+        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Chat());
+
+        ownChat.AskedApprovals.ShouldBeEmpty();
+        _kitCalls.Ran.ShouldBe(["schedule", "web_login"]);
+        _kitCalls.Delegations.First().ShouldNotBeNull("the person's own schedule was not delegated to them");
+        _kitCalls.Clear();
+
+        _model.Script([.. calls, _ => FakeOpenRouter.Saying(Answered)]);
+        var (apps, chat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Remind me to drink water", [KitName], "ask-a"));
+
+        _kitCalls.Ran.ShouldBeEmpty();
+        _model.Requests.Last().ToolOutputs.ShouldBe(
+        [
+            ApprovalRejection.UnaskableResultFor("domain__filesystem__text_create"),
+            ApprovalRejection.UnaskableResultFor($"mcp__{Kit}__web_login")
+        ]);
+        AnswerOf(apps, "ask-a").ShouldBe(Answered);
+        apps.AskedApprovals.ShouldBeEmpty();
+        apps.OfferedApprovals.ShouldBeEmpty();
+        apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
+        chat.AskedApprovals.ShouldBeEmpty();
+        chat.OfferedApprovals.ShouldBeEmpty();
+    }
+
+    // A write that leaves nothing a later turn acts on still runs unasked in an ask, as the viewer.
+    [Fact]
+    public async Task AWriteNoLaterTurnActsOn_RunsInAnAsk_AsTheViewer()
+    {
+        _model.Script(
+            FakeOpenRouter.CallingToolNamed("text_create", """{"filePath":"/schedules/jonas/water/notes.md","content":"water"}"""),
+            _ => FakeOpenRouter.Saying(Answered));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Note it", [KitName], "ask-a"));
+
+        _kitCalls.Ran.ShouldBe(["schedule"]);
+        _kitCalls.Callers.ShouldBe([_viewer.UserId]);
+        AnswerOf(apps, "ask-a").ShouldBe(Answered);
+    }
+
+    private const string ScheduleWrite =
+        """{"filePath":"/schedules/jonas/water/schedule.json","content":"{\"prompt\":\"Tell me to drink water\",\"cron\":\"0 8 * * *\"}"}""";
+
     // A model that keeps calling what cannot be asked would loop to the invocation limit within the ask's
     // timeout, the exec screen asking Jev each time: the third refused call of an ask ends it, as a person's
     // no ends theirs, and the model is not asked again. Two of the three are one site's as-person calls, the
@@ -733,7 +793,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         PromptSections = [VoicePrompt.Name],
         EnabledFeatures = ["filesystem", "subagents", "memory"],
         CustomInstructions = "ALWAYS-SIGN-AS-JONAS",
-        WhitelistPatterns = ["domain__filesystem*", "mcp__*__whoami", "mcp__*__browse"]
+        WhitelistPatterns = ["domain__filesystem*", "mcp__*__whoami", "mcp__*__browse", "mcp__*__web_login"]
     };
 
     private MultiAgentFactory Factory(
@@ -815,6 +875,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         private readonly List<string> _ran = [];
         private readonly List<string?> _callers = [];
         private readonly List<string?> _channels = [];
+        private readonly List<string?> _delegations = [];
 
         public IReadOnlyList<string> Ran
         {
@@ -850,13 +911,26 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             }
         }
 
-        public void Record(string tool, string? caller = null, string? channel = null)
+        // The delegation the agent signed beside each call, the server's to keep with what it wrote.
+        public IReadOnlyList<string?> Delegations
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _delegations];
+                }
+            }
+        }
+
+        public void Record(string tool, string? caller = null, string? channel = null, string? delegation = null)
         {
             lock (_gate)
             {
                 _ran.Add(tool);
                 _callers.Add(caller);
                 _channels.Add(channel);
+                _delegations.Add(delegation);
             }
         }
 
@@ -867,6 +941,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
                 _ran.Clear();
                 _callers.Clear();
                 _channels.Clear();
+                _delegations.Clear();
             }
         }
     }
@@ -890,6 +965,14 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         {
             calls.Record("unlock_door");
             return "Unlocked.";
+        }
+
+        [McpServerTool(Name = "web_login")]
+        [Description("Hands the person a link to log in to a site themselves.")]
+        public string WebLogin(string url, RequestContext<CallToolRequestParams> call)
+        {
+            calls.Record("web_login", call.Identity?.Subject, call.Identity?.ChannelId, call.Delegation);
+            return "A link.";
         }
 
         [McpServerTool(Name = "browse")]
@@ -916,6 +999,27 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             return Task.FromResult<FsResult<FsExecResult>>(new FsResult<FsExecResult>.Ok(new FsExecResult
             {
                 Stdout = "ran", Stderr = "", ExitCode = 0, Truncated = false, TimedOut = false, DurationMs = 1, Cwd = ""
+            }));
+        }
+    }
+
+    // A schedules mount: what a create there leaves runs later as a turn, acting for whoever the delegation the
+    // agent signed beside the write names. Any file is a create here; only a schedule's is delegated.
+    private sealed class ScheduleMount(KitCalls calls, FileSystemCaller? caller = null) : FileSystemBackendBase
+    {
+        public override string FilesystemName => ScheduleFileSystem.Name;
+
+        public override string DescribeMount => "Scheduled tasks.";
+
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new ScheduleMount(calls, caller);
+
+        public override Task<FsResult<FsCreateResult>> CreateAsync(
+            string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+        {
+            calls.Record("schedule", caller?.Conversation?.Identity?.Subject, caller?.Conversation?.Identity?.ChannelId, caller?.Delegation);
+            return Task.FromResult<FsResult<FsCreateResult>>(new FsResult<FsCreateResult>.Ok(new FsCreateResult
+            {
+                Status = "created", FilePath = path, Size = $"{content.Length} B", Lines = 1
             }));
         }
     }

@@ -14,8 +14,9 @@ description-budget: 110
 # the manifest's instructions, servers and model, strict schemas, images, follow-ups, every code an ask
 # answers and the cap, and checking an app that asks, each of which an agent would otherwise learn from
 # a failed ask, and that a failed ask still counts, so a page retrying in a loop drains the cap (measured
-# 2,490 on 2026-11-26).
-body-budget: 2495
+# 2,490 on 2026-11-26). 2510 since writing a schedule or a watch is refused in an ask, which an agent
+# would otherwise build an app around (measured 2,503 on 2026-11-26).
+body-budget: 2510
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -73,7 +74,7 @@ A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` 
 Each ask is a turn of the agent that built the app, for the viewer, paid from the household's credit; it is in no chat and remembers only its own conversation. app.json declares:
 
 - `"instructions": "asks.md"`: the markdown file (a path from the repository root, at most 16,000 bytes) the turn follows in place of your persona: a system prompt for a model knowing nothing else (what the app sends, what to answer, language, shape). None, no asks.
-- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run; the model is told any other was refused.
+- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run, and writing a schedule or a watch always needs it; the model is told any other was refused.
 - `"model": "vendor/name"`: the model asks run on, if the agent may switch to it; else the agent's own.
 
 `apps.ask(text, {schema, files, conversation, signal})` → `{conversation, text}`, or `{conversation, value}` asked with a schema:

@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 2490 / 2495 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 2503 / 2510 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -57,7 +57,7 @@ A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` 
 Each ask is a turn of the agent that built the app, for the viewer, paid from the household's credit; it is in no chat and remembers only its own conversation. app.json declares:
 
 - `"instructions": "asks.md"`: the markdown file (a path from the repository root, at most 16,000 bytes) the turn follows in place of your persona: a system prompt for a model knowing nothing else (what the app sends, what to answer, language, shape). None, no asks.
-- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run; the model is told any other was refused.
+- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run, and writing a schedule or a watch always needs it; the model is told any other was refused.
 - `"model": "vendor/name"`: the model asks run on, if the agent may switch to it; else the agent's own.
 
 `apps.ask(text, {schema, files, conversation, signal})` → `{conversation, text}`, or `{conversation, value}` asked with a schema:

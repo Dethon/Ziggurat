@@ -1,4 +1,7 @@
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Security.Signing;
+using Domain.Tools.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Watches;
@@ -22,6 +25,18 @@ public static class DelegatedWrites
         HaWatchFileSystem.Name or SugaryWatchFileSystem.Name => HaWatchPath.Parse(path).Kind == HaWatchKind.WatchFile,
         _ => false
     };
+
+    // The same for a path as a session's registry resolved it: a union's members are each asked, since
+    // the union's own name is none of theirs (/watchers joins the home's watches and Sugary's).
+    public static bool Delegates(FileSystemResolution at) => at.Backend is UnionFileSystem union
+        ? union.Members.Any(m => Delegates(m.Backend.FilesystemName, at.RelativePath))
+        : Delegates(at.Backend.FilesystemName, at.RelativePath);
+
+    // A built app's ask leaves nothing a later turn acts on, and is signed nothing that would: the app's
+    // text would otherwise run later as a full turn of the viewer, with the persona, every tool and their
+    // memory. An ask acts on the apps channel, which no other turn does (AppViewerCredential), so the
+    // identity the agent verified for it says so wherever its calls go.
+    public static bool MayBeLeftBy(IdentityClaims? writer) => writer?.ChannelId != AppChannels.Apps;
 
     // `writer` is the writing turn's context: its agent runs a watch it creates, its origin is where a
     // watch naming no delivery answers. A write with none delegates nothing.

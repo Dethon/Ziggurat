@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools;
+using Domain.Tools.Web;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -33,10 +34,15 @@ internal sealed class QualifiedMcpTool(
     public override string Description => innerTool.Description;
     public override JsonElement JsonSchema => innerTool.JsonSchema;
 
+    // web_login leaves a login handoff whose wake is a later turn of the person, by its name, as the
+    // signing transport delegates it.
+    private readonly StartsLaterTurns? _laterTurns = innerTool.Name == WebLoginTool.Name ? StartsLaterTurns.Always : null;
+
     public override object? GetService(Type serviceType, object? serviceKey = null) =>
-        serviceKey is null && serviceType == typeof(FootprintDeclaration)
-            ? _footprint
-            : base.GetService(serviceType, serviceKey);
+        serviceKey is not null ? base.GetService(serviceType, serviceKey)
+        : serviceType == typeof(FootprintDeclaration) ? _footprint
+        : serviceType == typeof(StartsLaterTurns) ? _laterTurns
+        : base.GetService(serviceType, serviceKey);
 
     public QualifiedMcpTool WithProgress(IProgress<ProgressNotificationValue> progress)
     {

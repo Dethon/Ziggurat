@@ -205,6 +205,10 @@ Spec `.scratch/app-asks/spec.md`; wire `Domain/Apps/AppAsks`; the library's `app
   sent; off the agent's `patchableModels` the ask runs on its own model. Sent by `AgentTurns` under its own
   key, waited `Asks:Timeout` (a check's no longer than its session has left); the page leaving or the wait
   ending cancels the turn **naming the agent** (the agent groups by conversation and agent).
+- **An ask leaves nothing a later turn acts on** (user's decision, 2026-11-26): a write to a schedule or a
+  watch, or a `web_login`, is refused as an asked call whatever the agent's whitelist says, so an app's text
+  never runs later as a full turn of the viewer (`channels.md`, the app-turn bullet). Other never-asking
+  writes run.
 - **Conversations** (`AskConversations` over `OpenConversations`, keyed by app id and viewer `Account`,
   carrying the building agent): none named opens one; a named one continues only if this app and viewer
   opened it, within `Asks:FollowUpWindow` of its last turn, on the same building agent (the agent's history

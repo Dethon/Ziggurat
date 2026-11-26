@@ -148,6 +148,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
+        // A turn that asks nobody leaves nothing a later turn acts on, whatever the whitelist says: what it
+        // wrote would run later as a full turn of the person, outside every bound this one has. Refused as a
+        // call that would be asked is, so the model is told the same and the bound counts it.
+        if (AsksNobody(context.Options) && StartsLaterTurns.Of(context.Function, request.Arguments))
+        {
+            return Rejected(context, toolName);
+        }
+
         // A call acting as the person is asked about by its site, whatever the whitelist or a
         // remembered tool says: the flag is the model's to set, and a page's own text can ask it
         // to, so nothing but the person's own yes for that site lets it run.
