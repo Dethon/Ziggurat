@@ -699,7 +699,9 @@ public sealed class McpChannelConnection(
     // Null on every way of not getting bytes — no client, no such tool, a refusal, a reconnect
     // under the call. Hydration turns all of them into the same placeholder, so a file that
     // cannot be fetched costs the turn its picture and nothing else.
-    public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+    // Signed for the turn through its context in the _meta, as an approval is: a store keeping a
+    // household's files hands them only to a call acting for that household.
+    public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct)
     {
         var client = _client;
         if (client is null)
@@ -714,10 +716,12 @@ public sealed class McpChannelConnection(
                 return null;
             }
 
-            var result = await client.CallToolAsync(
-                ChannelProtocol.FetchAttachmentTool,
-                new Dictionary<string, object?> { ["attachmentId"] = attachmentId },
-                cancellationToken: ct);
+            var result = await client.CallToolAsync(new CallToolRequestParams
+            {
+                Name = ChannelProtocol.FetchAttachmentTool,
+                Arguments = new Dictionary<string, JsonElement> { ["attachmentId"] = JsonSerializer.SerializeToElement(attachmentId) },
+                Meta = ConversationContextMeta.Build(turn)
+            }, ct);
 
             if (result.IsError == true)
             {

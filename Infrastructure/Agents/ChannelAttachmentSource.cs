@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -25,11 +26,13 @@ public sealed class ChannelAttachmentSource(
     private readonly ConcurrentQueue<string> _order = new();
 
     public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
-        FetchAsync(channelId, null, attachmentId, ct);
+        FetchAsync(channelId, null, attachmentId, null, ct);
 
     // Asked of the connection that took the file: a household's own server's for its household, the
-    // deployment's otherwise — never another household's server of the same name.
-    public Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct)
+    // deployment's otherwise — never another household's server of the same name. Signed as the turn
+    // asking, so a file the channel keeps for a household reaches that household's turns alone.
+    public Task<byte[]?> FetchAsync(
+        string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
     {
         var connection = connections.Find(channelId, householdId);
         if (connection is null)
@@ -40,7 +43,9 @@ public sealed class ChannelAttachmentSource(
             return Task.FromResult<byte[]?>(null);
         }
 
-        var key = $"{channelId}/{householdId}/{attachmentId}";
+        // Keyed by the household the fetch is signed for as well: a channel serving every household
+        // answers each for its own, so bytes handed to one household's turn are never another's hit.
+        var key = $"{channelId}/{householdId}/{turn?.Identity?.TenantId}/{attachmentId}";
         if (_cache.TryGetValue(key, out var cached))
         {
             return cached;
@@ -49,7 +54,7 @@ public sealed class ChannelAttachmentSource(
         // The fetch itself is cached, not its result, so concurrent hydrations of one attachment
         // share a single round trip rather than racing two. It goes in before it is awaited,
         // because the forget below has to find it there.
-        var fetch = connection.FetchAttachmentAsync(attachmentId, ct);
+        var fetch = connection.FetchAttachmentAsync(attachmentId, turn, ct);
         if (!_cache.TryAdd(key, fetch))
         {
             return _cache[key];

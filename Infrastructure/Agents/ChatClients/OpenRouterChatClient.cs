@@ -138,13 +138,12 @@ public sealed class OpenRouterChatClient : IChatClient
         // The conversation reaches this send on the turn's own options, the way MCP tool metadata
         // already does: a chat client is built per model from DI, so there is nothing per
         // conversation for it to have been constructed with.
+        var turnContext = ConversationContextMeta.TryRead(options);
         var transformedMessages = await AttachmentHydration.ApplyAsync(
             decorated,
             _attachmentSource,
-            new ReadImageContext(
-                _readImageStore,
-                ConversationContextMeta.TryRead(options)?.ConversationId,
-                inputs.Images),
+            turnContext,
+            new ReadImageContext(_readImageStore, turnContext?.ConversationId, inputs.Images),
             _hydrationDepthMessages,
             ct,
             inputs);

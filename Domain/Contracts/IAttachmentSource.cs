@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using JetBrains.Annotations;
 
 namespace Domain.Contracts;
@@ -11,8 +12,11 @@ public interface IAttachmentSource
     Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct);
 
     // The same, from the connection of the household that took the file (null for a channel serving
-    // every household): two households' servers of one name each keep their own. A source with one
-    // connection per channel id has no other to ask.
-    Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct) =>
+    // every household): two households' servers of one name each keep their own. Asked for the turn
+    // being sent (null: none), whose identity the fetch is signed as, so a channel keeping a
+    // household's files hands them only to that household's turns. A source with one connection per
+    // channel id and nobody to sign for has no other to ask.
+    Task<byte[]?> FetchAsync(
+        string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct) =>
         FetchAsync(channelId, attachmentId, ct);
 }

@@ -1202,7 +1202,7 @@ internal sealed class ConversationGroup(
             throw new AgentNotFoundException(x.Message.AgentId, tenantId);
         }
 
-        var targets = await targetResolver.ResolveAsync(x.Message, x.Channel, _groupCt);
+        var targets = await targetResolver.ResolveAsync(x.Message, x.Channel, x.Identity, _groupCt);
         var (approvalChannel, deliveryKey) = targets.Count > 0
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
@@ -1335,7 +1335,8 @@ internal sealed class ConversationGroup(
             new AttachmentLanding.Landing(
                 state.Agent.GetFileSystemRegistry(state.Thread),
                 attachments,
-                (id, ct) => channel.FetchAttachmentAsync(id, ct),
+                // Fetched as the turn's own calls are signed, for the person it acts for.
+                (id, ct) => channel.FetchAttachmentAsync(id, userMessage.GetConversationContext(), ct),
                 state.DeliveryKey.ConversationId,
                 // Each message's own: steers that went in together are one turn of several messages,
                 // and files of one name sent with two of them must not land on each other.
@@ -1374,7 +1375,7 @@ internal sealed class ConversationGroup(
         // their streams up again.
         return x.Message.ReplyTo is { Count: > 0 }
             ? [.. state.Targets.Select(t => t with { Minted = false })]
-            : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
+            : await targetResolver.ResolveAsync(x.Message, x.Channel, x.Identity, _turnCt);
     }
 
     // What the person said, as the conversation keeps it: everything but what only a run asks for (the

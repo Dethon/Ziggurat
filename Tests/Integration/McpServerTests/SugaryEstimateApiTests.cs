@@ -9,6 +9,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Prompts;
+using Domain.Security.Signing;
 using Domain.Tools.Sugary.Estimation;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
@@ -327,6 +328,13 @@ public class SugaryEstimateApiTests
         turn.Content.ShouldNotContain(Convert.ToBase64String(photo)[..40]);
 
         (await FetchAsync(agent, reference)).ShouldBe(photo);
+        // Kept for no household, so a fetch the agent signs for her turn is handed it as one for nobody is.
+        var her = turn.Principal!.Account!;
+        var herTurn = new ConversationContext("sugary", turn.ConversationId, her.UserId, new ReplyTarget("sugary", turn.ConversationId))
+        {
+            Identity = IdentityClaims.Person(her.UserId, her.TenantId, "sugary", [])
+        };
+        (await agent.FetchAttachmentAsync(reference.Id, herTurn, CancellationToken.None)).ShouldBe(photo);
 
         await ReplyAsync(agent, turn, Estimate);
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -370,7 +378,7 @@ public class SugaryEstimateApiTests
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
 
-        (await agent.FetchAttachmentAsync(id, CancellationToken.None)).ShouldBeNull();
+        (await agent.FetchAttachmentAsync(id, null, CancellationToken.None)).ShouldBeNull();
     }
 
     // Refused before anything is sent, with no agent even connected: a refusal that came after the

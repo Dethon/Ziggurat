@@ -21,9 +21,13 @@ public static class AttachmentHydration
 {
     public const int DefaultDepthMessages = 20;
 
+    // turn: the turn this send is for, whose identity every fetch is signed as, the earlier messages'
+    // files included: a follow-up's photos are fetched for the person asking now, never as whoever
+    // sent them, and a channel keeping a household's files hands them to that household's turns alone.
     public static async Task<IReadOnlyList<ChatMessage>> ApplyAsync(
         IReadOnlyList<ChatMessage> messages,
         IAttachmentSource? source,
+        ConversationContext? turn,
         ReadImageContext readImages,
         int depthMessages,
         CancellationToken ct,
@@ -59,7 +63,7 @@ public static class AttachmentHydration
             hydrated.Add(message switch
             {
                 _ when source is not null && NeedsHydrating(message) =>
-                    await HydrateAsync(message, source, inputs, withinDepth, ct),
+                    await HydrateAsync(message, source, turn, inputs, withinDepth, ct),
                 _ when imageReads[index].Count > 0 =>
                     await ReadImageHydration.ExpandAsync(
                         message, imageReads[index], readImages, withinDepth, ct),
@@ -98,7 +102,8 @@ public static class AttachmentHydration
         || message.GetLandingFailures() is { Count: > 0 };
 
     private static async Task<ChatMessage> HydrateAsync(
-        ChatMessage message, IAttachmentSource source, ModelInputs? inputs, bool withinDepth, CancellationToken ct)
+        ChatMessage message, IAttachmentSource source, ConversationContext? turn, ModelInputs? inputs, bool withinDepth,
+        CancellationToken ct)
     {
         // Decided before any byte is fetched, so a still the model will not be sent is never asked
         // for and a refused turn costs the channel nothing.
@@ -106,7 +111,7 @@ public static class AttachmentHydration
             message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinDepth);
         var channelId = message.GetAttachmentChannelId();
         var shown = attachments.Count > 0 && !string.IsNullOrWhiteSpace(channelId)
-            ? await ShowAsync(attachments, source, channelId!, message.GetAttachmentHouseholdId(), withinDepth, ct)
+            ? await ShowAsync(attachments, source, channelId!, message.GetAttachmentHouseholdId(), turn, withinDepth, ct)
             : [];
 
         // The files first, then where they landed: a path named ahead of a picture the model could
@@ -140,6 +145,7 @@ public static class AttachmentHydration
         IAttachmentSource source,
         string channelId,
         string? householdId,
+        ConversationContext? turn,
         bool withinDepth,
         CancellationToken ct)
     {
@@ -147,7 +153,7 @@ public static class AttachmentHydration
         foreach (var attachment in attachments)
         {
             var bytes = withinDepth
-                ? await source.FetchAsync(channelId, householdId, attachment.Id, ct)
+                ? await source.FetchAsync(channelId, householdId, attachment.Id, turn, ct)
                 : null;
             contents.Add(bytes is not null
                 ? new DataContent(bytes, attachment.MediaType)

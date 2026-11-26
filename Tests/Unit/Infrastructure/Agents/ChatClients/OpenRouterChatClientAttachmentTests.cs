@@ -1,7 +1,9 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security.Signing;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Moq;
 using Shouldly;
@@ -87,6 +89,27 @@ public class OpenRouterChatClientAttachmentTests
         source.Asked.ShouldBe([("voice", "casa", _photo.Id)]);
     }
 
+    // Every file the send puts back, an earlier turn's included, is fetched for the turn being sent: the one
+    // the agent stamped on the request's options, whose identity the fetch is signed as.
+    [Fact]
+    public async Task EveryFile_IsFetchedForTheTurnBeingSent_AnEarlierMessagesToo()
+    {
+        var earlier = UserTurnWith(_photo);
+        var now = new ChatMessage(ChatRole.User, "and this one?");
+        now.SetAttachments([_document]);
+        now.SetAttachmentChannelId("signalr");
+        var asking = new ConversationContext("jonas", "7:42", "her", new ReplyTarget("apps", "7:42"))
+        {
+            Identity = IdentityClaims.Person("her", "household-a", "apps", [])
+        };
+        var source = new HouseholdRecordingSource();
+
+        await SendAsync([earlier, new ChatMessage(ChatRole.Assistant, "A cat."), now], source,
+            new ChatOptions { AdditionalProperties = new() { [ConversationContextMeta.OptionsKey] = asking } });
+
+        source.Turns.ShouldBe([asking, asking]);
+    }
+
     private static ChatMessage UserTurnWith(params AttachmentReference[] attachments)
     {
         var message = new ChatMessage(ChatRole.User, "what is in this?");
@@ -98,7 +121,11 @@ public class OpenRouterChatClientAttachmentTests
     private Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn)
         => SendAsync(turn, new StubAttachmentSource(_bytes));
 
-    private async Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn, IAttachmentSource? source)
+    private Task<IReadOnlyList<ChatMessage>> SendAsync(ChatMessage turn, IAttachmentSource? source) =>
+        SendAsync([turn], source, null);
+
+    private async Task<IReadOnlyList<ChatMessage>> SendAsync(
+        IReadOnlyList<ChatMessage> messages, IAttachmentSource? source, ChatOptions? options)
     {
         IReadOnlyList<ChatMessage> captured = [];
         _innerClient
@@ -115,7 +142,7 @@ public class OpenRouterChatClientAttachmentTests
             "test-model",
             attachmentSource: source);
 
-        await foreach (var _ in sut.GetStreamingResponseAsync([turn]))
+        await foreach (var _ in sut.GetStreamingResponseAsync(messages, options))
         {
         }
 
@@ -126,12 +153,16 @@ public class OpenRouterChatClientAttachmentTests
     {
         public List<(string ChannelId, string? HouseholdId, string AttachmentId)> Asked { get; } = [];
 
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
-            FetchAsync(channelId, null, attachmentId, ct);
+        public List<ConversationContext?> Turns { get; } = [];
 
-        public Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct)
+        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+            FetchAsync(channelId, null, attachmentId, null, ct);
+
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
         {
             Asked.Add((channelId, householdId, attachmentId));
+            Turns.Add(turn);
             return Task.FromResult<byte[]?>(_bytes);
         }
     }

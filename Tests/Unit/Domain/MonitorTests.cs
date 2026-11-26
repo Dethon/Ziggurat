@@ -370,9 +370,21 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Dictionary<string, byte[]> Attachments { get; } = [];
 
-    private readonly List<string> _fetched = [];
+    private readonly List<(string Id, ConversationContext? Turn)> _fetched = [];
 
     public IReadOnlyList<string> FetchedAttachments
+    {
+        get
+        {
+            lock (_fetched)
+            {
+                return [.. _fetched.Select(f => f.Id)];
+            }
+        }
+    }
+
+    // Each fetch with the turn it was signed for, as the agent's own connection would sign it.
+    public IReadOnlyList<(string Id, ConversationContext? Turn)> Fetches
     {
         get
         {
@@ -383,11 +395,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
         }
     }
 
-    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct)
     {
         lock (_fetched)
         {
-            _fetched.Add(attachmentId);
+            _fetched.Add((attachmentId, turn));
         }
 
         return Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
