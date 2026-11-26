@@ -80,6 +80,28 @@ public class ChatMonitorAppTurnTests
         run.Errors.ShouldHaveSingleItem().Message.ShouldNotBeNull().ShouldContain(TurnAdmission.NotAnAppTurn);
     }
 
+    // The apps channel starts app turns alone: a fire on it — carrying an app turn, which a fire never may, or
+    // none — is no app's ask, and never runs with the agent's persona, tools and memory either.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AFireOnTheAppsChannel_IsRefused_AndRunsNothing(bool carryingAnAppTurn)
+    {
+        var run = new Run();
+        run.Apps.WriteUnsigned(Ask() with
+        {
+            Assertion = null,
+            AppTurn = carryingAnAppTurn ? _app : null,
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "s-1")
+        });
+
+        await run.MonitorAsync();
+
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Factory.Created.ShouldBeEmpty();
+        run.Errors.ShouldContain(e => e.Message != null && e.Message.Contains(TurnAdmission.NotAnAppTurn));
+    }
+
     public static TheoryData<string, string?> Unbelieved => new()
     {
         { "no assertion", null },

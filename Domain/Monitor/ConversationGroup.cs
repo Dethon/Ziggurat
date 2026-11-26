@@ -783,15 +783,17 @@ internal sealed class ConversationGroup(
     private async Task<AdmittedTurn?> AdmitAsync((IChannelConnection Channel, ChannelMessage Message) arrived)
     {
         var x = arrived with { Message = AppTurns.Believed(arrived.Channel, arrived.Message, logger) };
-        if (x.Message.Origin is not null)
-        {
-            return await AdmitFireAsync(x.Channel, x.Message);
-        }
-
+        // Before the fire path: the apps channel starts app turns alone, and a fire is never one, so a fire
+        // sent there would otherwise run with the agent's persona, tools and memory.
         if (AppTurns.IsAppsEndpoint(x.Channel) && x.Message.AppTurn is null)
         {
             await RefuseAsync(x.Channel, x.Message, TurnAdmission.NotAnAppTurn);
             return null;
+        }
+
+        if (x.Message.Origin is not null)
+        {
+            return await AdmitFireAsync(x.Channel, x.Message);
         }
 
         switch (await PersonOfAsync(x.Channel, x.Message))
