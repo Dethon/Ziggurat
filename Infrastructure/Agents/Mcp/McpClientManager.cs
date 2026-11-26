@@ -246,8 +246,13 @@ internal sealed class McpClientManager : IAsyncDisposable
         };
         return endpoint.Through is { } through
             ? new HttpClientTransport(options, through, ownsHttpClient: false)
-            : new HttpClientTransport(options);
+            : new HttpClientTransport(options, DialledHttpClient(), ownsHttpClient: true);
     }
+
+    // A call lasts as long as its caller's token lets it, never HttpClient's own 100 s: an approval
+    // waits on a person, and that default refused every one nobody answered within it. The tunnel's
+    // client is unbounded the same way (OpenTunnel).
+    internal static HttpClient DialledHttpClient() => new() { Timeout = Timeout.InfiniteTimeSpan };
 
     // Read only once the endpoint's URL has been taken apart for its dial, which is what refuses one
     // that is not a URL — or a household's server nobody resolved.

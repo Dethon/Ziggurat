@@ -921,7 +921,12 @@ public sealed class McpChannelConnection(
             // without the client reconnecting (a channel's container recreated with a new image is
             // answered by the same client, whose pump only retries), and a tool it gained must not
             // stay unseen until the agent restarts.
-            var tools = await client.ListToolsAsync(cancellationToken: ct);
+            // Bounded by the interval it runs at: a dialled server's calls have no HttpClient
+            // timeout (an approval waits on a person), so one that took the probe and never answered
+            // would otherwise hold the run for good. Not answered by the next tick is not healthy.
+            using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            probe.CancelAfter(healthCheckInterval ?? _defaultHealthCheckInterval);
+            var tools = await client.ListToolsAsync(cancellationToken: probe.Token);
             if (ReferenceEquals(_client, client))
             {
                 _tools = new ToolSet(client, tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal));

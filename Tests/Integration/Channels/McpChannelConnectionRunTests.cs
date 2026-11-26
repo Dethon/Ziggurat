@@ -279,6 +279,24 @@ public class McpChannelConnectionRunTests
         probeHeld.Release();
     }
 
+    // A dialled server's calls have no HttpClient timeout of their own (an approval waits on a
+    // person), so a server that took the probe and never answered would hold the run forever. The
+    // probe is given the interval it runs at: one not answered by the next tick is a failed check.
+    [Fact]
+    public async Task IsHealthyAsync_AServerThatNeverAnswersTheProbe_IsUnhealthyWithinTheInterval()
+    {
+        using var probeArrived = new SemaphoreSlim(0);
+        using var probeHeld = new SemaphoreSlim(0);
+        await using var server = await StartGatedListToolsServerAsync(probeArrived, probeHeld, gateFrom: 1);
+        await using var connection = new McpChannelConnection("test", healthCheckInterval: TimeSpan.FromSeconds(1));
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+
+        var health = connection.IsHealthyAsync(CancellationToken.None);
+
+        (await health.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeFalse();
+        probeHeld.Release();
+    }
+
     [Fact]
     public async Task RunAsync_CancelledDuringTheHealthCheck_StopsWithoutCallingItAFailedCheck()
     {
