@@ -432,6 +432,59 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
     }
 
+    // An ask's images are fetched on the apps channel, which keeps them for the household, signed for the
+    // viewer the ask was admitted as, and the model is sent each as a picture beside the words.
+    [Fact]
+    public async Task AnAsksImages_AreFetchedOnTheAppsChannelForTheViewer_AndSentToTheModel()
+    {
+        var (apps, _) = await RunAsync(Jonas(), Mock.Of<IThreadStateStore>(), _plateImages, Ask() with { Attachments = [_plate] });
+
+        var fetched = apps.Fetches.ShouldHaveSingleItem();
+        fetched.Id.ShouldBe(_plate.Id);
+        fetched.Turn!.Identity!.Account.ShouldBe(_viewer);
+        ImagesIn(RequestFor(AskText)).ShouldBe([Convert.ToBase64String(_plateBytes)]);
+        AnswerOf(apps, "ask-turn").ShouldNotBeEmpty();
+    }
+
+    // A follow-up carries no images, and the model still sees the first ask's: they come back from the
+    // conversation's history, fetched again for the turn asking now.
+    [Fact]
+    public async Task AFollowUp_CarriesNoImages_AndTheModelStillSeesTheFirstAsks()
+    {
+        const string followUpText = "And if I scrape the sauce off?";
+        var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
+        var history = new RedisThreadStateStore(
+            redis.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5) }, TimeProvider.System);
+        var first = Ask() with { ConversationId = conversation, Attachments = [_plate] };
+        var followUp = Ask(followUpText, turnKey: "follow-up-turn") with { ConversationId = conversation };
+
+        var (apps, _) = await RunAsync(Jonas(), history, _plateImages, first, followUp);
+
+        ImagesIn(RequestFor(followUpText)).ShouldBe([Convert.ToBase64String(_plateBytes)]);
+        apps.Fetches.Select(f => f.Turn!.Identity!.Account).Distinct().ShouldBe([_viewer]);
+        AnswerOf(apps, "follow-up-turn").ShouldNotBeEmpty();
+    }
+
+    private static readonly byte[] _plateBytes = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 7, 7];
+
+    private static readonly AttachmentReference _plate = new()
+    {
+        Id = "ask-1/plate", FileName = "plate.png", MediaType = "image/png", SizeBytes = _plateBytes.Length
+    };
+
+    private static readonly IReadOnlyDictionary<string, byte[]> _plateImages = new Dictionary<string, byte[]>
+    {
+        [_plate.Id] = _plateBytes
+    };
+
+    // The base64 of every picture a request's input carries, as a data URL's payload.
+    private static IReadOnlyList<string> ImagesIn(FakeOpenRouter.Request request) =>
+    [
+        .. TextsIn(request.Body["input"]!)
+            .Where(text => text.StartsWith("data:image/", StringComparison.Ordinal))
+            .Select(url => url[(url.IndexOf(',') + 1)..])
+    ];
+
     // Every string a request's input carries, however its items nest them.
     private static IReadOnlyList<string> TextsIn(JsonNode node) => node switch
     {
@@ -527,12 +580,18 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         AgentDefinition jonas, params ChannelMessage[] messages) =>
         RunAsync(jonas, Mock.Of<IThreadStateStore>(), messages);
 
+    private Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(
+        AgentDefinition jonas, IThreadStateStore history, params ChannelMessage[] messages) =>
+        RunAsync(jonas, history, new Dictionary<string, byte[]>(), messages);
+
     // history: where the agent keeps its conversations' turns; the others keep none, so each asserts one
-    // request per text.
+    // request per text. images: what the apps channel hands over for each reference it holds.
     private async Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(
-        AgentDefinition jonas, IThreadStateStore history, params ChannelMessage[] messages)
+        AgentDefinition jonas, IThreadStateStore history, IReadOnlyDictionary<string, byte[]> images,
+        params ChannelMessage[] messages)
     {
         var apps = new FakeChannelConnection { ChannelId = AppChannels.Apps };
+        images.ToList().ForEach(image => apps.Attachments[image.Key] = image.Value);
         var chat = new FakeChannelConnection
         {
             ChannelId = ChannelIds.SignalR, HostsReviewCopies = true, ConversationIdToReturn = "topic-1",
@@ -553,7 +612,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
 
         var monitor = new ChatMonitor(
             [apps, chat],
-            Factory(definitions, history),
+            Factory(definitions, history, [apps, chat]),
             new ChatThreadResolver(),
             Metrics(),
             RecallHook(definitions),
@@ -583,10 +642,13 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         WhitelistPatterns = ["domain__filesystem*", "mcp__*__whoami", "mcp__*__browse"]
     };
 
-    private MultiAgentFactory Factory(IAgentDefinitionProvider definitions, IThreadStateStore history)
+    private MultiAgentFactory Factory(
+        IAgentDefinitionProvider definitions, IThreadStateStore history, IReadOnlyList<IChannelConnection> channels)
     {
         var services = new ServiceCollection()
             .AddSingleton(TimeProvider.System)
+            // The agent's own way to a turn's files: asked of the channel that took them.
+            .AddSingleton<IAttachmentSource>(new ChannelAttachmentSource(channels))
             .AddSingleton(history)
             .AddSingleton(Mock.Of<IHouseholdKeyReports>())
             .AddSingleton<IOwnServers>(new InProcessOwnServers(new Dictionary<string, string> { [KitName] = _kit.Endpoint }))

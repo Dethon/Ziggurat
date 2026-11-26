@@ -176,8 +176,8 @@ public static partial class AppOriginFiles
     // assistant (AppAsks): the text, answered with the reply's text and the conversation it was given in —
     // or, asked with options.schema ({name, schema}), the reply's JSON as value — a refusal thrown as an
     // AskError carrying the envelope (an unreadable reply's words as reply, on the preview alone);
-    // options.conversation, an earlier answer's, continues that conversation; options.signal lets the page
-    // give up, which stops the turn. Small and dependent on nothing; one
+    // options.conversation, an earlier answer's, continues that conversation; options.files, images from a
+    // camera or a picker, go with it; options.signal lets the page give up, which stops the turn. Small and dependent on nothing; one
     // expression, so the classic script and the module are the same object, and the error listeners below
     // are installed once whichever loads first.
     //
@@ -311,10 +311,20 @@ public static partial class AppOriginFiles
                 message: `The ask was not answered (HTTP ${status}).`, hint: 'Ask again in a moment.' };
 
           // Every other option goes to the server, which refuses one it does not take rather than ignore it.
-          const ask = async (text, { signal, ...options } = {}) => {
+          // Images (options.files: Files or Blobs, a FileList too) make it a form of the same JSON and a part
+          // each, its type set by the browser with the form's boundary.
+          const ask = async (text, { signal, files, ...options } = {}) => {
+            const json = JSON.stringify({ ...options, text });
+            const form = files == null ? null : new FormData();
+            if (form) {
+              form.append('{{AppAsks.AskField}}', json);
+              for (const file of files) {
+                form.append('{{AppAsks.FilesField}}', file, file.name || 'image');
+              }
+            }
             const response = await fetch('{{AppAsks.OriginPath}}', {
               method: 'POST', credentials: 'same-origin', cache: 'no-store', signal,
-              headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...options, text })
+              ...(form ? { body: form } : { headers: { 'Content-Type': 'application/json' }, body: json })
             });
             if (response.ok) {
               return response.json();

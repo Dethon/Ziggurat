@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
@@ -7,9 +8,8 @@ using Shouldly;
 namespace Tests.Unit.Mcp.Hosting;
 
 // A channel server's upload store holds every household's files in one place, so a file stored for
-// a household is handed only to a read naming that household. A store whose server cannot yet name the
-// household a fetch is for (Sugary: its fetches act for nobody) stores files for none, and those are
-// read as they always were.
+// a household is handed only to a read naming that household (the apps server's). A server that keeps
+// its files for none (Sugary) has them read as they always were.
 public sealed class HouseholdUploadsTests : IDisposable
 {
     private sealed record Storage(string StoragePath) : IUploadStoreSettings;
@@ -87,5 +87,34 @@ public sealed class HouseholdUploadsTests : IDisposable
 
         store.Sweep().ShouldBe(1);
         (await store.ReadBytesAsync(stored.Id, "household-a", CancellationToken.None)).ShouldBeNull();
+    }
+
+    // A file whose message was never delivered is taken back at once, rather than kept for a retention
+    // nothing will ever hydrate within; its conversation goes with it once empty, and a file beside it stays.
+    [Fact]
+    public async Task AFileTakenBack_IsGone_AndItsEmptyConversationWithIt()
+    {
+        var taken = await _store.SaveForHouseholdAsync("household-a", "conversation", "a.jpg", "image/jpeg", [1], CancellationToken.None);
+        var kept = await _store.SaveForHouseholdAsync("household-a", "other", "b.jpg", "image/jpeg", [2], CancellationToken.None);
+
+        _store.Remove([taken]);
+
+        (await _store.ReadBytesAsync(taken.Id, "household-a", CancellationToken.None)).ShouldBeNull();
+        Directory.Exists(Path.Combine(_root, "conversation")).ShouldBeFalse();
+        (await _store.ReadBytesAsync(kept.Id, "household-a", CancellationToken.None)).ShouldBe([2]);
+    }
+
+    // Only a reference this store could have made is removed: one shaped to reach outside it removes nothing.
+    [Theory]
+    [InlineData("..")]
+    [InlineData("../outside")]
+    [InlineData("conversation")]
+    public async Task AReferenceNotTheStoresShape_RemovesNothing(string id)
+    {
+        var kept = await _store.SaveAsync("conversation", "a.jpg", "image/jpeg", [1], CancellationToken.None);
+
+        _store.Remove([new AttachmentReference { Id = id, FileName = "a.jpg", MediaType = "image/jpeg", SizeBytes = 1 }]);
+
+        (await _store.ReadBytesAsync(kept.Id, CancellationToken.None)).ShouldBe([1]);
     }
 }

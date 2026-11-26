@@ -206,4 +206,55 @@ public class AppAsksTests
     public void AnInvalidReplysWords_AreClippedToTheBound() =>
         AppAsks.InvalidReply(new string('x', AppAsks.MaxReplyShown + 10))[AppAsks.ReplyField]!.GetValue<string>()
             .Length.ShouldBe(AppAsks.MaxReplyShown);
+
+    private static readonly string[] _allTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+    public static TheoryData<byte[], string> Images => new()
+    {
+        { [0xFF, 0xD8, 0xFF, 0xE0, 1, 2], "image/jpeg" },
+        { [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1], "image/png" },
+        { [.. "RIFF"u8, 1, 0, 0, 0, .. "WEBP"u8, .. "VP8 "u8], "image/webp" },
+        { [.. "GIF89a"u8, 1, 2], "image/gif" }
+    };
+
+    // An image's type is what its bytes are, whatever its name or the page said: the model is sent that type.
+    [Theory]
+    [MemberData(nameof(Images))]
+    public void AnImage_IsTheTypeItsBytesAre_WhateverItIsCalled(byte[] bytes, string type)
+    {
+        var read = AppAskImages.Read([new AppAskUpload("photo.txt", bytes)], 4, 1024, _allTypes)
+            .ShouldBeOfType<AppAskImagesRead.Valid>();
+
+        var image = read.Images.ShouldHaveSingleItem();
+        (image.FileName, image.MediaType).ShouldBe(("photo.txt", type));
+        image.Bytes.ShouldBe(bytes);
+    }
+
+    // Anything past the limits, or whose bytes are no image the deployment takes, refuses the ask whole,
+    // naming the limit, so the page can say what to change.
+    [Theory]
+    [InlineData("count", "At most 2 images")]
+    [InlineData("empty", "empty")]
+    [InlineData("size", "at most 8 bytes")]
+    [InlineData("not an image", "JPEG, PNG, WebP or GIF")]
+    [InlineData("not taken here", "JPEG or PNG")]
+    public void ImagesPastTheLimits_OrNoImageTaken_AreRefusedNamingWhy(string what, string words)
+    {
+        byte[] jpeg = [0xFF, 0xD8, 0xFF, 0xE0];
+        IReadOnlyList<AppAskUpload> uploads = what switch
+        {
+            "count" => [.. Enumerable.Range(0, 3).Select(i => new AppAskUpload($"{i}.jpg", jpeg))],
+            "empty" => [new AppAskUpload("a.jpg", [])],
+            "size" => [new AppAskUpload("a.jpg", [.. jpeg, 1, 2, 3, 4, 5])],
+            "not an image" => [new AppAskUpload("a.jpg", [.. "%PDF-1.7"u8])],
+            _ => [new AppAskUpload("a.gif", [.. "GIF89a"u8])]
+        };
+        string[] types = what == "not taken here" ? ["image/jpeg", "image/png"] : _allTypes;
+
+        AppAskImages.Read(uploads, 2, 8, types).ShouldBeOfType<AppAskImagesRead.Refused>().Problem.ShouldContain(words);
+    }
+
+    [Fact]
+    public void NoImages_AreRead() =>
+        AppAskImages.Read([], 4, 1024, _allTypes).ShouldBeOfType<AppAskImagesRead.Valid>().Images.ShouldBeEmpty();
 }

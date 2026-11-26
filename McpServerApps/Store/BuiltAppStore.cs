@@ -203,6 +203,10 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     // Beside the households, under a name no household id can take (ids carry no dot).
     private string Removed => Path.Combine(Root, ".removed");
 
+    // Where an ask's images wait for the agent (the upload store, AskUploads): beside the households too, and
+    // for the same reason under a dotted name; nothing here lists, counts or serves it.
+    public static string UploadsIn(string storagePath) => Path.Combine(Path.GetFullPath(storagePath), ".uploads");
+
     private string AppDirectory(BuiltApp app) => Path.Combine(HouseholdDirectory(app.HouseholdId), app.Id);
 
     // A household's id is the accounts service's opaque one, taken from a verified token; it is still

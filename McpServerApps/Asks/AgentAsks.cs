@@ -8,6 +8,7 @@ using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace McpServerApps.Asks;
 
@@ -24,12 +25,20 @@ namespace McpServerApps.Asks;
 // The clock is the wait's alone: the inbox decides whether the agent is listening on the server's own, and
 // a test moving this one must not make an agent polling in real time look gone.
 public sealed class AgentAsks(
-    AgentTurns turns, AskConversations conversations, AskCaps caps, AskCounts counts, TimeProvider clock, AppsSettings settings)
+    AgentTurns turns, AskConversations conversations, AskCaps caps, AskCounts counts, UploadStore uploads,
+    TimeProvider clock, AppsSettings settings)
 {
+    // What a form's part carries besides its bytes (its boundary and headers), generously.
+    private const int PartOverhead = 1024;
+
     // The longest body an ask of MaxTextLength characters and a schema of MaxSchemaBytes can arrive as: JSON
     // writes a character as six bytes at most (\uXXXX), the schema is measured as written, and the object
     // around them, a conversation id among it, is small.
     private int MaxBodyBytes => settings.Asks.MaxTextLength * 6 + settings.Asks.MaxSchemaBytes + 1024;
+
+    // The longest form an ask with images can arrive as: that JSON, and each image at its bound.
+    private long MaxFormBytes =>
+        MaxBodyBytes + PartOverhead + settings.Asks.MaxImages * (settings.Asks.MaxImageBytes + PartOverhead);
 
     internal async Task<OriginAnswer> AskAsync(
         HttpRequest request, BuiltApp app, AppSession session, AppPages.ServedFiles served, CancellationToken ct)
@@ -41,9 +50,17 @@ public sealed class AgentAsks(
                 "Open the preview yourself to try the app's asks."));
         }
 
-        if (await AppPages.BodyAsync(request, MaxBodyBytes, ct) is not { } body)
+        byte[] body;
+        IReadOnlyList<AppAskUpload> sent;
+        switch (await ReadAsync(request, ct))
         {
-            return InvalidAsk($"An ask's body is one JSON object of at most {MaxBodyBytes} bytes.");
+            case AskBody.Refused { Problem: var problem }:
+                return InvalidAsk(problem);
+            case AskBody.Read read:
+                (body, sent) = (read.Json, read.Uploads);
+                break;
+            default:
+                throw new InvalidOperationException("An ask's body is either read or refused.");
         }
 
         AppAskRequest ask;
@@ -56,6 +73,18 @@ public sealed class AgentAsks(
                 break;
             default:
                 throw new InvalidOperationException("An ask is either valid or refused.");
+        }
+
+        IReadOnlyList<AppAskImage> images;
+        switch (AppAskImages.Read(sent, settings.Asks.MaxImages, settings.Asks.MaxImageBytes, settings.Asks.ImageTypes))
+        {
+            case AppAskImagesRead.Refused { Problem: var problem }:
+                return InvalidAsk(problem);
+            case AppAskImagesRead.Valid { Images: var valid }:
+                images = valid;
+                break;
+            default:
+                throw new InvalidOperationException("An ask's images are either valid or refused.");
         }
 
         if (served.Manifest.Instructions is not { } path)
@@ -112,6 +141,9 @@ public sealed class AgentAsks(
             return OriginAnswer.Envelope(StatusCodes.Status410Gone, AppAsks.ConversationExpired);
         }
 
+        // Kept for the app's household alone, under the conversation, and named on the message: the agent
+        // fetches them on this channel for the turn's person, so a follow-up's history puts them back too.
+        var attachments = await KeepAsync(app, conversation, images, ct);
         var reply = await turns.SendAsync(new ChannelMessageNotification
         {
             ConversationId = conversation,
@@ -121,17 +153,19 @@ public sealed class AgentAsks(
             Principal = new Principal(AppChannels.Apps, viewer.UserId, viewer),
             Assertion = assertion,
             Content = ask.Text,
+            Attachments = attachments.Count > 0 ? attachments : null,
             AppTurn = new AppTurn { AppId = app.Id, Instructions = instructions, Servers = served.Manifest.Asks },
             ResponseFormat = ask.Schema is { } schema ? new ResponseFormat { Name = schema.Name, Schema = schema.Schema } : null,
             ConfigPatch = served.Manifest.Model is { } model ? new AgentConfigPatch { Model = model } : null,
             Timestamp = clock.GetUtcNow()
         }, settings.Asks.Timeout, clock, ct);
 
-        // Never delivered: neither the count nor a conversation opened for it is kept, so a page retrying
-        // while nobody listens spends nothing and fills no table.
+        // Never delivered: neither the count, a conversation opened for it nor its images are kept, so a page
+        // retrying while nobody listens spends nothing and fills no table or volume.
         if (reply is TurnReply.NotListening)
         {
             await counts.ReleaseAsync(app, counted);
+            uploads.Remove(attachments);
             if (ask.Conversation is null)
             {
                 conversations.Forget(conversation);
@@ -157,6 +191,79 @@ public sealed class AgentAsks(
             TurnReply.TimedOut => OriginAnswer.Envelope(StatusCodes.Status504GatewayTimeout, AppAsks.TimedOut(settings.Asks.Timeout)),
             _ => throw new InvalidOperationException($"A turn's reply is answered, failed, unanswered, unheard or timed out: {reply}.")
         };
+    }
+
+    // An ask is its JSON, as a body of its own or, carrying images, as the one field of a form beside them
+    // (AppAsks.AskField, FilesField). Each is bounded before it is read whole, and a form naming anything
+    // else is refused rather than read as though it had not.
+    private async Task<AskBody> ReadAsync(HttpRequest request, CancellationToken ct)
+    {
+        if (!request.HasFormContentType)
+        {
+            return await AppPages.BodyAsync(request, MaxBodyBytes, ct) is { } body
+                ? new AskBody.Read(body, [])
+                : new AskBody.Refused($"An ask's body is one JSON object of at most {MaxBodyBytes} bytes.");
+        }
+
+        var shape = $"An ask with images is a form of one {AppAsks.AskField} field, the ask's JSON, and at most "
+                    + $"{settings.Asks.MaxImages} {AppAsks.FilesField} of at most {settings.Asks.MaxImageBytes} bytes each.";
+        if (request.HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+        {
+            limit.MaxRequestBodySize = MaxFormBytes;
+        }
+
+        IFormCollection form;
+        try
+        {
+            form = await request.ReadFormAsync(new FormOptions
+            {
+                MultipartBodyLengthLimit = MaxFormBytes,
+                ValueLengthLimit = MaxBodyBytes,
+                ValueCountLimit = 16
+            }, ct);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or BadHttpRequestException)
+        {
+            return new AskBody.Refused(shape);
+        }
+
+        if (form.Count != 1 || form[AppAsks.AskField] is not [{ } json] || form.Files.Any(f => f.Name != AppAsks.FilesField))
+        {
+            return new AskBody.Refused(shape);
+        }
+
+        // One at a time: every part reads from the one buffered body.
+        var images = new List<AppAskUpload>(form.Files.Count);
+        foreach (var file in form.Files)
+        {
+            await using var stream = file.OpenReadStream();
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer, ct);
+            images.Add(new AppAskUpload(file.FileName, buffer.ToArray()));
+        }
+
+        return new AskBody.Read(System.Text.Encoding.UTF8.GetBytes(json), images);
+    }
+
+    // In the order sent, so the references keep the order of the images.
+    private async Task<IReadOnlyList<AttachmentReference>> KeepAsync(
+        BuiltApp app, string conversation, IReadOnlyList<AppAskImage> images, CancellationToken ct)
+    {
+        var kept = new List<AttachmentReference>(images.Count);
+        foreach (var image in images)
+        {
+            kept.Add(await uploads.SaveForHouseholdAsync(
+                app.HouseholdId, conversation, image.FileName, image.MediaType, image.Bytes, ct));
+        }
+
+        return kept;
+    }
+
+    private abstract record AskBody
+    {
+        public sealed record Read(byte[] Json, IReadOnlyList<AppAskUpload> Uploads) : AskBody;
+
+        public sealed record Refused(string Problem) : AskBody;
     }
 
     private static OriginAnswer Answered(AppAskAnswer answer) =>

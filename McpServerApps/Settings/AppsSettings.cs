@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.Security;
 using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
@@ -46,6 +47,10 @@ public record AppsSettings : IMcpHostSettings
     public AppListeners Listeners { get; init; } = new();
 
     public AppAskSettings Asks { get; init; } = new();
+
+    // The deployment's retention policy, read from Domain's retention.json like every host's: an ask's images
+    // wait in the upload store as long as an attachment is kept anywhere (ADR-0020).
+    public RetentionSettings Retention { get; init; } = new();
 
     // Where a built app may load code, styles and fonts from besides itself, by exact version and
     // integrity hash (AppContentPolicy, OutsideCodePinning): origins, no paths.
@@ -112,6 +117,19 @@ public record AppAskSettings
     // an owner sets otherwise (AskCaps): what bounds a page asking in a loop, since each ask is a model's turn
     // paid from the household's credit.
     public int DailyCap { get; init; } = 200;
+
+    // How many images one ask may carry: more angles of one plate stop adding anything, and each is a picture
+    // the model is sent again on every turn of the conversation within the hydration distance.
+    public int MaxImages { get; init; } = 4;
+
+    // The largest image, in bytes as the page sent it: the most any model an app may ask on takes in one
+    // image (Anthropic's API refuses one over 5 MB). A page shrinks a photo before sending; nothing here does.
+    public long MaxImageBytes { get; init; } = 5L * 1024 * 1024;
+
+    // The image types an ask may carry, judged by their bytes (AppAskImages): JPEG, PNG, WebP and GIF are the
+    // ones every image model takes. None here takes no images: the shipped file names them, as it names the
+    // CDNs, since a default list would be added to, never replaced, by configuration naming fewer.
+    public IReadOnlyList<string> ImageTypes { get; init; } = [];
 }
 
 // What the apps server keeps of the runtime errors its apps' pages report (`/_errors`).

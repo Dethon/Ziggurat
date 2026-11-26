@@ -137,8 +137,9 @@ public class AppsServingInABrowserTests
     }
 
     // A published app asks its assistant through the client library, from the module and the classic
-    // script alike: the answer's text and conversation, an ask with a schema answered with the reply's JSON,
-    // and a refusal handed to the app as an AskError carrying the tools' envelope.
+    // script alike: the answer's text and conversation, a follow-up on it with a schema and an image from the
+    // page answered with the reply's JSON, and a refusal handed to the app as an AskError carrying the tools'
+    // envelope.
     [Fact]
     public async Task APublishedApp_AsksItsAssistantThroughTheClientLibrary_AndShowsTheAnswer()
     {
@@ -156,7 +157,8 @@ public class AppsServingInABrowserTests
             import { ask, AskError } from '/_app/apps.mjs';
             const answer = await ask('How was my morning?');
             document.getElementById('answer').textContent = `${answer.text} ${answer.conversation.length > 0}`;
-            const mood = await ask('And the mood?', { schema: { name: 'mood', schema: {
+            const plate = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2])], 'plate.png', { type: 'image/png' });
+            const mood = await ask('And the mood?', { conversation: answer.conversation, files: [plate], schema: { name: 'mood', schema: {
               type: 'object', properties: { mood: { type: 'string' } }, required: ['mood'], additionalProperties: false } } });
             document.getElementById('value').textContent = `${mood.value.mood} ${'text' in mood}`;
             try {
@@ -183,6 +185,9 @@ public class AppsServingInABrowserTests
         await ReplyAsync(agent, first, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
         var structured = await agent.Messages.FirstAsync(wait.Token);
         structured.ResponseFormat.ShouldNotBeNull().Name.ShouldBe("mood");
+        structured.ConversationId.ShouldBe(first.ConversationId);
+        var plate = structured.Attachments.ShouldNotBeNull().ShouldHaveSingleItem();
+        (plate.FileName, plate.MediaType, plate.SizeBytes).ShouldBe(("plate.png", "image/png", 10L));
         await ReplyAsync(agent, structured, global::Domain.DTOs.ReplyContentType.Text, """{"mood":"calm"}""");
         await ReplyAsync(agent, structured, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
         var second = await agent.Messages.FirstAsync(wait.Token);

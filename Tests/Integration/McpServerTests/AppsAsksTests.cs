@@ -6,10 +6,13 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Tools;
 using Infrastructure.Clients.Channels;
+using Mcp.Hosting;
 using McpServerApps.Asks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -627,6 +630,148 @@ public sealed class AppsAsksTests : IAsyncLifetime
     }
 
     private static readonly DateTimeOffset _capStart = new(2026, 11, 26, 12, 0, 0, TimeSpan.Zero);
+
+    // An ask's images are kept on the apps server for the app's household and named on the message by
+    // reference, each the type its bytes are, whatever the page called it. The agent fetches them on the apps
+    // channel, signed as it signs the turn's calls: anyone of the household is handed them, another
+    // household's turn or a call for nobody nothing.
+    [Fact]
+    public async Task AnAsksImages_AreNamedOnTheMessage_AsTheirBytesAre_AndFetchedForTheAppsHouseholdAlone()
+    {
+        var host = _apps.Published("glucose", _id);
+        byte[] plate = Png(1), side = Jpeg(2);
+
+        var answer = _apps.AskWithImagesAsync(host, """{"text":"What is on the plate?"}""",
+            [("plate.png", "image/png", plate), ("side.jpg", "application/octet-stream", side)],
+            _apps.SessionFor(AppsServer.Her, host));
+        var turn = await NextTurnAsync(_agent);
+
+        turn.Content.ShouldBe("What is on the plate?");
+        var images = turn.Attachments.ShouldNotBeNull();
+        images.Select(a => (a.FileName, a.MediaType, a.SizeBytes))
+            .ShouldBe([("plate.png", "image/png", plate.Length), ("side.jpg", "image/jpeg", side.Length)]);
+        (await FetchAsync(images[0], turn, AppsServer.Her)).ShouldBe(plate);
+        (await FetchAsync(images[1], turn, AppsServer.Him)).ShouldBe(side);
+        (await FetchAsync(images[0], turn, AppsServer.Neighbour)).ShouldBeNull();
+        (await _agent.FetchAttachmentAsync(images[0].Id, null, CancellationToken.None)).ShouldBeNull();
+        await ReplyAsync(turn, "Rice and an egg.");
+        using var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+    }
+
+    // Past a limit, or no image the deployment takes, an ask is refused whole before any turn: nothing is
+    // kept, nothing sent, and nothing counted, so the app's whole cap is still there for the ask it sends next.
+    [Theory]
+    [InlineData("too many", "At most 4 images")]
+    [InlineData("too large", "each image is at most 5242880 bytes")]
+    [InlineData("no image", "is not a JPEG, PNG, WebP or GIF image")]
+    [InlineData("a stray field", "one ask field")]
+    [InlineData("no ask", "one ask field")]
+    public async Task AnAsksImagesPastTheLimits_AreRefusedBeforeAnyTurn_KeepingAndCountingNothing(string what, string words)
+    {
+        await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+        var form = new MultipartFormDataContent();
+        if (what != "no ask")
+        {
+            form.Add(new StringContent("""{"text":"What is this?"}"""), AppAsks.AskField);
+        }
+
+        if (what == "a stray field")
+        {
+            form.Add(new StringContent("Hi"), "text");
+        }
+
+        IEnumerable<byte[]> images = what switch
+        {
+            "too many" => [.. Enumerable.Range(0, 5).Select(i => Png((byte)i))],
+            "too large" => [[.. Png(1), .. new byte[apps.Settings.Asks.MaxImageBytes]]],
+            "no image" => [[.. "%PDF-1.7"u8]],
+            _ => [Png(1)]
+        };
+        foreach (var image in images)
+        {
+            form.Add(new ByteArrayContent(image), AppAsks.FilesField, "photo.png");
+        }
+
+        using var response = await apps.AskAsync(host, form, session);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, body);
+        var envelope = JsonNode.Parse(body)!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        envelope["message"]!.GetValue<string>().ShouldContain(words);
+        await NothingAskedAsync(agent);
+        StoredUploads(apps).ShouldBeEmpty();
+        await AnsweredAsync(apps, agent, host, session);
+    }
+
+    // An ask nobody was listening for reached no model, so the images it brought are not kept for a
+    // retention nothing will ever hydrate within: a page retrying through an outage fills no volume.
+    [Fact]
+    public async Task AnAskNobodyIsListeningFor_KeepsNoneOfItsImages()
+    {
+        await using var apps = await AppsServer.StartAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+
+        using var response = await apps.AskWithImagesAsync(host, """{"text":"What is this?"}""",
+            [("plate.png", "image/png", Png(1))], apps.SessionFor(AppsServer.Her, host));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        StoredUploads(apps).ShouldBeEmpty();
+    }
+
+    // The images wait for the agent as long as the deployment keeps an attachment anywhere, then the store's
+    // sweep takes them, and a history still naming one hydrates a placeholder.
+    [Fact]
+    public async Task AnAsksImages_AreSweptAfterTheRetention()
+    {
+        var clock = new FakeTimeProvider(_capStart);
+        await using var apps = await AppsServer.StartAsync(services: s => s.AddSingleton(sp => new UploadStore(
+            sp.GetRequiredService<IUploadStoreSettings>(), sp.GetRequiredService<RetentionSettings>(), clock,
+            NullLogger<UploadStore>.Instance)));
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var answer = apps.AskWithImagesAsync(host, """{"text":"What is this?"}""",
+            [("plate.png", "image/png", Png(1))], apps.SessionFor(AppsServer.Her, host));
+        var turn = await NextTurnAsync(agent);
+        await ReplyAsync(agent, turn, "Rice.");
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var store = apps.Services.GetRequiredService<UploadStore>();
+        var image = turn.Attachments.ShouldNotBeNull().ShouldHaveSingleItem();
+
+        store.Sweep().ShouldBe(0);
+        clock.Advance(apps.Settings.Retention.AttachmentRetention + TimeSpan.FromMinutes(1));
+
+        store.Sweep().ShouldBe(1);
+        (await FetchAsync(agent, image, turn, AppsServer.Her)).ShouldBeNull();
+        StoredUploads(apps).ShouldBeEmpty();
+    }
+
+    // Where the upload store keeps an ask's images: on the apps volume, beside the households.
+    private static IReadOnlyList<string> StoredUploads(AppsServer apps)
+    {
+        var uploads = Path.Combine(apps.Settings.StoragePath, ".uploads");
+        return Directory.Exists(uploads) ? Directory.GetFiles(uploads, "*", SearchOption.AllDirectories) : [];
+    }
+
+    private static byte[] Png(byte seed) => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, seed, seed];
+
+    private static byte[] Jpeg(byte seed) => [0xFF, 0xD8, 0xFF, 0xE0, seed, seed];
+
+    private Task<byte[]?> FetchAsync(AttachmentReference image, ChannelMessage turn, Account person) =>
+        FetchAsync(_agent, image, turn, person);
+
+    // An image fetched as the agent fetches it for a turn of this person's: its context in the call's _meta,
+    // signed by the agent's call tokens for the identity the turn was admitted as.
+    private static Task<byte[]?> FetchAsync(McpChannelConnection agent, AttachmentReference image, ChannelMessage turn, Account person) =>
+        agent.FetchAttachmentAsync(image.Id, new ConversationContext(
+            turn.AgentId!, turn.ConversationId, person.UserId, new ReplyTarget(AppChannels.Apps, turn.ConversationId))
+        {
+            Identity = IdentityClaims.Person(person.UserId, person.TenantId, AppChannels.Apps, [])
+        }, CancellationToken.None);
 
     // A server whose asks are capped at so many a day, counted on the clock given (the counts' alone: the
     // server's own stays real, so an agent polling in real time never looks gone), over a copy of a volume.

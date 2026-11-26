@@ -56,7 +56,8 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   through `AppRepository` alone: argument lists, no system/global config, hooks or signing, empty
   `--template=`, a deadline, `add --all --force` with conversions unset, a model's revision after
   `--end-of-options`. The volume (`<household>/<id>/`: `app.meta.json`, `git/`, `tree/`, `checks/`,
-  `errors`, `asks`) is laid out on `BuiltAppStore`; a deleted app leaves a `.removed/<id>` tombstone.
+  `errors`, `asks`) is laid out on `BuiltAppStore`; a deleted app leaves a `.removed/<id>` tombstone, and asks'
+  images wait in `.uploads/` beside the households.
 - **Ids** (`BuiltAppId`): cryptographic, unique across households; the repository and the link
   (`<slug>-<id>[-preview].<AppsDomain>`) are named by id, so a rename keeps links. `AppsDomain` (compose
   `x-apps-domain`, shared by `mcp-apps` and `caddy`) is never under the session cookie's domain. A quota
@@ -182,6 +183,20 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   `[A-Za-z0-9_-]{1,64}`, the schema a JSON object of at most `Asks:MaxSchemaBytes` as written, never
   rewritten or checked for strict mode's rules): **settled exactly as a read** — from a page of that origin alone, the viewer
   before the app, the one 404 before the body is looked at — and answered `no-store`.
+- **Images** (`apps.ask(text, { files })`): the ask becomes a `multipart/form-data` of exactly one `ask` field
+  (the same JSON) and a `files` part per image (`AppAsks.AskField`, `FilesField`); anything else in the form,
+  more than `Asks:MaxImages`, one over `Asks:MaxImageBytes` or empty, or one whose **bytes** are no type in
+  `Asks:ImageTypes` (`AppAskImages.Sniff`: JPEG, PNG, WebP, GIF; the page's declared type is never believed,
+  and the sniffed one is what the model is sent; the code's default takes none, the shipped file names the
+  four) is 400 `invalid_argument` **before any turn, before counting**. The request body is bounded to the
+  JSON plus the images' bounds. Kept only once the ask is counted and its conversation settled, in the upload
+  store (`AskUploads`, `<volume>/.uploads`, under a name no household id takes) **for the app's household**
+  under the ask's conversation, named on the message's `Attachments` in the order sent; **taken back**
+  (`UploadStore.Remove`) when nobody was listening; swept after the shared `attachmentRetention`. The agent
+  fetches them on this channel signed for the turn's person, so only the app's household is ever handed one;
+  a follow-up sends none and its history hydrates the first ask's. Nothing checks the model can see images
+  (the apps server reads no catalogue, and the agent does not check a third time): one that cannot is sent
+  them anyway, and its provider's refusal fails the ask (422 `transient_dependency`).
 - **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
   (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
   principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's

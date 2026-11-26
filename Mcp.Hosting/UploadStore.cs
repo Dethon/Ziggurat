@@ -24,8 +24,9 @@ public interface IUploadStoreSettings
 // or rendered.
 //
 // One store holds every household's files, so a file stored for a household is handed only to a read
-// naming it. A file stored for none is handed to any read, as every file was before households were
-// kept, for a server whose fetches cannot yet say whose they are.
+// naming it: the agent signs each fetch for the turn it hydrates, so that is the household asking now. A
+// file stored for none is handed to any read, as every file was before households were kept: Sugary's,
+// whose histories already name files stored that way.
 public sealed class UploadStore(
     IUploadStoreSettings settings, RetentionSettings retention, TimeProvider clock, ILogger<UploadStore> logger)
 {
@@ -97,6 +98,24 @@ public sealed class UploadStore(
         var path = Path.Combine(directory, metadata.FileName);
         return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
     }
+
+    // Files whose message never reached the agent (nobody was listening), taken back at once: nothing will
+    // hydrate them, and a page retrying through an outage would otherwise fill the volume for a retention.
+    public void Remove(IEnumerable<AttachmentReference> attachments) =>
+        attachments
+            .Select(attachment => Resolve(attachment.Id))
+            .OfType<string>()
+            .Where(Directory.Exists)
+            .ToList()
+            .ForEach(directory =>
+            {
+                TryDelete(directory);
+                var conversation = Path.GetDirectoryName(directory)!;
+                if (Directory.Exists(conversation) && !Directory.EnumerateFileSystemEntries(conversation).Any())
+                {
+                    TryDelete(conversation);
+                }
+            });
 
     // Age alone decides, unlike WebChat's store, which also waits for the topic to be gone: a channel
     // server's conversation is a handful of turns over minutes or hours, so the window, the

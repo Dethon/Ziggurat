@@ -816,7 +816,8 @@ public class DeploymentConformanceTests
 
     // Every household's built apps are git repositories in a volume of the apps server's own; nothing
     // else mounts it, the one-shot step hands it to the server's user, and the server is told the
-    // apps domain it is required to know.
+    // apps domain it is required to know. The images an ask sends wait in the same volume, beside the
+    // households, so they are kept, owned and backed up as the apps are.
     [Fact]
     public void TheAppsServer_KeepsItsRepositoriesInAVolumeOfItsOwnThatItsUserOwns()
     {
@@ -824,6 +825,7 @@ public class DeploymentConformanceTests
         var apps = compose.Service("mcp-apps");
         var storage = new global::McpServerApps.Settings.AppsSettings { AppsDomain = "" }.StoragePath;
         var volume = $"./volumes/apps:{storage}";
+        global::McpServerApps.Asks.AskUploads.On(storage).StoragePath.ShouldBe($"{storage}/.uploads");
 
         apps.Volumes.ShouldBe([volume]);
         apps.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");

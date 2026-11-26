@@ -19,6 +19,13 @@ public static class AppAsks
 {
     public const string OriginPath = "/_ask";
 
+    // An ask carrying images is a multipart form: the ask's JSON, exactly as the body of one without
+    // (AppAskRequest), as the one AskField field, and each image a FilesField part. An ask without images
+    // stays a JSON body, so an app that sends none never changes how it asks.
+    public const string AskField = "ask";
+
+    public const string FilesField = "files";
+
     // The envelope's field carrying a reply that did not parse, on the preview alone (InvalidReply).
     public const string ReplyField = "reply";
 
@@ -255,4 +262,78 @@ public sealed record AppAskAnswer
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public JsonElement? Value { get; init; }
+}
+
+// An image as the page sent it: its name, and its bytes, whatever the page said they are.
+public sealed record AppAskUpload(string FileName, byte[] Bytes);
+
+// An image as it is kept and named on the ask's message: its type is what its bytes are.
+public sealed record AppAskImage(string FileName, string MediaType, byte[] Bytes);
+
+public abstract record AppAskImagesRead
+{
+    public sealed record Valid(IReadOnlyList<AppAskImage> Images) : AppAskImagesRead;
+
+    public sealed record Refused(string Problem) : AppAskImagesRead;
+}
+
+// The images an ask may carry. Each is judged by its leading bytes, never by its name or the type the page
+// declared, since that type is what the model is sent and a page can write anything there.
+public static class AppAskImages
+{
+    // The types the apps server can tell by their bytes, and how a refusal names each; a deployment takes
+    // some or all of them (Asks:ImageTypes), and a type it names beyond these is never matched.
+    private static readonly IReadOnlyList<(string MediaType, string Name)> _recognised =
+    [
+        ("image/jpeg", "JPEG"),
+        ("image/png", "PNG"),
+        ("image/webp", "WebP"),
+        ("image/gif", "GIF")
+    ];
+
+    public static string? Sniff(ReadOnlySpan<byte> bytes) => bytes switch
+    {
+        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
+        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ..] => "image/png",
+        [(byte)'R', (byte)'I', (byte)'F', (byte)'F', _, _, _, _, (byte)'W', (byte)'E', (byte)'B', (byte)'P', ..] => "image/webp",
+        [(byte)'G', (byte)'I', (byte)'F', (byte)'8', (byte)'7' or (byte)'9', (byte)'a', ..] => "image/gif",
+        _ => null
+    };
+
+    public static AppAskImagesRead Read(
+        IReadOnlyList<AppAskUpload> uploads, int maxImages, long maxImageBytes, IReadOnlyCollection<string> types)
+    {
+        if (uploads.Count > maxImages)
+        {
+            return new AppAskImagesRead.Refused($"At most {maxImages} images may go with one ask.");
+        }
+
+        var taken = Named(types);
+        var images = uploads.Select(upload => (Upload: upload, MediaType: Sniff(upload.Bytes))).ToList();
+        return images switch
+        {
+            _ when images.FirstOrDefault(i => i.Upload.Bytes.Length == 0) is { Upload: { } empty } =>
+                new AppAskImagesRead.Refused($"The image {empty.FileName} is empty."),
+            _ when images.FirstOrDefault(i => i.Upload.Bytes.LongLength > maxImageBytes) is { Upload: { } large } =>
+                new AppAskImagesRead.Refused(
+                    $"The image {large.FileName} is {large.Bytes.LongLength} bytes; each image is at most {maxImageBytes} bytes: send it smaller."),
+            _ when images.FirstOrDefault(i => i.MediaType is null || !types.Contains(i.MediaType)) is { Upload: { } other } =>
+                new AppAskImagesRead.Refused(taken is null
+                    ? "This deployment takes no images with an ask."
+                    : $"The image {other.FileName} is not a {taken} image."),
+            _ => new AppAskImagesRead.Valid([.. images.Select(i => new AppAskImage(i.Upload.FileName, i.MediaType!, i.Upload.Bytes))])
+        };
+    }
+
+    // "JPEG, PNG or GIF": the types this deployment takes, in a sentence; none when it takes none.
+    private static string? Named(IReadOnlyCollection<string> types)
+    {
+        var names = _recognised.Where(r => types.Contains(r.MediaType)).Select(r => r.Name).ToList();
+        return names.Count switch
+        {
+            0 => null,
+            1 => names[0],
+            _ => $"{string.Join(", ", names[..^1])} or {names[^1]}"
+        };
+    }
 }

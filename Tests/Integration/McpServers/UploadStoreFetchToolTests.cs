@@ -13,7 +13,7 @@ namespace Tests.Integration.McpServers;
 
 // fetch_attachment as the agent calls it: a file a channel server stored for a household comes back
 // only on a call the agent signed for somebody of that household, and a file stored for none comes
-// back on any call, the nobody-signed ones Sugary's fetches are included.
+// back on any call, signed for somebody or for nobody.
 public sealed class UploadStoreFetchToolTests : IAsyncLifetime
 {
     private sealed record Storage(string StoragePath) : IUploadStoreSettings;

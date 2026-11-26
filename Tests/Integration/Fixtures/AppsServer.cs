@@ -73,6 +73,8 @@ public sealed class AppsServer : IAsyncDisposable
 
     public BuiltAppStore Store => _app.Services.GetRequiredService<BuiltAppStore>();
 
+    public IServiceProvider Services => _app.Services;
+
     // Where the fixture's sessionless navigations are sent to sign in, unless a test names its own
     // accounts service.
     public const string MainHost = "https://assistants.test";
@@ -116,6 +118,8 @@ public sealed class AppsServer : IAsyncDisposable
             {
                 StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate, PublicBaseUrl = MainHost,
                 Cdns = ["https://cdn.jsdelivr.net", "https://unpkg.com", "https://esm.sh"],
+                // As shipped: the code takes no images until the file names their types.
+                Asks = new AppAskSettings { ImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"] },
                 Listeners = new AppListeners { Mcp = mcp, Pages = TestPort.GetAvailable() }
             };
             settings = configure?.Invoke(configured) ?? configured;
@@ -229,13 +233,31 @@ public sealed class AppsServer : IAsyncDisposable
     // A built app's page asking its assistant through the client library: its JSON POSTed to the origin's
     // /_ask with the app session's cookie and the page's own Origin, as the browser sends them. The page
     // gives up when ct is cancelled. origin: another page's, as a sibling app's would send it.
-    public async Task<HttpResponseMessage> AskAsync(
-        string host, string body, string? session, string? origin = null, CancellationToken ct = default)
+    public Task<HttpResponseMessage> AskAsync(
+        string host, string body, string? session, string? origin = null, CancellationToken ct = default) =>
+        AskAsync(host, new StringContent(body, System.Text.Encoding.UTF8, "application/json"), session, origin, ct);
+
+    // An ask with images, as the client library sends one: a form of the ask's JSON and a part per image,
+    // each with the name and type the page gave it.
+    public Task<HttpResponseMessage> AskWithImagesAsync(
+        string host, string ask, IEnumerable<(string Name, string Type, byte[] Bytes)> images, string? session,
+        CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, PagesAddress + AppAsks.OriginPath)
+        var form = new MultipartFormDataContent { { new StringContent(ask), AppAsks.AskField } };
+        foreach (var (name, type, bytes) in images)
         {
-            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
-        };
+            var part = new ByteArrayContent(bytes);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(type);
+            form.Add(part, AppAsks.FilesField, name);
+        }
+
+        return AskAsync(host, form, session, ct: ct);
+    }
+
+    public async Task<HttpResponseMessage> AskAsync(
+        string host, HttpContent content, string? session, string? origin = null, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, PagesAddress + AppAsks.OriginPath) { Content = content };
         request.Headers.Host = host;
         request.Headers.Add("X-Forwarded-Proto", "https");
         request.Headers.Add("Origin", origin ?? $"https://{host}");

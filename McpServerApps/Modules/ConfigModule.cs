@@ -76,6 +76,9 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             // A page waits on each ask's whole reply, and nobody there can approve a call.
             .AddAgentTurns()
+            // An ask's images, kept for the app's household until the agent has fetched them for every turn
+            // that may, then swept.
+            .AddUploadStore(AskUploads.On(settings.StoragePath), settings.Retention)
             // Gate-on-live: an ask nobody is polling for is answered unavailable at once rather than
             // buffered for an agent that may never come.
             .AddChannelServer(DeliveryPolicy.GateOnLive)
