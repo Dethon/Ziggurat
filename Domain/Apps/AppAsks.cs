@@ -118,7 +118,7 @@ public static class AppAsks
         "Show that the app cannot ask just now; signing in again may help.");
 
     // Most often an ask whose model stopped on calls that needed a person's approval, which an ask cannot get
-    // (it ends on its third such call): only its author, reading a check, can change that.
+    // (it ends on its third round holding such a call): only its author, reading a check, can change that.
     public static readonly ToolErrorResult Unanswered = ToolError.TransientDependency(
         "The assistant ended its turn with no answer.",
         "Ask again. If it keeps happening, the assistant may be stopping on tools that need a person's approval, "

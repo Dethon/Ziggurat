@@ -158,6 +158,9 @@ first, then green; no paid calls.
   `blazor-client-ui.md`. Skill: an ask may not write a schedule or a watch; `invalid_argument` includes a schema the
   provider refused (body budget 2495 -> 2530, measured 2,524; snapshot regenerated).
 - **Verified**: `dotnet build Ziggurat.sln` 0 warnings; full `dotnet test` 11,991 passed, 0 failed, 223 skipped
-  (2 m 6 s), with the smoke stack running beside it. An earlier filtered run failed
-  `WebChatPageE2ETests.TheComposerControls_AreDrawnAsIconsRatherThanWords` at its fixture (1 ms, while the WebChat
-  image rebuilt); it passed alone and in the full run.
+  (2 m 6 s), with the smoke stack running beside it. An earlier filtered run (beside the smoke stack) failed
+  `WebChatPageE2ETests.TheComposerControls_AreDrawnAsIconsRatherThanWords` once at its fixture (1 ms); its message
+  was not kept, so a collision with the smoke stack is not ruled out. It passed alone and in the full run.
+- **Left as they are, for a decision**: an ask may still delete a schedule or a watch (that starts no turn), and
+  `run_now`; a finished download's fire carries no app text. OpenRouter's 404 when no provider takes a strict
+  schema's parameters (`require_parameters`) is as deterministic as the 400 and still answered retryable.
