@@ -169,8 +169,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             }
             catch (Exception ex)
             {
-                // Nobody answered: the calls waiting on this one hear the same, never a yes.
+                // Nobody answered: the calls waiting on this one hear the same, never a yes, and
+                // the site's next call asks again rather than being handed the failure.
+                answers.TryRemove(KeyValuePair.Create(subject, mine));
                 mine.TrySetException(ex);
+                _ = mine.Task.Exception;
                 throw;
             }
 

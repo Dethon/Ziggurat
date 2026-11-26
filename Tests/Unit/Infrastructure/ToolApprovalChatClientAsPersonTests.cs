@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.Agents.ChatClients;
@@ -168,6 +169,73 @@ public class ToolApprovalChatClientAsPersonTests
         await CallAsync(client, model, Args("https://www.linkedin.com/in/me/"));
 
         handler.RequestedApprovals.Count.ShouldBe(3);
+    }
+
+    // A real turn streams: its rounds must share the turn's answers there too.
+    [Fact]
+    public async Task ApprovingOnce_CoversTheSiteForTheRestOfAStreamedTurn()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var model = new StreamingModel(
+            Calls(Args("https://www.linkedin.com/in/me/")),
+            Calls(Args("https://linkedin.com/in/a/details/skills/"), Args("https://www.linkedin.com/in/a/details/education/")));
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+
+        await client.GetStreamingResponseAsync([new ChatMessage(ChatRole.User, "look")], Options()).ToListAsync();
+
+        handler.RequestedApprovals.ShouldHaveSingleItem();
+        _browsed.Count.ShouldBe(3);
+    }
+
+    // An ask that failed is no answer: the site's next call in the turn is asked again rather
+    // than handed the failure.
+    [Fact]
+    public async Task AnAskThatFailed_IsAskedAgainByTheSitesNextCall()
+    {
+        var handler = new FailingOnceApprovalHandler();
+        var model = new FakeChatClient();
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+        model.SetNextResponse(Calls(Args("https://www.linkedin.com/in/me/")));
+        model.SetNextResponse(Calls(Args("https://www.linkedin.com/in/me/")));
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "look")], Options());
+
+        handler.Asked.ShouldBe(2);
+        _browsed.Count.ShouldBe(1);
+    }
+
+    private sealed class FailingOnceApprovalHandler : IToolApprovalHandler
+    {
+        public int Asked;
+
+        public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken) =>
+            Interlocked.Increment(ref Asked) == 1
+                ? Task.FromException<ToolApprovalResult>(new InvalidOperationException("channel down"))
+                : Task.FromResult(ToolApprovalResult.Approved);
+
+        public Task NotifyAutoApprovedAsync(
+            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class StreamingModel(params ChatResponse[] rounds) : IChatClient
+    {
+        private readonly Queue<ChatResponse> _rounds = new(rounds);
+
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            (_rounds.TryDequeue(out var round)
+                ? round
+                : new ChatResponse([new ChatMessage(ChatRole.Assistant, "Done")]) { FinishReason = ChatFinishReason.Stop })
+            .ToChatResponseUpdates().ToAsyncEnumerable();
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose() { }
     }
 
     private ChatOptions Options() => new() { Tools = [BrowseFunction()] };
