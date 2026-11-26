@@ -237,8 +237,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   the quota. **The limit is `AskCaps.LimitAsync`'s alone**, read at each ask from the household's `app-asks`
   view (`ICallHousehold.AppAsksAsync`, on the viewer's `apps` assertion; a check's on its call's own household, `call.Household`, carried on `ViewerProof.CheckCall`),
   kept a minute or until a save is heard: the app's own cap, else the household's `dailyCap`, else
-  `Asks:DailyCap` (200) (`AppAsksSection.LimitOf`). **Never lifted**: unreadable is 503
-  `transient_dependency` (`AppAsks.CapUnreadable`), refused 422 `permission_denied` (`CapRefused`), both
+  `Asks:DailyCap` (200) (`AppAsksSection.LimitOf`). **Never lifted**: refused is 422 `permission_denied` (`CapRefused`), anything else unreadable (an
+  outage, a timeout, an answer that does not parse) 503 `transient_dependency` (`AppAsks.CapUnreadable`), both
   before counting or sending, never the deployment's value. Owners set the caps on `/admin/apps`
   (`admin-owner-pages.md`, "Apps"). A check's asks count as anyone's.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its

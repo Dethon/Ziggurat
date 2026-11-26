@@ -152,8 +152,10 @@ turn is sent; a refusal before sending counts nothing. Counts are kept durably o
 volume, so a restart does not reset them. The limit is the app's override, else the household's
 default, else the deployment's default (an apps-server setting). The household's values are a new
 part of the household configuration, saved by owners on their apps admin page. The apps server
-reads them through a view, as it reads `spaces`, and a value it cannot read refuses asks
-(`transient_dependency`). It never lifts the cap. Check asks count toward the same cap.
+reads them through a view, as it reads `spaces`, and a value it cannot read, for any reason (an outage,
+a timeout, an answer that does not parse), refuses asks (`transient_dependency`), except that the
+accounts service refusing the viewer's proof refuses them `permission_denied`. It never lifts the cap.
+Check asks count toward the same cap.
 
 **Checks.** An ask during `./check` acts for the check's person, the author, on the check's own app
 session and call token, against the preview's manifest and instructions. A check's failed ask is

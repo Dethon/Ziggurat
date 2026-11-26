@@ -781,11 +781,12 @@ public sealed class AppsAsksTests : IAsyncLifetime
     }
 
     // A household's caps that cannot be read refuse the ask, never fall back to the deployment's, which
-    // could lift a cap an owner set lower: an outage is a transient dependency, a refusal of the viewer's
-    // proof a denial. Neither sends nor counts anything.
+    // could lift a cap an owner set lower: an outage, or an answer that does not parse, is a transient
+    // dependency (never a 500), a refusal of the viewer's proof a denial. Neither sends nor counts anything.
     [Theory]
     [InlineData("down", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
     [InlineData("slow", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
+    [InlineData("malformed", HttpStatusCode.ServiceUnavailable, ToolError.Codes.TransientDependency)]
     [InlineData("refused", HttpStatusCode.UnprocessableEntity, ToolError.Codes.PermissionDenied)]
     public async Task CapsThatCannotBeRead_RefuseTheAsk_SendingAndCountingNothing(string how, HttpStatusCode status, string code)
     {
@@ -796,6 +797,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         apps.AskCaps.Down = how == "down";
         apps.AskCaps.Refuses = how == "refused";
         apps.AskCaps.TimesOut = how == "slow";
+        apps.AskCaps.Malformed = how == "malformed";
 
         using var response = await apps.AskAsync(host, """{"text":"Hi"}""", session);
 
@@ -804,7 +806,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         JsonNode.Parse(body)!["errorCode"]!.GetValue<string>().ShouldBe(code);
         response.Headers.CacheControl!.NoStore.ShouldBeTrue();
         await NothingAskedAsync(agent);
-        apps.AskCaps.Down = apps.AskCaps.Refuses = apps.AskCaps.TimesOut = false;
+        apps.AskCaps.Down = apps.AskCaps.Refuses = apps.AskCaps.TimesOut = apps.AskCaps.Malformed = false;
         await AnsweredAsync(apps, agent, host, session);
     }
 
