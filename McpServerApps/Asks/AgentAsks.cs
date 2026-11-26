@@ -17,13 +17,14 @@ namespace McpServerApps.Asks;
 // and acting for the viewer on their app session's `apps` assertion, with the tools of that same manifest's
 // `asks` servers, on its `model`. A schema the page sends is the turn's response format, and the reply's JSON
 // the answer. An ask naming an earlier answer's conversation continues it, if this app and viewer opened it
-// within the window (AskConversations), with that ask's own schema or none. The page waits on the whole
-// reply; its giving up, or the wait running out, cancels the turn.
+// within the window (AskConversations), with that ask's own schema or none. Every ask sent counts toward
+// the app's daily cap (AskCounts, AskCaps), and one past it is refused before anything is sent. The page
+// waits on the whole reply; its giving up, or the wait running out, cancels the turn.
 //
 // The clock is the wait's alone: the inbox decides whether the agent is listening on the server's own, and
 // a test moving this one must not make an agent polling in real time look gone.
 public sealed class AgentAsks(
-    AgentTurns turns, AskConversations conversations, TimeProvider clock, AppsSettings settings)
+    AgentTurns turns, AskConversations conversations, AskCaps caps, AskCounts counts, TimeProvider clock, AppsSettings settings)
 {
     // The longest body an ask of MaxTextLength characters and a schema of MaxSchemaBytes can arrive as: JSON
     // writes a character as six bytes at most (\uXXXX), the schema is measured as written, and the object
@@ -76,6 +77,24 @@ public sealed class AgentAsks(
                 throw new InvalidOperationException("Instructions are either read or refused.");
         }
 
+        // Counted before the conversation is looked at, so an ask past the cap opens none, and the table of
+        // them grows no faster than the caps let; given back if the ask goes no further, since only an ask
+        // sent is counted.
+        AskCount.Counted counted;
+        switch (await counts.TryCountAsync(app, await caps.LimitAsync(app, session, ct), ct))
+        {
+            case AskCount.Capped { Limit: var limit, FreesAt: var freesAt }:
+                return OriginAnswer.Json(StatusCodes.Status429TooManyRequests, AppAsks.Capped(limit, freesAt));
+            case AskCount.Gone:
+                return OriginAnswer.Envelope(StatusCodes.Status404NotFound, ToolError.Result(ToolError.Codes.NotFound,
+                    "This app was deleted, so nothing was asked."));
+            case AskCount.Counted taken:
+                counted = taken;
+                break;
+            default:
+                throw new InvalidOperationException("An ask is counted, capped, or its app gone.");
+        }
+
         var viewer = session.Person;
         // Last before the turn, since continuing a conversation starts its window again.
         string conversation;
@@ -89,6 +108,7 @@ public sealed class AgentAsks(
         }
         else
         {
+            await counts.ReleaseAsync(app, counted);
             return OriginAnswer.Envelope(StatusCodes.Status410Gone, AppAsks.ConversationExpired);
         }
 
@@ -106,6 +126,11 @@ public sealed class AgentAsks(
             ConfigPatch = served.Manifest.Model is { } model ? new AgentConfigPatch { Model = model } : null,
             Timestamp = clock.GetUtcNow()
         }, settings.Asks.Timeout, clock, ct);
+
+        if (reply is TurnReply.NotListening)
+        {
+            await counts.ReleaseAsync(app, counted);
+        }
 
         return reply switch
         {

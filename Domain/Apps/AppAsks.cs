@@ -13,14 +13,18 @@ namespace Domain.Apps;
 //
 // Asked with an AppAskRequest; answered 200 with an AppAskAnswer, or the tools' envelope: what the agent
 // refused or failed, and a reply to a schema that is no JSON (InvalidReply), is a 422 (as a read's refusal
-// is), a conversation that cannot be continued a 410 (ConversationExpired), nobody answering a 503, the wait
-// running out a 504.
+// is), a conversation that cannot be continued a 410 (ConversationExpired), an app past its daily cap a 429
+// (Capped), nobody answering a 503, the wait running out a 504.
 public static class AppAsks
 {
     public const string OriginPath = "/_ask";
 
     // The envelope's field carrying a reply that did not parse, on the preview alone (InvalidReply).
     public const string ReplyField = "reply";
+
+    // The envelope's field carrying when a capped app's next ask is counted (Capped), ISO 8601; absent when
+    // none ever is.
+    public const string FreesAtField = "freesAt";
 
     // Enough of an unparsed reply for its author to see what the model did instead.
     public const int MaxReplyShown = 4_000;
@@ -51,6 +55,22 @@ public static class AppAsks
     public static readonly ToolErrorResult ConversationExpired = ToolError.Result(ToolError.Codes.ConversationExpired,
         "This conversation cannot be continued: it is over, or it was never this app's and this person's, so nothing was asked.",
         "Ask again without the conversation, starting a new one, and say so if the person was answering a question.");
+
+    // An app past its daily cap: the household's asks of it, everyone's, over the last 24 hours.
+    public static JsonObject Capped(int limit, DateTimeOffset? freesAt)
+    {
+        var envelope = ToolError.Result(ToolError.Codes.QuotaExceeded,
+            $"This app has reached its daily limit of {limit} asks, counted for the whole household over the last 24 hours, so nothing was asked.",
+            freesAt is { } at
+                ? $"Show that the app has reached its daily limit; it may ask again from {at:yyyy-MM-dd HH:mm} UTC."
+                : "Show that the app may not ask its assistant.").ToNode();
+        if (freesAt is { } next)
+        {
+            envelope[FreesAtField] = next.ToString("O");
+        }
+
+        return envelope;
+    }
 
     public static readonly ToolErrorResult Unanswered = ToolError.TransientDependency(
         "The assistant ended its turn with no answer.", "Ask again.");

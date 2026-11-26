@@ -107,6 +107,11 @@ public record AppAskSettings
 
     // How long after its last turn a conversation an ask opened stays bound to that app and viewer.
     public TimeSpan FollowUpWindow { get; init; } = TimeSpan.FromHours(24);
+
+    // How many asks of one app a household's people may send in any 24 hours, all of them together, unless
+    // an owner sets otherwise (AskCaps): what bounds a page asking in a loop, since each ask is a model's turn
+    // paid from the household's credit.
+    public int DailyCap { get; init; } = 200;
 }
 
 // What the apps server keeps of the runtime errors its apps' pages report (`/_errors`).

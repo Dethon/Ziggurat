@@ -56,7 +56,7 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   through `AppRepository` alone: argument lists, no system/global config, hooks or signing, empty
   `--template=`, a deadline, `add --all --force` with conversions unset, a model's revision after
   `--end-of-options`. The volume (`<household>/<id>/`: `app.meta.json`, `git/`, `tree/`, `checks/`,
-  `errors`) is laid out on `BuiltAppStore`; a deleted app leaves a `.removed/<id>` tombstone.
+  `errors`, `asks`) is laid out on `BuiltAppStore`; a deleted app leaves a `.removed/<id>` tombstone.
 - **Ids** (`BuiltAppId`): cryptographic, unique across households; the repository and the link
   (`<slug>-<id>[-preview].<AppsDomain>`) are named by id, so a rename keeps links. `AppsDomain` (compose
   `x-apps-domain`, shared by `mcp-apps` and `caddy`) is never under the session cookie's domain. A quota
@@ -203,6 +203,17 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   design**), evicted at the table's ceiling (`AskConversations.Ceiling`: the one longest without a turn
   goes) — is one answer, 410 `conversation_expired`, **before any turn**, checked after the ask's every
   other refusal, since continuing restarts the window. Each ask carries its own `schema`: a follow-up with none is answered in text.
+  The ceiling is deployment-wide, so one household's apps can push another's conversations out; the cap
+  bounds how fast (an ask past it opens none).
+- **The daily cap** (`AskCounts`, `AskCaps`): asks are counted **per app** — every viewer, published and
+  preview alike, sharing one count; another app or household's app its own — over a **rolling 24 hours**,
+  by the minute sent in (a minute stops counting a day after it began). An ask is counted **once nothing
+  else refuses it, before the conversation is looked at**, under a per-app lock (two asks never both take
+  the last slot), and **given back** if its conversation is refused or nobody was listening (never
+  delivered): an ask past the cap opens no conversation. Counts live at `<app>/asks` (the minutes still
+  counting, JSON), durable across restarts, gone with the app, never listed, committed or counted toward
+  the quota. The limit is `AskCaps.LimitAsync`'s alone: `Asks:DailyCap` (200) today, the one seam an
+  owner's household default and app override go behind. A check's ask is refused before counting.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
   file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
   `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
@@ -215,8 +226,9 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   the published origin's viewers may be any member), 422 `permission_denied` (no instructions, a refusal:
   `RefusalAnswers.CodeOf`'s sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
   turn whose words are the agent's exception (logged, never shown) or no answer (an ask ended on its refused
-  calls with no text is one), 410 `conversation_expired` (not retryable: ask without it), 503 nobody
-  polling, 504 `timeout`.
+  calls with no text is one), 410 `conversation_expired` (not retryable: ask without it), 429
+  `quota_exceeded` past the daily cap (not retryable; names the limit, and `freesAt` when an ask is next
+  counted, absent for a cap of none: `AppAsks.Capped`), 503 nobody polling, 504 `timeout`.
 
 ## App sign-in
 

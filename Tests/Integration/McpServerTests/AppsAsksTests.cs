@@ -524,6 +524,145 @@ public sealed class AppsAsksTests : IAsyncLifetime
         await NothingAskedAsync();
     }
 
+    // The cap is the household's on one app: every ask sent to the agent counts, and past the limit an ask is
+    // refused before anything is sent, naming the limit and when an ask is counted again. Asking again sooner
+    // changes nothing, so it is no retry.
+    [Fact]
+    public async Task AnAskPastTheDailyCap_IsRefusedNamingTheLimit_BeforeAnyTurn()
+    {
+        var clock = new FakeTimeProvider(_capStart);
+        await using var apps = await CappedAsync(2, clock);
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+        await AnsweredAsync(apps, agent, host, session);
+        clock.Advance(TimeSpan.FromHours(1));
+        await AnsweredAsync(apps, agent, host, session);
+
+        using var response = await apps.AskAsync(host, """{"text":"Hi"}""", session);
+
+        await ShouldBeCappedAsync(response, 2, freesAt: _capStart + TimeSpan.FromDays(1));
+        await NothingAskedAsync(agent);
+    }
+
+    // An ask is counted when it is sent: one refused for its body, for its conversation, or because nobody was
+    // listening reached no model, and the app keeps its whole cap.
+    [Fact]
+    public async Task AnAskRefusedBeforeItWasSent_CountsNothing()
+    {
+        await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+
+        using var unheard = await apps.AskAsync(host, """{"text":"Hi"}""", session);
+        var agent = await apps.AgentAsync();
+        using var malformed = await apps.AskAsync(host, """{"text":""}""", session);
+        using var expired = await apps.AskAsync(host, FollowUp("never-opened", "And now?"), session);
+        await AnsweredAsync(apps, agent, host, session);
+        using var capped = await apps.AskAsync(host, """{"text":"Hi"}""", session);
+
+        unheard.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        malformed.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        expired.StatusCode.ShouldBe(HttpStatusCode.Gone);
+        await ShouldBeCappedAsync(capped, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+    }
+
+    // One count per app of a household: whoever views it, on the published origin or the preview. Another app
+    // of the household, and another household's app, count their own.
+    [Fact]
+    public async Task EveryViewerOfAnApp_SharesOneCount_WhileAnotherAppOrHouseholdHasItsOwn()
+    {
+        await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
+        var agent = await apps.AgentAsync();
+        var id = await InstructedAppAsync(apps);
+        var host = apps.Published("glucose", id);
+        var preview = apps.Preview("glucose", id);
+        apps.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach());
+        var other = apps.Published("carbs", await InstructedAppAsync(apps, "carbs"));
+        var neighbours = apps.Published("glucose", await InstructedAppAsync(apps, author: AppsServer.Neighbour));
+        await AnsweredAsync(apps, agent, host, apps.SessionFor(AppsServer.Her, host));
+
+        using var his = await apps.AskAsync(host, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Him, host));
+        using var previewed = await apps.AskAsync(preview, """{"text":"Hi"}""", apps.SessionFor(AppsServer.Her, preview));
+        await ShouldBeCappedAsync(his, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        await ShouldBeCappedAsync(previewed, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        await AnsweredAsync(apps, agent, other, apps.SessionFor(AppsServer.Her, other));
+        await AnsweredAsync(apps, agent, neighbours, apps.SessionFor(AppsServer.Neighbour, neighbours));
+    }
+
+    // The window rolls: an ask stops counting a day after the minute it was sent in.
+    [Fact]
+    public async Task AnAskADayOld_StopsCounting()
+    {
+        var clock = new FakeTimeProvider(_capStart);
+        await using var apps = await CappedAsync(1, clock);
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+        clock.Advance(TimeSpan.FromSeconds(30));
+        await AnsweredAsync(apps, agent, host, session);
+
+        clock.Advance(TimeSpan.FromDays(1) - TimeSpan.FromMinutes(1));
+        using var capped = await apps.AskAsync(host, """{"text":"Hi"}""", session);
+        await ShouldBeCappedAsync(capped, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+        clock.Advance(TimeSpan.FromSeconds(30));
+
+        await AnsweredAsync(apps, agent, host, session);
+    }
+
+    // The counts are kept on the server's volume, so a restart lifts no cap.
+    [Fact]
+    public async Task TheCounts_OutliveARestart()
+    {
+        var clock = new FakeTimeProvider(_capStart);
+        await using var apps = await CappedAsync(1, clock);
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        await AnsweredAsync(apps, agent, host, apps.SessionFor(AppsServer.Her, host));
+
+        await using var restarted = await CappedAsync(1, clock, from: apps.Settings.StoragePath);
+        using var response = await restarted.AskAsync(host, """{"text":"Hi"}""", restarted.SessionFor(AppsServer.Her, host));
+
+        await ShouldBeCappedAsync(response, 1, freesAt: _capStart + TimeSpan.FromDays(1));
+    }
+
+    private static readonly DateTimeOffset _capStart = new(2026, 11, 26, 12, 0, 0, TimeSpan.Zero);
+
+    // A server whose asks are capped at so many a day, counted on the clock given (the counts' alone: the
+    // server's own stays real, so an agent polling in real time never looks gone), over a copy of a volume.
+    private static Task<AppsServer> CappedAsync(int cap, TimeProvider clock, string? from = null) =>
+        AppsServer.StartAsync(
+            configure: settings =>
+            {
+                if (from is not null)
+                {
+                    CopyDirectory(from, settings.StoragePath);
+                }
+
+                return settings with { Asks = settings.Asks with { DailyCap = cap } };
+            },
+            services: s => s.AddSingleton(sp => ActivatorUtilities.CreateInstance<AskCounts>(sp, clock)));
+
+    private static async Task AnsweredAsync(AppsServer apps, McpChannelConnection agent, string host, string session)
+    {
+        var answer = apps.AskAsync(host, """{"text":"How was my morning?"}""", session);
+        await ReplyAsync(agent, await NextTurnAsync(agent), "Quietly.");
+        using var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+    }
+
+    private static async Task ShouldBeCappedAsync(HttpResponseMessage response, int limit, DateTimeOffset freesAt)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests, body);
+        var envelope = JsonNode.Parse(body)!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.QuotaExceeded);
+        envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        envelope["message"]!.GetValue<string>().ShouldContain($"daily limit of {limit} asks");
+        envelope[AppAsks.FreesAtField]!.GetValue<DateTimeOffset>().ShouldBe(freesAt);
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+    }
+
     private const string CarbsSchema =
         """{"type":"object","properties":{"grams":{"type":"number","minimum":0}},"required":["grams"],"additionalProperties":false}""";
 
@@ -557,14 +696,15 @@ public sealed class AppsAsksTests : IAsyncLifetime
     }
 
     // An app whose published instructions are Published, and its tree's since edited to Tree.
-    private static async Task<string> InstructedAppAsync(AppsServer apps, string slug = "glucose")
+    private static async Task<string> InstructedAppAsync(AppsServer apps, string slug = "glucose", Account? author = null)
     {
-        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, slug));
-        await apps.CreateAsync(AppsServer.Her, $"/{slug}/app.json", Manifest("asks/glucose.md"), overwrite: true);
-        await apps.CreateAsync(AppsServer.Her, $"/{slug}/index.html", "<h1>Glucose</h1>");
-        await apps.CreateAsync(AppsServer.Her, $"/{slug}/asks/glucose.md", Published);
-        await apps.ExecAsync(AppsServer.Her, $"/{slug}", "./publish");
-        await apps.CreateAsync(AppsServer.Her, $"/{slug}/asks/glucose.md", Tree, overwrite: true);
+        var person = author ?? AppsServer.Her;
+        var id = AppsServer.IdIn(await apps.AppAsync(person, slug));
+        await apps.CreateAsync(person, $"/{slug}/app.json", Manifest("asks/glucose.md"), overwrite: true);
+        await apps.CreateAsync(person, $"/{slug}/index.html", "<h1>Glucose</h1>");
+        await apps.CreateAsync(person, $"/{slug}/asks/glucose.md", Published);
+        await apps.ExecAsync(person, $"/{slug}", "./publish");
+        await apps.CreateAsync(person, $"/{slug}/asks/glucose.md", Tree, overwrite: true);
         return id;
     }
 
