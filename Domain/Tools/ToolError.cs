@@ -69,6 +69,10 @@ public static class ToolError
         // reply is no JSON). Asking the same way again tends to get the same answer.
         public const string InvalidReply = "invalid_reply";
 
+        // A conversation the caller named cannot be continued: never opened, not the caller's, or forgotten
+        // (its window ran out, or the server restarted). Nothing but starting afresh changes that.
+        public const string ConversationExpired = "conversation_expired";
+
         // Nothing above fitted. A bug or an unmapped failure, worth retrying once.
         public const string InternalError = "internal_error";
     }
@@ -116,6 +120,7 @@ public static class ToolError
             Retryable: false,
             Recovery: "A person has to solve the challenge; nothing here can."),
         [Codes.InvalidReply] = new(Retryable: false),
+        [Codes.ConversationExpired] = new(Retryable: false),
         [Codes.InternalError] = new(Retryable: true)
     };
 

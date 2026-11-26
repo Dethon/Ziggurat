@@ -64,6 +64,32 @@ public class AppAsksTests
         request.Schema.ShouldBeNull();
     }
 
+    // A conversation to continue is read as written: whether it is one this app and viewer may continue is
+    // the apps server's to say, and every id it may not continue is answered alike, whatever its shape.
+    [Theory]
+    [InlineData("c1-topic")]
+    [InlineData("")]
+    public void AnAsksConversation_IsReadAsWritten(string conversation) =>
+        AppAskRequest.Parse(Encoding.UTF8.GetBytes($$"""{"text":"Hi","conversation":"{{conversation}}"}"""), maxText: 100, maxSchemaBytes: 100)
+            .ShouldBeOfType<AppAskRequestParse.Valid>().Request.Conversation.ShouldBe(conversation);
+
+    [Fact]
+    public void AnAskWithoutAConversation_ContinuesNone() =>
+        AppAskRequest.Parse("""{"text":"Hi","conversation":null}"""u8, maxText: 100, maxSchemaBytes: 100)
+            .ShouldBeOfType<AppAskRequestParse.Valid>().Request.Conversation.ShouldBeNull();
+
+    // A conversation the app may not continue is one code whatever the reason, and asking it again cannot
+    // change the answer: the app starts afresh.
+    [Fact]
+    public void AConversationThatCannotBeContinued_IsItsOwnCode_NotWorthAskingAgain()
+    {
+        var envelope = AppAsks.ConversationExpired;
+
+        envelope.ErrorCode.ShouldBe(ToolError.Codes.ConversationExpired);
+        envelope.Retryable.ShouldBeFalse();
+        envelope.Hint.ShouldNotBeNull().ShouldContain("without the conversation");
+    }
+
     // The schema goes to the agent as the page wrote it: strict mode's rules are the page's to meet, and
     // nothing here rewrites it.
     [Fact]
@@ -95,7 +121,8 @@ public class AppAsksTests
     [InlineData("""{"text":"eleven char"}""", "1 to 10 characters")]
     [InlineData("""{}""", "text")]
     [InlineData("""{"text":null}""", "text")]
-    [InlineData("""{"text":"hi","conversation":"c"}""", "conversation")]
+    [InlineData("""{"text":"hi","stream":true}""", "stream")]
+    [InlineData("""{"text":"hi","conversation":5}""", "conversation")]
     [InlineData("""["hi"]""", "JSON object")]
     [InlineData("""not json""", "JSON object")]
     [InlineData("""{"text":"hi","schema":"meal"}""", "schema")]

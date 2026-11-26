@@ -10,6 +10,7 @@ using Domain.Tools;
 using Infrastructure.Clients.Channels;
 using McpServerApps.Asks;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -94,6 +95,108 @@ public sealed class AppsAsksTests : IAsyncLifetime
 
         turn.AppTurn!.Instructions.ShouldBe(Tree);
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // An answer names its conversation, and an ask naming it is a turn on that conversation, on the agent
+    // that holds its history, answered in the same one. Each ask carries its own schema: a follow-up sending
+    // none is answered in text, whatever the first asked for.
+    [Fact]
+    public async Task AFollowUp_IsATurnOnTheSameConversation_AnsweredInIt_ItsOwnSchemaOrNone()
+    {
+        var host = _apps.Published("glucose", _id);
+        var session = _apps.SessionFor(AppsServer.Her, host);
+        var first = _apps.AskAsync(host, AskForCarbs, session);
+        var opened = await NextTurnAsync(_agent);
+        await ReplyAsync(opened, """{"grams":12}""");
+        var conversation = await ConversationOfAsync(await first);
+
+        var answer = _apps.AskAsync(host, FollowUp(conversation, "And with butter?"), session);
+        var followUp = await NextTurnAsync(_agent);
+        await ReplyAsync(followUp, "Still twelve.");
+
+        conversation.ShouldBe(opened.ConversationId);
+        followUp.ConversationId.ShouldBe(conversation);
+        followUp.AgentId.ShouldBe("jonas");
+        followUp.Content.ShouldBe("And with butter?");
+        followUp.ResponseFormat.ShouldBeNull();
+        followUp.TurnKey.ShouldNotBe(opened.TurnKey);
+        using var response = await answer;
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
+        body["conversation"]!.GetValue<string>().ShouldBe(conversation);
+        body["text"]!.GetValue<string>().ShouldBe("Still twelve.");
+        body.ContainsKey("value").ShouldBeFalse();
+    }
+
+    // Only the app and the viewer that opened a conversation continue it. Every other is refused alike before
+    // any turn, so the answer says nothing of whose a conversation is or whether it was ever opened.
+    [Theory]
+    [InlineData("never opened")]
+    [InlineData("another app's")]
+    [InlineData("another viewer's")]
+    public async Task AFollowUpOnAConversationNotTheAppsAndViewers_IsConversationExpired_BeforeAnyTurn(string whose)
+    {
+        var host = _apps.Published("glucose", _id);
+        var conversation = await OpenedAsync(_apps, _agent, host, _apps.SessionFor(AppsServer.Her, host));
+        var (asking, viewer) = whose switch
+        {
+            "another app's" => (_apps.Published("carbs", await InstructedAppAsync(_apps, "carbs")), AppsServer.Her),
+            "another viewer's" => (host, AppsServer.Him),
+            _ => (host, AppsServer.Her)
+        };
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach());
+
+        using var response = await _apps.AskAsync(asking,
+            FollowUp(whose == "never opened" ? $"{conversation}x" : conversation, "And now?"), _apps.SessionFor(viewer, asking));
+
+        await ShouldBeExpiredAsync(response);
+        await NothingAskedAsync();
+    }
+
+    // The binding lasts the server's follow-up window after the conversation's last turn, each follow-up
+    // starting it again.
+    [Fact]
+    public async Task AFollowUpPastTheWindowAfterTheLastTurn_IsConversationExpired_BeforeAnyTurn()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var apps = await AppsServer.StartAsync(services: s =>
+            s.AddSingleton(sp => ActivatorUtilities.CreateInstance<AskConversations>(sp, (TimeProvider)clock)));
+        var agent = await apps.AgentAsync();
+        var host = apps.Published("glucose", await InstructedAppAsync(apps));
+        var session = apps.SessionFor(AppsServer.Her, host);
+        var conversation = await OpenedAsync(apps, agent, host, session);
+        var window = apps.Settings.Asks.FollowUpWindow;
+
+        clock.Advance(window - TimeSpan.FromMinutes(1));
+        var kept = apps.AskAsync(host, FollowUp(conversation, "Still there?"), session);
+        await ReplyAsync(agent, await NextTurnAsync(agent), "Yes.");
+        (await kept).StatusCode.ShouldBe(HttpStatusCode.OK);
+        clock.Advance(window);
+
+        using var response = await apps.AskAsync(host, FollowUp(conversation, "And now?"), session);
+
+        await ShouldBeExpiredAsync(response);
+        await NothingAskedAsync(agent);
+    }
+
+    // The binding is kept in memory alone: a restarted server, over the same apps, continues nothing.
+    [Fact]
+    public async Task AFollowUpAfterTheServerRestarted_IsConversationExpired_BeforeAnyTurn()
+    {
+        var host = _apps.Published("glucose", _id);
+        var conversation = await OpenedAsync(_apps, _agent, host, _apps.SessionFor(AppsServer.Her, host));
+        await using var restarted = await AppsServer.StartAsync(configure: settings =>
+        {
+            CopyDirectory(_apps.Settings.StoragePath, settings.StoragePath);
+            return settings;
+        });
+        var agent = await restarted.AgentAsync();
+
+        using var response = await restarted.AskAsync(host, FollowUp(conversation, "And now?"),
+            restarted.SessionFor(AppsServer.Her, host));
+
+        await ShouldBeExpiredAsync(response);
+        await NothingAskedAsync(agent);
     }
 
     // The servers an ask may use are its origin's own manifest's: the served commit's on the published
@@ -293,7 +396,8 @@ public sealed class AppsAsksTests : IAsyncLifetime
 
     [Theory]
     [InlineData("""{"text":""}""", "1 to 8000 characters")]
-    [InlineData("""{"text":"Hi","conversation":"c"}""", "conversation")]
+    [InlineData("""{"text":"Hi","stream":true}""", "stream")]
+    [InlineData("""{"text":"Hi","conversation":5}""", "conversation")]
     [InlineData("""not json""", "JSON object")]
     [InlineData("""{"text":"Hi","schema":{"name":"carbs","schema":[]}}""", "a JSON object")]
     [InlineData("""{"text":"Hi","schema":{"name":"carbs and grams","schema":{}}}""", "letters, digits, _ and -")]
@@ -453,25 +557,66 @@ public sealed class AppsAsksTests : IAsyncLifetime
     }
 
     // An app whose published instructions are Published, and its tree's since edited to Tree.
-    private static async Task<string> InstructedAppAsync(AppsServer apps)
+    private static async Task<string> InstructedAppAsync(AppsServer apps, string slug = "glucose")
     {
-        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, "glucose"));
-        await apps.CreateAsync(AppsServer.Her, "/glucose/app.json", Manifest("asks/glucose.md"), overwrite: true);
-        await apps.CreateAsync(AppsServer.Her, "/glucose/index.html", "<h1>Glucose</h1>");
-        await apps.CreateAsync(AppsServer.Her, "/glucose/asks/glucose.md", Published);
-        await apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
-        await apps.CreateAsync(AppsServer.Her, "/glucose/asks/glucose.md", Tree, overwrite: true);
+        var id = AppsServer.IdIn(await apps.AppAsync(AppsServer.Her, slug));
+        await apps.CreateAsync(AppsServer.Her, $"/{slug}/app.json", Manifest("asks/glucose.md"), overwrite: true);
+        await apps.CreateAsync(AppsServer.Her, $"/{slug}/index.html", "<h1>Glucose</h1>");
+        await apps.CreateAsync(AppsServer.Her, $"/{slug}/asks/glucose.md", Published);
+        await apps.ExecAsync(AppsServer.Her, $"/{slug}", "./publish");
+        await apps.CreateAsync(AppsServer.Her, $"/{slug}/asks/glucose.md", Tree, overwrite: true);
         return id;
     }
+
+    private static string FollowUp(string conversation, string text) =>
+        new JsonObject { ["text"] = text, ["conversation"] = conversation }.ToJsonString();
+
+    // The conversation a first ask from this session opened, its turn answered.
+    private static async Task<string> OpenedAsync(AppsServer apps, McpChannelConnection agent, string host, string session)
+    {
+        var answer = apps.AskAsync(host, """{"text":"How was my morning?"}""", session);
+        await ReplyAsync(agent, await NextTurnAsync(agent), "Quietly.");
+        return await ConversationOfAsync(await answer);
+    }
+
+    private static async Task<string> ConversationOfAsync(HttpResponseMessage response)
+    {
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, body);
+            return JsonNode.Parse(body)!["conversation"]!.GetValue<string>();
+        }
+    }
+
+    private static async Task ShouldBeExpiredAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone, body);
+        var envelope = JsonNode.Parse(body)!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.ConversationExpired);
+        envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        response.Headers.CacheControl!.NoStore.ShouldBeTrue();
+    }
+
+    private static void CopyDirectory(string from, string to) =>
+        Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories).ToList().ForEach(file =>
+        {
+            var copy = Path.Combine(to, Path.GetRelativePath(from, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+            File.Copy(file, copy, overwrite: true);
+        });
 
     private string AssertionOf(string session, string host) =>
         _apps.Sessions.Find(session, AppOrigin.Parse(host, AppsServer.AppsDomain)!)!.Proof
             .ShouldBeOfType<global::McpServerApps.Serving.ViewerProof.Assertion>().Token;
 
-    private async Task NothingAskedAsync()
+    private Task NothingAskedAsync() => NothingAskedAsync(_agent);
+
+    private static async Task NothingAskedAsync(McpChannelConnection agent)
     {
         using var settled = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
-        await Should.ThrowAsync<OperationCanceledException>(async () => await _agent.Messages.FirstAsync(settled.Token));
+        await Should.ThrowAsync<OperationCanceledException>(async () => await agent.Messages.FirstAsync(settled.Token));
     }
 
     private static async Task<ChannelMessage> NextTurnAsync(McpChannelConnection agent)
@@ -480,15 +625,22 @@ public sealed class AppsAsksTests : IAsyncLifetime
         return await agent.Messages.FirstAsync(cts.Token);
     }
 
-    private async Task ReplyAsync(ChannelMessage turn, string text)
+    private Task ReplyAsync(ChannelMessage turn, string text) => ReplyAsync(_agent, turn, text);
+
+    private static async Task ReplyAsync(McpChannelConnection agent, ChannelMessage turn, string text)
     {
-        await SendAsync(turn, ReplyContentType.Text, text);
-        await SendAsync(turn, ReplyContentType.StreamComplete, "", isComplete: true);
+        await SendAsync(agent, turn, ReplyContentType.Text, text);
+        await SendAsync(agent, turn, ReplyContentType.StreamComplete, "", isComplete: true);
     }
 
     private Task SendAsync(
         ChannelMessage turn, ReplyContentType type, string content, string messageId = "resp_2", bool isComplete = false) =>
-        _agent.SendReplyAsync(new SendReplyParams
+        SendAsync(_agent, turn, type, content, messageId, isComplete);
+
+    private static Task SendAsync(
+        McpChannelConnection agent, ChannelMessage turn, ReplyContentType type, string content, string messageId = "resp_2",
+        bool isComplete = false) =>
+        agent.SendReplyAsync(new SendReplyParams
         {
             ConversationId = turn.ConversationId,
             Content = content,

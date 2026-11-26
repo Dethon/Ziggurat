@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
@@ -20,6 +21,7 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Memory;
+using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +43,7 @@ namespace Tests.Integration.Agents;
 // model, a real server dialled, the real recall hook and a skill judge. The same person's ordinary turn
 // with the same agent, beside it, sends everything the ask must not — the persona, every kind of tool,
 // the skills, a recall block — so each absence below is one that could have been there.
-public sealed class AppTurnAgentTests : IAsyncLifetime
+public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private const string Household = "fedcba9876543210fedcba9876543210";
     private const string Instructions = "You are the carb estimator of this app. Answer with the grams of carbohydrate.";
@@ -394,6 +396,51 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
             .ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Number);
     }
 
+    // A follow-up is a turn on the ask's own conversation, so the model reads the earlier exchange before it.
+    // Each ask carries its own format: one sending none is answered in text, whatever the first asked for.
+    [Fact]
+    public async Task AFollowUp_SeesTheEarlierExchange_AndCarriesItsOwnFormatOrNone()
+    {
+        const string followUpText = "And with butter on it?";
+        var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
+        var history = new RedisThreadStateStore(
+            redis.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5) }, TimeProvider.System);
+        var first = Ask() with
+        {
+            ConversationId = conversation,
+            ResponseFormat = new ResponseFormat
+            {
+                Name = "carbs",
+                Schema = System.Text.Json.JsonDocument.Parse(
+                    """{"type":"object","properties":{"grams":{"type":"number"}},"required":["grams"],"additionalProperties":false}""")
+                    .RootElement.Clone()
+            }
+        };
+        var followUp = Ask(followUpText, turnKey: "follow-up-turn") with { ConversationId = conversation };
+
+        var (apps, _) = await RunAsync(Jonas(), history, first, followUp);
+
+        var firstAnswer = AnswerOf(apps, "ask-turn");
+        System.Text.Json.JsonDocument.Parse(firstAnswer).RootElement.GetProperty("grams")
+            .ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Number);
+        var second = RequestFor(followUpText);
+        var said = TextsIn(second.Body["input"]!);
+        said.ShouldContain(text => text.Contains(AskText, StringComparison.Ordinal));
+        said.ShouldContain(text => text.Contains(firstAnswer, StringComparison.Ordinal));
+        second.Body["text"]?["format"]?["type"]?.GetValue<string>().ShouldNotBe("json_schema");
+        AnswerOf(apps, "follow-up-turn").ShouldNotBeEmpty();
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
+    // Every string a request's input carries, however its items nest them.
+    private static IReadOnlyList<string> TextsIn(JsonNode node) => node switch
+    {
+        JsonArray array => [.. array.OfType<JsonNode>().SelectMany(TextsIn)],
+        JsonObject item => [.. item.Select(field => field.Value).OfType<JsonNode>().SelectMany(TextsIn)],
+        JsonValue value when value.TryGetValue<string>(out var text) => [text],
+        _ => []
+    };
+
     // The model an app names travels as the ask's config patch, and the agent's patch rules hold as for any
     // turn: one of its patchable models answers the ask, anything else answers on the agent's own.
     [Theory]
@@ -476,8 +523,14 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     private Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(params ChannelMessage[] messages) =>
         RunAsync(Jonas(), messages);
 
+    private Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(
+        AgentDefinition jonas, params ChannelMessage[] messages) =>
+        RunAsync(jonas, Mock.Of<IThreadStateStore>(), messages);
+
+    // history: where the agent keeps its conversations' turns; the others keep none, so each asserts one
+    // request per text.
     private async Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(
-        AgentDefinition jonas, params ChannelMessage[] messages)
+        AgentDefinition jonas, IThreadStateStore history, params ChannelMessage[] messages)
     {
         var apps = new FakeChannelConnection { ChannelId = AppChannels.Apps };
         var chat = new FakeChannelConnection
@@ -500,7 +553,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
 
         var monitor = new ChatMonitor(
             [apps, chat],
-            Factory(definitions),
+            Factory(definitions, history),
             new ChatThreadResolver(),
             Metrics(),
             RecallHook(definitions),
@@ -530,11 +583,11 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         WhitelistPatterns = ["domain__filesystem*", "mcp__*__whoami", "mcp__*__browse"]
     };
 
-    private MultiAgentFactory Factory(IAgentDefinitionProvider definitions)
+    private MultiAgentFactory Factory(IAgentDefinitionProvider definitions, IThreadStateStore history)
     {
         var services = new ServiceCollection()
             .AddSingleton(TimeProvider.System)
-            .AddSingleton(Mock.Of<IThreadStateStore>())
+            .AddSingleton(history)
             .AddSingleton(Mock.Of<IHouseholdKeyReports>())
             .AddSingleton<IOwnServers>(new InProcessOwnServers(new Dictionary<string, string> { [KitName] = _kit.Endpoint }))
             .AddSingleton(McpTestSecret.Credentials)

@@ -177,15 +177,14 @@ gate-on-live, `AddAgentTurns`): the agent dials it as the `apps` channel endpoin
 as `sharedServers.apps` (`AgentAppSettingsTests`), with no default agent. What the agent believes of an
 ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification.AppTurn`).
 
-- **`POST /_ask` on the origin** (`AgentAsks`), `{ "text", "schema"? }` parsed strictly (`AppAskRequest`: an
+- **`POST /_ask` on the origin** (`AgentAsks`), `{ "text", "schema"?, "conversation"? }` parsed strictly (`AppAskRequest`: an
   unknown field refuses it whole, `Asks:MaxTextLength`; `schema` is `{ name, schema }`, the name
   `[A-Za-z0-9_-]{1,64}`, the schema a JSON object of at most `Asks:MaxSchemaBytes` as written, never
   rewritten or checked for strict mode's rules): **settled exactly as a read** — from a page of that origin alone, the viewer
   before the app, the one 404 before the body is looked at — and answered `no-store`.
 - **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
   (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
-  principal `("apps", user id, Account)`, a conversation minted through `AskConversations`
-  (`OpenConversations` keyed by app and viewer), and an `AppTurn` with the origin's own manifest's
+  principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's
   instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
   a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
   as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; a
@@ -195,19 +194,29 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   patched to that model is the agent's (`channels.md`): off its `patchableModels` the ask runs on its own. Sent by `AgentTurns` under its own
   key, waited on for `Asks:Timeout`; the page giving up or the wait running out cancels the turn **naming
   the agent** (the agent groups by conversation and agent).
+- **Conversations** (`AskConversations` over `OpenConversations`, keyed by app id and viewer `Account`,
+  carrying the building agent): an ask naming none opens one; one naming a `conversation` is a turn on it
+  **only if this app and viewer opened it, within `Asks:FollowUpWindow` of its last turn, and the app's
+  building agent is still the one it was opened on** (the agent keeps its history under conversation and
+  agent; a changed one holds none, so the app starts afresh). Anything else — never minted, another app's
+  or viewer's (published and preview are one app), past the window, after a restart (**in memory by
+  design**), evicted at the table's ceiling (`AskConversations.Ceiling`: the one longest without a turn
+  goes) — is one answer, 410 `conversation_expired`, **before any turn**, checked last so a refused ask
+  never restarts the window. Each ask carries its own `schema`: a follow-up with none is answered in text.
 - **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
   file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
   `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
   constant, not a setting: 16,000 bytes keep the `app_instructions` section within its 4,000-token budget
   (`AppAsksTests`).
-- **Answers**: 200 `{ conversation, text }` (the last message's text), or, asked with a schema,
+- **Answers**: 200 `{ conversation, text }` (the last message's text; the conversation opened or continued), or, asked with a schema,
   `{ conversation, value }` (that text parsed as JSON whole, `AppAsks.ReadReply`; never both keys); else the
   tools' envelope — 400 `invalid_argument` (body), 422 `invalid_reply` (a reply to a schema that is no JSON,
   not retryable; **its words ride as `reply` on the preview alone**, `AppAsks.InvalidReply`, clipped, since
   the published origin's viewers may be any member), 422 `permission_denied` (no instructions, a refusal:
   `RefusalAnswers.CodeOf`'s sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
   turn whose words are the agent's exception (logged, never shown) or no answer (an ask ended on its refused
-  calls with no text is one), 503 nobody polling, 504 `timeout`.
+  calls with no text is one), 410 `conversation_expired` (not retryable: ask without it), 503 nobody
+  polling, 504 `timeout`.
 
 ## App sign-in
 

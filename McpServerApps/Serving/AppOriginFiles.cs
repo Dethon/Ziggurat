@@ -176,7 +176,8 @@ public static partial class AppOriginFiles
     // assistant (AppAsks): the text, answered with the reply's text and the conversation it was given in —
     // or, asked with options.schema ({name, schema}), the reply's JSON as value — a refusal thrown as an
     // AskError carrying the envelope (an unreadable reply's words as reply, on the preview alone);
-    // options.signal lets the page give up, which stops the turn. Small and dependent on nothing; one
+    // options.conversation, an earlier answer's, continues that conversation; options.signal lets the page
+    // give up, which stops the turn. Small and dependent on nothing; one
     // expression, so the classic script and the module are the same object, and the error listeners below
     // are installed once whichever loads first.
     //

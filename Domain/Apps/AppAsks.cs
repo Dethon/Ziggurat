@@ -13,7 +13,8 @@ namespace Domain.Apps;
 //
 // Asked with an AppAskRequest; answered 200 with an AppAskAnswer, or the tools' envelope: what the agent
 // refused or failed, and a reply to a schema that is no JSON (InvalidReply), is a 422 (as a read's refusal
-// is), nobody answering a 503, the wait running out a 504.
+// is), a conversation that cannot be continued a 410 (ConversationExpired), nobody answering a 503, the wait
+// running out a 504.
 public static class AppAsks
 {
     public const string OriginPath = "/_ask";
@@ -44,6 +45,12 @@ public static class AppAsks
     public static readonly ToolErrorResult NoInstructions = ToolError.PermissionDenied(
         "This app has no instructions, so it cannot ask its assistant.",
         "Name a markdown file of its repository as instructions in app.json, and publish.");
+
+    // Any conversation this app and viewer may not continue, alike whatever the reason, so the answer says
+    // nothing of whose another conversation is or whether it was ever opened.
+    public static readonly ToolErrorResult ConversationExpired = ToolError.Result(ToolError.Codes.ConversationExpired,
+        "This conversation cannot be continued: it is over, or it was never this app's and this person's, so nothing was asked.",
+        "Ask again without the conversation, starting a new one, and say so if the person was answering a question.");
 
     public static readonly ToolErrorResult Unanswered = ToolError.TransientDependency(
         "The assistant ended its turn with no answer.", "Ask again.");
@@ -130,22 +137,27 @@ public abstract record AppAskReplyRead
     public sealed record Unparsed(string Problem) : AppAskReplyRead;
 }
 
-// What a page asks: the text, and the schema its answer is to come back in, if any.
+// What a page asks: the text, the schema its answer is to come back in, if any, and the conversation it
+// continues, if any.
 public sealed record AppAskRequest
 {
     public required string Text { get; init; }
 
     public AppAskSchema? Schema { get; init; }
 
+    // The conversation an earlier answer named, to continue it; none opens a new one.
+    public string? Conversation { get; init; }
+
     // Strict: a field the shape does not name refuses the ask whole, so nothing a page sends is quietly
-    // dropped (a conversation to continue) and answered as though it had not been.
+    // dropped and answered as though it had not been.
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         RespectNullableAnnotations = true
     };
 
-    private const string Shape = "An ask is one JSON object, {\"text\": \"...\", \"schema\": {\"name\": \"...\", \"schema\": {...}}}, its schema optional";
+    private const string Shape =
+        "An ask is one JSON object, {\"text\": \"...\", \"schema\": {\"name\": \"...\", \"schema\": {...}}, \"conversation\": \"...\"}, its schema and conversation optional";
 
     public static AppAskRequestParse Parse(ReadOnlySpan<byte> body, int maxText, int maxSchemaBytes)
     {

@@ -16,7 +16,9 @@ namespace McpServerApps.Asks;
 // commit's, so an edit in the tree changes nothing a viewer sees until published; the preview the tree's —
 // and acting for the viewer on their app session's `apps` assertion, with the tools of that same manifest's
 // `asks` servers, on its `model`. A schema the page sends is the turn's response format, and the reply's JSON
-// the answer. The page waits on the whole reply; its giving up, or the wait running out, cancels the turn.
+// the answer. An ask naming an earlier answer's conversation continues it, if this app and viewer opened it
+// within the window (AskConversations), with that ask's own schema or none. The page waits on the whole
+// reply; its giving up, or the wait running out, cancels the turn.
 //
 // The clock is the wait's alone: the inbox decides whether the agent is listening on the server's own, and
 // a test moving this one must not make an agent polling in real time look gone.
@@ -25,7 +27,7 @@ public sealed class AgentAsks(
 {
     // The longest body an ask of MaxTextLength characters and a schema of MaxSchemaBytes can arrive as: JSON
     // writes a character as six bytes at most (\uXXXX), the schema is measured as written, and the object
-    // around them is small.
+    // around them, a conversation id among it, is small.
     private int MaxBodyBytes => settings.Asks.MaxTextLength * 6 + settings.Asks.MaxSchemaBytes + 1024;
 
     internal async Task<OriginAnswer> AskAsync(
@@ -75,7 +77,21 @@ public sealed class AgentAsks(
         }
 
         var viewer = session.Person;
-        var conversation = conversations.Open(app.Id, viewer, app.BuildingAgent);
+        // Last before the turn, since continuing a conversation starts its window again.
+        string conversation;
+        if (ask.Conversation is not { } named)
+        {
+            conversation = conversations.Open(app.Id, viewer, app.BuildingAgent);
+        }
+        else if (conversations.TryContinue(app.Id, viewer, app.BuildingAgent, named))
+        {
+            conversation = named;
+        }
+        else
+        {
+            return OriginAnswer.Envelope(StatusCodes.Status410Gone, AppAsks.ConversationExpired);
+        }
+
         var reply = await turns.SendAsync(new ChannelMessageNotification
         {
             ConversationId = conversation,
