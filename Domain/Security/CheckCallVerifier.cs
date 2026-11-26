@@ -32,9 +32,11 @@ public sealed class CheckCallVerifier(
             return new TurnAdmission.Refused(verification.Refusal.Value.ToString());
         }
 
+        // The person acts on the apps channel, as a viewer's assertion would have said, not on the channel the
+        // token's turn came from: a check reads and asks as the app's viewer.
         var claims = verification.Claims;
         return claims.Account is null
             ? new TurnAdmission.Refused(NamesNoPerson)
-            : new TurnAdmission.Admitted(IdentityClaims.Person(claims.Subject, claims.TenantId, claims.ChannelId, claims.Roles));
+            : new TurnAdmission.Admitted(IdentityClaims.Person(claims.Subject, claims.TenantId, AppChannels.Apps, claims.Roles));
     }
 }

@@ -825,24 +825,11 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // Who a person's message is from: its assertion; or, for a built app's ask during `./check` alone, the
-    // agent's own call token for the apps server that ran it (AppTurns.Believed has already dropped a token
-    // anywhere else). Never both, which would leave two answers. A check's person acts on the apps channel,
-    // as an ask's assertion would have said, not on the channel its token's turn came from.
-    private async Task<TurnAdmission> PersonOfAsync(IChannelConnection channel, ChannelMessage message) =>
-        (message.Assertion, message.CheckCallToken) switch
-        {
-            ({ }, { }) => new TurnAdmission.Refused(TurnAdmission.BothAnAssertionAndACheck),
-            (null, { } token) => checks is null
-                ? new TurnAdmission.Refused(CheckCallVerifier.NoAppsServer)
-                : await checks.VerifyAsync(token, _groupCt) switch
-                {
-                    TurnAdmission.Admitted { Identity: var identity } =>
-                        new TurnAdmission.Admitted(identity with { ChannelId = AppChannels.Apps }),
-                    var refused => refused
-                },
-            _ => await assertions.VerifyTurnAsync(message.Assertion, channel.ChannelId, _groupCt)
-        };
+    // Who a person's message is from (AppViewerCredential): its assertion, or, for a built app's ask during
+    // `./check` alone, the agent's own call token for the apps server that ran it — AppTurns.Believed has
+    // already dropped a token anywhere else.
+    private Task<TurnAdmission> PersonOfAsync(IChannelConnection channel, ChannelMessage message) =>
+        AppViewerCredential.VerifyAsync(message.Assertion, message.CheckCallToken, channel.ChannelId, assertions, checks, _groupCt);
 
     // Nothing the fire's server stamped on it is believed: the principal is the delegation's person,
     // channel, account and all, or there is none, and the turn acts for nobody. What it asks is checked
