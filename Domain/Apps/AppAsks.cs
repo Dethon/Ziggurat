@@ -217,37 +217,104 @@ public sealed record AppAskRequest
     // The conversation an earlier answer named, to continue it; none opens a new one.
     public string? Conversation { get; init; }
 
-    // Strict: a field the shape does not name refuses the ask whole, so nothing a page sends is quietly
-    // dropped and answered as though it had not been.
-    private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
-    {
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        RespectNullableAnnotations = true
-    };
+    private static readonly string _textField = JsonNamingPolicy.CamelCase.ConvertName(nameof(Text));
+    private static readonly string _schemaField = JsonNamingPolicy.CamelCase.ConvertName(nameof(Schema));
+    private static readonly string _conversationField = JsonNamingPolicy.CamelCase.ConvertName(nameof(Conversation));
 
     private const string Shape =
         "An ask is one JSON object, {\"text\": \"...\", \"schema\": {\"name\": \"...\", \"schema\": {...}}, \"conversation\": \"...\"}, its schema and conversation optional";
 
+    // Read by hand rather than by the serializer, whose refusals named the .NET types it read into and its own
+    // paths: a page is told the field and what it must be. Strict: a field the shape does not name, or one
+    // named twice, refuses the ask whole, so nothing a page sends is quietly dropped. Names match as the
+    // serializer matched them, regardless of case.
     public static AppAskRequestParse Parse(ReadOnlySpan<byte> body, int maxText, int maxSchemaBytes)
     {
-        AppAskRequest? request;
+        JsonDocument document;
         try
         {
-            request = JsonSerializer.Deserialize<AppAskRequest>(body, _json);
+            document = JsonDocument.Parse(body.ToArray());
         }
         catch (JsonException ex)
         {
-            return new AppAskRequestParse.Refused($"{Shape}: {ex.Message}");
+            return new AppAskRequestParse.Refused(
+                $"An ask's body is not JSON (line {(ex.LineNumber ?? 0) + 1}, byte {(ex.BytePositionInLine ?? 0) + 1}). {Shape}.");
         }
 
-        return request switch
+        using (document)
         {
-            null => new AppAskRequestParse.Refused($"{Shape}."),
-            { Text: var text } when string.IsNullOrWhiteSpace(text) || text.Length > maxText =>
-                new AppAskRequestParse.Refused($"An ask's text is 1 to {maxText} characters."),
-            { Schema: { } schema } when schema.Problem(maxSchemaBytes) is { } problem =>
-                new AppAskRequestParse.Refused(problem),
-            _ => new AppAskRequestParse.Valid(request)
+            return Read(document.RootElement, maxText, maxSchemaBytes);
+        }
+    }
+
+    private static AppAskRequestParse Read(JsonElement ask, int maxText, int maxSchemaBytes)
+    {
+        if (ask.ValueKind != JsonValueKind.Object)
+        {
+            return new AppAskRequestParse.Refused($"{Shape}.");
+        }
+
+        if (AskFields.Problem(ask, "An ask", [_textField, _schemaField, _conversationField], $" {Shape}.") is { } shape)
+        {
+            return new AppAskRequestParse.Refused(shape);
+        }
+
+        var textRule = $"a string of 1 to {maxText} characters";
+        var text = AskFields.Find(ask, _textField);
+        if (text is not { ValueKind: JsonValueKind.String })
+        {
+            return new AppAskRequestParse.Refused(text is null or { ValueKind: JsonValueKind.Null }
+                ? $"An ask's text is missing: it must be {textRule}."
+                : $"An ask's text must be {textRule}.");
+        }
+
+        if (text.Value.GetString() is not { } words || string.IsNullOrWhiteSpace(words) || words.Length > maxText)
+        {
+            return new AppAskRequestParse.Refused($"An ask's text is 1 to {maxText} characters.");
+        }
+
+        var conversation = AskFields.Find(ask, _conversationField);
+        if (conversation is { ValueKind: not (JsonValueKind.String or JsonValueKind.Null) })
+        {
+            return new AppAskRequestParse.Refused("An ask's conversation must be a string, an earlier answer's, or null for a new one.");
+        }
+
+        var schema = AppAskSchema.Read(AskFields.Find(ask, _schemaField));
+        if (schema is AppAskSchemaRead.Refused { Problem: var refused })
+        {
+            return new AppAskRequestParse.Refused(refused);
+        }
+
+        var request = new AppAskRequest
+        {
+            Text = words,
+            Schema = ((AppAskSchemaRead.Read)schema).Schema,
+            Conversation = conversation is { ValueKind: JsonValueKind.String } named ? named.GetString() : null
+        };
+        return request.Schema?.Problem(maxSchemaBytes) is { } problem
+            ? new AppAskRequestParse.Refused(problem)
+            : new AppAskRequestParse.Valid(request);
+    }
+}
+
+// An object's fields as an ask's wire reads them: by name regardless of case, each named once, none outside
+// the shape.
+internal static class AskFields
+{
+    public static JsonElement? Find(JsonElement json, string name) =>
+        json.EnumerateObject().Where(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Select(f => (JsonElement?)f.Value).FirstOrDefault();
+
+    public static string? Problem(JsonElement json, string what, IReadOnlyList<string> names, string shape)
+    {
+        var fields = json.EnumerateObject().Select(f => f.Name).ToList();
+        var unknown = fields.FirstOrDefault(f => !names.Contains(f, StringComparer.OrdinalIgnoreCase));
+        var twice = fields.GroupBy(f => f, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1)?.Key;
+        return (unknown, twice) switch
+        {
+            ({ } name, _) => $"{what} has an unknown field '{name}'.{shape}",
+            (_, { } name) => $"{what} names the field '{name}' twice.{shape}",
+            _ => null
         };
     }
 }
@@ -264,6 +331,42 @@ public sealed partial record AppAskSchema
     public required string Name { get; init; }
 
     public required JsonElement Schema { get; init; }
+
+    private static readonly string _nameField = JsonNamingPolicy.CamelCase.ConvertName(nameof(Name));
+    private static readonly string _schemaField = JsonNamingPolicy.CamelCase.ConvertName(nameof(Schema));
+
+    private const string Shape = " It is {\"name\": \"...\", \"schema\": {...}}.";
+
+    // An ask's schema field as sent, absent or null for none; its name and schema are judged by Problem once
+    // read.
+    internal static AppAskSchemaRead Read(JsonElement? field)
+    {
+        if (field is null or { ValueKind: JsonValueKind.Null })
+        {
+            return new AppAskSchemaRead.Read(null);
+        }
+
+        var schema = field.Value;
+        if (schema.ValueKind != JsonValueKind.Object)
+        {
+            return new AppAskSchemaRead.Refused($"An ask's schema must be an object, or null for an answer in text.{Shape}");
+        }
+
+        if (AskFields.Problem(schema, "An ask's schema", [_nameField, _schemaField], Shape) is { } shape)
+        {
+            return new AppAskSchemaRead.Refused(shape);
+        }
+
+        if (AskFields.Find(schema, _nameField) is not { ValueKind: JsonValueKind.String } name)
+        {
+            return new AppAskSchemaRead.Refused(
+                $"An ask's schema name must be a string of 1 to {MaxNameLength} letters, digits, _ and -.");
+        }
+
+        return AskFields.Find(schema, _schemaField) is { } json
+            ? new AppAskSchemaRead.Read(new AppAskSchema { Name = name.GetString()!, Schema = json.Clone() })
+            : new AppAskSchemaRead.Refused("An ask's schema is missing its schema: a JSON object, such as {\"type\": \"object\", ...}.");
+    }
 
     internal string? Problem(int maxBytes)
     {
@@ -285,6 +388,13 @@ public sealed partial record AppAskSchema
 
     [GeneratedRegex("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant)]
     private static partial Regex NameShape();
+}
+
+internal abstract record AppAskSchemaRead
+{
+    public sealed record Read(AppAskSchema? Schema) : AppAskSchemaRead;
+
+    public sealed record Refused(string Problem) : AppAskSchemaRead;
 }
 
 public abstract record AppAskRequestParse

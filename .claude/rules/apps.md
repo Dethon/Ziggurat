@@ -181,7 +181,8 @@ Spec `.scratch/app-asks/spec.md`; wire `Domain/Apps/AppAsks`; the library's `app
 `AddAgentTurns`), dialled as the `apps` endpoint at `sharedServers.apps`'s address with no default agent
 (`AgentAppSettingsTests`). What the agent believes and does with an ask: `channels.md` (`AppTurn`).
 
-- **`POST /_ask`** (`AgentAsks`): `{ text, schema?, conversation? }`, strict (`AppAskRequest`: an unknown
+- **`POST /_ask`** (`AgentAsks`): `{ text, schema?, conversation? }`, strict (`AppAskRequest`, read by hand so
+  a refusal names the field and what it must be, never the parser's .NET words: an unknown or twice-named
   field refuses it whole; `Asks:MaxTextLength`; `schema` `{ name, schema }`, name `[A-Za-z0-9_-]{1,64}`,
   schema a JSON object ≤ `Asks:MaxSchemaBytes`, sent as written, never checked for strict mode's rules).
   **Settled exactly as a read** (origin's own page, viewer before app, the one 404 before the body); `no-store`.

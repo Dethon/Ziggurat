@@ -422,9 +422,9 @@ public sealed class AppsAsksTests : IAsyncLifetime
 
     [Theory]
     [InlineData("""{"text":""}""", "1 to 8000 characters")]
-    [InlineData("""{"text":"Hi","stream":true}""", "stream")]
-    [InlineData("""{"text":"Hi","conversation":5}""", "conversation")]
-    [InlineData("""not json""", "JSON object")]
+    [InlineData("""{"text":"Hi","stream":true}""", "unknown field 'stream'")]
+    [InlineData("""{"text":"Hi","conversation":5}""", "conversation must be a string")]
+    [InlineData("""not json""", "not JSON")]
     [InlineData("""{"text":"Hi","schema":{"name":"carbs","schema":[]}}""", "a JSON object")]
     [InlineData("""{"text":"Hi","schema":{"name":"carbs and grams","schema":{}}}""", "letters, digits, _ and -")]
     public async Task AnAskOutsideItsShape_IsAnInvalidArgument_BeforeAnyTurn(string body, string words)
@@ -879,6 +879,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
     [InlineData("no image", "is not a JPEG, PNG, WebP or GIF image")]
     [InlineData("a stray field", "one ask field")]
     [InlineData("no ask", "one ask field")]
+    [InlineData("an ask with an unknown field", "unknown field 'stream'")]
     public async Task AnAsksImagesPastTheLimits_AreRefusedBeforeAnyTurn_KeepingAndCountingNothing(string what, string words)
     {
         await using var apps = await CappedAsync(1, new FakeTimeProvider(_capStart));
@@ -888,7 +889,9 @@ public sealed class AppsAsksTests : IAsyncLifetime
         var form = new MultipartFormDataContent();
         if (what != "no ask")
         {
-            form.Add(new StringContent("""{"text":"What is this?"}"""), AppAsks.AskField);
+            form.Add(new StringContent(what == "an ask with an unknown field"
+                ? """{"text":"What is this?","stream":true}"""
+                : """{"text":"What is this?"}"""), AppAsks.AskField);
         }
 
         if (what == "a stray field")

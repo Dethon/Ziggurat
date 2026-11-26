@@ -167,6 +167,30 @@ public class AppAsksTests
             .ShouldBeOfType<AppAskRequestParse.Refused>().Problem.ShouldContain(words);
     }
 
+    // A page sent an ask wrong is told so in the wire's own words — the field, and what it must be — never in the
+    // parser's, which named the .NET types it read into and its own paths and positions.
+    [Theory]
+    [InlineData("""{"text":"hi","foo":1}""", "unknown field 'foo'")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":{},"strict":false}}""", "unknown field 'strict'")]
+    [InlineData("""{"text":5}""", "text must be a string")]
+    [InlineData("""{"text":"hi","conversation":5}""", "conversation must be a string")]
+    [InlineData("""{"text":"hi","schema":"meal"}""", "schema must be an object")]
+    [InlineData("""{"text":"hi","schema":{"name":5,"schema":{}}}""", "name must be a string")]
+    [InlineData("""{"text":"hi","text":"again"}""", "'text' twice")]
+    [InlineData("""not json at all""", "not JSON")]
+    [InlineData("""{"text":"hi" """, "not JSON")]
+    [InlineData("""["hi"]""", "one JSON object")]
+    [InlineData("""null""", "one JSON object")]
+    public void AnAskSentWrong_IsToldInTheWiresOwnWords(string body, string words)
+    {
+        var problem = AppAskRequest.Parse(Encoding.UTF8.GetBytes(body), maxText: 10, maxSchemaBytes: 40)
+            .ShouldBeOfType<AppAskRequestParse.Refused>().Problem;
+
+        problem.ShouldContain(words);
+        new[] { ".NET", "Domain.", "System.", "Path: $", "LineNumber", "BytePositionInLine", "literal" }
+            .ShouldAllBe(internals => !problem.Contains(internals, StringComparison.Ordinal), problem);
+    }
+
     [Fact]
     public void Instructions_AreTheFilesText()
     {
