@@ -672,13 +672,6 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
-    // machines are asked again — a lookup, not a dial — and a session built with the very servers
-    // found now is the one this turn runs in. One that came online since, went offline, or
-    // reconnected as a new generation of its tunnel makes
-    // this turn build a new session in its place, so a server joins or leaves between turns and a
-    // session's tools never change under it (ADR 0012). Turns of one conversation group run one at a
-    // time, so the session replaced has no call in flight.
     // A built app's ask runs in a session of the agent's servers it declared alone, reconciled as any turn's,
     // so a later ask of the same conversation declaring other servers builds its own. One declaring none of
     // them runs in none, and lets go of the one an earlier ask left, whose skills and mounts are read off
@@ -694,6 +687,13 @@ public sealed class McpAgent : DisposableAgent
         return null;
     }
 
+    // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
+    // machines are asked again — a lookup, not a dial — and a session built with the very servers
+    // found now is the one this turn runs in. One that came online since, went offline, or
+    // reconnected as a new generation of its tunnel makes
+    // this turn build a new session in its place, so a server joins or leaves between turns and a
+    // session's tools never change under it (ADR 0012). Turns of one conversation group run one at a
+    // time, so the session replaced has no call in flight.
     private async Task<ReconciledSession> GetOrCreateSessionAsync(
         AgentSession thread, SessionReach sessionReach, IReadOnlyList<AIFunction> domainTools, CancellationToken ct)
     {
