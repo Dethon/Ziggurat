@@ -9,8 +9,9 @@ using static Tests.Unit.Infrastructure.Helpers.ToolApprovalResponseFactory;
 namespace Tests.Unit.Infrastructure;
 
 // A call carrying asMe acts as the person on a site, and a page's own text can ask for one — so
-// the person is asked the first time a conversation browses a site as them, whatever the
-// whitelist says, and only approve-and-remember covers that site for the rest of it.
+// the person is asked the first time a turn browses a site as them, whatever the whitelist says:
+// a plain yes covers that site for the rest of the turn, approve-and-remember for the rest of the
+// conversation.
 public class ToolApprovalChatClientAsPersonTests
 {
     private const string Browse = "mcp__websearch__web_browse";
@@ -101,6 +102,83 @@ public class ToolApprovalChatClientAsPersonTests
         handler.RequestedApprovals.Count.ShouldBe(2);
         handler.AutoApprovedNotifications.ShouldBeEmpty();
     }
+
+    // A plain yes covers the site for the rest of the turn it was given in: a profile read as
+    // https://www.linkedin.com/in/me and then its three detail pages in one message asked twice.
+    // The site is the registrable domain, so neither the path nor the www counts.
+    [Fact]
+    public async Task ApprovingOnce_CoversTheSiteForTheRestOfTheTurn_WhateverThePath()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var model = new FakeChatClient();
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+        model.SetNextResponse(Calls(Args("https://www.linkedin.com/in/me/")));
+        model.SetNextResponse(Calls(
+            Args("https://linkedin.com/in/someone/details/education/"),
+            Args("https://www.linkedin.com/in/someone/details/skills/"),
+            Args("https://es.linkedin.com/in/someone/details/recommendations/")));
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "look at my profile")], Options());
+
+        handler.RequestedApprovals.ShouldHaveSingleItem();
+        _browsed.Count.ShouldBe(4);
+    }
+
+    // Calls of one message are asked about together, before any answer: the yes to the first is
+    // the yes to every other on its site, rather than a card each.
+    [Fact]
+    public async Task CallsOnOneSiteInOneMessage_AreAskedOnce()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var model = new FakeChatClient();
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+        model.SetNextResponse(Calls(
+            Args("https://www.linkedin.com/in/a/"), Args("https://www.linkedin.com/in/b/"),
+            Args("https://www.linkedin.com/in/c/")));
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "look")], Options());
+
+        handler.RequestedApprovals.ShouldHaveSingleItem();
+        _browsed.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task ARefusal_CoversTheSiteForTheRestOfTheTurnToo()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Rejected);
+        var model = new FakeChatClient();
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+        model.SetNextResponse(Calls(Args("https://www.linkedin.com/in/a/"), Args("https://www.linkedin.com/in/b/")));
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "look")], Options());
+
+        handler.RequestedApprovals.ShouldHaveSingleItem();
+        _browsed.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task APlainYes_DoesNotCoverAnotherSiteInTheTurn_NorTheSiteInTheNextTurn()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var model = new FakeChatClient();
+        var client = new ToolApprovalChatClient(model, handler, "conv", _shippedWhitelist);
+        model.SetNextResponse(Calls(Args("https://www.linkedin.com/in/me/"), Args("https://mail.google.com/")));
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "look")], Options());
+        await CallAsync(client, model, Args("https://www.linkedin.com/in/me/"));
+
+        handler.RequestedApprovals.Count.ShouldBe(3);
+    }
+
+    private ChatOptions Options() => new() { Tools = [BrowseFunction()] };
+
+    private static ChatResponse Calls(params Dictionary<string, object?>[] arguments) =>
+        new([
+            new ChatMessage(
+                ChatRole.Assistant,
+                arguments.Select(a => (AIContent)new FunctionCallContent($"call-{Guid.NewGuid():N}", Browse, a)).ToList())
+        ])
+        { FinishReason = ChatFinishReason.ToolCalls };
 
     // Remembering the tool for one site must not remember the tool itself: a later call as the
     // person on another site, or with a tool-level remember from an unflagged call, still asks.

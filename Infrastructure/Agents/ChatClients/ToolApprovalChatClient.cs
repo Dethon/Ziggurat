@@ -47,6 +47,13 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     // one — a worker — and its calls must not queue behind the call that is waiting for them.
     private readonly ConditionalWeakTable<IList<ChatMessage>, WrittenOrder> _writtenOrders = new();
 
+    // The person's answer about each site a call acted as them on, for the rest of the turn it was
+    // given in, found by the turn's history as the written order is. A plain yes to the first of a
+    // site's calls is a yes to the rest of them: a profile read and then three of its pages asked
+    // twice, and calls of one message, asked together before any answer, would ask once each.
+    private readonly ConditionalWeakTable<IList<ChatMessage>, ConcurrentDictionary<AsPersonSubject, TaskCompletionSource<ToolApprovalResult>>>
+        _turnAnswers = new();
+
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
     // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
     // the very round trip the skill exists to save (docs/adr/0039).
@@ -131,21 +138,45 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         // to, so nothing but the person's own yes for that site lets it run.
         if (AsPersonSubject.Of(toolName, request.Arguments) is { } subject && !IsUnpromptedFire(context.Options))
         {
-            if (subject.Site is not null && _approvedSubjects.ContainsKey(subject))
+            var asked = request with { Screen = [ExecScreenCodes.AsPerson] };
+
+            // A call with no site has nothing to scope the yes to, so it is asked every time.
+            if (subject.Site is null)
+            {
+                return await AskAsync(context, asked, place, cancellationToken, remember: () => { });
+            }
+
+            if (_approvedSubjects.ContainsKey(subject))
             {
                 return await RunUnaskedAsync(context, request, place, cancellationToken);
             }
 
-            return await AskAsync(
-                context, request with { Screen = [ExecScreenCodes.AsPerson] }, place, cancellationToken,
-                remember: () =>
-                {
-                    // A call with no site has nothing to scope the yes to, so it is asked again.
-                    if (subject.Site is not null)
-                    {
-                        _approvedSubjects.TryAdd(subject, 0);
-                    }
-                });
+            var answers = _turnAnswers.GetValue(context.Messages, _ => new());
+            var mine = new TaskCompletionSource<ToolApprovalResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = answers.GetOrAdd(subject, mine);
+            if (answer != mine)
+            {
+                var given = await answer.Task.WaitAsync(cancellationToken);
+                return given is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember or ToolApprovalResult.AutoApproved
+                    ? await RunUnaskedAsync(context, request, place, cancellationToken)
+                    : Rejected(context, toolName);
+            }
+
+            ToolApprovalResult result;
+            try
+            {
+                result = await RequestAsync(context, asked, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Nobody answered: the calls waiting on this one hear the same, never a yes.
+                mine.TrySetException(ex);
+                throw;
+            }
+
+            mine.TrySetResult(result);
+            return await AnsweredAsync(
+                context, toolName, result, place, cancellationToken, remember: () => _approvedSubjects.TryAdd(subject, 0));
         }
 
         if (RunsUnasked(toolName))
@@ -199,13 +230,26 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         CancellationToken cancellationToken,
         Action? remember = null)
     {
-        var toolName = request.ToolName;
-        // The turn rides with the question as a field of it, so whose question it is never depends
-        // on which call happens to be in flight.
-        var result = await _approvalHandler.RequestApprovalAsync(
+        var result = await RequestAsync(context, request, cancellationToken);
+        return await AnsweredAsync(context, request.ToolName, result, place, cancellationToken, remember);
+    }
+
+    // The turn rides with the question as a field of it, so whose question it is never depends on
+    // which call happens to be in flight.
+    private Task<ToolApprovalResult> RequestAsync(
+        FunctionInvocationContext context, ToolApprovalRequest request, CancellationToken cancellationToken) =>
+        _approvalHandler.RequestApprovalAsync(
             ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
             cancellationToken);
 
+    private async ValueTask<object?> AnsweredAsync(
+        FunctionInvocationContext context,
+        string toolName,
+        ToolApprovalResult result,
+        WrittenOrder.Place place,
+        CancellationToken cancellationToken,
+        Action? remember)
+    {
         switch (result)
         {
             case ToolApprovalResult.ApprovedAndRemember:
@@ -218,9 +262,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
             case ToolApprovalResult.Rejected:
             default:
-                context.Terminate = true;
-                return ApprovalRejection.ResultFor(toolName);
+                return Rejected(context, toolName);
         }
+    }
+
+    private static object? Rejected(FunctionInvocationContext context, string toolName)
+    {
+        context.Terminate = true;
+        return ApprovalRejection.ResultFor(toolName);
     }
 
     // The one question every unasked path answers: always approved, whitelisted, or remembered for
