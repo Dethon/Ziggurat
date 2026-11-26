@@ -58,6 +58,15 @@ public class MemoryRecallHook(
         AgentSession thread,
         CancellationToken ct)
     {
+        // A built app's ask may carry anything the app's code fetched, so it is neither recalled for nor
+        // extracted from. Read off the turn's own message by the stamp's presence alone, so a stamp that
+        // cannot be read keeps memory out too. Its own gate, deliberately apart from the one-way Lemonade
+        // boundary below (ADR 0042).
+        if (message.IsAppTurn())
+        {
+            return null;
+        }
+
         var agent = await AgentAsync(agentId, account, ct);
         if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {

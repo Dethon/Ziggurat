@@ -237,6 +237,28 @@ public class McpChannelConnectionParsingTests
             break;
         }
     }
+    // The wire the apps server writes: camelCase, as every other field of the notification.
+    [Fact]
+    public async Task HandleChannelMessageNotification_WithAnAppTurn_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("apps");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"ask-1","sender":"app","content":"how many carbs?","agentId":"jonas","turnKey":"t-1",
+         "appTurn":{"appId":"a1b2c3","instructions":"You estimate carbs.","servers":[]}}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            var app = msg.AppTurn.ShouldNotBeNull();
+            app.AppId.ShouldBe("a1b2c3");
+            app.Instructions.ShouldBe("You estimate carbs.");
+            app.Servers.ShouldBeEmpty();
+            msg.ChannelId.ShouldBe("apps");
+            break;
+        }
+    }
+
     [Fact]
     public async Task HandleChannelMessageNotification_WithAReviewCopy_MapsItOntoChannelMessage()
     {

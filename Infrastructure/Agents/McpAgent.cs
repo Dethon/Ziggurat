@@ -78,7 +78,7 @@ public sealed class McpAgent : DisposableAgent
     // lives on the shared chat client and the model stamped on metrics is by construction the
     // model the request ran on.
     private sealed record TurnConfig(
-        string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null);
+        string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null, AppTurn? App = null);
 
     // The spec carries every configured value, so nothing about what this agent is can be
     // expressed by omitting an argument. What is left are the live collaborators, and the
@@ -324,9 +324,10 @@ public sealed class McpAgent : DisposableAgent
 
         // Said on the turn's own message, never in the instructions: the system prompt is the cached
         // prefix every turn shares, and which of a household's machines are on is this turn's news.
-        // Stamped as data and rendered by the decoration, so the persisted message stays as typed.
+        // Stamped as data and rendered by the decoration, so the persisted message stays as typed. An
+        // app's ask is offered none of the agent's servers, so none of them is missing from it.
         messageList.LastOrDefault(m => m.Role == ChatRole.User)
-            ?.SetOfflineServers(reconciled.Reach.OwnServers.Offline);
+            ?.SetOfflineServers(turnConfig.App is null ? reconciled.Reach.OwnServers.Offline : []);
 
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
@@ -379,7 +380,8 @@ public sealed class McpAgent : DisposableAgent
         return new TurnConfig(
             ResolveModelOverride(patch?.Model),
             ResolveEffort(patch?.ReasoningEffort),
-            userMessage?.GetResponseFormat());
+            userMessage?.GetResponseFormat(),
+            userMessage?.GetAppTurn());
     }
 
     private string? ResolveModelOverride(string? patchedModel)
@@ -451,8 +453,10 @@ public sealed class McpAgent : DisposableAgent
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             ModelId = turnConfig.ModelOverride,
-            Tools = [.. session.Tools],
-            Instructions = BuildInstructions(session),
+            // An app's ask calls nothing: not the agent's servers, nor the tools that are no server's
+            // (files, workers, memory). The skills provider offers it no load either.
+            Tools = turnConfig.App is null ? [.. session.Tools] : [],
+            Instructions = turnConfig.App is { } app ? BuildAppInstructions(app) : BuildInstructions(session),
             // The summary is asked for because an OpenAI model on the Responses wire returns its
             // reasoning encrypted and empty without one; providers OpenRouter translates stream
             // theirs regardless, so this is what makes reasoning visible at all on that wire.
@@ -542,6 +546,27 @@ public sealed class McpAgent : DisposableAgent
             Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
             // Named only where it is not the host's own: the home's agents read the prompt they always
             // read, and a household elsewhere is told whose eight o'clock it is.
+            TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
+        });
+
+        ReportPromptWarnings(assembly);
+
+        return assembly.Text;
+    }
+
+    // A built app's ask is answered by the app's instructions in place of the persona, around what every
+    // agent carries. It is offered none of the session's servers, so none of their mounts, prompts or
+    // skills is its; the day, zone and language are the agent's, as for any turn.
+    private string BuildAppInstructions(AppTurn app)
+    {
+        var zone = Zone;
+        var assembly = PromptComposer.Compose(new PromptContext
+        {
+            AgentId = _agentId,
+            Name = _promptName,
+            AppInstructions = app.Instructions,
+            Language = _language,
+            Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
             TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
         });
 

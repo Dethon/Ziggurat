@@ -29,6 +29,10 @@ paths:
   - "Tests/E2E/WebChat/AppSpacesE2ETests.cs"
   - "Domain/Prompts/Skills/apps.md"
   - "Domain/Prompts/AppsSkill.cs"
+  - "Domain/DTOs/Channel/AppTurn.cs"
+  - "Domain/Monitor/AppTurns.cs"
+  - "Tests/Integration/Agents/AppTurnAgentTests.cs"
+  - "Tests/Unit/Domain/Monitor/ChatMonitorAppTurnTests.cs"
 ---
 
 # Built apps: the apps server and `/apps`
@@ -164,6 +168,17 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   `APPSURL`). Each answers the assertion's household alone, `no-store`; a person's apps give a shared id no
   more than its link and name, and read no spaces. `apps-browser` reaches this listener, so the assertion is
   all that closes them.
+
+## App asks
+
+Spec: `.scratch/app-asks/spec.md`. **The apps server is also a channel**: the agent dials it as the `apps`
+channel endpoint at the address it serves as `sharedServers.apps` (`AgentAppSettingsTests`), with no
+default agent. An ask is a channel message naming the building agent, carrying the viewer's `apps`
+assertion and an `AppTurn` (`AppId`, `Instructions`, `Servers`), under a `TurnKey` of its own. What the
+agent believes of it and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification.AppTurn`):
+the app's instructions in place of the persona (`app_instructions` section, budget 4,000), no tools yet,
+no memory, no topic, usage on channel `apps` naming the app; each refusal answered with a
+`RefusalAnswers` sentence whose `CodeOf` is the code to map.
 
 ## App sign-in
 

@@ -339,6 +339,22 @@ public class AgentAppSettingsTests
             .ShouldBe("http://mcp-sugary:8080/mcp");
     }
 
+    // A built app's asks come on the apps server's own channel, dialled at the address it already serves as
+    // a shared server (as Sugary is both), under the id the viewer's `apps` assertion names — the agent holds
+    // an ask's assertion to the channel it came on. No default answers it: an ask names its building agent.
+    [Fact]
+    public void TheAppsChannel_IsTheAppsServer_UnderTheAppsAssertionsChannel_WithNoDefaultAgent()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+
+        var apps = settings.ChannelEndpoints.Single(e => e.ChannelId == global::Domain.Security.AppChannels.Apps);
+        apps.Endpoint.ShouldBe(Root()["sharedServers"]!["apps"]!.GetValue<string>());
+        apps.Endpoint.ShouldBe("http://mcp-apps:8080/mcp");
+        apps.AttachOnly.ShouldBeFalse();
+        apps.HostsReviewCopies.ShouldBeFalse();
+        settings.AgentDefaults.For(global::Domain.Security.AppChannels.Apps).ShouldBeNull();
+    }
+
     // The Sugary server refuses a photo for a model that cannot see one, and asks the catalogue about
     // the agent its turns are answered by. The message names no agent — routing is agentDefaults' —
     // so the server's setting is a second spelling of that route, and the two must not drift: asked

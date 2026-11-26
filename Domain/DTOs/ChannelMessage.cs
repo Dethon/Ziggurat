@@ -49,6 +49,10 @@ public record ChannelMessage
     public bool Steer { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
 
+    // A built app's ask (ChannelMessageNotification.AppTurn), unverified: the conversation group keeps
+    // it only on a message from the deployment's `apps` channel endpoint and drops it everywhere else.
+    public AppTurn? AppTurn { get; init; }
+
     // The channel asks for this conversation to be shown on the review host too (ADR 0046).
     public ReviewCopy? ReviewCopy { get; init; }
 

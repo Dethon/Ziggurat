@@ -77,6 +77,7 @@ public static class PromptManifest
     public const string FilesystemMounts = "filesystem_mounts";
     public const string Date = "date";
     public const string CustomInstructions = "custom_instructions";
+    public const string AppInstructions = "app_instructions";
     public const string Language = "language";
 
     private static readonly Dictionary<string, PromptDeclaration> _byName =

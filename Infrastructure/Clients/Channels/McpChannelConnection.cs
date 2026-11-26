@@ -503,6 +503,7 @@ public sealed class McpChannelConnection(
             Continuation = notification.Continuation,
             Steer = notification.Steer,
             ResponseFormat = notification.ResponseFormat,
+            AppTurn = notification.AppTurn,
             ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,
             Attachments = notification.Attachments

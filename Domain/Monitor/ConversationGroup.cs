@@ -345,8 +345,7 @@ internal sealed class ConversationGroup(
                     // The household has no agent of that id. Ends the group as a failed setup does, so
                     // the next message is built afresh — once an owner adds the agent it answers.
                     await RefuseWithoutAgentAsync(x, ex);
-                    await EndUnsetUpAsync(
-                        together, x.Channel.AttachOnly && x.Message.Origin is null ? NoAgentHereAnswer : null);
+                    await EndUnsetUpAsync(together, WithoutAgentAnswer(x, ex));
                     await EndFailedSetupAsync();
                     break;
                 }
@@ -779,15 +778,25 @@ internal sealed class ConversationGroup(
     //
     // On the group token, not the pump's: a /cancel arriving behind this message must not drop it
     // half-checked rather than through the teardown drain that names it.
-    private async Task<AdmittedTurn?> AdmitAsync((IChannelConnection Channel, ChannelMessage Message) x)
+    private async Task<AdmittedTurn?> AdmitAsync((IChannelConnection Channel, ChannelMessage Message) arrived)
     {
+        var x = arrived with { Message = AppTurns.Believed(arrived.Channel, arrived.Message, logger) };
         if (x.Message.Origin is not null)
         {
             return await AdmitFireAsync(x.Channel, x.Message);
         }
 
+        if (AppTurns.IsAppsEndpoint(x.Channel) && x.Message.AppTurn is null)
+        {
+            await RefuseAsync(x.Channel, x.Message, TurnAdmission.NotAnAppTurn);
+            return null;
+        }
+
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
         {
+            case TurnAdmission.Admitted { Identity.Account: null } when x.Message.AppTurn is not null:
+                await RefuseAsync(x.Channel, x.Message, TurnAdmission.NotAPerson);
+                return null;
             case TurnAdmission.Admitted { Identity: var identity }:
                 if (await RefusedForAnotherHouseholdAsync(x.Channel, x.Message, [identity.TenantId]))
                 {
@@ -795,7 +804,7 @@ internal sealed class ConversationGroup(
                 }
 
                 if ((await StandingRefusalAsync([identity.TenantId], identity)
-                     ?? await FeatureRefusalAsync(x.Channel.ChannelId, identity.TenantId)) is { } refusal)
+                     ?? await FeatureRefusalAsync(x.Channel.ChannelId, x.Message, identity.TenantId)) is { } refusal)
                 {
                     await RefuseByStandingAsync(x.Channel, x.Message, refusal);
                     return null;
@@ -942,25 +951,39 @@ internal sealed class ConversationGroup(
     // agent of the household, the estimator included, whose rules (never a dose among them) that server
     // serves — so the app's turns are refused rather than estimated without them. Asked for every
     // message, as a suspension is; the household's view is the one just read.
-    private async Task<StandingRefusal?> FeatureRefusalAsync(string channelId, string householdId)
+    //
+    // A built app's ask needs the household's apps, and the agent that built the app among the household's
+    // own agents — a person's registered agent of that id is not it — asked for every ask, so an agent
+    // removed while the app's conversation is open answers it no more.
+    private async Task<StandingRefusal?> FeatureRefusalAsync(string channelId, ChannelMessage message, string householdId)
     {
-        if (households is null || channelId != ChannelIds.Sugary || householdId.Length == 0)
+        if (households is null || householdId.Length == 0 || (channelId != ChannelIds.Sugary && message.AppTurn is null))
         {
             return null;
         }
 
         try
         {
-            return (await households.ForHouseholdAsync(householdId, _groupCt)).Configuration?.Features.Sugary == false
-                ? new StandingRefusal.SugaryOff(householdId)
-                : null;
+            var household = await households.ForHouseholdAsync(householdId, _groupCt);
+            return message.AppTurn is not null
+                ? AppRefusal(household, message.AgentId ?? "", householdId)
+                : household.Configuration?.Features.Sugary == false
+                    ? new StandingRefusal.SugaryOff(householdId)
+                    : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
         {
-            logger.LogWarning(ex, "Could not read whether household {Household} has Sugary on", householdId);
+            logger.LogWarning(ex, "Could not read whether household {Household} lets {ChannelId} through", householdId, channelId);
             return new StandingRefusal.Unchecked(householdId);
         }
     }
+
+    private static StandingRefusal? AppRefusal(HouseholdAgents household, string agentId, string householdId) =>
+        household.Configuration?.Features.Apps != true
+            ? new StandingRefusal.AppsOff(householdId)
+            : household.Find(agentId) is null
+                ? new StandingRefusal.AppAgentGone(householdId, agentId)
+                : null;
 
     // Whether the households a message names let it through, and its person's whether it still lets the
     // agent act for them (HouseholdStanding), on the group token.
@@ -980,13 +1003,20 @@ internal sealed class ConversationGroup(
                 (ChatMonitor.AccountDisabledErrorType, $"account {account.UserId} is disabled", DisabledAnswer),
             StandingRefusal.SugaryOff =>
                 (ChatMonitor.FeatureOffErrorType, $"household {refusal.HouseholdId} turned Sugary off", RefusalAnswers.SugaryOff),
+            StandingRefusal.AppsOff =>
+                (ChatMonitor.FeatureOffErrorType, $"household {refusal.HouseholdId} has no built apps", RefusalAnswers.AppsOff),
+            StandingRefusal.AppAgentGone { AgentId: var agentId } =>
+                (ChatMonitor.AgentNotFoundErrorType, $"household {refusal.HouseholdId} has no agent {agentId}",
+                    RefusalAnswers.AgentGone(agentId)),
             _ => (ChatMonitor.StandingUnreadableErrorType,
                 $"whether household {refusal.HouseholdId} lets it through could not be read", UncheckedAnswer)
         };
         var what = message.Origin is null ? "turn" : $"{message.Origin.Kind} fire";
         // A suspended household's crons keep firing until it is resumed, which is the operator's doing,
         // not a fault.
-        logger.Log(refusal is StandingRefusal.Suspended or StandingRefusal.SugaryOff ? LogLevel.Information : LogLevel.Warning,
+        logger.Log(refusal is StandingRefusal.Suspended or StandingRefusal.SugaryOff or StandingRefusal.AppsOff
+                ? LogLevel.Information
+                : LogLevel.Warning,
             "Refused a {What} on {ChannelId} for conversation {ConversationId}: {Why}",
             what, channel.ChannelId, message.ConversationId, why);
         metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent
@@ -1043,9 +1073,7 @@ internal sealed class ConversationGroup(
         }
     }
 
-    // Refused for an agent its household does not have, counted as that household's. A channel that
-    // only attaches (voice) has a person waiting on a satellite that would otherwise sit silent for its
-    // whole reply timeout, so it is told; the other channels refuse as they always have.
+    // Refused for an agent its household does not have, counted as that household's.
     private async Task RefuseWithoutAgentAsync(AdmittedTurn x, AgentNotFoundException refusal)
     {
         logger.LogWarning(
@@ -1057,11 +1085,19 @@ internal sealed class ConversationGroup(
             ErrorType = ChatMonitor.AgentNotFoundErrorType,
             Message = $"A turn on {x.Channel.ChannelId} for conversation {x.Message.ConversationId} named agent {refusal.AgentId}, which household {refusal.HouseholdId ?? "home"} does not have"
         });
-        if (x.Channel.AttachOnly && x.Message.Origin is null)
+        if (WithoutAgentAnswer(x, refusal) is { } answer)
         {
-            await AnswerRefusedAsync(x.Channel, x.Message, NoAgentHereAnswer);
+            await AnswerRefusedAsync(x.Channel, x.Message, answer);
         }
     }
+
+    // A satellite is told nobody answers there, and a built app's ask names the agent it asked, since the
+    // apps server waits on the turn; every other channel refuses as it always has.
+    private static string? WithoutAgentAnswer(AdmittedTurn x, AgentNotFoundException refusal) =>
+        x.Message.Origin is not null ? null
+        : x.Message.AppTurn is not null ? RefusalAnswers.AgentGone(refusal.AgentId ?? "")
+        : x.Channel.AttachOnly ? NoAgentHereAnswer
+        : null;
 
     private async Task AnswerRefusedAsync(IChannelConnection channel, ChannelMessage message, string answer)
     {
@@ -1361,6 +1397,7 @@ internal sealed class ConversationGroup(
         }
 
         userMessage.SetResponseFormat(message.ResponseFormat);
+        userMessage.SetAppTurn(message.AppTurn);
         // References only. The bytes rest wherever the channel keeps them and are put back on the
         // way to the model, so a history read costs the same whether or not files were sent
         // (ADR 0020). The channel id rides along because it names who still holds them.
@@ -1381,7 +1418,8 @@ internal sealed class ConversationGroup(
         ChannelMessage message, Turn turn, GroupState state, bool preload)
     {
         var userMessage = PersonsMessage(message, turn.Targets, turn.Identity, turn.ChannelHouseholdId);
-        if (skillPreloader is not null && preload)
+        // An app's ask is offered no skill, so no judge is paid to pick one.
+        if (skillPreloader is not null && preload && message.AppTurn is null)
         {
             // Started here and awaited by nobody here: the judgment runs while recall makes its
             // own round trips, so a live turn pays nothing for it, and its deadline runs from

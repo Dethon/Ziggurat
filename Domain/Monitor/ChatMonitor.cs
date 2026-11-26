@@ -145,7 +145,8 @@ public class ChatMonitor(
     private async ValueTask<ChannelMessage> RouteToAgentAsync(
         IChannelConnection channel, ChannelMessage message, CancellationToken ct)
     {
-        if (!string.IsNullOrEmpty(message.AgentId))
+        // A built app's ask is answered by the agent that built the app or by none, never a default.
+        if (!string.IsNullOrEmpty(message.AgentId) || AppTurns.IsAppsEndpoint(channel))
         {
             return message;
         }

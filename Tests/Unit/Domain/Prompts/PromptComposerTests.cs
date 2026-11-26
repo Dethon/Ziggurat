@@ -70,6 +70,38 @@ public class PromptComposerTests
         date.ShouldBeGreaterThan(result.IndexOf("CLIENT", StringComparison.Ordinal));
     }
 
+    // A built app's ask is answered by the app's instructions in place of the agent's persona: who the agent
+    // is, how its owner tuned it, its workers, memory and channel are left out, and what every agent carries
+    // whatever its persona — the core directive, the day, the language and the sections of whatever servers
+    // the ask is offered — is kept.
+    [Fact]
+    public void Compose_ForAnApp_TheAppsInstructionsStandInForThePersona()
+    {
+        var voice = PromptManifest.Selected(VoicePrompt.Name).ShouldNotBeNull();
+        var result = PromptComposer.Compose(Context(
+                name: "Jonas", description: "The household's assistant.", customInstructions: "CUSTOM", language: "es",
+                withSections: true) with
+        {
+            Selected = [voice],
+            AppInstructions = "APP: estimate the carbs of the meal described."
+        });
+
+        result.Text.ShouldStartWith(CoreDirectivePrompt.Instructions);
+        result.Text.ShouldContain("APP: estimate the carbs of the meal described.");
+        result.Text.ShouldContain("Today is Friday, 2026-05-15.");
+        result.Text.ShouldContain(LanguagePrompt.Build("es"));
+        result.Text.ShouldContain("FS");
+        result.Text.ShouldContain("CLIENT");
+        result.Text.ShouldNotContain("You are Jonas");
+        result.Text.ShouldNotContain("CUSTOM");
+        result.Text.ShouldNotContain("DOMAIN");
+        result.Sections.Select(s => s.Declaration.Name).ShouldNotContain(VoicePrompt.Name);
+        result.Sections.Select(s => s.Declaration.Name).ShouldContain(PromptManifest.AppInstructions);
+        result.Text.IndexOf("APP:", StringComparison.Ordinal)
+            .ShouldBeGreaterThan(result.Text.IndexOf("Today is", StringComparison.Ordinal));
+        result.Warnings.ShouldBeEmpty();
+    }
+
     [Fact]
     public void Compose_PlacesCustomInstructionsLast()
     {
@@ -130,7 +162,7 @@ public class PromptComposerTests
         var result = Compose(Context(
             name: "Nabu", customInstructions: "CUSTOM", language: "es", withSections: true));
 
-        result.ShouldEndWith(LanguagePrompt.Build("es")!);
+        result.ShouldEndWith(LanguagePrompt.Build("es"));
         result.IndexOf("## Idioma", StringComparison.Ordinal)
             .ShouldBeGreaterThan(result.IndexOf("CUSTOM", StringComparison.Ordinal));
     }

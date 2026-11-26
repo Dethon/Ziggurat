@@ -100,6 +100,12 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     protected override async ValueTask<AIContext> ProvideAIContextAsync(
         InvokingContext context, CancellationToken cancellationToken = default)
     {
+        // A built app's ask is offered no skill: no list, no load tool and nothing preloaded.
+        if (context.AIContext.Messages?.LastOrDefault(m => m.Role == ChatRole.User)?.IsAppTurn() == true)
+        {
+            return new AIContext();
+        }
+
         var provided = await _inner.InvokingAsync(
             new InvokingContext(context.Agent, context.Session, new AIContext()), cancellationToken);
 

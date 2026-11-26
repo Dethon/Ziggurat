@@ -153,6 +153,7 @@ public sealed class OpenRouterChatClient : IChatClient
         var sender = asking?.GetSenderId();
         var account = asking?.GetAccountId();
         var agent = asking?.GetAgentId();
+        var turn = new TurnLabels(asking?.GetConversationContext()?.Origin.ChannelId, asking?.GetAppTurn()?.AppId);
 
         // Decided for this turn rather than at construction, and from the model the turn runs on:
         // a model a person switched to for one turn may hold less than the agent's own does.
@@ -211,7 +212,7 @@ public sealed class OpenRouterChatClient : IChatClient
             }
 
             // Each ask was paid for, so each is billed.
-            PublishUsage(usage, sender, account, agent, effectiveModel);
+            PublishUsage(usage, sender, account, agent, effectiveModel, turn);
 
             if (answered || !asksAgain || ask > 0 || (finish is not null && finish != ChatFinishReason.Stop))
             {
@@ -224,7 +225,11 @@ public sealed class OpenRouterChatClient : IChatClient
     private static bool Answers(ChatResponseUpdate update) =>
         update.Contents.Any(c => c is FunctionCallContent || c is TextContent { Text: var text } && !string.IsNullOrWhiteSpace(text));
 
-    private void PublishUsage(UsageContent? usage, string? sender, string? account, string? agent, string model)
+    // The channel a turn came on and the built app whose ask it was, which its usage is counted under.
+    private sealed record TurnLabels(string? Channel, string? AppId);
+
+    private void PublishUsage(
+        UsageContent? usage, string? sender, string? account, string? agent, string model, TurnLabels turn)
     {
         if (usage?.Details is null)
         {
@@ -236,6 +241,8 @@ public sealed class OpenRouterChatClient : IChatClient
             Sender = sender ?? "unknown",
             UserId = account,
             AgentId = agent,
+            Channel = turn.Channel,
+            AppId = turn.AppId,
             Model = model,
             InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
             OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),

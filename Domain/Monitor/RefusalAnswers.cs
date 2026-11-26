@@ -48,6 +48,21 @@ public static class RefusalAnswers
     public const string SugaryOff =
         "Sugary is turned off for your household, so nothing was estimated. An owner can turn it back on on the Features page.";
 
+    // A built app's ask for a household whose built apps the operator has not turned on: the apps feature
+    // is the operator's alone, so no owner can change it.
+    public const string AppsOff =
+        "Built apps are not turned on for your household, so this app could not ask its assistant. Whoever runs this deployment can turn them on.";
+
+    // A built app's ask naming the agent that built it, which its household no longer has: named, so the
+    // app's author knows which one, and never answered by another agent instead. Said to an app alone,
+    // never on a satellite, so voice has no sentence for it and it is not in All.
+    public static string AgentGone(string agentId) => $"{AgentGoneOpening}'{agentId}'{AgentGoneClosing}";
+
+    private const string AgentGoneOpening = "Your household no longer has the agent ";
+
+    private const string AgentGoneClosing =
+        " that built this app, so the app cannot ask it. An owner can add it back on the Agents page.";
+
     // A turn whose agent could not be built for a reason that is nobody's to fix here — a store the
     // agent reads was down, say: nothing was asked of any model, and the same message may simply be
     // sent again. Not the household's refusal, so it has no code: an app says its own "try again".
@@ -55,7 +70,7 @@ public static class RefusalAnswers
         "Something went wrong getting the assistant ready for this message, so it was not answered. Try sending it again in a moment.";
 
     public static IReadOnlyList<string> All { get; } =
-        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, SetupFailed];
+        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, AppsOff, SetupFailed];
 
     // Each refusal by a short code, for a channel that says it in words of its own rather than showing
     // these (the Sugary app, in the person's language). Null for an answer that is no refusal.
@@ -70,6 +85,9 @@ public static class RefusalAnswers
         KeyRefused => "key-refused",
         OutOfCredit => "out-of-credit",
         SugaryOff => "sugary-off",
+        AppsOff => "apps-off",
+        var named when named.StartsWith(AgentGoneOpening, StringComparison.Ordinal)
+                       && named.EndsWith(AgentGoneClosing, StringComparison.Ordinal) => "agent-gone",
         _ => null
     };
 }

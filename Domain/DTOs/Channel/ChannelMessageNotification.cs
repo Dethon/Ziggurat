@@ -68,6 +68,9 @@ public record ChannelMessageNotification
     // like it honoured for this message only. Part of the shared protocol; populated by a channel
     // that parses the reply (Sugary), left null by every other.
     public ResponseFormat? ResponseFormat { get; init; }
+    // A built app's ask: the app, its instructions and the servers its asks may use. Sent by the apps
+    // server alone, and believed by the agent only on that server's own channel connection.
+    public AppTurn? AppTurn { get; init; }
     // Optional request that the conversation also be shown on the deployment's review host
     // (WebChat), with this channel kept as the conversation's first target. Asked for by a channel
     // whose conversations are worth reading afterwards (Sugary, and Telegram on every turn); left

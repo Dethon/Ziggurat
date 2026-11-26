@@ -79,6 +79,7 @@ notification's `Principal`.
 | Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
+| Apps (a built app's ask) | the app session's `apps` assertion the apps server keeps; a person only, never the guest (`TurnAdmission.NotAPerson`) |
 
 **The check** is `AssertionVerifier.VerifyTurnAsync(assertion, channel)` on the agent's
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`

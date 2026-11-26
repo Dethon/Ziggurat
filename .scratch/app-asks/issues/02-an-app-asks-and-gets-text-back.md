@@ -25,10 +25,32 @@ Spec: `.scratch/app-asks/spec.md` ("Solution"; "The apps server becomes a channe
 - [ ] An app without instructions is refused `permission_denied`; anyone who may not open the app gets the one 404 (origin seam).
 - [ ] The message names the building agent, carries the viewer's assertion and the app turn, and is sent under its own turn key (origin seam).
 - [ ] The page giving up cancels the turn. The timeout cancels it and answers the timeout code. The agent unreachable answers unavailable (origin seam).
-- [ ] The model is sent the app's instructions with no persona, custom instructions, subagents, channel, voice or memory sections (agent seam, FakeOpenRouter).
-- [ ] Neither recall nor an extraction enqueue happens for an app turn (agent seam).
-- [ ] An app turn on any channel but `apps` is ignored and logged (agent seam).
-- [ ] Admission refuses: no assertion, a non-`apps` assertion, the guest, a suspended household, a disabled member, the `apps` feature off, and a building agent the household no longer has (named). Each comes back to the app as `AskError` (agent seam).
-- [ ] No topic is minted, and usage is counted on channel `apps` under the viewer with the app id (agent seam).
+- [x] The model is sent the app's instructions with no persona, custom instructions, subagents, channel, voice or memory sections (agent seam, FakeOpenRouter).
+- [x] Neither recall nor an extraction enqueue happens for an app turn (agent seam).
+- [x] An app turn on any channel but `apps` is ignored and logged (agent seam).
+- [x] Admission refuses: no assertion, a non-`apps` assertion, the guest, a suspended household, a disabled member, the `apps` feature off, and a building agent the household no longer has (named). Each comes back to the app as `AskError` (agent seam).
+- [x] No topic is minted, and usage is counted on channel `apps` under the viewer with the app id (agent seam).
 - [ ] The client library exposes `apps.ask` and `apps.AskError`, from the classic script and the module.
-- [ ] Wiring: the `apps` channel endpoint in the agent's settings; conformance tests updated.
+- [x] Wiring: the `apps` channel endpoint in the agent's settings; conformance tests updated.
+
+## Comments
+
+**Agent side done (2026-11-26).** What the apps server must send, and what it gets back:
+
+- The `apps` channel endpoint is dialled at `http://mcp-apps:8080/mcp` (`appsettings.Local.json`:
+  `http://localhost:6018/mcp`), with no default agent. A message on it that names no agent is never routed
+  to the household's default, and one with no `appTurn` is refused.
+- Send each ask as a `ChannelMessageNotification` with `agentId` (the building agent from `app.meta.json`),
+  `assertion` (the session's `apps` assertion, renewed first if due), `principal` (`apps`, the viewer's user
+  id, their account; a label only), `sender` (a label), a `turnKey` of the server's own, the conversation id
+  it minted, and `appTurn`: `{"appId": "...", "instructions": "...", "servers": []}` (`Domain/DTOs/Channel/AppTurn.cs`).
+  `reviewCopy` and `replyTo` are dropped by the agent.
+- Every refusal is an `Error` reply then a `StreamComplete`, both under the ask's `turnKey`. Its text is a
+  `RefusalAnswers` sentence, and `RefusalAnswers.CodeOf(text)` gives its code: `not-verified` (no
+  assertion, another channel's, the guest's, nobody's, or no `appTurn`), `suspended`, `disabled`,
+  `unchecked`, `apps-off`, `agent-gone` (the text names the agent), `without-key`. `SetupFailed` has no code.
+- The `app_instructions` section is budgeted at 4,000 tokens: keep the publish bound on the instructions
+  file within it.
+- Tests: `ChatMonitorAppTurnTests` (trust, admission, refusals, no topic), `AppTurnAgentTests` (FakeOpenRouter:
+  instructions, empty tools, no skills, no recall or extraction, usage), `MemoryRecallHookTests`,
+  `PromptComposerTests`, `McpChannelConnectionParsingTests`, `AgentAppSettingsTests`.
