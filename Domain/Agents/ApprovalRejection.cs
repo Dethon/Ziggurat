@@ -1,8 +1,9 @@
 namespace Domain.Agents;
 
 // What a call the person turned down leaves behind. The tool's result is what the model reads, and
-// the turn ends on it; the line is what a transcript shows in its place, since the turn has no text
-// of its own and a reload would otherwise show the question with nothing under it.
+// the turn ends on it (but in a turn that asks nobody, a built app's ask, which goes on to its answer);
+// the line is what a transcript shows in its place, since the turn has no text of its own and a reload
+// would otherwise show the question with nothing under it.
 public static class ApprovalRejection
 {
     private const string Prefix = "Tool execution was rejected by user: ";
