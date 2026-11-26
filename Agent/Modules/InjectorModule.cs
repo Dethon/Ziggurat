@@ -270,7 +270,12 @@ public static class InjectorModule
                         ? household => tunnels.StreamsTo(household, HouseholdServerNames.Lemonade, TunnelProtocol.ChatTag)
                         : null))
                 .AddSingleton<ILemonadeHosts>(sp => sp.GetRequiredService<HouseholdLemonadeHosts>())
-                .AddHostedService<LemonadeModelRefresher>()
+                // Read once the agent listens, as the channel catalogues are.
+                .AddHostedService(sp => new LemonadeModelRefresher(
+                    sp.GetRequiredService<HouseholdLemonadeHosts>(),
+                    sp.GetRequiredService<ILogger<LemonadeModelRefresher>>(),
+                    sp.GetService<LemonadeModelDiscovery>(),
+                    sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
                 // Each household's own box is a dashboard tile of that household's, probed from what
                 // its Keys page saved, on the pool its turns ride (or its kit's tunnel).
                 .AddHostedService(sp => new LemonadeBoxHealthProbes(
