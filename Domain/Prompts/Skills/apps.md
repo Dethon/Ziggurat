@@ -9,8 +9,9 @@ description-budget: 110
 # publish and imported the library a bundler cannot resolve, and since a check's refused reads are reported
 # apart (measured 1,697 on 2026-11-25). 1730 since an app names its own icon, and an agent wrote a manifest
 # of its own that no browser read. 1750 since a check shows the icon as it installs, which two agents
-# had built a venv to rasterize.
-body-budget: 1750
+# had built a venv to rasterize. 1840 since an app asks its assistant: the call, its instructions file and
+# its error, which no other text teaches (measured 1,836 on 2026-11-26).
+body-budget: 1840
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -62,6 +63,10 @@ Every page has `apps` as a global (an unbundled module may `import apps from '/_
 - `apps.glob(basePath, pattern)` → `{entries, truncated}`; `apps.info(path)`; `apps.search(query, {directoryPath})` → `{results, totalMatches}`.
 
 A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` and `path`. Show it in the page as a sentence: `permission_denied` is a read this viewer or this app is not granted, `transient_dependency` a household server offline, `authentication` a lost sign-in (reloading signs in again). Only reads you would make unasked are served; one needing approval is always refused.
+
+### Asking the assistant
+
+`apps.ask(text)` → `{conversation, text}`: a turn of yours for the viewer, answered as the markdown file app.json names in `"instructions"` (a path from the repository root, at most 16,000 bytes) says, in place of your persona, with no tools or memory. No instructions, no asks. A refusal throws `apps.AskError`, carrying `errorCode`, `message` and `hint`.
 
 ### An npm build (a household with a sandbox)
 

@@ -136,6 +136,71 @@ public class AppsServingInABrowserTests
         violations.ShouldBeEmpty();
     }
 
+    // A published app asks its assistant through the client library, from the module and the classic
+    // script alike: the answer's text and conversation, and a refusal handed to the app as an AskError
+    // carrying the tools' envelope.
+    [Fact]
+    public async Task APublishedApp_AsksItsAssistantThroughTheClientLibrary_AndShowsTheAnswer()
+    {
+        await using var server = await AppsServer.StartAsync(s => s with { AppsDomain = LocalAppsDomain });
+        var agent = await server.AgentAsync();
+        var id = AppsServer.IdIn(await server.AppAsync(AppsServer.Her, "glucose"));
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"asks.md"}""",
+            overwrite: true);
+        await server.CreateAsync(AppsServer.Her, "/glucose/asks.md", "Answer in one word.");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="answer"></p><p id="refused"></p></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            import { ask, AskError } from '/_app/apps.mjs';
+            const answer = await ask('How was my morning?');
+            document.getElementById('answer').textContent = `${answer.text} ${answer.conversation.length > 0}`;
+            try {
+              await globalThis.apps.ask('And now?');
+            } catch (error) {
+              document.getElementById('refused').textContent =
+                `${error instanceof AskError} ${error instanceof globalThis.apps.AskError} ${error.name} ${error.errorCode} ${error.retryable}`;
+            }
+            """);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        var host = server.Published("glucose", id);
+        var origin = $"http://{host}:{server.Settings.Listeners.Pages}";
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await LaunchAsync(playwright);
+        var page = await (await browser.NewContextAsync()).NewPageAsync();
+        await SetAppCookieAsync(page, origin, server.SessionFor(AppsServer.Her, host));
+        var violations = await ViolationsAsync(page);
+
+        await page.GotoAsync(origin + "/");
+        using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var first = await agent.Messages.FirstAsync(wait.Token);
+        first.Content.ShouldBe("How was my morning?");
+        await ReplyAsync(agent, first, global::Domain.DTOs.ReplyContentType.Text, "Quietly.");
+        await ReplyAsync(agent, first, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
+        var second = await agent.Messages.FirstAsync(wait.Token);
+        await ReplyAsync(agent, second, global::Domain.DTOs.ReplyContentType.Error, global::Domain.Monitor.RefusalAnswers.AgentGone("jonas"));
+        await ReplyAsync(agent, second, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
+
+        await Assertions.Expect(page.Locator("#answer")).ToHaveTextAsync("Quietly. true");
+        await Assertions.Expect(page.Locator("#refused")).ToHaveTextAsync("true true AskError permission_denied false");
+        violations.ShouldBeEmpty();
+    }
+
+    private static Task ReplyAsync(
+        global::Infrastructure.Clients.Channels.McpChannelConnection agent, global::Domain.DTOs.ChannelMessage turn,
+        global::Domain.DTOs.ReplyContentType type, string content) =>
+        agent.SendReplyAsync(new global::Domain.DTOs.Channel.SendReplyParams
+        {
+            ConversationId = turn.ConversationId,
+            Content = content,
+            ContentType = type,
+            IsComplete = type == global::Domain.DTOs.ReplyContentType.StreamComplete,
+            MessageId = "resp_1",
+            TurnKey = turn.TurnKey,
+            AgentInitiated = false
+        }, CancellationToken.None);
+
     // A published app that breaks in a person's browser tells the agent why, through the library alone:
     // an uncaught error (thrown fifty times by one loop, reported once), an unhandled rejection, and two
     // failed reads — one the app caught, one it did not, each reported once as the read it was. A value

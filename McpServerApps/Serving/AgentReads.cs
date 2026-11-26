@@ -18,7 +18,7 @@ namespace McpServerApps.Serving;
 // An agent that cannot be reached, or that did not believe this server, is the unavailable envelope.
 public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<AgentReads> logger)
 {
-    public async Task<AgentReadAnswer> ReadAsync(
+    public async Task<OriginAnswer> ReadAsync(
         string operation, AppReadScope app, JsonObject arguments, ViewerProof viewer, CancellationToken ct)
     {
         if (settings.AgentUrl.Length == 0)
@@ -49,7 +49,7 @@ public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<A
                 return Unavailable($"the agent answered {(int)response.StatusCode}");
             }
 
-            return new AgentReadAnswer(
+            return new OriginAnswer(
                 (int)response.StatusCode,
                 response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
                 await response.Content.ReadAsByteArrayAsync(ct));
@@ -61,13 +61,15 @@ public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<A
         }
     }
 
-    private static AgentReadAnswer Unavailable(string why) =>
-        AgentReadAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
+    private static OriginAnswer Unavailable(string why) =>
+        OriginAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
             $"The household could not be read just now: {why}. Nothing was read.", "Read again in a moment."));
 }
 
-public sealed record AgentReadAnswer(int Status, string ContentType, byte[] Body)
+// What the origin answers a page's read or ask with, as it came from the agent: a body under its type, or
+// the tools' envelope.
+public sealed record OriginAnswer(int Status, string ContentType, byte[] Body)
 {
-    public static AgentReadAnswer Envelope(int status, ToolErrorResult error) =>
+    public static OriginAnswer Envelope(int status, ToolErrorResult error) =>
         new(status, "application/json; charset=utf-8", System.Text.Encoding.UTF8.GetBytes(error.ToNode().ToJsonString()));
 }

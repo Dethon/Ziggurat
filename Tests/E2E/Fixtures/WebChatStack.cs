@@ -897,7 +897,9 @@ internal sealed partial class WebChatStack
                 // Under the id the deployment gives it: the hub's assertions name `signalr`, and the agent
                 // refuses a turn whose assertion names another channel than the one it came on.
                 { "channelId": "signalr", "endpoint": "http://mcp-channel-signalr:8080/mcp", "hostsReviewCopies": true },
-                { "channelId": "sugary", "endpoint": "http://mcp-sugary:8080/mcp" }
+                { "channelId": "sugary", "endpoint": "http://mcp-sugary:8080/mcp" },
+                // A built app's asks, on the apps server's own channel, as in the deployment.
+                { "channelId": "apps", "endpoint": "http://mcp-apps:8080/mcp" }
               ],
               "Logging": { "LogLevel": { "Default": "{{agentLogLevel}}" } }
             }

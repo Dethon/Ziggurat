@@ -9,6 +9,7 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Security;
+using Infrastructure.Clients.Channels;
 using McpServerApps.Modules;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
@@ -43,6 +44,7 @@ public sealed class AppsServer : IAsyncDisposable
     private readonly WebApplication _app;
     private readonly McpClient _client;
     private readonly HttpClient _browser = new(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false });
+    private readonly List<McpChannelConnection> _agents = [];
 
     private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces)
     {
@@ -224,6 +226,50 @@ public sealed class AppsServer : IAsyncDisposable
         return response;
     }
 
+    // A built app's page asking its assistant through the client library: its JSON POSTed to the origin's
+    // /_ask with the app session's cookie and the page's own Origin, as the browser sends them. The page
+    // gives up when ct is cancelled. origin: another page's, as a sibling app's would send it.
+    public async Task<HttpResponseMessage> AskAsync(
+        string host, string body, string? session, string? origin = null, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, PagesAddress + AppAsks.OriginPath)
+        {
+            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json")
+        };
+        request.Headers.Host = host;
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("Origin", origin ?? $"https://{host}");
+        if (session is not null)
+        {
+            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+        }
+
+        var response = await _browser.SendAsync(request, ct);
+        await response.Content.LoadIntoBufferAsync(ct);
+        return response;
+    }
+
+    // A conversation no ask ever has, for the probe AgentAsync sends.
+    private const string ProbeConversation = "probe";
+
+    // The agent as it dials this server's channel (`apps`), polling: what an ask sends arrives on its
+    // Messages, and what it replies goes back on the wire.
+    public async Task<McpChannelConnection> AgentAsync()
+    {
+        var agent = new McpChannelConnection(AppChannels.Apps, mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
+        _agents.Add(agent);
+        await agent.ConnectAsync(Endpoint, CancellationToken.None);
+
+        var emitter = _app.Services.GetRequiredService<Mcp.Hosting.ChannelNotificationEmitter>();
+        await Eventually.Until(
+            async ValueTask<bool> () => await emitter.EmitCancelAsync(
+                new ChannelCancelNotification { ConversationId = ProbeConversation }),
+            "the agent to be polling");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        (await agent.Messages.FirstAsync(cts.Token)).ConversationId.ShouldBe(ProbeConversation);
+        return agent;
+    }
+
     // The browser's round trip through a real accounts service up to its arrival back on the app's origin:
     // the app's redirect, the accounts service's answer to this person's session cookie. The callback's path
     // and query, and the state cookie the origin set on the way out.
@@ -335,6 +381,11 @@ public sealed class AppsServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var agent in _agents)
+        {
+            await agent.DisposeAsync();
+        }
+
         _browser.Dispose();
         await _client.DisposeAsync();
         await _app.StopAsync();

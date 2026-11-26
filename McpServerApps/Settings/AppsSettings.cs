@@ -45,6 +45,8 @@ public record AppsSettings : IMcpHostSettings
 
     public AppListeners Listeners { get; init; } = new();
 
+    public AppAskSettings Asks { get; init; } = new();
+
     // Where a built app may load code, styles and fonts from besides itself, by exact version and
     // integrity hash (AppContentPolicy, OutsideCodePinning): origins, no paths.
     public IReadOnlyList<string> Cdns { get; init; } = [];
@@ -88,6 +90,21 @@ public record AppSessionSettings
     // longest a revoked session goes on opening an app when its announcement was missed.
     public TimeSpan AssertionKept { get; init; } = TimeSpan.FromMinutes(5);
 }
+// How a built app's asks (POST /_ask) are bounded: each is a turn of the building agent's that the page
+// waits on whole. The instructions' bound is not here: it is the agent's prompt budget's
+// (AppAsks.MaxInstructionsBytes), which no deployment may raise.
+public record AppAskSettings
+{
+    // How long the page waits for the whole answer before the turn is stopped and the page told so.
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(2);
+
+    // The longest text one ask may carry, in characters.
+    public int MaxTextLength { get; init; } = 8_000;
+
+    // How long after its last turn a conversation an ask opened stays bound to that app and viewer.
+    public TimeSpan FollowUpWindow { get; init; } = TimeSpan.FromHours(24);
+}
+
 // What the apps server keeps of the runtime errors its apps' pages report (`/_errors`).
 public record AppErrorSettings
 {

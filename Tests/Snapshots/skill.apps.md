@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1740 / 1750 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 1836 / 1840 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -51,6 +51,10 @@ Every page has `apps` as a global (an unbundled module may `import apps from '/_
 - `apps.glob(basePath, pattern)` → `{entries, truncated}`; `apps.info(path)`; `apps.search(query, {directoryPath})` → `{results, totalMatches}`.
 
 A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` and `path`. Show it in the page as a sentence: `permission_denied` is a read this viewer or this app is not granted, `transient_dependency` a household server offline, `authentication` a lost sign-in (reloading signs in again). Only reads you would make unasked are served; one needing approval is always refused.
+
+### Asking the assistant
+
+`apps.ask(text)` → `{conversation, text}`: a turn of yours for the viewer, answered as the markdown file app.json names in `"instructions"` (a path from the repository root, at most 16,000 bytes) says, in place of your persona, with no tools or memory. No instructions, no asks. A refusal throws `apps.AskError`, carrying `errorCode`, `message` and `hint`.
 
 ### An npm build (a household with a sandbox)
 

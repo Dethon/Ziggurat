@@ -14,7 +14,6 @@ using McpServerSugary.Channel;
 using McpServerSugary.Clips;
 using McpServerSugary.Glucose;
 using McpServerSugary.McpPrompts;
-using McpServerSugary.McpTools;
 using McpServerSugary.Reminders;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
@@ -75,7 +74,6 @@ public static class ConfigModule
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             // The sugary agent as the person's household runs it, on the models the agent registered.
             .AddSingleton<HouseholdAgentCatalogue>()
-            .AddSingleton<AgentTurns>()
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings)
@@ -114,8 +112,8 @@ public static class ConfigModule
 
         services
             .AddToolServer(settings, ToolResponse.Create)
-            .WithTools<SendReplyTool>()
-            .WithTools<RequestApprovalTool>()
+            // Her app waits on each estimate's whole reply, and nobody there can approve a call.
+            .AddAgentTurns()
             // A meal's photos and clip, kept until the agent has fetched them for every turn that may.
             .AddUploadStore(settings.Uploads, settings.Retention)
             .WithTools<RegisterAgentsTool>()

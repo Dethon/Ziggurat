@@ -94,11 +94,11 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   site has **no `forward_auth`**, and nothing else of the deployment is on that domain
   (`DeploymentConformanceTests`).
 - **The app is the Host's label, by id** (`AppOrigin.Parse`); the slug is ignored.
-- **Who opens what** (`AppPages.AccessAsync`, settled for pages, reads and reports alike by
+- **Who opens what** (`AppPages.AccessAsync`, settled for pages, reads, asks and reports alike by
   `AppPages.SettleAsync`): the published origin to its author and, while an app space, every member of its
   household; the preview to its author alone. **The viewer is settled before the app is looked up**, so a
   sessionless page goes to sign in whether or not the app exists. Anyone who may not open it, an unknown
-  label, a non-GET (but the `/_vfs/*` and `/_errors` POSTs), an unpublished app: **one 404, byte for byte**,
+  label, a non-GET (but the `/_vfs/*`, `/_ask` and `/_errors` POSTs), an unpublished app: **one 404, byte for byte**,
   under `AppContentPolicy.Closed`.
 - **App sessions** (`AppSessions`): a host-only `__Host-app-session` cookie opens one `AppOrigin` (never
   published and preview both) until `Sessions:Lifetime`, keeping the accounts `sid` and the latest `apps`
@@ -135,7 +135,7 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   publish, a narrowed approval or a new build is new worker bytes, and the new worker drops every other
   `app-files-*` cache. **A navigation reaches the server first**; the kept page answers only when the
   network fails; a page served at another version loads from the network until the new worker takes over.
-  The preview is network first. `/_vfs/`, `/_errors`, `/_app/sign-in` and `/_app/sw.js` are never cached.
+  The preview is network first. `/_vfs/`, `/_ask`, `/_errors`, `/_app/sign-in` and `/_app/sw.js` are never cached.
   Residual: a shell opened offline after a narrowing runs the old policy until it is back online.
 - **A deleted app's origin**: navigations a 410, `/_app/sw.js` a worker that clears, unregisters and
   reloads. Its id stays taken (`BuiltAppStore.IdTaken`), so no later app inherits its storage.
@@ -171,14 +171,32 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
 
 ## App asks
 
-Spec: `.scratch/app-asks/spec.md`. **The apps server is also a channel**: the agent dials it as the `apps`
-channel endpoint at the address it serves as `sharedServers.apps` (`AgentAppSettingsTests`), with no
-default agent. An ask is a channel message naming the building agent, carrying the viewer's `apps`
-assertion and an `AppTurn` (`AppId`, `Instructions`, `Servers`), under a `TurnKey` of its own. What the
-agent believes of it and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification.AppTurn`):
-the app's instructions in place of the persona (`app_instructions` section, budget 4,000), no tools yet,
-no memory, no topic, usage on channel `apps` naming the app; each refusal answered with a
-`RefusalAnswers` sentence whose `CodeOf` is the code to map.
+Spec: `.scratch/app-asks/spec.md`; wire in `Domain/Apps/AppAsks`; the client library's `apps.ask` and
+`apps.AskError` (the envelope, as `ReadError`). **The apps server is also a channel** (dual-role,
+gate-on-live, `AddAgentTurns`): the agent dials it as the `apps` channel endpoint at the address it serves
+as `sharedServers.apps` (`AgentAppSettingsTests`), with no default agent. What the agent believes of an
+ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification.AppTurn`).
+
+- **`POST /_ask` on the origin** (`AgentAsks`), `{ "text" }` parsed strictly (an unknown field refuses it
+  whole, `Asks:MaxTextLength`): **settled exactly as a read** — from a page of that origin alone, the viewer
+  before the app, the one 404 before the body is looked at — and answered `no-store`.
+- **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
+  (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
+  principal `("apps", user id, Account)`, a conversation minted through `AskConversations`
+  (`OpenConversations` keyed by app and viewer), and an `AppTurn` with the origin's own manifest's
+  instructions — the served commit's, the preview the tree's — and no servers yet. Sent by `AgentTurns`
+  under its own key, waited on for `Asks:Timeout`; the page giving up or the wait running out cancels the
+  turn **naming the agent** (the agent groups by conversation and agent).
+- **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
+  file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
+  `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
+  constant, not a setting: 16,000 bytes keep the `app_instructions` section within its 4,000-token budget
+  (`AppAsksTests`).
+- **Answers**: 200 `{ conversation, text }` (the last message's text); else the tools' envelope — 400
+  `invalid_argument` (body), 422 `permission_denied` (no instructions, a refusal: `RefusalAnswers.CodeOf`'s
+  sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
+  turn whose words are the agent's exception (logged, never shown) or no answer, 503 nobody polling, 504
+  `timeout`.
 
 ## App sign-in
 
