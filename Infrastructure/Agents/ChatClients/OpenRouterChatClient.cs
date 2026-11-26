@@ -35,6 +35,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly Func<string, bool> _modelAcceptsImages;
     private readonly Func<string, bool> _modelAcceptsVideo;
     private readonly int _hydrationDepthMessages;
+    private readonly bool _asksAgainAfterEmptyReply;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -65,6 +66,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
+        _asksAgainAfterEmptyReply = maxRetries != 0;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
@@ -83,7 +85,8 @@ public sealed class OpenRouterChatClient : IChatClient
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
         Func<string, bool>? modelAcceptsVideo = null,
-        TimeZoneInfo? turnZone = null)
+        TimeZoneInfo? turnZone = null,
+        int? maxRetries = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -95,6 +98,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
+        _asksAgainAfterEmptyReply = maxRetries != 0;
         _client = innerClient;
     }
 
@@ -178,41 +182,66 @@ public sealed class OpenRouterChatClient : IChatClient
         // the record, where the last user-role message is still the person's.
         var sent = VideoInputParts.AsSent(SkillPreloadNote.AsSent(truncated));
 
-        UsageContent? usage = null;
-
-        await foreach (var update in DsmlToolCalls.RepairAsync(
-                           _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), ct))
+        // A provider now and then ends a reply with nothing in it — on prod, Pearl Research generated
+        // what was by every sign a tool call and OpenRouter passed on none of it, finish "stop". After
+        // a tool result that ends the turn with no word, so it is asked once more; nothing was shown,
+        // so the second reply simply follows. Only there: after the person's own message an empty
+        // reply is what the model chose.
+        var asksAgain = _asksAgainAfterEmptyReply && sent.LastOrDefault()?.Role == ChatRole.Tool;
+        for (var ask = 0; ; ask++)
         {
-            // The Responses adapter leaves MessageId empty where the chat wire stamped the
-            // completion id, and everything that reassembles a streamed turn keys on it. The
-            // response id is one id per model turn — the aggregation the consumers want.
-            update.MessageId ??= update.ResponseId;
-            update.SetTimestamp(_timeProvider.GetUtcNow());
+            UsageContent? usage = null;
+            ChatFinishReason? finish = null;
+            var answered = false;
 
-            var updateUsage = update.Contents.OfType<UsageContent>().FirstOrDefault();
-            if (updateUsage is not null)
+            await foreach (var update in DsmlToolCalls.RepairAsync(
+                               _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), ct))
             {
-                usage = updateUsage;
+                // The Responses adapter leaves MessageId empty where the chat wire stamped the
+                // completion id, and everything that reassembles a streamed turn keys on it. The
+                // response id is one id per model turn — the aggregation the consumers want.
+                update.MessageId ??= update.ResponseId;
+                update.SetTimestamp(_timeProvider.GetUtcNow());
+
+                usage = update.Contents.OfType<UsageContent>().FirstOrDefault() ?? usage;
+                finish = update.FinishReason ?? finish;
+                answered |= Answers(update);
+
+                yield return update;
             }
 
-            yield return update;
+            // Each ask was paid for, so each is billed.
+            PublishUsage(usage, sender, account, agent, effectiveModel);
+
+            if (answered || !asksAgain || ask > 0 || (finish is not null && finish != ChatFinishReason.Stop))
+            {
+                yield break;
+            }
+        }
+    }
+
+    // Words or a call; reasoning alone, or blank text, leaves the person with nothing to read.
+    private static bool Answers(ChatResponseUpdate update) =>
+        update.Contents.Any(c => c is FunctionCallContent || c is TextContent { Text: var text } && !string.IsNullOrWhiteSpace(text));
+
+    private void PublishUsage(UsageContent? usage, string? sender, string? account, string? agent, string model)
+    {
+        if (usage?.Details is null)
+        {
+            return;
         }
 
-        if (usage?.Details is not null)
+        _metricsPublisher.Publish(new TokenUsageEvent
         {
-            var cost = DrainCostQueue() ?? 0m;
-            _metricsPublisher.Publish(new TokenUsageEvent
-            {
-                Sender = sender ?? "unknown",
-                UserId = account,
-                AgentId = agent,
-                Model = effectiveModel,
-                InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
-                OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
-                CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
-                Cost = cost
-            });
-        }
+            Sender = sender ?? "unknown",
+            UserId = account,
+            AgentId = agent,
+            Model = model,
+            InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
+            OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
+            CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
+            Cost = DrainCostQueue() ?? 0m
+        });
     }
 
     // A strict schema goes out as it was written. The adapter would otherwise rewrite it into the
