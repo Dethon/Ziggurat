@@ -13,6 +13,7 @@ using Domain.Memory;
 using Domain.Monitor;
 using Domain.Prompts;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Memory;
@@ -70,6 +71,9 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
     private ToolApprovalResult _personAnswers = ToolApprovalResult.Approved;
 
     private readonly ScriptedJudge _judge = new(_ => new JudgmentOutcome.Absent(AbsenceReason.Error));
+
+    // The household's features: the apps feature on, unless a case turns it off.
+    private FeaturesSection _features = new() { Apps = true };
 
     public async Task InitializeAsync()
     {
@@ -287,6 +291,74 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         _model.Requests.Last().ToolOutputs.ShouldHaveSingleItem().ShouldContain(_viewer.UserId);
         apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
         apps.AskedApprovals.ShouldBeEmpty();
+    }
+
+    // A check's page asks as the person whose turn ran `./check`, on that tool call's own token handed back by the
+    // apps server in place of an assertion: the agent's own signature for the apps server, naming a person. It
+    // is an ask like any other — counted on the apps channel under that person, its calls signed as them on it.
+    [Fact]
+    public async Task ACheckAsk_IsAdmittedOnTheChecksCallToken_ActingAsThePersonItNames()
+    {
+        _model.Script(FakeOpenRouter.CallingToolNamed("whoami", "{}"), _ => FakeOpenRouter.Saying("You are you."));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] },
+            Ask("Who am I?", [KitName], "check-ask") with { Assertion = null, CheckCallToken = TestCheckCalls.Of(_viewer) });
+
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+        AnswerOf(apps, "check-ask").ShouldBe("You are you.");
+        _kitCalls.Callers.ShouldBe([_viewer.UserId]);
+        _kitCalls.Channels.ShouldBe([AppChannels.Apps]);
+        Published.OfType<TokenUsageEvent>().ShouldNotBeEmpty();
+        Published.OfType<TokenUsageEvent>().ShouldAllBe(usage => usage.Channel == AppChannels.Apps && usage.UserId == _viewer.UserId
+                                                                && usage.TenantId == Household && usage.AppId == _app.AppId);
+    }
+
+    // The token is believed as the agent signed it and for nothing else — its own key, in date, for the apps
+    // server, naming a person — and never beside an assertion, which would leave two answers to who asks.
+    public static TheoryData<string, string?, string?> UnbelievedCheckAsks => new()
+    {
+        { "beside an assertion", TestAssertions.Of(_viewer, AppChannels.Apps), TestCheckCalls.Of(_viewer) },
+        { "the guest's", null, TestCheckCalls.Of(IdentityClaims.Guest(Household, "signalr")) },
+        { "nobody's", null, TestCheckCalls.Of(IdentityClaims.Nobody("signalr")) },
+        { "another server's", null, TestCheckCalls.Of(_viewer, audience: "mcp-vault") },
+        { "the accounts service's key", null, TestCheckCalls.Of(_viewer, key: TestSigningKeys.Accounts) },
+        { "out of date", null, TestCheckCalls.Of(_viewer, now: DateTimeOffset.UtcNow.AddMinutes(-10)) }
+    };
+
+    [Theory]
+    [MemberData(nameof(UnbelievedCheckAsks))]
+    public async Task ACheckAsk_WithoutABelievableCallToken_IsRefusedAndAnswered_BeforeAnythingIsAsked(
+        string what, string? assertion, string? callToken)
+    {
+        var (apps, _) = await RunAsync(Ask(turnKey: "check-ask") with { Assertion = assertion, CheckCallToken = callToken });
+
+        apps.SentReplies.Where(r => r.TurnKey == "check-ask").Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, RefusalAnswers.NotVerified), (ReplyContentType.StreamComplete, "")], what);
+        _model.Requests.ShouldBeEmpty(what);
+    }
+
+    // A check's call token admits an app turn on the apps channel alone: carried by any other channel it is
+    // dropped, and the turn needs the assertion it does not have.
+    [Fact]
+    public async Task ACheckCallToken_OnAnotherChannel_AdmitsNothing()
+    {
+        var (_, chat) = await RunAsync(Chat() with { Assertion = null, CheckCallToken = TestCheckCalls.Of(_viewer), TurnKey = "chat-turn" });
+
+        chat.SentReplies.Where(r => r.TurnKey == "chat-turn").Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, RefusalAnswers.NotVerified), (ReplyContentType.StreamComplete, "")]);
+        _model.Requests.ShouldBeEmpty();
+    }
+
+    // Admitted on its token, a check's ask meets the household's word as any ask does: the apps feature first.
+    [Fact]
+    public async Task ACheckAsk_OfAHouseholdWithoutApps_IsRefusedAsAnyAskIs()
+    {
+        _features = new FeaturesSection { Apps = false };
+
+        var (apps, _) = await RunAsync(Ask(turnKey: "check-ask") with { Assertion = null, CheckCallToken = TestCheckCalls.Of(_viewer) });
+
+        apps.SentReplies.Where(r => r.TurnKey == "check-ask").Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, RefusalAnswers.AppsOff), (ReplyContentType.StreamComplete, "")]);
+        _model.Requests.ShouldBeEmpty();
     }
 
     // An app declares a server by the name it is configured under — a shared server by its `sharedServers`
@@ -606,7 +678,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         chat.Complete();
 
         var households = new AgentHouseholds();
-        households.Add(Household, [jonas], new FeaturesSection { Apps = true }, ownServers: ["vault", KitName]);
+        households.Add(Household, [jonas], _features, ownServers: ["vault", KitName]);
         var definitions = new AgentDefinitionProvider(
             new HouseholdAgentSource(households, new SharedServers { Sugary = _server.Endpoint }), new CustomAgentRegistry());
 
@@ -620,7 +692,8 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             TestAssertions.Verifier(),
             skillPreloader: new SkillPreloader(_judge, new SkillPreloadSettings { DeadlineMs = 600 }, TimeProvider.System),
             agentDefinitions: definitions,
-            standing: new HouseholdAccountStanding(households));
+            standing: new HouseholdAccountStanding(households),
+            checks: TestCheckCalls.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
         return (apps, chat);
@@ -720,6 +793,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         private readonly Lock _gate = new();
         private readonly List<string> _ran = [];
         private readonly List<string?> _callers = [];
+        private readonly List<string?> _channels = [];
 
         public IReadOnlyList<string> Ran
         {
@@ -743,12 +817,25 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             }
         }
 
-        public void Record(string tool, string? caller = null)
+        // The channel the call was signed on, beside each caller.
+        public IReadOnlyList<string?> Channels
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _channels];
+                }
+            }
+        }
+
+        public void Record(string tool, string? caller = null, string? channel = null)
         {
             lock (_gate)
             {
                 _ran.Add(tool);
                 _callers.Add(caller);
+                _channels.Add(channel);
             }
         }
 
@@ -758,6 +845,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             {
                 _ran.Clear();
                 _callers.Clear();
+                _channels.Clear();
             }
         }
     }
@@ -771,7 +859,7 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         [Description("Says who is calling.")]
         public string WhoAmI(RequestContext<CallToolRequestParams> call)
         {
-            calls.Record("whoami", call.Identity?.Subject);
+            calls.Record("whoami", call.Identity?.Subject, call.Identity?.ChannelId);
             return $"You are {call.Identity?.Subject}.";
         }
 

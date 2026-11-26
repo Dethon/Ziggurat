@@ -46,8 +46,15 @@ public class ChatMonitor(
     IAccountStanding? standing = null,
     // What each agent's sessions last offered, so a group's first turn judges its preload while its
     // warmup dials rather than after. Optional: with none, every first turn waits for its warmup.
-    ISkillsOffered? skillsOffered = null)
+    ISkillsOffered? skillsOffered = null,
+    // Who a built app's check asks as: the agent's own call token for the apps server, handed back for
+    // the tool call that ran `./check`. Optional because its absence is safe: a monitor with none believes
+    // no check, and every check's ask is refused.
+    CheckCallVerifier? checks = null)
 {
+    // Whether a built app's check may ask at all: a host that registered no verifier refuses every one.
+    internal bool BelievesChecks => checks is not null;
+
     // A person's turn whose assertion was not believed, on the errors feed beside the servers'
     // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
     // reach, or a turn that sat too long on its way here.
@@ -188,7 +195,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, assertions, delegations, standing, agentDefinitions, logger, skillsOffered);
+            skillPreloader, assertions, delegations, standing, agentDefinitions, logger, skillsOffered, checks);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

@@ -490,6 +490,7 @@ public sealed class McpChannelConnection(
             UserId = notification.UserId,
             Principal = notification.Principal,
             Assertion = notification.Assertion,
+            CheckCallToken = notification.CheckCallToken,
             Delegation = notification.Delegation,
             FireReport = notification.FireReport,
             HouseholdId = notification.HouseholdId,

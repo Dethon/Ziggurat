@@ -123,6 +123,22 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
+    public async Task HandleChannelMessageNotification_WithACheckCallToken_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("apps");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"app","content":"hi","checkCallToken":"call.token.signature"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.CheckCallToken.ShouldBe("call.token.signature");
+            break;
+        }
+    }
+
+    [Fact]
     public async Task HandleChannelMessageNotification_WithAHousehold_MapsItOntoChannelMessage()
     {
         var conn = new McpChannelConnection("scheduling");

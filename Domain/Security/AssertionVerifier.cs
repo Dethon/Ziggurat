@@ -123,6 +123,9 @@ public abstract record TurnAdmission
     // alone, never an ordinary turn with the agent's persona, tools and memory.
     public const string NotAnAppTurn = "NotAnAppTurn";
 
+    // A check's call token beside an assertion: two answers to who a read or an ask is for, so neither.
+    public const string BothAnAssertionAndACheck = "BothAnAssertionAndACheck";
+
     public sealed record Admitted(IdentityClaims Identity) : TurnAdmission;
 
     public sealed record Refused(string Reason) : TurnAdmission;

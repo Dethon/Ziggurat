@@ -26,6 +26,10 @@ public record ChannelMessageNotification
     // it verifies it as the turn arrives and refuses a person's turn without one. A fire nobody sent
     // carries none.
     public string? Assertion { get; init; }
+    // A built app's ask during `./check` carries this in place of an assertion: the agent's own call token
+    // for the apps server, from the tool call that ran the check, naming its person (CheckCallVerifier).
+    // Believed on an app turn from the deployment's `apps` channel alone, and never beside an assertion.
+    public string? CheckCallToken { get; init; }
     // A fire's word for who it acts for: the delegation the agent signed when a person's turn wrote
     // the schedule, the watch or the login handoff raising it, with what that object does now. The
     // agent checks it as the fire arrives; a fire carrying none, or one that fails, acts for nobody.

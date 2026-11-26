@@ -29,7 +29,7 @@ public sealed class AppReader(
     {
         var admission = (assertion, checkCallToken) switch
         {
-            ({ }, { }) => new TurnAdmission.Refused("BothAnAssertionAndACheck"),
+            ({ }, { }) => new TurnAdmission.Refused(TurnAdmission.BothAnAssertionAndACheck),
             (null, { } token) => await checks.VerifyAsync(token, ct),
             _ => await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct)
         };

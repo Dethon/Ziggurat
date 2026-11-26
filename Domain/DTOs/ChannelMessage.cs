@@ -18,6 +18,10 @@ public record ChannelMessage
     // it as the message arrives and nothing else reads it (ChannelMessageNotification.Assertion).
     public string? Assertion { get; init; }
 
+    // A check's ask's call token as the apps channel carried it, unverified: the conversation group checks it
+    // on an app turn alone (ChannelMessageNotification.CheckCallToken).
+    public string? CheckCallToken { get; init; }
+
     // A fire's delegation as its server carried it, unverified: the conversation group checks it as
     // the fire arrives and nothing else reads it (ChannelMessageNotification.Delegation).
     public FireDelegation? Delegation { get; init; }

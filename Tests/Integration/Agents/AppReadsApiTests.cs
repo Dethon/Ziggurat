@@ -381,7 +381,7 @@ public sealed class AppReadsApiTests
 
         using var response = await agent.ReadAsync(
             AppReads.Operations.Query, _glucoseApp, new JsonObject { ["path"] = "/sugary", ["sql"] = "select notes from meals" },
-            assertion: null, callToken: CallTokenOf(SugaryServer.Him));
+            assertion: null, callToken: TestCheckCalls.Of(SugaryServer.Him));
 
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
@@ -393,12 +393,12 @@ public sealed class AppReadsApiTests
     // to who reads.
     public static TheoryData<string, string?, string?> UnbelievedChecks => new()
     {
-        { "another issuer's key", null, CallTokenOf(SugaryServer.Her, key: TestSigningKeys.Accounts) },
-        { "out of date", null, CallTokenOf(SugaryServer.Her, now: DateTimeOffset.UtcNow.AddMinutes(-10)) },
-        { "another server's", null, CallTokenOf(SugaryServer.Her, audience: "mcp-vault") },
-        { "the guest's", null, CallTokenOf(IdentityClaims.Guest(SugaryServer.Her.TenantId, "signalr")) },
-        { "nobody's", null, CallTokenOf(IdentityClaims.Nobody("signalr")) },
-        { "beside an assertion", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps), CallTokenOf(SugaryServer.Her) }
+        { "another issuer's key", null, TestCheckCalls.Of(SugaryServer.Her, key: TestSigningKeys.Accounts) },
+        { "out of date", null, TestCheckCalls.Of(SugaryServer.Her, now: DateTimeOffset.UtcNow.AddMinutes(-10)) },
+        { "another server's", null, TestCheckCalls.Of(SugaryServer.Her, audience: "mcp-vault") },
+        { "the guest's", null, TestCheckCalls.Of(IdentityClaims.Guest(SugaryServer.Her.TenantId, "signalr")) },
+        { "nobody's", null, TestCheckCalls.Of(IdentityClaims.Nobody("signalr")) },
+        { "beside an assertion", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps), TestCheckCalls.Of(SugaryServer.Her) }
     };
 
     [Theory]
@@ -414,16 +414,6 @@ public sealed class AppReadsApiTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized, what);
     }
-
-    // A call token as the agent signs one for a tool call to the apps server (AppReadsAgent.AppsServer).
-    private static string CallTokenOf(
-        Account person, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
-        CallTokenOf(IdentityClaims.Person(person.UserId, person.TenantId, "signalr", ["member"]), audience, key, now);
-
-    private static string CallTokenOf(
-        IdentityClaims identity, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
-        new TokenSigner(TestSigningKeys.Store(key ?? TestSigningKeys.Agent)).Sign(
-            identity.Stamped(TokenIssuers.Agent, audience, now ?? DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2)));
 
     private static async Task<IReadOnlyList<string?>> NotesAsync(
         AppReadsAgent agent, Account viewer, IReadOnlyDictionary<string, string>? headers = null)

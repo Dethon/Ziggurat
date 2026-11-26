@@ -68,7 +68,7 @@ Observability, which references Domain alone.
 
 ## Channels and the agent
 
-No turn acts for a person the accounts service did not vouch for. A channel carries the service's
+No turn acts for a person the accounts service did not vouch for, but for a check's ask (below). A channel carries the service's
 assertion on the turn's notification (`ChannelMessageNotification.Assertion`, mapped onto
 `ChannelMessage.Assertion` by `McpChannelConnection`) and the agent believes that, never the
 notification's `Principal`.
@@ -80,6 +80,18 @@ notification's `Principal`.
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
 | Apps (a built app's ask) | the app session's `apps` assertion the apps server keeps; a person only, never the guest (`TurnAdmission.NotAPerson`) |
+
+**The one exception: a check's ask.** A built app's ask during `./check` carries no assertion but
+`ChannelMessageNotification.CheckCallToken`: the agent's own call token for the tool call that ran the
+check, handed back by the apps server. It is believed on an app turn from the deployment's `apps`
+channel endpoint alone (`AppTurns.Believed` drops it anywhere else) and only as `CheckCallVerifier`
+believes a check's reads — the agent's own key, in date, audience `TokenAudiences.CallTo(sharedServers.apps)`,
+naming a person; the guest, nobody or another server's token is refused, and **both together are
+refused** (`TurnAdmission.BothAnAssertionAndACheck`). The person it names acts on the `apps` channel
+(the identity's channel restamped), then standing, the `apps` feature and the building agent apply as
+to any ask. Why: nobody is signed in to a check's preview, and the token is the agent's own word that
+this person's turn asked for it, good for the check's deadline (`ChatMonitor`'s optional
+`CheckCallVerifier`; none refuses every check's ask).
 
 **The check** is `AssertionVerifier.VerifyTurnAsync(assertion, channel)` on the agent's
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`

@@ -46,7 +46,9 @@ internal sealed class ConversationGroup(
     // What each agent's sessions last offered, shared by the monitor's groups: a group's first turn
     // judges its preload over it rather than waiting out its own warmup. None means every first
     // turn waits, as before.
-    ISkillsOffered? skillsOffered = null) : IAsyncDisposable
+    ISkillsOffered? skillsOffered = null,
+    // A built app's check's call token, believed on an app turn alone. None believes no check.
+    CheckCallVerifier? checks = null) : IAsyncDisposable
 {
     // What a refused person is told (RefusalAnswers, which a channel may say in its own words).
     internal const string SuspendedAnswer = RefusalAnswers.Suspended;
@@ -792,7 +794,7 @@ internal sealed class ConversationGroup(
             return null;
         }
 
-        switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
+        switch (await PersonOfAsync(x.Channel, x.Message))
         {
             case TurnAdmission.Admitted { Identity.Account: null } when x.Message.AppTurn is not null:
                 await RefuseAsync(x.Channel, x.Message, TurnAdmission.NotAPerson);
@@ -820,6 +822,25 @@ internal sealed class ConversationGroup(
                 throw new InvalidOperationException("An assertion was neither admitted nor refused.");
         }
     }
+
+    // Who a person's message is from: its assertion; or, for a built app's ask during `./check` alone, the
+    // agent's own call token for the apps server that ran it (AppTurns.Believed has already dropped a token
+    // anywhere else). Never both, which would leave two answers. A check's person acts on the apps channel,
+    // as an ask's assertion would have said, not on the channel its token's turn came from.
+    private async Task<TurnAdmission> PersonOfAsync(IChannelConnection channel, ChannelMessage message) =>
+        (message.Assertion, message.CheckCallToken) switch
+        {
+            ({ }, { }) => new TurnAdmission.Refused(TurnAdmission.BothAnAssertionAndACheck),
+            (null, { } token) => checks is null
+                ? new TurnAdmission.Refused(CheckCallVerifier.NoAppsServer)
+                : await checks.VerifyAsync(token, _groupCt) switch
+                {
+                    TurnAdmission.Admitted { Identity: var identity } =>
+                        new TurnAdmission.Admitted(identity with { ChannelId = AppChannels.Apps }),
+                    var refused => refused
+                },
+            _ => await assertions.VerifyTurnAsync(message.Assertion, channel.ChannelId, _groupCt)
+        };
 
     // Nothing the fire's server stamped on it is believed: the principal is the delegation's person,
     // channel, account and all, or there is none, and the turn acts for nobody. What it asks is checked
