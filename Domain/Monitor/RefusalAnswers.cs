@@ -72,22 +72,42 @@ public static class RefusalAnswers
     public static IReadOnlyList<string> All { get; } =
         [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, AppsOff, SetupFailed];
 
-    // Each refusal by a short code, for a channel that says it in words of its own rather than showing
-    // these (the Sugary app, in the person's language). Null for an answer that is no refusal.
+    // Each refusal's short code, for a channel that says it in words of its own rather than showing these
+    // (the Sugary app, in the person's language; a built app's ask). The values are a wire: Sugary's app
+    // words each one.
+    public static class Codes
+    {
+        public const string Suspended = "suspended";
+        public const string NotVerified = "not-verified";
+        public const string Disabled = "disabled";
+        public const string Unchecked = "unchecked";
+        public const string WithoutKey = "without-key";
+        public const string NoVoiceAgent = "no-voice-agent";
+        public const string KeyRefused = "key-refused";
+        public const string OutOfCredit = "out-of-credit";
+        public const string SugaryOff = "sugary-off";
+        public const string AppsOff = "apps-off";
+        public const string AgentGone = "agent-gone";
+    }
+
+    // The code of an answer the agent gave (Codes), null for an answer that is no refusal. Read off the words
+    // because the reply carries nothing else: AgentGone, naming its agent, is known by the sentence around it.
     public static string? CodeOf(string answer) => answer.Trim() switch
     {
-        Suspended => "suspended",
-        NotVerified => "not-verified",
-        Disabled => "disabled",
-        Unchecked => "unchecked",
-        WithoutKey => "without-key",
-        NoVoiceAgent => "no-voice-agent",
-        KeyRefused => "key-refused",
-        OutOfCredit => "out-of-credit",
-        SugaryOff => "sugary-off",
-        AppsOff => "apps-off",
-        var named when named.StartsWith(AgentGoneOpening, StringComparison.Ordinal)
-                       && named.EndsWith(AgentGoneClosing, StringComparison.Ordinal) => "agent-gone",
+        Suspended => Codes.Suspended,
+        NotVerified => Codes.NotVerified,
+        Disabled => Codes.Disabled,
+        Unchecked => Codes.Unchecked,
+        WithoutKey => Codes.WithoutKey,
+        NoVoiceAgent => Codes.NoVoiceAgent,
+        KeyRefused => Codes.KeyRefused,
+        OutOfCredit => Codes.OutOfCredit,
+        SugaryOff => Codes.SugaryOff,
+        AppsOff => Codes.AppsOff,
+        var named when IsAgentGone(named) => Codes.AgentGone,
         _ => null
     };
+
+    private static bool IsAgentGone(string answer) =>
+        answer.StartsWith(AgentGoneOpening, StringComparison.Ordinal) && answer.EndsWith(AgentGoneClosing, StringComparison.Ordinal);
 }

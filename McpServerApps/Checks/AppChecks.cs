@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Apps;
 using Domain.Contracts;
+using Domain.Tools;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
@@ -356,27 +358,39 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     // it failed). Anything else answered there (no session's 404) stays a failed request.
     private static async Task<FailedAsk?> FailedAskAsync(IResponse response, ViewportRun seen)
     {
-        try
+        var body = await BodyAsync(response);
+        if (ToolErrorResult.FromEnvelope(body) is { } failed)
         {
-            using var envelope = JsonDocument.Parse(await response.TextAsync());
-            var root = envelope.RootElement;
-            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.False
-                && Text(root, "errorCode") is { } code)
-            {
-                seen.EnvelopeUrls.Enqueue(response.Url);
-                return new FailedAsk(response.Status, AskedText(response.Request.PostData), code, Text(root, "message"),
-                    Text(root, "hint"), Text(root, AppAsks.ReplyField), Text(root, AppAsks.FailureField));
-            }
-        }
-        catch (Exception ex) when (ex is PlaywrightException or JsonException)
-        {
+            seen.EnvelopeUrls.Enqueue(response.Url);
+            return new FailedAsk(response.Status, AskedText(response.Request.PostData), failed.ErrorCode, failed.Message,
+                failed.Hint, TextAt(body, AppAsks.ReplyField), TextAt(body, AppAsks.FailureField));
         }
 
         seen.Failed.Enqueue(new FailedRequest(response.Request.Method, response.Url, response.Status, null));
         return null;
     }
 
+    private static string? TextAt(JsonNode? body, string name) =>
+        body?[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    // Null for a body that is no JSON (the origin's 404 page) or one the page went away before it was read
+    // (Playwright throws): either way there is no envelope, and the answer is a failed request.
+    private static async Task<JsonNode?> BodyAsync(IResponse response)
+    {
+        try
+        {
+            return JsonNode.Parse(await response.TextAsync());
+        }
+        catch (Exception ex) when (ex is PlaywrightException or JsonException)
+        {
+            return null;
+        }
+    }
+
     private const int MaxAskedText = 200;
+
+    // The ask's text as its wire names it (AppAskRequest, read with JSON's web names).
+    private static readonly string _askedTextField = JsonNamingPolicy.CamelCase.ConvertName(nameof(AppAskRequest.Text));
 
     // What the page asked, when it asked in JSON (an ask with images is a form, its text left unsaid), clipped.
     private static string? AskedText(string? body)
@@ -384,7 +398,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         try
         {
             using var read = JsonDocument.Parse(body ?? "");
-            var text = Text(read.RootElement, "text");
+            var text = Text(read.RootElement, _askedTextField);
             return text is { Length: > MaxAskedText } ? $"{text[..MaxAskedText]}…" : text;
         }
         catch (JsonException)

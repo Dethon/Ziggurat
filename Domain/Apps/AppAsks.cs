@@ -49,7 +49,7 @@ public static class AppAsks
     // it caught, often a provider's own body, which a viewer never reads (Failed: the preview's alone).
     public static ToolErrorResult Refusal(string agentAnswer) => RefusalAnswers.CodeOf(agentAnswer) switch
     {
-        "unchecked" => ToolError.TransientDependency(agentAnswer.Trim(), "Ask again in a moment."),
+        RefusalAnswers.Codes.Unchecked => ToolError.TransientDependency(agentAnswer.Trim(), "Ask again in a moment."),
         null => ToolError.TransientDependency(
             "The assistant could not answer this ask.", "Ask again in a moment."),
         _ => ToolError.PermissionDenied(agentAnswer.Trim(),
