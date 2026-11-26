@@ -11,10 +11,18 @@ namespace Infrastructure.Agents;
 // they stood (OwnServerEndpoints) and the machines joining them (OutpostEndpoints). Two reaches that
 // are the same name the same servers on the same openings of their tunnels, so a session built over
 // the first serves the second.
-internal sealed record ServerReach(OwnServerResolution OwnServers, ComposedEndpoints Composed)
+//
+// A reach narrowed to a built app's ask names the servers it was narrowed to: a shared server's address has
+// no state to compare, so two asks of one conversation declaring different servers would otherwise reach
+// "the same" and the second be offered the first's tools.
+internal sealed record ServerReach(
+    OwnServerResolution OwnServers, ComposedEndpoints Composed, IReadOnlyList<string>? NarrowedTo = null)
 {
     public bool ReachesTheSameAs(ServerReach other) =>
-        OwnServers.ReachesTheSameServersAs(other.OwnServers) && Composed.ReachesTheSameMachinesAs(other.Composed);
+        OwnServers.ReachesTheSameServersAs(other.OwnServers) && Composed.ReachesTheSameMachinesAs(other.Composed)
+        && (NarrowedTo is null
+            ? other.NarrowedTo is null
+            : other.NarrowedTo is not null && NarrowedTo.SequenceEqual(other.NarrowedTo, StringComparer.Ordinal));
 }
 
 // Everything a session is built with besides the servers it reaches: the agent's name and what it
@@ -49,7 +57,8 @@ internal sealed class SessionReach(
     Func<CancellationToken, Task<HouseholdAgents>>? household,
     IOwnServers? ownServers,
     IOutposts? outposts,
-    bool usesOutposts)
+    bool usesOutposts,
+    IReadOnlyList<string>? narrowedTo = null)
 {
     public async Task<ServerReach> ResolveAsync(CancellationToken ct)
     {
@@ -57,7 +66,21 @@ internal sealed class SessionReach(
         // An agent outlives many sessions and an outpost's tunnel outlives none, so a machine that
         // opened, closed or reopened since the last session is reconciled like a household server,
         // and nothing mutates a session already built.
-        return new ServerReach(own, OutpostEndpoints.Compose(own.Endpoints, outposts, usesOutposts, tenantId));
+        return new ServerReach(own, OutpostEndpoints.Compose(own.Endpoints, outposts, usesOutposts, tenantId), narrowedTo);
+    }
+
+    // The same agent's servers a built app's ask declared (`servers`, by the names their tools carry), in
+    // the definition's order: narrowed before anything is resolved, so an undeclared household server is not
+    // even looked up, and never joined by a machine, whose tunnel is somebody's own computer — an app reaches
+    // the household's data, as its reads do. Null when the agent dials none of them.
+    public SessionReach? NarrowedTo(IReadOnlyList<string> servers)
+    {
+        List<McpServerEndpoint> declared =
+            [.. endpoints.Where(e => e.Qualifier is { } name && servers.Contains(name, StringComparer.Ordinal))];
+        return declared.Count == 0
+            ? null
+            : new SessionReach(declared, tenantId, withheldServers, household, ownServers, outposts: null, usesOutposts: false,
+                [.. declared.Select(e => e.Qualifier!)]);
     }
 
     public static async Task<ThreadSession> BuildAsync(ServerReach reach, SessionShape shape, CancellationToken ct)

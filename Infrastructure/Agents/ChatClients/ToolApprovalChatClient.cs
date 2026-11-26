@@ -54,6 +54,12 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly ConditionalWeakTable<IList<ChatMessage>, ConcurrentDictionary<AsPersonSubject, TaskCompletionSource<ToolApprovalResult>>>
         _turnAnswers = new();
 
+    // Set on the options of a turn nobody may be asked in: a built app's ask, whose person waits on an answer
+    // in an app whose code — and whatever web text it carried in — wrote the request. Every call that would be
+    // asked is refused at once, whoever would have asked (the whitelist, the exec screen, acting as the
+    // person), and nothing reaches any channel about a call, asked or not.
+    public const string AsksNobodyKey = "AsksNobody";
+
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
     // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
     // the very round trip the skill exists to save (docs/adr/0039).
@@ -207,8 +213,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         WrittenOrder.Place place,
         CancellationToken cancellationToken)
     {
-        var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
-            _conversationId, [request], cancellationToken);
+        var notifyTask = AsksNobody(context.Options)
+            ? Task.CompletedTask
+            : _approvalHandler.NotifyAutoApprovedAsync(_conversationId, [request], cancellationToken);
         var invokeTask = InvokeInTurnAsync(context, request.ToolName, place, cancellationToken).AsTask();
         await Task.WhenAll(notifyTask, invokeTask);
         return await invokeTask;
@@ -238,12 +245,18 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     }
 
     // The turn rides with the question as a field of it, so whose question it is never depends on
-    // which call happens to be in flight.
+    // which call happens to be in flight. Every question passes here, so a turn that asks nobody is
+    // refused here, once for every reason a call could be asked.
     private Task<ToolApprovalResult> RequestAsync(
         FunctionInvocationContext context, ToolApprovalRequest request, CancellationToken cancellationToken) =>
-        _approvalHandler.RequestApprovalAsync(
-            ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
-            cancellationToken);
+        AsksNobody(context.Options)
+            ? Task.FromResult(ToolApprovalResult.Rejected)
+            : _approvalHandler.RequestApprovalAsync(
+                ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
+                cancellationToken);
+
+    private static bool AsksNobody(ChatOptions? options) =>
+        options?.AdditionalProperties?.GetValueOrDefault(AsksNobodyKey) is true;
 
     private async ValueTask<object?> AnsweredAsync(
         FunctionInvocationContext context,

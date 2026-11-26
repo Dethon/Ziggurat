@@ -1254,8 +1254,8 @@ internal sealed class ConversationGroup(
         return _state = state with { Agent = agent, Thread = thread, Warmup = WarmupFor(anchor, agent, thread) };
     }
 
-    // A conversation an ask opened is offered none of the agent's servers, so nothing is dialled for it; a
-    // turn of another kind that joins it builds its session when it runs.
+    // A conversation an ask opened dials nothing ahead: each ask is offered only the servers it declares,
+    // dialled as it runs, and a turn of another kind that joins it builds its session when it runs.
     private Task WarmupFor(ChannelMessage anchor, DisposableAgent agent, AgentSession thread) =>
         anchor.AppTurn is null ? agent.WarmupSessionAsync(thread, _turnCt) : Task.CompletedTask;
 

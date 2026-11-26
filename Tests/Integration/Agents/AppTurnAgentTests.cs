@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
@@ -11,18 +13,24 @@ using Domain.Monitor;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Skills;
+using Domain.Tools.FileSystem;
 using Domain.Tools.Memory;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Memory;
+using Infrastructure.Utils;
+using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Integration.McpServers;
 using Tests.Unit.Domain;
 using Tests.Unit.Domain.Skills;
 
@@ -47,6 +55,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
 
     private FakeOpenRouter _model = null!;
     private SugaryServer _server = null!;
+    private readonly KitCalls _kitCalls = new();
+    private RunningServer _kit = null!;
 
     private readonly List<MetricEvent> _published = [];
     private readonly MemoryExtractionQueue _extractions = new();
@@ -57,10 +67,20 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     {
         _model = await FakeOpenRouter.StartAsync();
         _server = await SugaryServer.StartAsync();
+        _kit = await InMemoryMcpServer.StartAsync(services =>
+        {
+            services.AddSingleton(_kitCalls);
+            services.AddSingleton(new MachineMount(_kitCalls));
+            services.AddToolServer(new KitSettings())
+                .WithTools<KitTools>()
+                .AddFileSystemTools<MachineMount>()
+                .AddFileSystemResource<MachineMount>();
+        });
     }
 
     public async Task DisposeAsync()
     {
+        await _kit.DisposeAsync();
         await _server.DisposeAsync();
         await _model.DisposeAsync();
     }
@@ -117,8 +137,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         _judge.Asked.Select(r => r.Caller.ConversationId).ShouldBe(["chat-1"]);
     }
 
-    // An ask is offered none of the agent's servers, so none is dialled for it: a server of the agent's
-    // that cannot be reached costs the ask nothing.
+    // An ask declaring none of the agent's servers dials none: a server of the agent's that cannot be
+    // reached costs it nothing.
     [Fact]
     public async Task AnAsk_DialsNoneOfTheAgentsServers_SoOneThatIsDownCostsItNothing()
     {
@@ -153,6 +173,119 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         usage.AppId.ShouldBeNull();
     }
 
+    // The servers an ask may use are the building agent's that the app declared: their tools, mounts,
+    // skills and prompts, and nothing else of the agent — no workers, no memory, no undeclared server. A
+    // declared server the agent does not dial is simply absent. The servers are each ask's own: a later ask
+    // on the same conversation declaring fewer is offered fewer, and one declaring none is offered nothing.
+    [Fact]
+    public async Task EachAsk_IsOfferedOnlyItsDeclaredServers_AndALaterAskWithFewerIsOfferedFewer()
+    {
+        var (apps, _) = await RunAsync(
+            Jonas() with { McpServerEndpoints = [_server.Endpoint, _kit.Endpoint, "vault"] },
+            Chat(),
+            Ask("Both servers", [Kit, Sugary, "not-the-agents"], "ask-a"),
+            Ask("The kit alone", [Kit], "ask-b"),
+            Ask("Nothing at all", [], "ask-c"));
+
+        var ordinary = RequestFor(ChatText);
+        ordinary.SystemPrompt.ShouldNotBeNull().ShouldContain("`/sugary`");
+        ordinary.ToolNames.ShouldContain($"mcp__{Kit}__whoami");
+        ordinary.ToolNames.ShouldContain(n => n.StartsWith("domain__memory__", StringComparison.Ordinal));
+        ordinary.ToolNames.ShouldContain(n => n.StartsWith("domain__subagents__", StringComparison.Ordinal));
+
+        var both = RequestFor("Both servers");
+        both.ToolNames.ShouldContain($"mcp__{Kit}__whoami");
+        both.ToolNames.ShouldContain(n => n.StartsWith("domain__filesystem__", StringComparison.Ordinal));
+        both.ToolNames.ShouldContain(SkillLoadTool.Name);
+        both.ToolNames.ShouldNotContain(n => n.StartsWith("domain__memory__", StringComparison.Ordinal));
+        both.ToolNames.ShouldNotContain(n => n.StartsWith("domain__subagents__", StringComparison.Ordinal));
+        var bothPrompt = both.SystemPrompt.ShouldNotBeNull();
+        bothPrompt.ShouldContain("`/machine`");
+        bothPrompt.ShouldContain("`/sugary`");
+        bothPrompt.ShouldContain("<skill>");
+        bothPrompt.ShouldContain(Instructions);
+        bothPrompt.ShouldNotContain("You are Jonas");
+        bothPrompt.ShouldNotContain("## Memory System");
+        bothPrompt.ShouldNotContain("## Subagent Delegation");
+        // Only the declared household server would be named offline: vault was not declared.
+        both.Body.ToJsonString().ShouldNotContain("Offline household servers");
+
+        var kit = RequestFor("The kit alone");
+        kit.ToolNames.ShouldContain($"mcp__{Kit}__whoami");
+        kit.ToolNames.ShouldContain(n => n.StartsWith("domain__filesystem__", StringComparison.Ordinal));
+        kit.ToolNames.ShouldNotContain(SkillLoadTool.Name);
+        var kitPrompt = kit.SystemPrompt.ShouldNotBeNull();
+        kitPrompt.ShouldContain("`/machine`");
+        kitPrompt.ShouldNotContain("`/sugary`");
+        kitPrompt.ShouldNotContain("<skill>");
+
+        var none = RequestFor("Nothing at all");
+        (none.Body["tools"] as JsonArray ?? []).ShouldBeEmpty($"tools went out: {none.Body["tools"]?.ToJsonString()}");
+        none.SystemPrompt.ShouldNotBeNull().ShouldNotContain("`/machine`");
+
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
+    // Nothing an ask calls may be put to anybody: a call that would be asked — by the whitelist, the exec
+    // screen (Jev's verdict missing on a person's own machine) or because it acts as the person on a site —
+    // is refused at once with the usual rejection, never sent to the anchor and never offered elsewhere. The
+    // same three calls on the person's own turn are each asked.
+    [Fact]
+    public async Task ACallThatWouldBeAsked_IsRefusedAtOnce_AndPutToNobody()
+    {
+        ScriptTheAskedCalls();
+        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [_kit.Endpoint] }, Chat());
+
+        ownChat.AskedApprovals.SelectMany(a => a.Requests).Select(r => r.ToolName)
+            .ShouldBe([$"mcp__{Kit}__unlock_door", $"mcp__{Kit}__browse", "domain__filesystem__exec"]);
+        _kitCalls.Ran.ShouldBe(["unlock_door", "browse", "exec"]);
+        _kitCalls.Clear();
+
+        ScriptTheAskedCalls();
+        var (apps, chat) = await RunAsync(
+            Jonas() with { McpServerEndpoints = [_kit.Endpoint] },
+            Ask("Unlock the door", [Kit], "ask-a"),
+            Ask("Read my bank page", [Kit], "ask-b"),
+            Ask("Run it on my laptop", [Kit], "ask-c"));
+
+        _kitCalls.Ran.ShouldBeEmpty();
+        apps.AskedApprovals.ShouldBeEmpty();
+        apps.OfferedApprovals.ShouldBeEmpty();
+        apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
+        chat.AskedApprovals.ShouldBeEmpty();
+        chat.OfferedApprovals.ShouldBeEmpty();
+        // Each ask ended as a refused call ends a turn, and the exec screen was asked of the third.
+        apps.SentReplies.Where(r => r.ContentType == ReplyContentType.StreamComplete).Select(r => r.TurnKey)
+            .ShouldBe(["ask-a", "ask-b", "ask-c"]);
+        _judge.Asked.ShouldContain(r => r.Caller.ConversationId == "ask-1");
+    }
+
+    // A call that never asks runs, as the person viewing the app: the call token the server verified names
+    // them. Nothing tells the apps channel it was approved, since nobody there is watching a conversation.
+    [Fact]
+    public async Task ACallThatNeverAsks_Runs_ActingAsTheViewer()
+    {
+        _model.Script(FakeOpenRouter.CallingToolNamed("whoami", "{}"));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [_kit.Endpoint] }, Ask("Who am I?", [Kit], "ask-a"));
+
+        _kitCalls.Ran.ShouldBe(["whoami"]);
+        _kitCalls.Callers.ShouldBe([_viewer.UserId]);
+        _model.Requests.Last().ToolOutputs.ShouldHaveSingleItem().ShouldContain(_viewer.UserId);
+        apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
+        apps.AskedApprovals.ShouldBeEmpty();
+    }
+
+    private void ScriptTheAskedCalls() =>
+        _model.Script(
+            FakeOpenRouter.CallingToolNamed("unlock_door", "{}"),
+            FakeOpenRouter.CallingToolNamed("browse", """{"url":"https://bank.example.com/account","asMe":true}"""),
+            FakeOpenRouter.CallingToolNamed("exec", """{"path":"/machine","command":"ls"}"""));
+
+    // The names the agent's tools carry these servers under, which an app declares them by.
+    private string Kit => McpServerEndpoint.Configured(_kit.Endpoint).Qualifier!;
+
+    private string Sugary => McpServerEndpoint.Configured(_server.Endpoint).Qualifier!;
+
     private FakeOpenRouter.Request RequestFor(string text) =>
         _model.Requests.Where(r => r.Path.Contains("responses", StringComparison.Ordinal))
             .Single(r => r.Body["input"]!.ToJsonString().Contains(text, StringComparison.Ordinal));
@@ -168,17 +301,17 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         }
     }
 
-    private static ChannelMessage Ask() => new()
+    private static ChannelMessage Ask(string text = AskText, IReadOnlyList<string>? servers = null, string turnKey = "ask-turn") => new()
     {
         ConversationId = "ask-1",
-        Content = AskText,
+        Content = text,
         Sender = "app",
         ChannelId = AppChannels.Apps,
         AgentId = "jonas",
-        TurnKey = "ask-turn",
+        TurnKey = turnKey,
         Principal = new Principal(AppChannels.Apps, _viewer.UserId, _viewer),
         Assertion = TestAssertions.Of(_viewer, AppChannels.Apps),
-        AppTurn = _app,
+        AppTurn = _app with { Servers = servers ?? [] },
         // Asked for, and never made: an app's conversation is no topic.
         ReviewCopy = new ReviewCopy { Title = "Ask" }
     };
@@ -247,7 +380,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         PromptSections = [VoicePrompt.Name],
         EnabledFeatures = ["filesystem", "subagents", "memory"],
         CustomInstructions = "ALWAYS-SIGN-AS-JONAS",
-        WhitelistPatterns = ["domain__filesystem*"]
+        WhitelistPatterns = ["domain__filesystem*", "mcp__*__whoami", "mcp__*__browse"]
     };
 
     private MultiAgentFactory Factory(IAgentDefinitionProvider definitions)
@@ -259,6 +392,9 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
             .AddSingleton<IOwnServers>(new InProcessOwnServers(new Dictionary<string, string>()))
             .AddSingleton(McpTestSecret.Credentials)
             .AddSingleton(McpTestSecret.CallTokens)
+            // The real screen over the judge, which never answers here: a command headed for a person's own
+            // machine is then asked about.
+            .AddSingleton<IExecScreen>(new ExecScreen(_judge, new ExecScreenSettings(), TimeProvider.System))
             .BuildServiceProvider();
         return new MultiAgentFactory(
             services, definitions, new OpenRouterConfig { ApiUrl = _model.ApiUrl, ApiKey = "deployment-key" },
@@ -308,5 +444,107 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
                 }
             });
         return metrics.Object;
+    }
+
+    private sealed record KitSettings : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
+
+    // What the kit server ran, and as whom: only what its call token verified.
+    private sealed class KitCalls
+    {
+        private readonly Lock _gate = new();
+        private readonly List<string> _ran = [];
+        private readonly List<string?> _callers = [];
+
+        public IReadOnlyList<string> Ran
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _ran];
+                }
+            }
+        }
+
+        public IReadOnlyList<string?> Callers
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _callers];
+                }
+            }
+        }
+
+        public void Record(string tool, string? caller = null)
+        {
+            lock (_gate)
+            {
+                _ran.Add(tool);
+                _callers.Add(caller);
+            }
+        }
+
+        public void Clear()
+        {
+            lock (_gate)
+            {
+                _ran.Clear();
+                _callers.Clear();
+            }
+        }
+    }
+
+    // A household server with one tool of each kind an ask may meet: one that never asks, one the whitelist
+    // leaves to the person, and one that can act as the person on a site.
+    [McpServerToolType]
+    private sealed class KitTools(KitCalls calls)
+    {
+        [McpServerTool(Name = "whoami")]
+        [Description("Says who is calling.")]
+        public string WhoAmI(RequestContext<CallToolRequestParams> call)
+        {
+            calls.Record("whoami", call.Identity?.Subject);
+            return $"You are {call.Identity?.Subject}.";
+        }
+
+        [McpServerTool(Name = "unlock_door")]
+        [Description("Unlocks the front door.")]
+        public string UnlockDoor()
+        {
+            calls.Record("unlock_door");
+            return "Unlocked.";
+        }
+
+        [McpServerTool(Name = "browse")]
+        [Description("Opens a web page, as the person when asMe is true.")]
+        public string Browse(string url, bool asMe = false)
+        {
+            calls.Record("browse");
+            return "A page.";
+        }
+    }
+
+    // A person's own machine: a shell that reaches the host.
+    private sealed class MachineMount(KitCalls calls) : FileSystemBackendBase
+    {
+        public override string FilesystemName => "machine";
+
+        public override string DescribeMount => "Somebody's own computer.";
+
+        public override ShellReach? ShellReach => global::Domain.DTOs.ShellReach.Host;
+
+        public override Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
+        {
+            calls.Record("exec");
+            return Task.FromResult<FsResult<FsExecResult>>(new FsResult<FsExecResult>.Ok(new FsExecResult
+            {
+                Stdout = "ran", Stderr = "", ExitCode = 0, Truncated = false, TimedOut = false, DurationMs = 1, Cwd = ""
+            }));
+        }
     }
 }
