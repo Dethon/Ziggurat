@@ -545,50 +545,45 @@ public sealed class McpAgent : DisposableAgent
     // Every section this agent has, handed to the composer as data. Nothing about the order lives
     // here any more: a section carries its own band, and what used to be a chain of Prepend and
     // Append calls with a comment each is now the manifest those comments moved into.
-    private string BuildInstructions(ThreadSession session)
-    {
-        var zone = Zone;
-        var assembly = PromptComposer.Compose(new PromptContext
+    private string BuildInstructions(ThreadSession session) =>
+        Compose(common => common with
         {
-            AgentId = _agentId,
-            Name = _promptName,
             Description = _description,
             Selected = _selectedSections,
             Domain = _domainPrompts,
             FileSystem = session.FileSystemPrompts,
             Client = session.ClientManager.Prompts,
             Skills = session.Skills,
-            CustomInstructions = _customInstructions,
+            CustomInstructions = _customInstructions
+        });
+
+    // A built app's ask is answered by the app's instructions in place of the persona, around what every
+    // agent carries: the mounts, prompts and skills of the servers it declared, and the agent's day, zone
+    // and language, as for any turn.
+    private string BuildAppInstructions(AppTurn app, ThreadSession? session) =>
+        Compose(common => common with
+        {
+            FileSystem = session?.FileSystemPrompts ?? [],
+            Client = session?.ClientManager.Prompts ?? [],
+            Skills = session?.Skills ?? [],
+            AppInstructions = app.Instructions
+        });
+
+    // What every prompt of this agent carries whatever it is built from — who it is, its language, and its
+    // household's day and zone — shaped into a persona's prompt or an app's.
+    private string Compose(Func<PromptContext, PromptContext> shape)
+    {
+        var zone = Zone;
+        var assembly = PromptComposer.Compose(shape(new PromptContext
+        {
+            AgentId = _agentId,
+            Name = _promptName,
             Language = _language,
             Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
             // Named only where it is not the host's own: the home's agents read the prompt they always
             // read, and a household elsewhere is told whose eight o'clock it is.
             TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
-        });
-
-        ReportPromptWarnings(assembly);
-
-        return assembly.Text;
-    }
-
-    // A built app's ask is answered by the app's instructions in place of the persona, around what every
-    // agent carries: the mounts, prompts and skills of the servers it declared, and the agent's day, zone
-    // and language, as for any turn.
-    private string BuildAppInstructions(AppTurn app, ThreadSession? session)
-    {
-        var zone = Zone;
-        var assembly = PromptComposer.Compose(new PromptContext
-        {
-            AgentId = _agentId,
-            Name = _promptName,
-            FileSystem = session?.FileSystemPrompts ?? [],
-            Client = session?.ClientManager.Prompts ?? [],
-            Skills = session?.Skills ?? [],
-            AppInstructions = app.Instructions,
-            Language = _language,
-            Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
-            TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
-        });
+        }));
 
         ReportPromptWarnings(assembly);
 
