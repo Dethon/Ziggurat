@@ -48,6 +48,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     private const string AskText = "How many carbs in a slice of bread?";
     private const string ChatText = "What did I eat yesterday?";
     private const string Remembered = "Prefers answers in grams";
+    private const string PatchableModel = "z-ai/glm-5.3-flash";
 
     private static readonly Account _viewer = new(Household, "0123456789abcdef0123456789abcdef");
 
@@ -364,6 +365,49 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         apps.AskedApprovals.ShouldBeEmpty();
     }
 
+    // An app's schema shapes its ask's answer as any channel's does (ADR 0044): strict, the schema as the app
+    // wrote it (its minimum still a minimum, not prose), providers that ignore it refused, and the tools the
+    // ask is offered sent as they always are, never strict.
+    [Fact]
+    public async Task AnAsksSchema_GoesToTheModelStrictAndAsWritten_OnlyToProvidersThatHonourIt()
+    {
+        const string schema =
+            """{"type":"object","properties":{"grams":{"type":"number","minimum":0}},"required":["grams"],"additionalProperties":false}""";
+        var ask = Ask(servers: [KitName]) with
+        {
+            ResponseFormat = new ResponseFormat { Name = "carbs", Schema = System.Text.Json.JsonDocument.Parse(schema).RootElement.Clone() }
+        };
+
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, ask);
+
+        var body = RequestFor(AskText).Body;
+        var format = body["text"]!["format"].ShouldBeOfType<JsonObject>();
+        format["type"]!.GetValue<string>().ShouldBe("json_schema");
+        format["name"]!.GetValue<string>().ShouldBe("carbs");
+        format["strict"]!.GetValue<bool>().ShouldBeTrue();
+        JsonNode.DeepEquals(format["schema"], JsonNode.Parse(schema)).ShouldBeTrue(format["schema"]?.ToJsonString());
+        body["provider"]!["require_parameters"]!.GetValue<bool>().ShouldBeTrue();
+        var tools = (body["tools"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+        tools.ShouldNotBeEmpty();
+        tools.ShouldAllBe(tool => tool["strict"] == null || !tool["strict"]!.GetValue<bool>());
+        System.Text.Json.JsonDocument.Parse(AnswerOf(apps, "ask-turn")).RootElement.GetProperty("grams")
+            .ValueKind.ShouldBe(System.Text.Json.JsonValueKind.Number);
+    }
+
+    // The model an app names travels as the ask's config patch, and the agent's patch rules hold as for any
+    // turn: one of its patchable models answers the ask, anything else answers on the agent's own.
+    [Theory]
+    [InlineData("z-ai/glm-5.3-flash", "z-ai/glm-5.3-flash")]
+    [InlineData("Z-AI/GLM-5.3-Flash", "z-ai/glm-5.3-flash")]
+    [InlineData("vendor/a-model-nobody-offers", "deepseek/deepseek-v4.1-flash-1017")]
+    public async Task AnAsksModel_AnswersIt_WhenTheAgentMayBePatchedToIt_ElseTheAgentsOwnDoes(string named, string answering)
+    {
+        var (apps, _) = await RunAsync(Ask() with { ConfigPatch = new AgentConfigPatch { Model = named } });
+
+        RequestFor(AskText).Body["model"]!.GetValue<string>().ShouldBe(answering);
+        AnswerOf(apps, "ask-turn").ShouldNotBeEmpty();
+    }
+
     // The three calls, one after another in one turn; or, for three asks, each followed by the ask's answer.
     private void ScriptTheAskedCalls(bool answeringEach = false)
     {
@@ -500,7 +544,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
             .AddSingleton<IExecScreen>(new ExecScreen(_judge, new ExecScreenSettings(), TimeProvider.System))
             .BuildServiceProvider();
         return new MultiAgentFactory(
-            services, definitions, new OpenRouterConfig { ApiUrl = _model.ApiUrl, ApiKey = "deployment-key" },
+            services, definitions,
+            new OpenRouterConfig { ApiUrl = _model.ApiUrl, ApiKey = "deployment-key", PatchableModelIds = [PatchableModel] },
             new DomainToolRegistry(
             [
                 new SubAgentToolFeature(new SubAgentRegistryOptions

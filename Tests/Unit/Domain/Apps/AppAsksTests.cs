@@ -57,8 +57,36 @@ public class AppAsksTests
     [Fact]
     public void AnAsksText_IsRead()
     {
-        AppAskRequest.Parse("""{"text":"How much is this?"}"""u8, maxText: 100)
-            .ShouldBeOfType<AppAskRequestParse.Valid>().Request.Text.ShouldBe("How much is this?");
+        var request = AppAskRequest.Parse("""{"text":"How much is this?"}"""u8, maxText: 100, maxSchemaBytes: 100)
+            .ShouldBeOfType<AppAskRequestParse.Valid>().Request;
+
+        request.Text.ShouldBe("How much is this?");
+        request.Schema.ShouldBeNull();
+    }
+
+    // The schema goes to the agent as the page wrote it: strict mode's rules are the page's to meet, and
+    // nothing here rewrites it.
+    [Fact]
+    public void AnAsksSchema_IsReadAsWritten()
+    {
+        var schema = AppAskRequest.Parse(
+                """{"text":"Hi","schema":{"name":"meal_estimate","schema":{"type":"object","properties":{"grams":{"type":"number","minimum":0}},"required":["grams"],"additionalProperties":false}}}"""u8,
+                maxText: 100, maxSchemaBytes: 1000)
+            .ShouldBeOfType<AppAskRequestParse.Valid>().Request.Schema.ShouldNotBeNull();
+
+        schema.Name.ShouldBe("meal_estimate");
+        schema.Schema.GetRawText().ShouldBe(
+            """{"type":"object","properties":{"grams":{"type":"number","minimum":0}},"required":["grams"],"additionalProperties":false}""");
+    }
+
+    [Fact]
+    public void ASchemaAtTheBound_IsRead()
+    {
+        var schema = """{"type":"object"}""";
+
+        AppAskRequest.Parse(Encoding.UTF8.GetBytes("""{"text":"Hi","schema":{"name":"n","schema":""" + schema + "}}"),
+                maxText: 10, maxSchemaBytes: Encoding.UTF8.GetByteCount(schema))
+            .ShouldBeOfType<AppAskRequestParse.Valid>();
     }
 
     [Theory]
@@ -70,9 +98,20 @@ public class AppAsksTests
     [InlineData("""{"text":"hi","conversation":"c"}""", "conversation")]
     [InlineData("""["hi"]""", "JSON object")]
     [InlineData("""not json""", "JSON object")]
+    [InlineData("""{"text":"hi","schema":"meal"}""", "schema")]
+    [InlineData("""{"text":"hi","schema":{"schema":{}}}""", "name")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal"}}""", "schema")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":{},"strict":false}}""", "strict")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":[]}}""", "a JSON object")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":"object"}}""", "a JSON object")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":null}}""", "a JSON object")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal estimate","schema":{}}}""", "letters, digits, _ and -")]
+    [InlineData("""{"text":"hi","schema":{"name":"","schema":{}}}""", "letters, digits, _ and -")]
+    [InlineData("""{"text":"hi","schema":{"name":"x123456789x123456789x123456789x123456789x123456789x123456789x1234","schema":{}}}""", "1 to 64")]
+    [InlineData("""{"text":"hi","schema":{"name":"meal","schema":{"type":"object","description":"twenty-nine characters"}}}""", "over the 40 bytes")]
     public void AnAskOutsideItsShape_IsRefusedWhole(string body, string words)
     {
-        AppAskRequest.Parse(Encoding.UTF8.GetBytes(body), maxText: 10)
+        AppAskRequest.Parse(Encoding.UTF8.GetBytes(body), maxText: 10, maxSchemaBytes: 40)
             .ShouldBeOfType<AppAskRequestParse.Refused>().Problem.ShouldContain(words);
     }
 
@@ -103,4 +142,41 @@ public class AppAsksTests
     public void Instructions_AtTheBound_AreRead() =>
         AppAsks.ReadInstructions("i.md", Enumerable.Repeat((byte)'x', AppAsks.MaxInstructionsBytes).ToArray())
             .ShouldBeOfType<AppInstructionsRead.Read>();
+
+    [Theory]
+    [InlineData("""{"grams":12}""", """{"grams":12}""")]
+    [InlineData(" \n{\"grams\":12}\n", """{"grams":12}""")]
+    [InlineData("[1,2]", "[1,2]")]
+    public void AReplyToASchema_IsItsJson(string reply, string value) =>
+        AppAsks.ReadReply(reply).ShouldBeOfType<AppAskReplyRead.Parsed>().Value.GetRawText().ShouldBe(value);
+
+    // Read whole or not at all: a reply in prose around its JSON, or fenced, is not what a strict format asked for.
+    [Theory]
+    [InlineData("Sure! {\"grams\":12}")]
+    [InlineData("```json\n{\"grams\":12}\n```")]
+    [InlineData("{\"grams\":12} and that is all")]
+    [InlineData("{\"grams\":")]
+    public void AReplyThatIsNotJsonWhole_IsUnparsed(string reply) =>
+        AppAsks.ReadReply(reply).ShouldBeOfType<AppAskReplyRead.Unparsed>();
+
+    // The reply's own words are kept for the author's preview alone: anywhere else they could carry what the
+    // model read for one viewer to whoever reads the app's errors.
+    [Fact]
+    public void AnInvalidReply_IsItsOwnCode_NotWorthAskingAgainUnchanged_AndCarriesTheReplyOnlyWhenGiven()
+    {
+        var hidden = AppAsks.InvalidReply(reply: null);
+        var shown = AppAsks.InvalidReply(reply: "Twelve grams.");
+
+        hidden["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidReply);
+        hidden["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        hidden["hint"]!.GetValue<string>().ShouldNotBeNullOrWhiteSpace();
+        hidden.ContainsKey(AppAsks.ReplyField).ShouldBeFalse();
+        shown[AppAsks.ReplyField]!.GetValue<string>().ShouldBe("Twelve grams.");
+        shown["message"]!.GetValue<string>().ShouldBe(hidden["message"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void AnInvalidReplysWords_AreClippedToTheBound() =>
+        AppAsks.InvalidReply(new string('x', AppAsks.MaxReplyShown + 10))[AppAsks.ReplyField]!.GetValue<string>()
+            .Length.ShouldBe(AppAsks.MaxReplyShown);
 }

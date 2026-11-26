@@ -65,6 +65,10 @@ public static class ToolError
         // The page is asking a human to prove they are one.
         public const string CaptchaRequired = "captcha_required";
 
+        // The far side answered, and not in the shape the caller asked for (an app's ask with a schema whose
+        // reply is no JSON). Asking the same way again tends to get the same answer.
+        public const string InvalidReply = "invalid_reply";
+
         // Nothing above fitted. A bug or an unmapped failure, worth retrying once.
         public const string InternalError = "internal_error";
     }
@@ -111,6 +115,7 @@ public static class ToolError
         [Codes.CaptchaRequired] = new(
             Retryable: false,
             Recovery: "A person has to solve the challenge; nothing here can."),
+        [Codes.InvalidReply] = new(Retryable: false),
         [Codes.InternalError] = new(Retryable: true)
     };
 

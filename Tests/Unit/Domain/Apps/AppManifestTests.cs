@@ -18,7 +18,8 @@ public class AppManifestTests
                                    "connect": ["https://api.example.com", "https://tiles.example.org:8443"],
                                    "icon": "/icons/glucose.svg",
                                    "instructions": "asks/instructions.md",
-                                   "asks": ["vault", "sugary", "homeassistant"]
+                                   "asks": ["vault", "sugary", "homeassistant"],
+                                   "model": "z-ai/glm-5.3-flash"
                                  }
                                  """;
 
@@ -36,6 +37,7 @@ public class AppManifestTests
         manifest.Icon.ShouldBe("/icons/glucose.svg");
         manifest.Instructions.ShouldBe("asks/instructions.md");
         manifest.Asks.ShouldBe(["vault", "sugary", "homeassistant"]);
+        manifest.Model.ShouldBe("z-ai/glm-5.3-flash");
     }
 
     [Fact]
@@ -51,7 +53,20 @@ public class AppManifestTests
         manifest.Icon.ShouldBeNull();
         manifest.Instructions.ShouldBeNull();
         manifest.Asks.ShouldBeEmpty();
+        manifest.Model.ShouldBeNull();
     }
+
+    // A model is named as the agent's patchable models name it: a provider's id or a local box's, kept as
+    // written, since whether it is one of the building agent's is the agent's to say at each ask.
+    [Theory]
+    [InlineData("openai/gpt-6-luna")]
+    [InlineData("deepseek/deepseek-v4.1-flash-1017")]
+    [InlineData("meta-llama/llama-4-scout:free")]
+    [InlineData("lemonade/Qwen3-8B-GGUF")]
+    [InlineData("lemonade/user.Gemma-3-4b-it")]
+    public void AModel_IsKeptAsWritten(string model) =>
+        AppManifest.Parse($$"""{"name":"A","accentColor":"#abc","description":"B","model":"{{model}}"}""")
+            .ShouldBeOfType<AppManifestParse.Valid>().Manifest.Model.ShouldBe(model);
 
     [Theory]
     [InlineData("""{"accentColor":"#abc","description":"B"}""", "name is required")]
@@ -97,6 +112,12 @@ public class AppManifestTests
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":[""]}""", "asks: '' is no server's name")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["vault","vault"]}""", "asks: 'vault' is named twice")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":"vault"}""", "asks must be a list of strings")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"glm-5.3"}""", "model 'glm-5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"/glm-5.3"}""", "model '/glm-5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/"}""", "model 'z-ai/'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/glm 5.3"}""", "model 'z-ai/glm 5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":""}""", "model ''")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":7}""", "model must be a string")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","colour":"#abc"}""", "colour")]
     [InlineData("""[1, 2]""", "a JSON object")]
     [InlineData("""{"name":""", "not JSON")]
@@ -106,6 +127,11 @@ public class AppManifestTests
 
         refused.Problems.ShouldContain(problem => problem.Contains(words, StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void AModelOverItsLength_IsRefused() =>
+        AppManifest.Parse($$"""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/{{new string('g', AppManifest.ModelLength)}}"}""")
+            .ShouldBeOfType<AppManifestParse.Refused>().Problems.ShouldHaveSingleItem().ShouldContain("model");
 
     [Fact]
     public void EveryBrokenRule_IsNamed_NotOnlyTheFirst()

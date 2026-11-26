@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Domain.Monitor;
 using Domain.Tools;
 
@@ -9,11 +11,18 @@ namespace Domain.Apps;
 // app's own origin) and the apps server that answers it there, sending the ask to the app's building
 // agent as a turn on the apps channel and waiting for the whole reply.
 //
-// Answered 200 with an AppAskAnswer, or the tools' envelope: what the agent refused or failed is a 422
-// (as a read's refusal is), nobody answering a 503, the wait running out a 504.
+// Asked with an AppAskRequest; answered 200 with an AppAskAnswer, or the tools' envelope: what the agent
+// refused or failed, and a reply to a schema that is no JSON (InvalidReply), is a 422 (as a read's refusal
+// is), nobody answering a 503, the wait running out a 504.
 public static class AppAsks
 {
     public const string OriginPath = "/_ask";
+
+    // The envelope's field carrying a reply that did not parse, on the preview alone (InvalidReply).
+    public const string ReplyField = "reply";
+
+    // Enough of an unparsed reply for its author to see what the model did instead.
+    public const int MaxReplyShown = 4_000;
 
     // The instructions file's bound, in UTF-8 bytes: no fewer than its characters, at four a token it is
     // within the app_instructions section's budget (4,000 tokens), so an app inside it is never reported
@@ -45,6 +54,37 @@ public static class AppAsks
     public static ToolErrorResult TimedOut(TimeSpan waited) => ToolError.Result(ToolError.Codes.Timeout,
         $"The assistant did not answer within {waited.TotalSeconds:0} seconds, so its turn was stopped.",
         "Ask again, or ask for less at once.");
+
+    // What an ask with a schema is answered with: its reply's JSON, whole. Nothing checks it against the
+    // schema (the provider was held to it, ADR 0044); prose around it, or a fence, is not what was asked for.
+    public static AppAskReplyRead ReadReply(string reply)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(reply);
+            return new AppAskReplyRead.Parsed(document.RootElement.Clone());
+        }
+        catch (JsonException ex)
+        {
+            return new AppAskReplyRead.Unparsed(ex.Message);
+        }
+    }
+
+    // A reply to a schema that is no JSON. Its words are what the model wrote for this viewer, so they are
+    // handed only where the author alone asks (the preview); elsewhere the page learns only that it failed.
+    public static JsonObject InvalidReply(string? reply)
+    {
+        var envelope = ToolError.Result(ToolError.Codes.InvalidReply,
+            "The assistant's answer was not JSON in the shape this app asked for.",
+            "Show that the answer could not be read. If it keeps happening, the app's instructions or schema need fixing: "
+            + "its author sees the answer on the preview.").ToNode();
+        if (reply is not null)
+        {
+            envelope[ReplyField] = reply.Length > MaxReplyShown ? reply[..MaxReplyShown] : reply;
+        }
+
+        return envelope;
+    }
 
     // The instructions as the agent is sent them: UTF-8 text of at most the bound, or why not.
     public static AppInstructionsRead ReadInstructions(string path, byte[]? file)
@@ -83,20 +123,31 @@ public abstract record AppInstructionsRead
     public sealed record Refused(string Problem) : AppInstructionsRead;
 }
 
-// What a page asks: the text alone, for now.
+public abstract record AppAskReplyRead
+{
+    public sealed record Parsed(JsonElement Value) : AppAskReplyRead;
+
+    public sealed record Unparsed(string Problem) : AppAskReplyRead;
+}
+
+// What a page asks: the text, and the schema its answer is to come back in, if any.
 public sealed record AppAskRequest
 {
     public required string Text { get; init; }
 
+    public AppAskSchema? Schema { get; init; }
+
     // Strict: a field the shape does not name refuses the ask whole, so nothing a page sends is quietly
-    // dropped (a conversation to continue, a schema) and answered as though it had not been.
+    // dropped (a conversation to continue) and answered as though it had not been.
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web)
     {
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         RespectNullableAnnotations = true
     };
 
-    public static AppAskRequestParse Parse(ReadOnlySpan<byte> body, int maxText)
+    private const string Shape = "An ask is one JSON object, {\"text\": \"...\", \"schema\": {\"name\": \"...\", \"schema\": {...}}}, its schema optional";
+
+    public static AppAskRequestParse Parse(ReadOnlySpan<byte> body, int maxText, int maxSchemaBytes)
     {
         AppAskRequest? request;
         try
@@ -105,17 +156,53 @@ public sealed record AppAskRequest
         }
         catch (JsonException ex)
         {
-            return new AppAskRequestParse.Refused($"An ask is one JSON object, {{\"text\": \"...\"}}: {ex.Message}");
+            return new AppAskRequestParse.Refused($"{Shape}: {ex.Message}");
         }
 
         return request switch
         {
-            null => new AppAskRequestParse.Refused("An ask is one JSON object, {\"text\": \"...\"}."),
+            null => new AppAskRequestParse.Refused($"{Shape}."),
             { Text: var text } when string.IsNullOrWhiteSpace(text) || text.Length > maxText =>
                 new AppAskRequestParse.Refused($"An ask's text is 1 to {maxText} characters."),
+            { Schema: { } schema } when schema.Problem(maxSchemaBytes) is { } problem =>
+                new AppAskRequestParse.Refused(problem),
             _ => new AppAskRequestParse.Valid(request)
         };
     }
+}
+
+// The shape an ask's answer must come in: a name and a JSON schema, sent to the model strict and as written
+// (ADR 0044), so strict mode's rules (every property required, additionalProperties false) are the page's
+// to meet. Only what would refuse the request before any model reads it is judged here.
+public sealed partial record AppAskSchema
+{
+    // What a strict response format's name may be.
+    public const int MaxNameLength = 64;
+
+    public required string Name { get; init; }
+
+    public required JsonElement Schema { get; init; }
+
+    internal string? Problem(int maxBytes)
+    {
+        if (Name.Length is 0 or > MaxNameLength || !NameShape().IsMatch(Name))
+        {
+            return $"An ask's schema name is 1 to {MaxNameLength} letters, digits, _ and -.";
+        }
+
+        if (Schema.ValueKind != JsonValueKind.Object)
+        {
+            return "An ask's schema is a JSON schema: a JSON object, such as {\"type\": \"object\", ...}.";
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(Schema.GetRawText());
+        return bytes > maxBytes
+            ? $"An ask's schema is {bytes} bytes, over the {maxBytes} bytes a schema may be: ask for less at once."
+            : null;
+    }
+
+    [GeneratedRegex("^[A-Za-z0-9_-]+$", RegexOptions.CultureInvariant)]
+    private static partial Regex NameShape();
 }
 
 public abstract record AppAskRequestParse
@@ -125,9 +212,15 @@ public abstract record AppAskRequestParse
     public sealed record Refused(string Problem) : AppAskRequestParse;
 }
 
-// The agent's answer, and the conversation it was given in.
+// The agent's answer, and the conversation it was given in: an ask with a schema gets its reply's JSON as
+// value, one without its text, never both.
 public sealed record AppAskAnswer
 {
     public required string Conversation { get; init; }
-    public required string Text { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Text { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public JsonElement? Value { get; init; }
 }

@@ -15,16 +15,18 @@ namespace McpServerApps.Asks;
 // on this server's own channel, answered by the instructions of the origin's own manifest — the served
 // commit's, so an edit in the tree changes nothing a viewer sees until published; the preview the tree's —
 // and acting for the viewer on their app session's `apps` assertion, with the tools of that same manifest's
-// `asks` servers. The page waits on the whole reply; its giving up, or the wait running out, cancels the turn.
+// `asks` servers, on its `model`. A schema the page sends is the turn's response format, and the reply's JSON
+// the answer. The page waits on the whole reply; its giving up, or the wait running out, cancels the turn.
 //
 // The clock is the wait's alone: the inbox decides whether the agent is listening on the server's own, and
 // a test moving this one must not make an agent polling in real time look gone.
 public sealed class AgentAsks(
     AgentTurns turns, AskConversations conversations, TimeProvider clock, AppsSettings settings)
 {
-    // The longest body an ask of MaxTextLength characters can arrive as: JSON writes a character as six
-    // bytes at most (\uXXXX), and the object around it is small.
-    private int MaxBodyBytes => settings.Asks.MaxTextLength * 6 + 1024;
+    // The longest body an ask of MaxTextLength characters and a schema of MaxSchemaBytes can arrive as: JSON
+    // writes a character as six bytes at most (\uXXXX), the schema is measured as written, and the object
+    // around them is small.
+    private int MaxBodyBytes => settings.Asks.MaxTextLength * 6 + settings.Asks.MaxSchemaBytes + 1024;
 
     internal async Task<OriginAnswer> AskAsync(
         HttpRequest request, BuiltApp app, AppSession session, AppPages.ServedFiles served, CancellationToken ct)
@@ -41,13 +43,13 @@ public sealed class AgentAsks(
             return InvalidAsk($"An ask's body is one JSON object of at most {MaxBodyBytes} bytes.");
         }
 
-        string text;
-        switch (AppAskRequest.Parse(body, settings.Asks.MaxTextLength))
+        AppAskRequest ask;
+        switch (AppAskRequest.Parse(body, settings.Asks.MaxTextLength, settings.Asks.MaxSchemaBytes))
         {
             case AppAskRequestParse.Refused { Problem: var problem }:
                 return InvalidAsk(problem);
-            case AppAskRequestParse.Valid { Request: var ask }:
-                text = ask.Text;
+            case AppAskRequestParse.Valid { Request: var valid }:
+                ask = valid;
                 break;
             default:
                 throw new InvalidOperationException("An ask is either valid or refused.");
@@ -82,16 +84,25 @@ public sealed class AgentAsks(
             // A label only: the agent believes the assertion, renewed with the session if it was due.
             Principal = new Principal(AppChannels.Apps, viewer.UserId, viewer),
             Assertion = assertion,
-            Content = text,
+            Content = ask.Text,
             AppTurn = new AppTurn { AppId = app.Id, Instructions = instructions, Servers = served.Manifest.Asks },
+            ResponseFormat = ask.Schema is { } schema ? new ResponseFormat { Name = schema.Name, Schema = schema.Schema } : null,
+            ConfigPatch = served.Manifest.Model is { } model ? new AgentConfigPatch { Model = model } : null,
             Timestamp = clock.GetUtcNow()
         }, settings.Asks.Timeout, clock, ct);
 
         return reply switch
         {
-            TurnReply.Answered { Text: var answer } => new OriginAnswer(StatusCodes.Status200OK, "application/json; charset=utf-8",
-                JsonSerializer.SerializeToUtf8Bytes(new AppAskAnswer { Conversation = conversation, Text = answer },
-                    JsonSerializerOptions.Web)),
+            TurnReply.Answered { Text: var answer } when ask.Schema is null =>
+                Answered(new AppAskAnswer { Conversation = conversation, Text = answer }),
+            TurnReply.Answered { Text: var answer } => AppAsks.ReadReply(answer) switch
+            {
+                AppAskReplyRead.Parsed { Value: var value } => Answered(new AppAskAnswer { Conversation = conversation, Value = value }),
+                // Only the preview's: no one but its author opens it, and the published origin's viewers may be
+                // anyone of the household, the reply written for them.
+                _ => OriginAnswer.Json(StatusCodes.Status422UnprocessableEntity,
+                    AppAsks.InvalidReply(session.Origin.Preview ? answer : null))
+            },
             // AgentTurns logged the agent's own words; the page is told only what a refusal says.
             TurnReply.Failed { Reason: var reason } => OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.Refusal(reason)),
             TurnReply.Unanswered => OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.Unanswered),
@@ -100,6 +111,9 @@ public sealed class AgentAsks(
             _ => throw new InvalidOperationException($"A turn's reply is answered, failed, unanswered, unheard or timed out: {reply}.")
         };
     }
+
+    private static OriginAnswer Answered(AppAskAnswer answer) =>
+        new(StatusCodes.Status200OK, "application/json; charset=utf-8", JsonSerializer.SerializeToUtf8Bytes(answer, JsonSerializerOptions.Web));
 
     private static OriginAnswer InvalidAsk(string problem) =>
         OriginAnswer.Envelope(StatusCodes.Status400BadRequest, ToolError.Result(ToolError.Codes.InvalidArgument, problem));

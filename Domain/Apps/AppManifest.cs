@@ -18,6 +18,9 @@ public sealed record AppManifest
     public const int ShortNameLength = 12;
     public const int DescriptionLength = 300;
 
+    // Longer than any provider's or local box's model id.
+    public const int ModelLength = 200;
+
     public required string Name { get; init; }
     public string? ShortName { get; init; }
     public required string AccentColor { get; init; }
@@ -47,9 +50,14 @@ public sealed record AppManifest
     // offered. None, and an ask is offered no tools.
     public IReadOnlyList<string> Asks { get; init; } = [];
 
+    // The model the app's asks are answered on, as the agent's patchable models name it (vendor/name, a
+    // local box's lemonade/name). Checked for shape alone: the agent answers on its own model when this is
+    // not one it may be patched to, as it does any patch. None, and asks run on the agent's own.
+    public string? Model { get; init; }
+
     // Every field app.json takes; any other is refused.
     public static readonly IReadOnlyList<string> Fields =
-        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon", "instructions", "asks"];
+        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon", "instructions", "asks", "model"];
 
     public static AppManifestParse Parse(string json)
     {
@@ -86,6 +94,7 @@ public sealed record AppManifest
             var icon = Text(root, "icon", problems);
             var instructions = Text(root, "instructions", problems);
             var asks = Texts(root, "asks", problems);
+            var model = Text(root, "model", problems);
 
             if (string.IsNullOrWhiteSpace(name) || name.Length > NameLength)
             {
@@ -138,6 +147,12 @@ public sealed record AppManifest
                 .Select(a => $"asks: '{a}' is no server's name: write the name it is configured under, such as sugary or vault."));
             problems.AddRange(Twice(asks).Select(a => $"asks: '{a}' is named twice."));
 
+            if (model is not null && !IsModelId(model))
+            {
+                problems.Add($"model '{model}' must be a model id as your patchable models name it, such as z-ai/glm-5.3-flash: "
+                             + $"a vendor, a slash and a name, no spaces, at most {ModelLength} characters.");
+            }
+
             return problems.Count > 0
                 ? new AppManifestParse.Refused(problems)
                 : new AppManifestParse.Valid(new AppManifest
@@ -151,7 +166,8 @@ public sealed record AppManifest
                     Connect = connect,
                     Icon = icon,
                     Instructions = instructions,
-                    Asks = asks
+                    Asks = asks,
+                    Model = model
                 });
         }
     }
@@ -176,6 +192,11 @@ public sealed record AppManifest
         path.EndsWith(".md", StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains('\\')
         && path.Split('/').All(segment =>
             segment.Length > 0 && !segment.Any(char.IsControl) && segment is not ("." or ".." or "node_modules" or ".git"));
+
+    private static bool IsModelId(string model) =>
+        model.Length <= ModelLength
+        && model.IndexOf('/') is > 0 and var slash && slash < model.Length - 1
+        && !model.Any(c => char.IsWhiteSpace(c) || char.IsControl(c));
 
     private static IEnumerable<string> Twice(IReadOnlyList<string> values) =>
         values.GroupBy(v => v, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key);

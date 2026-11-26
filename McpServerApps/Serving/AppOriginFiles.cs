@@ -173,11 +173,12 @@ public static partial class AppOriginFiles
     // How a built app reads the household: each of the file tools' reads, by the tool's own arguments,
     // answered with the tool's own result — and a refusal thrown as a ReadError carrying the tools'
     // envelope (errorCode, message, retryable, hint), with the path it was about. And how it asks its
-    // assistant (AppAsks): the text, answered with the reply's text and the conversation it was given in,
-    // a refusal thrown as an AskError carrying the envelope; options.signal lets the page give up, which
-    // stops the turn. Small and dependent on
-    // nothing; one expression, so the classic script and the module are the same object, and the error
-    // listeners below are installed once whichever loads first.
+    // assistant (AppAsks): the text, answered with the reply's text and the conversation it was given in —
+    // or, asked with options.schema ({name, schema}), the reply's JSON as value — a refusal thrown as an
+    // AskError carrying the envelope (an unreadable reply's words as reply, on the preview alone);
+    // options.signal lets the page give up, which stops the turn. Small and dependent on nothing; one
+    // expression, so the classic script and the module are the same object, and the error listeners below
+    // are installed once whichever loads first.
     //
     // It also tells the server what went wrong (POST /_errors, AppErrors): every uncaught error, unhandled
     // rejection and failed or refused read, so the agent can see why an app broke on somebody's phone.
@@ -210,6 +211,7 @@ public static partial class AppOriginFiles
               super(envelope.message);
               this.name = 'AskError';
               this.errorCode = envelope.errorCode;
+              this.reply = envelope.{{AppAsks.ReplyField}};
               this.retryable = envelope.retryable === true;
               this.hint = envelope.hint;
               this.envelope = envelope;

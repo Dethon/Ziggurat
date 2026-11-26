@@ -137,8 +137,8 @@ public class AppsServingInABrowserTests
     }
 
     // A published app asks its assistant through the client library, from the module and the classic
-    // script alike: the answer's text and conversation, and a refusal handed to the app as an AskError
-    // carrying the tools' envelope.
+    // script alike: the answer's text and conversation, an ask with a schema answered with the reply's JSON,
+    // and a refusal handed to the app as an AskError carrying the tools' envelope.
     [Fact]
     public async Task APublishedApp_AsksItsAssistantThroughTheClientLibrary_AndShowsTheAnswer()
     {
@@ -150,12 +150,15 @@ public class AppsServingInABrowserTests
             overwrite: true);
         await server.CreateAsync(AppsServer.Her, "/glucose/asks.md", "Answer in one word.");
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
-            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="answer"></p><p id="refused"></p></body></html>""");
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="answer"></p><p id="value"></p><p id="refused"></p></body></html>""");
         await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
             """
             import { ask, AskError } from '/_app/apps.mjs';
             const answer = await ask('How was my morning?');
             document.getElementById('answer').textContent = `${answer.text} ${answer.conversation.length > 0}`;
+            const mood = await ask('And the mood?', { schema: { name: 'mood', schema: {
+              type: 'object', properties: { mood: { type: 'string' } }, required: ['mood'], additionalProperties: false } } });
+            document.getElementById('value').textContent = `${mood.value.mood} ${'text' in mood}`;
             try {
               await globalThis.apps.ask('And now?');
             } catch (error) {
@@ -178,11 +181,16 @@ public class AppsServingInABrowserTests
         first.Content.ShouldBe("How was my morning?");
         await ReplyAsync(agent, first, global::Domain.DTOs.ReplyContentType.Text, "Quietly.");
         await ReplyAsync(agent, first, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
+        var structured = await agent.Messages.FirstAsync(wait.Token);
+        structured.ResponseFormat.ShouldNotBeNull().Name.ShouldBe("mood");
+        await ReplyAsync(agent, structured, global::Domain.DTOs.ReplyContentType.Text, """{"mood":"calm"}""");
+        await ReplyAsync(agent, structured, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
         var second = await agent.Messages.FirstAsync(wait.Token);
         await ReplyAsync(agent, second, global::Domain.DTOs.ReplyContentType.Error, global::Domain.Monitor.RefusalAnswers.AgentGone("jonas"));
         await ReplyAsync(agent, second, global::Domain.DTOs.ReplyContentType.StreamComplete, "");
 
         await Assertions.Expect(page.Locator("#answer")).ToHaveTextAsync("Quietly. true");
+        await Assertions.Expect(page.Locator("#value")).ToHaveTextAsync("calm false");
         await Assertions.Expect(page.Locator("#refused")).ToHaveTextAsync("true true AskError permission_denied false");
         violations.ShouldBeEmpty();
     }

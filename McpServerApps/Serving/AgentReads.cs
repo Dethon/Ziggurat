@@ -70,6 +70,8 @@ public sealed class AgentReads(HttpClient http, AppsSettings settings, ILogger<A
 // the tools' envelope.
 public sealed record OriginAnswer(int Status, string ContentType, byte[] Body)
 {
-    public static OriginAnswer Envelope(int status, ToolErrorResult error) =>
-        new(status, "application/json; charset=utf-8", System.Text.Encoding.UTF8.GetBytes(error.ToNode().ToJsonString()));
+    public static OriginAnswer Envelope(int status, ToolErrorResult error) => Json(status, error.ToNode());
+
+    public static OriginAnswer Json(int status, System.Text.Json.Nodes.JsonNode body) =>
+        new(status, "application/json; charset=utf-8", System.Text.Encoding.UTF8.GetBytes(body.ToJsonString()));
 }

@@ -62,6 +62,9 @@ public sealed class AppsAsksTests : IAsyncLifetime
         ConversationIdentity.Parse(turn.ConversationId).ShouldNotBeNull();
         // No topic is asked for: an app's asks stay out of WebChat.
         turn.ReviewCopy.ShouldBeNull();
+        // Neither a shape nor a model asked for: the agent's own, answering in text.
+        turn.ResponseFormat.ShouldBeNull();
+        turn.ConfigPatch.ShouldBeNull();
 
         await SendAsync(turn, ReplyContentType.Text, "Let me look.", "resp_1");
         await SendAsync(turn, ReplyContentType.Text, "Quiet", "resp_2");
@@ -73,6 +76,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
         body["text"]!.GetValue<string>().ShouldBe("Quietly.");
         body["conversation"]!.GetValue<string>().ShouldBe(turn.ConversationId);
+        body.AsObject().ContainsKey("value").ShouldBeFalse();
         response.Headers.CacheControl!.NoStore.ShouldBeTrue();
         response.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem().ShouldContain("default-src 'none'");
     }
@@ -121,6 +125,106 @@ public sealed class AppsAsksTests : IAsyncLifetime
         _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach { Reads = ["/sugary"] });
 
         (await ServersAskedFromAsync(_apps.Published("glucose", _id))).ShouldBeEmpty();
+    }
+
+    // An ask with a schema is a turn whose answer must come in it: the schema rides the message as its
+    // response format, as the page wrote it, and the reply's JSON is the answer's value, never its text.
+    [Fact]
+    public async Task AnAskWithASchema_SendsItAsTheResponseFormat_AndIsAnsweredWithTheReplysJson()
+    {
+        var host = _apps.Published("glucose", _id);
+
+        var answer = _apps.AskAsync(host, AskForCarbs,
+            _apps.SessionFor(AppsServer.Her, host));
+        var turn = await NextTurnAsync(_agent);
+
+        turn.ResponseFormat.ShouldNotBeNull();
+        turn.ResponseFormat.Name.ShouldBe("carbs");
+        turn.ResponseFormat.Schema.GetRawText().ShouldBe(CarbsSchema);
+
+        await SendAsync(turn, ReplyContentType.Text, "Let me look.", "resp_1");
+        await SendAsync(turn, ReplyContentType.Text, "{\"grams\":", "resp_2");
+        await SendAsync(turn, ReplyContentType.Text, "12}", "resp_2");
+        await SendAsync(turn, ReplyContentType.StreamComplete, "", "resp_2", isComplete: true);
+
+        using var response = await answer;
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
+        body["value"]!.ToJsonString().ShouldBe("""{"grams":12}""");
+        body["conversation"]!.GetValue<string>().ShouldBe(turn.ConversationId);
+        body.ContainsKey("text").ShouldBeFalse();
+    }
+
+    // A reply that is no JSON is no answer to a schema. What the model wrote instead reaches the author on
+    // the preview, where nobody else asks; on the published origin it reaches no viewer, the author included.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AReplyToASchemaThatIsNoJson_IsAnInvalidReply_ItsWordsOnThePreviewAlone(bool preview)
+    {
+        var host = preview ? _apps.Preview("glucose", _id) : _apps.Published("glucose", _id);
+
+        var answer = _apps.AskAsync(host, AskForCarbs,
+            _apps.SessionFor(AppsServer.Her, host));
+        await ReplyAsync(await NextTurnAsync(_agent), "About twelve grams.");
+
+        using var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var body = await response.Content.ReadAsStringAsync();
+        var envelope = JsonNode.Parse(body)!.AsObject();
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidReply);
+        envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        if (preview)
+        {
+            envelope[AppAsks.ReplyField]!.GetValue<string>().ShouldBe("About twelve grams.");
+        }
+        else
+        {
+            body.ShouldNotContain("twelve");
+        }
+    }
+
+    // A schema is held to its bound before anything is sent; one at the bound is sent, whatever the text
+    // beside it, so the body's own bound never refuses what the two bounds allow.
+    [Fact]
+    public async Task ASchemaOverItsBound_IsRefusedBeforeAnyTurn_AndOneAtItIsSent()
+    {
+        var host = _apps.Published("glucose", _id);
+        var bound = _apps.Settings.Asks.MaxSchemaBytes;
+        var text = new string('\u00e9', _apps.Settings.Asks.MaxTextLength);
+
+        using var over = await _apps.AskAsync(host, AskWithSchemaOf(text, bound + 1), _apps.SessionFor(AppsServer.Her, host));
+
+        over.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var envelope = JsonNode.Parse(await over.Content.ReadAsStringAsync())!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.InvalidArgument);
+        envelope["message"]!.GetValue<string>().ShouldContain($"over the {bound} bytes");
+        await NothingAskedAsync();
+
+        var at = _apps.AskAsync(host, AskWithSchemaOf(text, bound), _apps.SessionFor(AppsServer.Her, host));
+        var turn = await NextTurnAsync(_agent);
+        await ReplyAsync(turn, "{}");
+        (await at).StatusCode.ShouldBe(HttpStatusCode.OK);
+        System.Text.Encoding.UTF8.GetByteCount(turn.ResponseFormat!.Schema.GetRawText()).ShouldBe(bound);
+    }
+
+    // The model an ask is answered on is its origin's own manifest's, sent as the message's config patch: the
+    // served commit's on the published origin, the tree's on the preview. Whether the agent may be patched to
+    // it is the agent's to say.
+    [Fact]
+    public async Task TheModelAnAskNames_IsItsOriginsOwnManifests_SentAsTheConfigPatch()
+    {
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", model: "z-ai/glm-5.3-flash"), overwrite: true);
+        await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", model: "openai/gpt-6-luna"), overwrite: true);
+
+        var published = await TurnAskedFromAsync(_apps.Published("glucose", _id));
+        var preview = await TurnAskedFromAsync(_apps.Preview("glucose", _id));
+
+        published.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "z-ai/glm-5.3-flash" });
+        preview.ConfigPatch.ShouldBe(new AgentConfigPatch { Model = "openai/gpt-6-luna" });
     }
 
     // An app whose manifest names no instructions cannot ask: refused before anything is sent.
@@ -191,6 +295,8 @@ public sealed class AppsAsksTests : IAsyncLifetime
     [InlineData("""{"text":""}""", "1 to 8000 characters")]
     [InlineData("""{"text":"Hi","conversation":"c"}""", "conversation")]
     [InlineData("""not json""", "JSON object")]
+    [InlineData("""{"text":"Hi","schema":{"name":"carbs","schema":[]}}""", "a JSON object")]
+    [InlineData("""{"text":"Hi","schema":{"name":"carbs and grams","schema":{}}}""", "letters, digits, _ and -")]
     public async Task AnAskOutsideItsShape_IsAnInvalidArgument_BeforeAnyTurn(string body, string words)
     {
         var host = _apps.Published("glucose", _id);
@@ -314,16 +420,36 @@ public sealed class AppsAsksTests : IAsyncLifetime
         await NothingAskedAsync();
     }
 
-    private static string Manifest(string instructions, string asks = "[]") =>
-        $$"""{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"{{instructions}}","asks":{{asks}}}""";
+    private const string CarbsSchema =
+        """{"type":"object","properties":{"grams":{"type":"number","minimum":0}},"required":["grams"],"additionalProperties":false}""";
 
-    private async Task<IReadOnlyList<string>> ServersAskedFromAsync(string host)
+    private const string AskForCarbs = """{"text":"Bread","schema":{"name":"carbs","schema":""" + CarbsSchema + "}}";
+
+    private static string Manifest(string instructions, string asks = "[]", string? model = null) =>
+        $$"""{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"{{instructions}}","asks":{{asks}}{{(model is null ? "" : $",\"model\":\"{model}\"")}}}""";
+
+    // An ask of the text with a schema of exactly so many bytes, padded in its description.
+    private static string AskWithSchemaOf(string text, int bytes)
+    {
+        const string around = """{"type":"object","description":""}""";
+        var schema = around.Insert(around.Length - 2, new string('x', bytes - around.Length));
+        return new JsonObject
+        {
+            ["text"] = text,
+            ["schema"] = new JsonObject { ["name"] = "padded", ["schema"] = JsonNode.Parse(schema) }
+        }.ToJsonString();
+    }
+
+    private async Task<IReadOnlyList<string>> ServersAskedFromAsync(string host) =>
+        (await TurnAskedFromAsync(host)).AppTurn!.Servers;
+
+    private async Task<ChannelMessage> TurnAskedFromAsync(string host)
     {
         var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, host));
         var turn = await NextTurnAsync(_agent);
         await ReplyAsync(turn, "Hello there.");
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
-        return turn.AppTurn!.Servers;
+        return turn;
     }
 
     // An app whose published instructions are Published, and its tree's since edited to Tree.

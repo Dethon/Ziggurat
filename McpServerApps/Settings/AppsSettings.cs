@@ -101,6 +101,10 @@ public record AppAskSettings
     // The longest text one ask may carry, in characters.
     public int MaxTextLength { get; init; } = 8_000;
 
+    // The largest JSON schema one ask may carry, in UTF-8 bytes as the page wrote it. It rides the turn's
+    // persisted message, uncounted in the history's budget (ADR 0044), so it stays a few kilobytes.
+    public int MaxSchemaBytes { get; init; } = 8_192;
+
     // How long after its last turn a conversation an ask opened stays bound to that app and viewer.
     public TimeSpan FollowUpWindow { get; init; } = TimeSpan.FromHours(24);
 }
