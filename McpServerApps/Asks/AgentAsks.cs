@@ -56,94 +56,71 @@ public sealed class AgentAsks(
             _ => throw new InvalidOperationException("A session is proved by an assertion or a check's call token.")
         };
 
-        byte[] body;
-        IReadOnlyList<AppAskUpload> sent;
-        switch (await ReadAsync(request, ct))
+        // Each step below is its value or a refusal the page is told; the cast after each is that step's only
+        // other outcome.
+        var read = await ReadAsync(request, ct);
+        if (read is AskBody.Refused { Problem: var unread })
         {
-            case AskBody.Refused { Problem: var problem }:
-                return InvalidAsk(problem);
-            case AskBody.Read read:
-                (body, sent) = (read.Json, read.Uploads);
-                break;
-            default:
-                throw new InvalidOperationException("An ask's body is either read or refused.");
+            return InvalidAsk(unread);
         }
 
-        AppAskRequest ask;
-        switch (AppAskRequest.Parse(body, settings.Asks.MaxTextLength, settings.Asks.MaxSchemaBytes))
+        var (body, sent) = (AskBody.Read)read;
+        var parsed = AppAskRequest.Parse(body, settings.Asks.MaxTextLength, settings.Asks.MaxSchemaBytes);
+        if (parsed is AppAskRequestParse.Refused { Problem: var invalid })
         {
-            case AppAskRequestParse.Refused { Problem: var problem }:
-                return InvalidAsk(problem);
-            case AppAskRequestParse.Valid { Request: var valid }:
-                ask = valid;
-                break;
-            default:
-                throw new InvalidOperationException("An ask is either valid or refused.");
+            return InvalidAsk(invalid);
         }
 
-        IReadOnlyList<AppAskImage> images;
-        switch (AppAskImages.Read(sent, settings.Asks.MaxImages, settings.Asks.MaxImageBytes, settings.Asks.ImageTypes))
+        var ask = ((AppAskRequestParse.Valid)parsed).Request;
+        var judged = AppAskImages.Read(sent, settings.Asks.MaxImages, settings.Asks.MaxImageBytes, settings.Asks.ImageTypes);
+        if (judged is AppAskImagesRead.Refused { Problem: var refusedImages })
         {
-            case AppAskImagesRead.Refused { Problem: var problem }:
-                return InvalidAsk(problem);
-            case AppAskImagesRead.Valid { Images: var valid }:
-                images = valid;
-                break;
-            default:
-                throw new InvalidOperationException("An ask's images are either valid or refused.");
+            return InvalidAsk(refusedImages);
         }
 
+        var images = ((AppAskImagesRead.Valid)judged).Images;
         if (served.Manifest.Instructions is not { } path)
         {
             return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.NoInstructions);
         }
 
         // Read at each ask: the preview's never went through a publish.
-        string instructions;
-        switch (AppAsks.ReadInstructions(path, await served.RepositoryFileAsync(path, AppAsks.MaxInstructionsBytes + 1, ct)))
+        var written = AppAsks.ReadInstructions(path, await served.RepositoryFileAsync(path, AppAsks.MaxInstructionsBytes + 1, ct));
+        if (written is AppInstructionsRead.Refused { Problem: var unusable })
         {
-            case AppInstructionsRead.Refused { Problem: var problem }:
-                return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, ToolError.PermissionDenied(
-                    $"This app cannot ask its assistant: {problem}", "Fix app.json's instructions and publish."));
-            case AppInstructionsRead.Read { Text: var read }:
-                instructions = read;
-                break;
-            default:
-                throw new InvalidOperationException("Instructions are either read or refused.");
+            return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, ToolError.PermissionDenied(
+                $"This app cannot ask its assistant: {unusable}", "Fix app.json's instructions and publish."));
         }
+
+        var instructions = ((AppInstructionsRead.Read)written).Text;
 
         // Counted before the conversation is looked at, so an ask past the cap opens none, and the table of
         // them grows no faster than the caps let; given back if the ask goes no further, since only an ask
         // sent is counted.
-        int limit;
-        switch (await caps.LimitAsync(app, household, ct))
+        var cap = await caps.LimitAsync(app, household, ct);
+        if (cap is AskLimit.Unreadable)
         {
-            case AskLimit.Read read:
-                limit = read.Limit;
-                break;
-            case AskLimit.Unreadable:
-                return OriginAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, AppAsks.CapUnreadable);
-            case AskLimit.Refused:
-                return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.CapRefused);
-            default:
-                throw new InvalidOperationException("An app's limit is read, unreadable or refused.");
+            return OriginAnswer.Envelope(StatusCodes.Status503ServiceUnavailable, AppAsks.CapUnreadable);
         }
 
-        AskCount.Counted counted;
-        switch (await counts.TryCountAsync(app, limit, ct))
+        if (cap is AskLimit.Refused)
         {
-            case AskCount.Capped { Limit: var reached, FreesAt: var freesAt }:
-                return OriginAnswer.Json(StatusCodes.Status429TooManyRequests, AppAsks.Capped(reached, freesAt));
-            case AskCount.Gone:
-                return OriginAnswer.Envelope(StatusCodes.Status404NotFound, ToolError.Result(ToolError.Codes.NotFound,
-                    "This app was deleted, so nothing was asked."));
-            case AskCount.Counted taken:
-                counted = taken;
-                break;
-            default:
-                throw new InvalidOperationException("An ask is counted, capped, or its app gone.");
+            return OriginAnswer.Envelope(StatusCodes.Status422UnprocessableEntity, AppAsks.CapRefused);
         }
 
+        var counting = await counts.TryCountAsync(app, ((AskLimit.Read)cap).Limit, ct);
+        if (counting is AskCount.Capped { Limit: var reached, FreesAt: var freesAt })
+        {
+            return OriginAnswer.Json(StatusCodes.Status429TooManyRequests, AppAsks.Capped(reached, freesAt));
+        }
+
+        if (counting is AskCount.Gone)
+        {
+            return OriginAnswer.Envelope(StatusCodes.Status404NotFound, ToolError.Result(ToolError.Codes.NotFound,
+                "This app was deleted, so nothing was asked."));
+        }
+
+        var counted = (AskCount.Counted)counting;
         var viewer = session.Person;
         // Last before the turn, since continuing a conversation starts its window again.
         string conversation;
