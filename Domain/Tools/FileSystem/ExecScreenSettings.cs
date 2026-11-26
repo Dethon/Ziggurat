@@ -25,7 +25,8 @@ public sealed record ExecScreenSettings
 
     // …and is dangerous: it destroys, sends out, runs downloaded code or reaches the local network with
     // at least one of these.
-    // On either machine — what the person asked for runs, however destructive.
+    // On either machine — what the person asked for runs, however destructive. Destroying asks on the
+    // person's own computer alone (ExecScreen.Decide says why).
     public double DestroysBar { get; [UsedImplicitly] init; } = 0.4;
 
     public double SendsOutBar { get; [UsedImplicitly] init; } = 0.5;

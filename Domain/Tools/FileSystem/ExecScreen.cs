@@ -15,8 +15,9 @@ namespace Domain.Tools.FileSystem;
 //
 // Nothing is ever refused here. A command is put to the person on the conversation's own approval
 // prompt, with the codes saying why, only when it is both: not what they asked for, and dangerous —
-// it destroys, sends data out, or downloads code and runs it. Whatever they asked for runs, however
-// destructive, and so does a harmless step the judge could not place.
+// it destroys (on their own computer only), sends data out, downloads code and runs it, or reaches
+// the local network. Whatever they asked for runs, however destructive, and so does a harmless step
+// the judge could not place.
 public interface IExecScreen
 {
     Task<ExecScreenVerdict> ScreenAsync(ExecScreenRequest request, CancellationToken ct);
@@ -188,9 +189,14 @@ public sealed class ExecScreen(
             return Unjudged(request, AbsenceReason.Error) with { Judgment = judgment };
         }
 
+        // The sandbox destroys only its own files or what a tool call would change unasked anyway —
+        // the bridge refuses any shell write the matching file tool would put to a person — so there
+        // destroying is no reason to ask. Asked, it was 200 of 217 approvals in two days: an app's
+        // every `rm -rf dist` after an "update" that named no command (user's decision, 2026-11-26).
+        // Still asked of Jev, so the event keeps the probability.
         string?[] dangers =
         [
-            destroys >= settings.DestroysBar ? ExecScreenCodes.Destructive : null,
+            request.Reach == ShellReach.Host && destroys >= settings.DestroysBar ? ExecScreenCodes.Destructive : null,
             sendsOut >= settings.SendsOutBar ? ExecScreenCodes.SendsOut : null,
             runsDownloaded >= settings.RunsDownloadedBar ? ExecScreenCodes.RunsDownloaded : null,
             reachesLan >= settings.ReachesLanBar ? ExecScreenCodes.ReachesLan : null

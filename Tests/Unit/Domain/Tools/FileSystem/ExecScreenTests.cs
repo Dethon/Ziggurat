@@ -90,7 +90,7 @@ public class ExecScreenTests
     }
 
     [Theory]
-    [InlineData(ShellReach.Contained, 0.95, 0.02, 0.02, ExecScreenCodes.Destructive)]
+    [InlineData(ShellReach.Host, 0.95, 0.02, 0.02, ExecScreenCodes.Destructive)]
     [InlineData(ShellReach.Contained, 0.02, 0.95, 0.02, ExecScreenCodes.SendsOut)]
     [InlineData(ShellReach.Host, 0.02, 0.02, 0.95, ExecScreenCodes.RunsDownloaded)]
     public async Task ADangerousCommandThatDoesNotServeTheRequest_IsAsked_NamingTheDanger(
@@ -106,13 +106,29 @@ public class ExecScreenTests
     public async Task EveryDangerRaised_IsNamed()
     {
         var verdict = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.9, 0.9, 0.9, 0.9)))
-            .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
+            .ScreenAsync(Request(ShellReach.Host), CancellationToken.None);
 
         verdict.Codes.ShouldBe(
         [
             ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut, ExecScreenCodes.RunsDownloaded,
             ExecScreenCodes.ReachesLan
         ]);
+    }
+
+    // The sandbox destroys only what is its own or what a tool call would change unasked anyway: the
+    // bridge refuses any shell write the matching file tool would put to a person. Asking about it
+    // put 200 of 217 approvals in two days in front of somebody building an app, its every
+    // `rm -rf dist` flagged after an "update" or "Continua" that named no command.
+    [Fact]
+    public async Task InTheSandbox_DestroyingIsNeverASeparateReasonToAsk()
+    {
+        var destroysAlone = await Screen(new ScriptedJudge(_ => Answered(0.05, destroys: 0.95)))
+            .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
+        var destroysAndSendsOut = await Screen(new ScriptedJudge(_ => Answered(0.05, destroys: 0.95, sendsOut: 0.9)))
+            .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
+
+        destroysAlone.Asks.ShouldBeFalse();
+        destroysAndSendsOut.Codes.ShouldBe([ExecScreenCodes.NotRequested, ExecScreenCodes.SendsOut]);
     }
 
     // A command that probes the household's own network — a sweep of 192.168.0.0/24 from the sandbox
