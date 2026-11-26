@@ -49,6 +49,16 @@ Spec: `.scratch/app-asks/spec.md` ("Solution"; "The apps server becomes a channe
   `RefusalAnswers` sentence, and `RefusalAnswers.CodeOf(text)` gives its code: `not-verified` (no
   assertion, another channel's, the guest's, nobody's, or no `appTurn`), `suspended`, `disabled`,
   `unchecked`, `apps-off`, `agent-gone` (the text names the agent), `without-key`. `SetupFailed` has no code.
+- **A cancel must name the agent**: messages group by (conversation, agent) and an apps-channel message is
+  never routed to a default, so a `ChannelCancelNotification` without `agentId` never reaches the ask's
+  turn. `AgentTurns.CancelAsync` (`Mcp.Hosting`) sends none today; the apps side has to carry it.
+- `key-refused` and `out-of-credit` arrive as in-turn errors (an `Error` reply in the turn), not admission
+  refusals. A message on the apps channel with no `appTurn` being refused is the agent's own fail-closed
+  addition, not the spec's.
+- An ask dials none of the building agent's servers (no warmup, no session) while `servers` offers
+  nothing; ticket 05 builds the narrowed session.
+- Until the apps server serves the channel tools, the agent's `apps` connection fails and retries. The E2E
+  (`WebChatStack`) and eval stacks list their own `channelEndpoints` and need `apps` added when they ask.
 - The `app_instructions` section is budgeted at 4,000 tokens: keep the publish bound on the instructions
   file within it.
 - Tests: `ChatMonitorAppTurnTests` (trust, admission, refusals, no topic), `AppTurnAgentTests` (FakeOpenRouter:

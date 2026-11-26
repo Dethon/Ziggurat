@@ -1221,7 +1221,7 @@ internal sealed class ConversationGroup(
         // it overlaps the turn-start announce and memory recall. It is awaited deterministically
         // just before the first RunStreamingAsync, so it never outlives the agent and the order
         // of operations is well-defined.
-        var warmup = agent.WarmupSessionAsync(thread, _turnCt);
+        var warmup = WarmupFor(x.Message, agent, thread);
 
         return _state = new GroupState(
             x.Message, targets, deliveryKey, agent, thread, warmup, metricsPublisher.ForHousehold(tenantId),
@@ -1251,8 +1251,13 @@ internal sealed class ConversationGroup(
         await stale.DisposeAsync();
         var thread = await GetOrRestoreThread(agent, state.DeliveryKey);
         _warmupSurfaced = false;
-        return _state = state with { Agent = agent, Thread = thread, Warmup = agent.WarmupSessionAsync(thread, _turnCt) };
+        return _state = state with { Agent = agent, Thread = thread, Warmup = WarmupFor(anchor, agent, thread) };
     }
+
+    // A conversation an ask opened is offered none of the agent's servers, so nothing is dialled for it; a
+    // turn of another kind that joins it builds its session when it runs.
+    private Task WarmupFor(ChannelMessage anchor, DisposableAgent agent, AgentSession thread) =>
+        anchor.AppTurn is null ? agent.WarmupSessionAsync(thread, _turnCt) : Task.CompletedTask;
 
     // A turn's messages are x's alone, or the steers drawn together with it (SteeredWithAsync), x first: one
     // turn, set up by x, answered once under its key.

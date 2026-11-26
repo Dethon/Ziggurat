@@ -216,8 +216,8 @@ public class ChatMonitorAppTurnTests
         AppTurn = _app
     };
 
-    // The household as the agent reads it: Jonas its agent, built apps on unless a test says, running
-    // unless a test suspends it.
+    // The household as the agent reads it: Jonas its agent and its default, built apps on unless a test
+    // says, running unless a test suspends it.
     private static IAgentDefinitionProvider Households(bool apps = true, bool suspended = false)
     {
         var provider = new Mock<IAgentDefinitionProvider>();
@@ -227,6 +227,7 @@ public class ChatMonitorAppTurnTests
             {
                 HouseholdId = household,
                 Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "test/model", McpServerEndpoints = [] }],
+                DefaultAgent = "jonas",
                 Configuration = new AgentHouseholdConfig(
                     household ?? "home", false, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" },
                     new AgentsSection(), new FeaturesSection { Apps = apps }, new SpacesSection(), "key",

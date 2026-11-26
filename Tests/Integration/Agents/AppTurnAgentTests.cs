@@ -77,6 +77,9 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         ordinary.SystemPrompt.ShouldContain("## Subagent Delegation");
         ordinary.SystemPrompt.ShouldContain("`/sugary`");
         ordinary.SystemPrompt.ShouldContain("<skill>");
+        ordinary.SystemPrompt.ShouldContain("## User Context");
+        ordinary.SystemPrompt.ShouldContain("VOICE RULES");
+        ordinary.Body.ToJsonString().ShouldContain("Offline household servers: vault.");
         ordinary.ToolNames.ShouldContain(SkillLoadTool.Name);
         ordinary.ToolNames.ShouldContain(n => n.StartsWith("domain__filesystem__", StringComparison.Ordinal));
         ordinary.ToolNames.ShouldContain(n => n.StartsWith("domain__memory__", StringComparison.Ordinal));
@@ -93,6 +96,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         prompt.ShouldNotContain("## Memory System");
         prompt.ShouldNotContain("## Subagent Delegation");
         prompt.ShouldNotContain("## User Context");
+        prompt.ShouldNotContain("VOICE RULES");
         prompt.ShouldNotContain("`/sugary`");
         prompt.ShouldNotContain("<skill>");
         prompt.ShouldNotContain("load_skill");
@@ -110,7 +114,19 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         _extractions.Complete();
         (await _extractions.ReadAllAsync(CancellationToken.None).ToListAsync())
             .ShouldHaveSingleItem().ConversationId.ShouldBe("chat-1");
-        _judge.Asked.Select(r => r.Caller.ConversationId).ShouldNotContain("ask-1");
+        _judge.Asked.Select(r => r.Caller.ConversationId).ShouldBe(["chat-1"]);
+    }
+
+    // An ask is offered none of the agent's servers, so none is dialled for it: a server of the agent's
+    // that cannot be reached costs the ask nothing.
+    [Fact]
+    public async Task AnAsk_DialsNoneOfTheAgentsServers_SoOneThatIsDownCostsItNothing()
+    {
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [DeadEnd.Url("/mcp")] }, Ask());
+
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+        string.Concat(apps.SentReplies.Select(r => r.Content)).ShouldNotBeEmpty();
+        RequestFor(AskText).SystemPrompt.ShouldNotBeNull().ShouldContain(Instructions);
     }
 
     // What the ask cost is the household's, under the person who asked, on the apps channel and naming the app.
@@ -178,7 +194,11 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         Assertion = TestAssertions.Of(_viewer, ChannelIds.SignalR)
     };
 
-    private async Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(params ChannelMessage[] messages)
+    private Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(params ChannelMessage[] messages) =>
+        RunAsync(Jonas(), messages);
+
+    private async Task<(FakeChannelConnection Apps, FakeChannelConnection Chat)> RunAsync(
+        AgentDefinition jonas, params ChannelMessage[] messages)
     {
         var apps = new FakeChannelConnection { ChannelId = AppChannels.Apps };
         var chat = new FakeChannelConnection
@@ -194,7 +214,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         chat.Complete();
 
         var households = new AgentHouseholds();
-        households.Add(Household, [Jonas()], new FeaturesSection { Apps = true });
+        households.Add(Household, [jonas], new FeaturesSection { Apps = true }, ownServers: ["vault"]);
         var definitions = new AgentDefinitionProvider(
             new HouseholdAgentSource(households, new SharedServers()), new CustomAgentRegistry());
 
@@ -215,14 +235,16 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     }
 
     // The household's own Jonas, every kind of tool and section an agent can carry: a server with a mount
-    // and skills, the file tools, workers and memory, a persona and its owner's instructions.
+    // and skills, a household server it set up and is offline, the file tools, workers and memory, a
+    // persona, its owner's instructions and a channel's section.
     private AgentDefinition Jonas() => new()
     {
         Id = "jonas",
         Name = "Jonas",
         Description = "The household's assistant.",
         Model = "deepseek/deepseek-v4.1-flash-1017",
-        McpServerEndpoints = [_server.Endpoint],
+        McpServerEndpoints = [_server.Endpoint, "vault"],
+        PromptSections = [VoicePrompt.Name],
         EnabledFeatures = ["filesystem", "subagents", "memory"],
         CustomInstructions = "ALWAYS-SIGN-AS-JONAS",
         WhitelistPatterns = ["domain__filesystem*"]

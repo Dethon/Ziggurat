@@ -85,7 +85,7 @@ notification's `Principal`.
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`
 the id of the connection the message came on (`WrongChannel`), and a person or the guest — an
 assertion naming nobody is refused (`NamesNobody`), though `TokenVerifier` alone would pass it. It
-answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. Its clock is the registered `TimeProvider`.
+answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. The group adds two for a built app's ask (`NotAPerson`, `NotAnAppTurn`; `.claude/rules/channels.md`). Its clock is the registered `TimeProvider`.
 
 **Where**: `ConversationGroup`'s message pump, as each message arrives and before it is queued — never
 when its turn comes up, or a turn queued behind a long one would be refused for the minutes it
@@ -115,7 +115,7 @@ agent act for that person: `IAccountStanding` (`HouseholdAccountStanding`, over
 - A standing or suspension that cannot be read refuses the turn as `StandingUnreadable`
   (`ChatMonitor.StandingUnreadableErrorType`) with `ConversationGroup.UncheckedAnswer` — never
   "suspended" or "disabled", and never let through.
-- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`) answers every check and one
+- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`, `AppsOff`, `AppAgentGone`) answers every check and one
   `RefuseByStandingAsync` reports it, for a turn and a fire alike.
 - **An approval is held to the same standing** (`ApprovalRelay`, given the group's `IAccountStanding`;
   user's decision, 2026-11-05): a question waiting on a member disabled meanwhile is refused everywhere

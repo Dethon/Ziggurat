@@ -319,15 +319,16 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= await CreateSessionAsync(cancellationToken);
-        var reconciled = await GetOrCreateSessionAsync(thread, cancellationToken);
-        var session = reconciled.Session;
+        // An app's ask is offered none of the agent's servers, so none is dialled for it: a session would
+        // cost its first ask the whole warmup, and a server of the agent's that is down would fail an ask
+        // that uses nothing of it.
+        var reconciled = turnConfig.App is null ? await GetOrCreateSessionAsync(thread, cancellationToken) : null;
 
         // Said on the turn's own message, never in the instructions: the system prompt is the cached
         // prefix every turn shares, and which of a household's machines are on is this turn's news.
-        // Stamped as data and rendered by the decoration, so the persisted message stays as typed. An
-        // app's ask is offered none of the agent's servers, so none of them is missing from it.
+        // Stamped as data and rendered by the decoration, so the persisted message stays as typed.
         messageList.LastOrDefault(m => m.Role == ChatRole.User)
-            ?.SetOfflineServers(turnConfig.App is null ? reconciled.Reach.OwnServers.Offline : []);
+            ?.SetOfflineServers(reconciled?.Reach.OwnServers.Offline ?? []);
 
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
@@ -335,7 +336,7 @@ public sealed class McpAgent : DisposableAgent
 
         var steering = (options as TurnRunOptions)?.Steering;
         options = AreTheAgentsToBuild(options)
-            ? CreateRunOptions(session, conversationContext, turnConfig, steering)
+            ? CreateRunOptions(Surface(reconciled, turnConfig), conversationContext, turnConfig, steering)
             : options;
 
         // What the reply streams goes to the history as it passes, so a reply the person stops is kept
@@ -447,16 +448,25 @@ public sealed class McpAgent : DisposableAgent
             "Rejected config patch {Field}={Value}; using {Fallback}", field, value, fallback ?? "unset");
     }
 
+    // What the turn is told and may call. An app's ask calls nothing: not the agent's servers, nor the
+    // tools that are no server's (files, workers, memory); the skills provider offers it no load either.
+    private (IList<AITool> Tools, string Instructions) Surface(ReconciledSession? reconciled, TurnConfig turnConfig) =>
+        (turnConfig.App, reconciled) switch
+        {
+            ({ } app, _) => (new List<AITool>(), BuildAppInstructions(app)),
+            (null, { Session: var session }) => ([.. session.Tools], BuildInstructions(session)),
+            _ => throw new InvalidOperationException("A turn that is no app's ask runs in a session.")
+        };
+
     private ChatClientAgentRunOptions CreateRunOptions(
-        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig, TurnSteering? steering)
+        (IList<AITool> Tools, string Instructions) surface, ConversationContext? conversationContext, TurnConfig turnConfig,
+        TurnSteering? steering)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             ModelId = turnConfig.ModelOverride,
-            // An app's ask calls nothing: not the agent's servers, nor the tools that are no server's
-            // (files, workers, memory). The skills provider offers it no load either.
-            Tools = turnConfig.App is null ? [.. session.Tools] : [],
-            Instructions = turnConfig.App is { } app ? BuildAppInstructions(app) : BuildInstructions(session),
+            Tools = surface.Tools,
+            Instructions = surface.Instructions,
             // The summary is asked for because an OpenAI model on the Responses wire returns its
             // reasoning encrypted and empty without one; providers OpenRouter translates stream
             // theirs regardless, so this is what makes reasoning visible at all on that wire.
@@ -555,8 +565,8 @@ public sealed class McpAgent : DisposableAgent
     }
 
     // A built app's ask is answered by the app's instructions in place of the persona, around what every
-    // agent carries. It is offered none of the session's servers, so none of their mounts, prompts or
-    // skills is its; the day, zone and language are the agent's, as for any turn.
+    // agent carries. It is offered none of the agent's servers, so none of their mounts, prompts or skills
+    // is its; the day, zone and language are the agent's, as for any turn.
     private string BuildAppInstructions(AppTurn app)
     {
         var zone = Zone;
