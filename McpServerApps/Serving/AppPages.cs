@@ -519,7 +519,7 @@ public sealed class AppPages(
     // What an origin serves: the served commit's root for the published app (nothing until the first
     // publish), the working tree's for the preview, each with the manifest it was written with — the
     // published one's reach, while the app is shared, no more than an owner approved (sharedAs), so every
-    // policy and read on that origin is granted only that.
+    // policy, read and ask on that origin is granted only that.
     private async Task<ServedFiles?> ServedAsync(BuiltApp app, AppOrigin origin, HouseholdSpace? sharedAs, CancellationToken ct)
     {
         var repository = store.Repository(app);
@@ -540,8 +540,7 @@ public sealed class AppPages(
     private static AppManifest Granted(AppManifest manifest, AppReach? approved)
     {
         var granted = AppReach.Of(manifest).Within(approved);
-        // An approval names no server an ask may use, so a shared app's asks are granted none.
-        return manifest with { Reads = granted.Reads, Connect = granted.Connect, Asks = [] };
+        return manifest with { Reads = granted.Reads, Connect = granted.Connect, Asks = granted.Asks };
     }
 
     // The path's segments, or null for one that tries to leave the root or reach git.

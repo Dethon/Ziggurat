@@ -188,7 +188,7 @@ public static class HouseholdSpacesAdmin
             return space with { Approved = before.Spaces.FirstOrDefault(b => b.Slug == space.Slug)?.Approved };
         }
 
-        var approved = new AppReach { Reads = app.Reads, Connect = app.Connect }.Within(space.Approved);
+        var approved = app.Reach.Within(space.Approved);
         return space with { Approved = approved.IsEmpty ? null : approved };
     }
 
@@ -217,7 +217,7 @@ public static class HouseholdSpacesAdmin
             agents,
             [
                 .. published.Select(app => new AdminSpaceApp(app.Id, app.Slug, app.Name, app.AccentColor, app.Description, app.AuthorId,
-                    names.GetValueOrDefault(app.AuthorId, ""), app.Reads, app.Connect, app.Url))
+                    names.GetValueOrDefault(app.AuthorId, ""), app.Reads, app.Connect, app.Url) { Asks = app.Asks })
             ]);
     }
 

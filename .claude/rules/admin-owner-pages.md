@@ -161,7 +161,7 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   - a name is at most `AdminSpaces.NameLength`; a space opens on one of the household's agents or none;
   - **a slug is set when a space is added and never edited**: a new slug is a new space.
   - **an app space** (`appId`) shares one of the household's published apps with every member. `AdminSpaces.Apps`
-    lists them (`AdminSpaceApp`: author by their name now, `reads`, `connect`, link) from the apps server's
+    lists them (`AdminSpaceApp`: author by their name now, `reads`, `connect`, `asks`, link) from the apps server's
     listing (`HouseholdAppsClient`, `AccountsSettings.AppsUrl` = `APPSURL`, within `AppsTimeout`), asked on an
     assertion this service signs for the gate-verified owner on `AppChannels.PublishedApps` (as usage's), and
     only for a household with the `apps` feature (else none, nobody asked); null when it could not be asked,

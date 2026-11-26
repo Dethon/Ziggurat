@@ -220,17 +220,38 @@ public sealed class AppsAsksTests : IAsyncLifetime
         preview.ShouldBe(["vault", "homeassistant"]);
     }
 
-    // A shared app's asks reach no more than an owner approved, for every viewer, its author too; an approval
-    // says nothing of asks yet, so they are granted no server.
+    // A shared app's asks reach no more than an owner approved, for every viewer, its author too: the servers
+    // its served manifest asks that the approval names, in the manifest's order. A server approved but not
+    // asked is not offered, and an approval naming no servers grants none.
     [Fact]
-    public async Task ASharedAppsAsks_AreGrantedNoServerAnOwnerDidNotApprove()
+    public async Task ASharedAppsAsks_AreGrantedOnlyTheServersAnOwnerApproved_ForEveryViewer()
     {
         await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
-            Manifest("asks/glucose.md", asks: """["vault"]"""), overwrite: true);
+            Manifest("asks/glucose.md", asks: """["vault","sugary"]"""), overwrite: true);
         await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
-        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach { Reads = ["/sugary"] });
+        var host = _apps.Published("glucose", _id);
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id,
+            approved: new AppReach { Reads = ["/sugary"], Asks = ["homeassistant", "sugary"] });
 
-        (await ServersAskedFromAsync(_apps.Published("glucose", _id))).ShouldBeEmpty();
+        var hers = await ServersAskedFromAsync(host);
+        var his = await ServersAskedFromAsync(host, AppsServer.Him);
+        _apps.Spaces.Share(AppsServer.Her.TenantId, _id, approved: new AppReach { Reads = ["/sugary"] });
+        var readsAlone = await ServersAskedFromAsync(host, AppsServer.Him);
+
+        hers.ShouldBe(["sugary"]);
+        his.ShouldBe(["sugary"]);
+        readsAlone.ShouldBeEmpty();
+    }
+
+    // Nobody shares it: its author's asks may use every server its served manifest names.
+    [Fact]
+    public async Task AnUnsharedAppsAsks_AreGrantedTheWholeManifest()
+    {
+        await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            Manifest("asks/glucose.md", asks: """["vault","sugary"]"""), overwrite: true);
+        await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+
+        (await ServersAskedFromAsync(_apps.Published("glucose", _id))).ShouldBe(["vault", "sugary"]);
     }
 
     // An ask with a schema is a turn whose answer must come in it: the schema rides the message as its
@@ -828,12 +849,12 @@ public sealed class AppsAsksTests : IAsyncLifetime
         }.ToJsonString();
     }
 
-    private async Task<IReadOnlyList<string>> ServersAskedFromAsync(string host) =>
-        (await TurnAskedFromAsync(host)).AppTurn!.Servers;
+    private async Task<IReadOnlyList<string>> ServersAskedFromAsync(string host, Account? viewer = null) =>
+        (await TurnAskedFromAsync(host, viewer)).AppTurn!.Servers;
 
-    private async Task<ChannelMessage> TurnAskedFromAsync(string host)
+    private async Task<ChannelMessage> TurnAskedFromAsync(string host, Account? viewer = null)
     {
-        var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, host));
+        var answer = _apps.AskAsync(host, """{"text":"Hi"}""", _apps.SessionFor(viewer ?? AppsServer.Her, host));
         var turn = await NextTurnAsync(_agent);
         await ReplyAsync(turn, "Hello there.");
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);

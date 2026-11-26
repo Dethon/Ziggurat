@@ -363,7 +363,7 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         var sharing = await SpacesAsync(admin);
 
         await apps.CreateAsync(author, "/glucose/app.json",
-            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"]}""",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"],"asks":["sugary","vault"]}""",
             overwrite: true);
         await apps.ExecAsync(author, "/glucose", "./publish");
         var widened = await SpacesAsync(admin);
@@ -374,22 +374,65 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         var app = widened.Apps.ShouldNotBeNull().ShouldHaveSingleItem();
         var approving = await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection
         {
-            Spaces = [HouseholdSpace.Default, untouched.Spaces[1] with { Approved = new AppReach { Reads = app.Reads, Connect = app.Connect } }, kitchen]
+            Spaces = [HouseholdSpace.Default, untouched.Spaces[1] with { Approved = app.Reach }, kitchen]
         });
         var approved = (await approving.Content.ReadFromJsonAsync<AdminSaved<AdminSpaces>>())!.Value;
 
         sharing.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"] });
         sharing.PendingOf(sharing.Spaces[1]).ShouldBe(AppReach.None);
-        var pending = new AppReach { Reads = ["/notes"], Connect = ["https://tracker.example.com"] };
+        app.Asks.ShouldBe(["sugary", "vault"]);
+        var pending = new AppReach { Reads = ["/notes"], Connect = ["https://tracker.example.com"], Asks = ["sugary", "vault"] };
         widened.PendingOf(widened.Spaces[1]).ShouldBe(pending);
         untouched.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"] });
         untouched.PendingOf(untouched.Spaces[1]).ShouldBe(pending);
-        approved.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] });
+        approved.Spaces[1].Approved.ShouldBe(new AppReach
+        {
+            Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"], Asks = ["sugary", "vault"]
+        });
         approved.PendingOf(approved.Spaces[1]).ShouldBe(AppReach.None);
         // The suite's clock stands still, so the log's order says nothing: only the approving save names the reach.
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
             [$"Added space glucose, sharing app {id}", "Added space kitchen", "Changed space glucose's approved reach"],
             ignoreOrder: true);
+    }
+
+    // The servers an owner approves are only ever those the page sent, and no more of them than the app asks
+    // now: one the app does not ask is dropped, in the app's order; one it asks that the page left out
+    // stays unapproved. A second owner's page, loaded before, approving its connect alone keeps the servers.
+    [Fact]
+    public async Task ApprovedServers_AreWhatThePageSent_CappedAtWhatTheAppAsks_AndMergedWithAnotherOwnersApproval()
+    {
+        await using var apps = await AppsAsync();
+        await using var server = await StartAsync(apps);
+        var (household, ana) = await AppsHouseholdAsync(server);
+        var author = new Account(household, ana);
+        var id = await PublishedAsync(apps, author, "glucose");
+        await apps.CreateAsync(author, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary"],"connect":["https://tracker.example.com"],"asks":["sugary","vault","timers"]}""",
+            overwrite: true);
+        await apps.ExecAsync(author, "/glucose", "./publish");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var space = new HouseholdSpace { Slug = "glucose", Name = "Glucose today", AppId = id, Order = 1 };
+
+        (await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection
+        {
+            Spaces = [HouseholdSpace.Default, space with { Approved = new AppReach { Reads = ["/sugary"], Asks = ["homeassistant", "vault", "sugary"] } }]
+        })).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var loaded = await SpacesAsync(admin);
+        var mine = loaded.Spaces[1] with { Approved = loaded.Spaces[1].Approved! with { Asks = ["sugary", "vault", "timers"] } };
+        var theirs = loaded.Spaces[1] with { Approved = loaded.Spaces[1].Approved! with { Connect = ["https://tracker.example.com"] } };
+        var section = new SpacesSection { Spaces = [.. loaded.Spaces] };
+        (await admin.PutAsync(AdminProtocol.Spaces, AdminEdit.Of(section with { Spaces = [HouseholdSpace.Default, mine] }, section)))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        var merging = await admin.PutAsync(AdminProtocol.Spaces, AdminEdit.Of(section with { Spaces = [HouseholdSpace.Default, theirs] }, section));
+
+        loaded.Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"], Asks = ["sugary", "vault"] });
+        loaded.PendingOf(loaded.Spaces[1]).ShouldBe(new AppReach { Connect = ["https://tracker.example.com"], Asks = ["timers"] });
+        merging.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await SpacesAsync(admin)).Spaces[1].Approved.ShouldBe(new AppReach
+        {
+            Reads = ["/sugary"], Connect = ["https://tracker.example.com"], Asks = ["sugary", "vault", "timers"]
+        });
     }
 
     // The apps server not answering costs only what needs it: the spaces still load (their app spaces as

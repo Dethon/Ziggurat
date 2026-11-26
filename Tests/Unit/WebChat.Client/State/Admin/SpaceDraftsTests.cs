@@ -147,4 +147,27 @@ public sealed class SpaceDraftsTests
         drafts.PendingOf(draft, loaded).ShouldBe(AppReach.None);
         drafts.ToSection().Spaces[4].Approved.ShouldBe(new AppReach { Reads = ["/sugary", "/notes"], Connect = ["https://tracker.example.com"] });
     }
+
+    // The servers an app's asks may use are approved as its reads are: sharing it approves those the page
+    // showed, a later publish asking another is shown waiting, and approving it sends them all.
+    [Fact]
+    public void TheServersAnAppsAsksMayUse_AreApprovedWithTheRestOfWhatItAsks()
+    {
+        var asking = _glucose with { Asks = ["sugary"] };
+        var wider = asking with { Asks = ["sugary", "vault"] };
+        var drafts = new SpaceDrafts(_loaded);
+        drafts.Share(asking);
+        var shared = drafts.ToSection().Spaces.Last();
+        var loaded = new AdminSpaces([.. _loaded, shared], [], [wider]);
+        var reloaded = new SpaceDrafts(loaded.Spaces);
+        var draft = reloaded.All[4];
+        var before = reloaded.PendingOf(draft, loaded);
+
+        draft.Approve(wider);
+
+        shared.Approved.ShouldBe(new AppReach { Reads = ["/sugary"], Asks = ["sugary"] });
+        before.ShouldBe(new AppReach { Asks = ["vault"] });
+        reloaded.PendingOf(draft, loaded).ShouldBe(AppReach.None);
+        reloaded.ToSection().Spaces[4].Approved.ShouldBe(new AppReach { Reads = ["/sugary"], Asks = ["sugary", "vault"] });
+    }
 }

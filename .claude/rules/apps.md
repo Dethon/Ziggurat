@@ -82,7 +82,7 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   segment (hidden from listings too), and the reserved root names (the action files, `errors`, `.checks`).
 - **Action files** are a closed catalog (`AppActions`; unknown is exit 127): `publish`, `history`,
   `rollback` (moves the served pointer only; history is never rewritten), `check` ("Checks"). A publish of
-  an app space asking beyond its approval says what waits on an owner, read after the household lock; spaces
+  an app space asking beyond its approval (reads, origins or servers) says what waits on an owner, read after the household lock; spaces
   unreadable or refused say it could not be checked, and the publish stands.
 - **Deleting an app the household shares as an app space is refused** `permission_denied`, naming the space;
   spaces unreadable delete nothing (`transient_dependency`), refused delete nothing (`permission_denied`).
@@ -156,9 +156,10 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
   closed**.
 - **A disabled member** is closed by their sessions ending (`SessionsEnded` → `EndAll`) or, if that is
   missed, by the next renewal answering nobody.
-- **The approval holds** (`HouseholdSpace.Approved`, an `AppReach`): while shared, the published origin
-  grants **every viewer, its author too**, only the served manifest's reach `Within` it
-  (`AppPages.ServedAsync` narrows once, for both policies and the reads); a read `Beyond` it is
+- **The approval holds** (`HouseholdSpace.Approved`, an `AppReach`: `reads`, `connect` and the servers its
+  `asks` may use): while shared, the published origin grants **every viewer, its author too**, only the
+  served manifest's reach `Within` it (`AppPages.ServedAsync` narrows once, for both policies, the reads and
+  an ask's servers); a read `Beyond` it is
   `permission_denied` naming an owner's approval. No approval grants nothing. **Accounts never closes an
   author's own app**: spaces unreadable or refused open it under its whole manifest (their own data only).
 - **The listing** `GET /internal/published-apps` (`PublishedAppsListing`) and **a person's apps** `GET
@@ -203,7 +204,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
   a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
   as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; a
-  shared app's asks are granted none, since an approval names none yet. The page's schema is the message's
+  shared app's are narrowed `Within` its approval for every viewer, its author too (an unapproved server is left
+  out, never the ask refused). The page's schema is the message's
   `ResponseFormat` (strict, as written: ADR 0044), and the same manifest's **`model`** (a model id's shape
   alone, `vendor/name`) its `ConfigPatch.Model`; neither is sent when absent. Whether the agent may be
   patched to that model is the agent's (`channels.md`): off its `patchableModels` the ask runs on its own. Sent by `AgentTurns` under its own

@@ -183,8 +183,8 @@ public class AppsSpacesTests
         Directive(approved.Headers.GetValues("Content-Security-Policy").Single(), "connect-src").ShouldContain("https://tracker.example.com");
     }
 
-    // Publishing a shared app that asks for more than an owner approved serves it, granted only the approved
-    // part, and the answer names what waits on an owner, so the agent can tell its person; a publish within
+    // Publishing a shared app that asks for more than an owner approved — reads, origins or servers for its
+    // asks — serves it, granted only the approved part, and the answer names what waits on an owner, so the agent can tell its person; a publish within
     // the approval, or of an app nobody shares, says nothing of owners. Spaces that cannot be read publish
     // all the same, the answer saying the check could not be made.
     [Fact]
@@ -193,9 +193,9 @@ public class AppsSpacesTests
         var (server, id) = await PublishedAsync();
         await using var _ = server;
         var within = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
-        server.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"] });
+        server.Spaces.Share(AppsServer.Her.TenantId, id, approved: new AppReach { Reads = ["/sugary"], Asks = ["timers"] });
         await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
-            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"]}""",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","reads":["/sugary","/notes"],"connect":["https://tracker.example.com"],"asks":["vault","timers"]}""",
             overwrite: true);
 
         var widened = await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
@@ -208,7 +208,9 @@ public class AppsSpacesTests
         said.ShouldContain("/notes");
         said.ShouldContain("https://tracker.example.com");
         said.ShouldContain("owner");
+        said.ShouldContain("vault");
         said.ShouldNotContain("/sugary");
+        said.ShouldNotContain("timers");
         unchecked_["exitCode"]!.GetValue<int>().ShouldBe(0);
         unchecked_["stdout"]!.GetValue<string>().ShouldContain("could not be checked");
     }

@@ -164,7 +164,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         var sharing = await AppSharing.OfAsync(household, app, ct);
         if (sharing is not AppSharing.Read { SharedAs: var space })
         {
-            return "whether the household's owners approved what it reads and talks to could not be checked just now: while the "
+            return "whether the household's owners approved what it reads, talks to and asks with could not be checked just now: while the "
                    + "household shares the app as a space, it is granted no more than they approved\n";
         }
 
@@ -174,7 +174,8 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         }
 
         var asked = beyond.Reads.Select(read => $"reading {read}")
-            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"));
+            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"))
+            .Concat(beyond.Asks.Select(server => $"its asks using {server}"));
         return $"the household shares it as the space '{space.Name}', and an owner has not approved all it now asks: until one "
                + $"approves it on the spaces page, it is not granted {string.Join(", ", asked)} — for anyone, you included. "
                + "Tell the person, so they can ask an owner\n";
