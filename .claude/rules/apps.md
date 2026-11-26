@@ -210,7 +210,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   by the minute sent in (a minute stops counting a day after it began). An ask is counted **once nothing
   else refuses it, before the conversation is looked at**, under a per-app lock (two asks never both take
   the last slot), and **given back** if its conversation is refused or nobody was listening (never
-  delivered): an ask past the cap opens no conversation. Counts live at `<app>/asks` (the minutes still
+  delivered; a conversation it opened is forgotten too, `OpenConversations.Forget`): an ask past the cap
+  opens no conversation, and one never delivered keeps none. Counts live at `<app>/asks` (the minutes still
   counting, JSON), durable across restarts, gone with the app, never listed, committed or counted toward
   the quota. The limit is `AskCaps.LimitAsync`'s alone: `Asks:DailyCap` (200) today, the one seam an
   owner's household default and app override go behind. A check's ask is refused before counting.

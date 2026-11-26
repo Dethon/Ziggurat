@@ -23,6 +23,9 @@ public sealed class AskConversations(TimeProvider clock, AppsSettings settings)
 
     public string Open(string appId, Account viewer, string agentId) => _open.Open(new Asker(appId, viewer), agentId);
 
+    // One opened for an ask that never reached the agent.
+    public void Forget(string conversation) => _open.Forget(conversation);
+
     // Whether this app and viewer may continue the conversation on the app's building agent now: one that
     // changed since holds none of its history, so the app starts afresh rather than be answered as though
     // it did. If they may, the window starts again.

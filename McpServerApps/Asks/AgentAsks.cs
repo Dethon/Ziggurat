@@ -127,9 +127,15 @@ public sealed class AgentAsks(
             Timestamp = clock.GetUtcNow()
         }, settings.Asks.Timeout, clock, ct);
 
+        // Never delivered: neither the count nor a conversation opened for it is kept, so a page retrying
+        // while nobody listens spends nothing and fills no table.
         if (reply is TurnReply.NotListening)
         {
             await counts.ReleaseAsync(app, counted);
+            if (ask.Conversation is null)
+            {
+                conversations.Forget(conversation);
+            }
         }
 
         return reply switch

@@ -84,5 +84,15 @@ public sealed class OpenConversations<TOwner, TCarried>(TimeProvider clock, Time
         }
     }
 
+    // A conversation opened for a turn that was never delivered: nothing is there to continue, and kept it
+    // would hold a place under the ceiling that a client retrying could fill without end.
+    public void Forget(string conversation)
+    {
+        lock (_lock)
+        {
+            _open.Remove(conversation);
+        }
+    }
+
     private bool IsWithin(DateTimeOffset last, DateTimeOffset now) => now - last < window;
 }

@@ -77,6 +77,22 @@ public sealed class OpenConversationsTests
             .ShouldBeEmpty();
     }
 
+    // A conversation whose first turn never reached the agent holds nothing to continue, and takes no room
+    // from the ones that did.
+    [Fact]
+    public void AForgottenConversation_IsNotContinued_AndHoldsNoPlaceUnderTheCeiling()
+    {
+        var owner = new Owner("app-1", "her");
+        var kept = Enumerable.Range(0, Ceiling - 1).Select(_ => _open.Open(owner, "kept")).ToList();
+        var forgotten = _open.Open(owner, "kept");
+
+        _open.Forget(forgotten);
+        var newest = _open.Open(owner, "kept");
+
+        _open.TryContinue(owner, forgotten, out _).ShouldBeFalse();
+        kept.Append(newest).Where(conversation => !_open.TryContinue(owner, conversation, out _)).ShouldBeEmpty();
+    }
+
     // Spelled as WebChat spells a conversation, so a review copy can be shown over it (ADR 0046).
     [Fact]
     public void AnOpenedConversation_IsSpelledAsAConversationIdentity() =>

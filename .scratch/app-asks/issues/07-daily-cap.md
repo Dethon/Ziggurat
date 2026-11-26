@@ -32,7 +32,8 @@ apps-server restart. The limit for now is the deployment's default, an apps-serv
 - **When it counts**: after the body, the instructions and a check's session are refused, **before the
   conversation is looked at** (so an ask past the cap opens no conversation), and **given back** if the
   conversation is refused (410) or `TurnReply.NotListening` (never delivered: an agent outage with a page
-  retrying would otherwise burn the cap). A timeout, a failed turn or the page giving up still count: the turn
+  retrying would otherwise burn the cap); a conversation that undelivered ask opened is forgotten
+  (`OpenConversations.Forget`, new), so retries during an outage fill no table either. A timeout, a failed turn or the page giving up still count: the turn
   was sent. A check's ask is refused before counting today (10 makes it count).
 - **Storage** (`AskCounts`, its own singleton and clock): `<household>/<id>/asks` (`BuiltAppStore.AskCountsFile`),
   a JSON array of `{ "start", "asks" }` per minute still counting, rewritten via `.tmp` + move under a per-app
@@ -49,9 +50,14 @@ apps-server restart. The limit for now is the deployment's default, an apps-serv
 - **The conversation ceiling** stays deployment-wide (10,000); with the cap a household opens at most
   cap x apps conversations a day (4,000 at the defaults), so it can still push other households' out, just
   no longer without bound. Noted in `apps.md`; no per-household bound added.
+- **Also counted**: turns the agent refuses on admission (`apps-off`, `agent-gone`, `unchecked`), timeouts and
+  page aborts, since they were sent. An ask later given back holds its slot meanwhile, so at the last slot a
+  concurrent ask can be refused 429 with a `freesAt` a day out. The deleted-app race's 404 is pinned only on
+  `AskCountsTests` (`Gone`), not at the origin.
 - **Tests**: `AppsAsksTests` (the Nth ask answered and the next refused naming the limit and `freesAt`, nothing
   sent; refused for its body, its conversation and nobody listening counts nothing; one count across viewers,
   his and the preview, while another app and the neighbour's app count their own; the window rolls at a day
   after the minute; counts outlive a restart over a copy of the volume; fake clock on `AskCounts` alone),
+  `OpenConversationsTests` (a forgotten conversation is not continued and holds no place under the ceiling),
   `AskCountsTests` (concurrency, release, `freesAt` after a lowered limit, a cap of 0, not in `SizeOf`, gone
   with the app), `ToolErrorTaxonomyTests`. The `apps` skill is unchanged (11 teaches the cap).
