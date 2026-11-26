@@ -370,16 +370,18 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 
 What a page met in somebody's browser (wire in `Domain/Apps/AppErrors`), for the agent to read.
 
-- **The client library reports** uncaught errors, rejections and failed reads to `POST /_errors`; a thrown
-  value that is no Error is named by its type alone, so what the app held never leaves the page.
+- **The client library reports** uncaught errors, rejections, failed reads and failed asks to `POST /_errors`;
+  a thrown value that is no Error is named by its type alone, so what the app held never leaves the page. A
+  failed ask (kind `ask`, `AppErrorAsk`) carries its envelope's code, message and hint alone — **never the
+  ask's text, schema, images or a `reply`/`failure` riding on the envelope** (the strict shape refuses them).
 - **`POST /_errors`** (`AppErrorReports`): from a page of that origin alone, settled as a read (the one
   404). **The body is the page's word only for what went wrong**, parsed strictly (`AppErrorReport.Parse`);
   **the server stamps the rest** (time, user agent, viewer, origin, `retryable` from this side's taxonomy);
   `Errors:PerSessionPerMinute`, then 429.
 - **Only the author's own report keeps the page's text.** A member's is **reduced** (`AppErrorReduction`):
   kind, a standard error name, frames and route only where they name a file the origin serves (in the
-  origin's own spelling), a read's operation, mount point (only one the manifest reads) and code, and
-  `reduced` (`AppErrorReduction.Note`). No message, stack, user agent or hint: a bounded numeric channel, so
+  origin's own spelling), a read's operation, mount point (only one the manifest reads) and code, an ask's
+  code alone (no error type), and `reduced` (`AppErrorReduction.Note`). No message, stack, user agent or hint: a bounded numeric channel, so
   an error carries nothing past the approved reach.
 - **Kept** at `<app>/errors` (`AppErrorLog`: newest first, the newest `Errors:Kept`, written unescaped since
   it is never served; never committed or counted; a deleted app's report is dropped), shown read-only at

@@ -182,11 +182,12 @@ public static partial class AppOriginFiles
     // are installed once whichever loads first.
     //
     // It also tells the server what went wrong (POST /_errors, AppErrors): every uncaught error, unhandled
-    // rejection and failed or refused read, so the agent can see why an app broke on somebody's phone.
-    // - What went wrong, never what was read: a read's operation, path and envelope; an Error's name,
+    // rejection, failed or refused read and failed ask, so the agent can see why an app broke on somebody's phone.
+    // - What went wrong, never what was read or asked: a read's operation, path and envelope; an ask's
+    //   envelope's code, message and hint (never its text, nor a reply that rides on it); an Error's name,
     //   message and stack; a thrown or rejected value that is no Error by its type alone.
-    // - A failed read is reported as the read, once: its ReadError is never reported again as the rejection
-    //   or uncaught error it becomes when the app does not catch it.
+    // - A failed read or ask is reported as such, once: its ReadError or AskError is never reported again as
+    //   the rejection or uncaught error it becomes when the app does not catch it.
     // - One broken loop is one report: the same error is sent once a page, and at most ten a minute, well
     //   under the server's own limit a session (Errors:PerSessionPerMinute).
     // - Reporting never throws into the app, and a report that fails is dropped, never reported itself.
@@ -303,6 +304,17 @@ public static partial class AppOriginFiles
           };
           const json = async (operation, path, args) => (await send(operation, path, args)).json();
 
+          const failed = envelope => {
+            const error = new AskError(envelope);
+            reported.add(error);
+            const message = clip(envelope.message, {{AppErrorReport.MaxMessage}});
+            report({
+              kind: '{{AppErrors.Kinds.Ask}}', message: message ?? 'The ask failed.',
+              ask: { envelope: { errorCode: envelope.errorCode, message: message ?? '', hint: clip(envelope.hint, {{AppErrorReport.MaxMessage}}) } }
+            });
+            return error;
+          };
+
           // Not the tools' envelope: no app session (the origin's one 404), or nobody answered.
           const unasked = status => status === 404 || status === 401
             ? { ok: false, errorCode: 'authentication', retryable: false,
@@ -330,7 +342,7 @@ public static partial class AppOriginFiles
               return response.json();
             }
             const envelope = await response.json().catch(() => null);
-            throw new AskError(envelope?.ok === false ? envelope : unasked(response.status));
+            throw failed(envelope?.ok === false ? envelope : unasked(response.status));
           };
 
           return Object.freeze({

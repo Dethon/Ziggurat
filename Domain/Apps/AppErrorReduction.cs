@@ -12,14 +12,15 @@ namespace Domain.Apps;
 // - the stack's places on the app's own origin, in files it serves (Places hands the candidates; the
 //   server keeps those it serves), at most MaxFrames, path, line and column alone;
 // - the route, when it names something the origin serves;
-// - a read's operation, its mount point when the origin's manifest reads it, and its envelope's code.
+// - a read's operation, its mount point when the origin's manifest reads it, and its envelope's code;
+// - an ask's envelope's code alone (and no error type: its message is the server's or the page's words).
 // What remains is a numeric channel (which frames, their lines and columns, which kind, type and served
 // route), bounded by the frames and the per-session minute.
 public static partial class AppErrorReduction
 {
     public const string Note =
         "Another member's report: only what the server could check is kept (the error's type, its places in the app's "
-        + "own files, a served route, a read's operation, mount and code), never the text their page wrote. Ask them "
+        + "own files, a served route, a read's operation, mount and code, an ask's code), never the text their page wrote. Ask them "
         + "what they did, or run ./check.";
 
     public const int MaxFrames = 10;

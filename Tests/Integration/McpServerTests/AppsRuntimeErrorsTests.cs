@@ -103,6 +103,12 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
     [InlineData("""{"kind":"read","message":"m","route":"/","read":{"operation":"query","path":"/sugary","envelope":{"errorCode":"permission_denied","message":"no","rows":[1]}}}""")]
     [InlineData("""{"kind":"read","message":"m","route":"/","read":{"operation":"write","path":"/sugary","envelope":{"errorCode":"permission_denied","message":"no"}}}""")]
     [InlineData("""{"kind":"read","message":"m","route":"/","read":{"operation":"query","path":"/sugary","envelope":{"errorCode":"made_up","message":"no"}}}""")]
+    [InlineData("""{"kind":"ask","message":"m","route":"/"}""")]
+    [InlineData("""{"kind":"error","message":"m","route":"/","ask":{"envelope":{"errorCode":"invalid_reply","message":"no"}}}""")]
+    [InlineData("""{"kind":"ask","message":"m","route":"/","ask":{"envelope":{"errorCode":"invalid_reply","message":"no","reply":"Twelve grams."}}}""")]
+    [InlineData("""{"kind":"ask","message":"m","route":"/","ask":{"text":"How many carbs?","envelope":{"errorCode":"invalid_reply","message":"no"}}}""")]
+    [InlineData("""{"kind":"ask","message":"m","route":"/","ask":{"envelope":{"errorCode":"made_up","message":"no"}}}""")]
+    [InlineData("""{"kind":"ask","message":"m","route":"/","read":{"operation":"query","path":"/sugary","envelope":{"errorCode":"permission_denied","message":"no"}}}""")]
     [InlineData("[1,2,3]")]
     public async Task AReportOutsideTheShape_IsRefused_AndNotKept(string body)
     {
@@ -156,6 +162,26 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
     }
 
     // The newest Errors:Kept are kept, newest first; an older one drops as a newer arrives.
+    // A failed ask says how the ask was answered — the envelope's code, message and hint — and never what it
+    // asked or what came back: its text and any reply stay in the page.
+    [Fact]
+    public async Task AFailedAsk_IsKept_WithItsEnvelope()
+    {
+        var host = _apps.Published("glucose", _id);
+        using var response = await _apps.ReportAsync(host,
+            """{"kind":"ask","message":"The assistant's answer was not JSON in the shape this app asked for.","route":"/","ask":{"envelope":{"errorCode":"invalid_reply","message":"The assistant's answer was not JSON in the shape this app asked for.","hint":"Show that the answer could not be read."}}}""",
+            _apps.SessionFor(AppsServer.Her, host));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
+        var entry = (await EntriesAsync()).ShouldHaveSingleItem();
+        entry["kind"]!.GetValue<string>().ShouldBe("ask");
+        entry["message"]!.GetValue<string>().ShouldContain("not JSON");
+        var envelope = entry["ask"]!["envelope"]!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe("invalid_reply");
+        envelope["hint"]!.GetValue<string>().ShouldBe("Show that the answer could not be read.");
+        envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
     [Fact]
     public async Task OnlyTheNewestKeptAreKept_NewestFirst()
     {
@@ -348,6 +374,14 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
                     ["operation"] = "read", ["path"] = $"/{canary}/a.md",
                     ["envelope"] = new JsonObject { ["errorCode"] = "permission_denied", ["message"] = canary }
                 }
+            },
+            new JsonObject
+            {
+                ["kind"] = "ask", ["message"] = $"TypeError: {canary}", ["route"] = "/",
+                ["ask"] = new JsonObject
+                {
+                    ["envelope"] = new JsonObject { ["errorCode"] = "invalid_reply", ["message"] = canary, ["hint"] = canary }
+                }
             }
         };
 
@@ -372,6 +406,10 @@ public sealed class AppsRuntimeErrorsTests : IAsyncLifetime
         entries[2]["route"]!.GetValue<string>().ShouldBe("/index.html");
         entries[2]["read"]!.ToJsonString().ShouldBe("""{"operation":"query","path":"/sugary","envelope":{"errorCode":"permission_denied","retryable":false}}""");
         entries[3]["read"]!["path"].ShouldBeNull();
+        // An ask's report is its code alone: no error type read off the page's words, nothing it asked or got back.
+        entries[4]["name"].ShouldBeNull();
+        entries[4]["ask"]!.ToJsonString().ShouldBe("""{"envelope":{"errorCode":"invalid_reply","retryable":false}}""");
+        metrics.Published.OfType<ErrorEvent>().ElementAt(4).Message.ShouldBe($"glucose-{id}: ask: invalid_reply");
         metrics.Published.OfType<ErrorEvent>().First().Message.ShouldBe($"glucose-{id}: error: TypeError");
 
         using var hers = await apps.ReportAsync(host, bodies[0].ToJsonString(), apps.SessionFor(AppsServer.Her, host),

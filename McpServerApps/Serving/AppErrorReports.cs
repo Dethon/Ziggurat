@@ -70,7 +70,8 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
             UserAgent = userAgent.Length > MaxUserAgent ? userAgent[..MaxUserAgent] : userAgent,
             Viewer = session.Person.UserId,
             Origin = session.Origin.Preview ? AppErrorEntry.Preview : AppErrorEntry.Published,
-            Read = report.Read
+            Read = report.Read,
+            Ask = report.Ask
         };
         if (session.Person != app.Author)
         {
@@ -82,7 +83,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
         {
             Service = ServiceName,
             ErrorType = AppErrors.ErrorType,
-            Message = $"{label}: {report.Kind}: {entry.Message ?? entry.Name}"
+            Message = $"{label}: {report.Kind}: {entry.Message ?? entry.Name ?? entry.Ask?.Envelope.ErrorCode}"
         });
 
         context.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -103,7 +104,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
 
         return entry with
         {
-            Name = AppErrorReduction.NameOf(report.Message),
+            Name = report.Ask is null ? AppErrorReduction.NameOf(report.Message) : null,
             Message = null,
             Stack = null,
             Frames = frames,
@@ -117,6 +118,7 @@ public sealed class AppErrorReports(AppErrorLog log, AppsSettings settings, Time
                     Envelope = new AppErrorEnvelope { ErrorCode = read.Envelope.ErrorCode }
                 }
                 : null,
+            Ask = report.Ask is { } ask ? new AppErrorAsk { Envelope = new AppErrorEnvelope { ErrorCode = ask.Envelope.ErrorCode } } : null,
             Reduced = AppErrorReduction.Note
         };
     }

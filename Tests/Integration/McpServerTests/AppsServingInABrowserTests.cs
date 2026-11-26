@@ -198,6 +198,15 @@ public class AppsServingInABrowserTests
         await Assertions.Expect(page.Locator("#value")).ToHaveTextAsync("calm false");
         await Assertions.Expect(page.Locator("#refused")).ToHaveTextAsync("true true AskError permission_denied false");
         violations.ShouldBeEmpty();
+        // The refusal reaches the app's runtime errors as the ask it was, its author's report keeping the
+        // envelope's words, never what was asked; caught by the app, it is no rejection besides.
+        IReadOnlyList<System.Text.Json.Nodes.JsonNode> reported = [];
+        await Eventually.Until(async () => (reported = await ErrorsAsync(server)).Count > 0, "the failed ask is reported");
+        var ask = reported.ShouldHaveSingleItem();
+        ask["kind"]!.GetValue<string>().ShouldBe("ask");
+        ask["message"]!.GetValue<string>().ShouldContain("'jonas'");
+        ask["ask"]!["envelope"]!["errorCode"]!.GetValue<string>().ShouldBe("permission_denied");
+        ask.ToJsonString().ShouldNotContain("And now?");
     }
 
     private static Task ReplyAsync(
