@@ -234,8 +234,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
 
     // Nothing an ask calls may be put to anybody: a call that would be asked — by the whitelist, the exec
     // screen (Jev's verdict missing on a person's own machine) or because it acts as the person on a site —
-    // is refused at once with the usual rejection, never sent to the anchor and never offered elsewhere. The
-    // same three calls on the person's own turn are each asked.
+    // is refused at once, never sent to the anchor and never offered elsewhere. The same three calls on the
+    // person's own turn are each asked.
     [Fact]
     public async Task ACallThatWouldBeAsked_IsRefusedAtOnce_AndPutToNobody()
     {
@@ -309,27 +309,59 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     }
 
     // A refused call is the tool's result, and the ask goes on to its answer: the app waits on words, and
-    // the model may say it could not, or answer without it. A person who turns a call down in their own
-    // chat ends their turn there, as ever: the model is not asked again.
+    // the model may say it could not, or answer without it. The result says what happened — nobody could be
+    // asked — never that a person turned it down and more input is coming, which would steer a model to stop.
     [Fact]
-    public async Task ARefusedCall_IsTheToolsResult_AndTheAskGoesOnToItsAnswer_WhereAPersonsNoEndsTheirTurn()
+    public async Task ARefusedCall_IsTheToolsResult_SayingNobodyCouldBeAsked_AndTheAskGoesOnToItsAnswer()
     {
-        _personAnswers = ToolApprovalResult.Rejected;
-        _model.Script(FakeOpenRouter.CallingToolNamed("unlock_door", "{}"));
-        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Chat());
-
-        ownChat.AskedApprovals.ShouldHaveSingleItem();
-        _model.Requests.Count(r => r.Body["input"]!.ToJsonString().Contains(ChatText, StringComparison.Ordinal))
-            .ShouldBe(1, "the model was asked again after the person said no");
-
         _model.Script(FakeOpenRouter.CallingToolNamed("unlock_door", "{}"), _ => FakeOpenRouter.Saying(Answered));
         var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Unlock the door", [KitName], "ask-a"));
 
         _kitCalls.Ran.ShouldBeEmpty();
-        _model.Requests.Last().ToolOutputs.ShouldHaveSingleItem()
-            .ShouldBe(ApprovalRejection.ResultFor($"mcp__{Kit}__unlock_door"));
+        _model.Requests.Last().ToolOutputs.ShouldHaveSingleItem().ShouldBe(
+            $"Tool execution was refused: mcp__{Kit}__unlock_door needs a person's approval, which an app's request "
+            + "cannot ask for, so it was not run. Carry on without it: answer with what you have, or say it could not be done.");
         AnswerOf(apps, "ask-a").ShouldBe(Answered);
         apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
+    // A person who turns a call down in their own chat ends their turn there, as ever: the model is not asked
+    // again. The words that call leaves are pinned where the client is (ToolApprovalChatClientExecScreenTests).
+    [Fact]
+    public async Task APersonsNo_EndsTheirTurn_WithNoFurtherRequest()
+    {
+        _personAnswers = ToolApprovalResult.Rejected;
+        _model.Script(FakeOpenRouter.CallingToolNamed("unlock_door", "{}"), _ => FakeOpenRouter.Saying(Answered));
+        var (_, chat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Chat());
+
+        chat.AskedApprovals.ShouldHaveSingleItem();
+        _kitCalls.Ran.ShouldBeEmpty();
+        _model.Requests.Count(r => r.Path.Contains("responses", StringComparison.Ordinal))
+            .ShouldBe(1, "the model was asked again after the person said no");
+    }
+
+    // A model that keeps calling what cannot be asked would loop to the invocation limit within the ask's
+    // timeout, the exec screen asking Jev each time: the third refused call of an ask ends it, as a person's
+    // no ends theirs, and the model is not asked again. Two of the three are one site's as-person calls, the
+    // second refused by the first's answer rather than asked, and counted all the same.
+    [Fact]
+    public async Task AnAsksThirdRefusedCall_EndsIt_WithNoFurtherRequest()
+    {
+        _model.Script(
+            FakeOpenRouter.CallingToolNamed("browse", """{"url":"https://bank.example.com/account","asMe":true}"""),
+            FakeOpenRouter.CallingToolNamed("browse", """{"url":"https://bank.example.com/cards","asMe":true}"""),
+            FakeOpenRouter.CallingToolNamed("unlock_door", "{}"),
+            _ => FakeOpenRouter.Saying(Answered));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Do it all", [KitName], "ask-a"));
+
+        _kitCalls.Ran.ShouldBeEmpty();
+        _model.Requests.Count(r => r.Body["input"]!.ToJsonString().Contains("Do it all", StringComparison.Ordinal))
+            .ShouldBe(3, "the model was asked again after the ask's third refused call");
+        apps.SentReplies.Where(r => r.ContentType == ReplyContentType.StreamComplete).Select(r => r.TurnKey)
+            .ShouldBe(["ask-a"]);
+        AnswerOf(apps, "ask-a").ShouldBeEmpty();
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+        apps.AskedApprovals.ShouldBeEmpty();
     }
 
     // The three calls, one after another in one turn; or, for three asks, each followed by the ask's answer.

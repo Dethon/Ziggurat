@@ -198,8 +198,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
 - **Answers**: 200 `{ conversation, text }` (the last message's text); else the tools' envelope — 400
   `invalid_argument` (body), 422 `permission_denied` (no instructions, a refusal: `RefusalAnswers.CodeOf`'s
   sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
-  turn whose words are the agent's exception (logged, never shown) or no answer, 503 nobody polling, 504
-  `timeout`.
+  turn whose words are the agent's exception (logged, never shown) or no answer (an ask ended on its refused
+  calls with no text is one), 503 nobody polling, 504 `timeout`.
 
 ## App sign-in
 

@@ -83,3 +83,26 @@ where they differ.
   `AppTurnAgentTests` (the kit is now an own server `kit`; `sugary` and `kit` offer their servers where their
   tools' qualifiers offer nothing; a refused call is the tool's result and the ask answers, where a person's
   no sends no second request; the three refused asks each answer).
+
+
+**Follow-up (2026-11-26): what a refused call says, and how many an ask takes.** Answers the two things the
+previous follow-up left for 10.
+
+- **Wording**: under `AsksNobodyKey` a refused call's result is `ApprovalRejection.UnaskableResultFor`:
+  "Tool execution was refused: <tool> needs a person's approval, which an app's request cannot ask for, so
+  it was not run. Carry on without it: answer with what you have, or say it could not be done." Nobody
+  rejected it and no input is coming, so the person's wording no longer reaches an ask. Its prefix is not
+  the person's, so `ApprovalRejection.ToolOf` (the transcript's "turned down" line) never reads it. A
+  person's no is byte for byte as before (`ToolApprovalChatClientExecScreenTests` pins the literal).
+- **Bound**: the third refused call of one ask (`ToolApprovalChatClient.RefusedCallsPerUnaskedTurn`, a
+  constant) sets `Terminate`, as a person's no does: no further model request. Counted per turn by the
+  turn's history (`_refusedUnasked`, keyed as `_writtenOrders` and `_turnAnswers` are), every refusal
+  path included (an as-person call refused by an earlier one's answer too). It counts calls, not rounds:
+  a first message carrying three asked calls ends the ask before the model reads any refusal (10 may want
+  rounds instead). An ask with no text by then is the origin's 422 "no answer"; that text written before
+  the third refusal is the reply is the apps server's existing behaviour, not exercised here.
+- **Tests** (`AppTurnAgentTests`): `ARefusedCall_IsTheToolsResult_SayingNobodyCouldBeAsked_AndTheAskGoesOnToItsAnswer`
+  (the literal reaches the follow-up request), `APersonsNo_EndsTheirTurn_WithNoFurtherRequest`,
+  `AnAsksThirdRefusedCall_EndsIt_WithNoFurtherRequest` (two same-site as-person calls and a whitelist
+  call, a fourth scripted reply never asked for). Rules: `channels.md` (the app-turn bullet), `apps.md`
+  (Answers).
