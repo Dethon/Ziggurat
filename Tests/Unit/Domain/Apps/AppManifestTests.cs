@@ -16,7 +16,8 @@ public class AppManifestTests
                                    "root": "dist",
                                    "reads": ["/sugary", "/ha"],
                                    "connect": ["https://api.example.com", "https://tiles.example.org:8443"],
-                                   "icon": "/icons/glucose.svg"
+                                   "icon": "/icons/glucose.svg",
+                                   "instructions": "asks/instructions.md"
                                  }
                                  """;
 
@@ -32,6 +33,7 @@ public class AppManifestTests
         manifest.Reads.ShouldBe(["/sugary", "/ha"]);
         manifest.Connect.ShouldBe(["https://api.example.com", "https://tiles.example.org:8443"]);
         manifest.Icon.ShouldBe("/icons/glucose.svg");
+        manifest.Instructions.ShouldBe("asks/instructions.md");
     }
 
     [Fact]
@@ -45,6 +47,7 @@ public class AppManifestTests
         manifest.Reads.ShouldBeEmpty();
         manifest.Connect.ShouldBeEmpty();
         manifest.Icon.ShouldBeNull();
+        manifest.Instructions.ShouldBeNull();
     }
 
     [Theory]
@@ -69,6 +72,17 @@ public class AppManifestTests
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/../icon.svg"}""", "icon '/../icon.svg'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/_app/icon.svg"}""", "icon '/_app/icon.svg'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"https://example.org/i.svg"}""", "icon 'https://example.org/i.svg'")]
+    // The instructions are a markdown file of the repository, named from its root, wherever the app serves.
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"/instructions.md"}""", "instructions '/instructions.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"instructions.txt"}""", "instructions 'instructions.txt'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"../instructions.md"}""", "instructions '../instructions.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks/./a.md"}""", "instructions 'asks/./a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks//a.md"}""", "instructions 'asks//a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks\\a.md"}""", "instructions 'asks\\a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":".git/a.md"}""", "instructions '.git/a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"node_modules/x/README.md"}""", "instructions 'node_modules/x/README.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":""}""", "instructions ''")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":7}""", "instructions must be a string")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","colour":"#abc"}""", "colour")]
     [InlineData("""[1, 2]""", "a JSON object")]
     [InlineData("""{"name":""", "not JSON")]

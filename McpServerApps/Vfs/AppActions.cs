@@ -89,6 +89,11 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 return (Exec(cwd, "", $"nothing published: {icon}", 1), null);
             }
 
+            if (await InstructionsProblemAsync(repository, manifest, ct) is { } instructions)
+            {
+                return (Exec(cwd, "", $"nothing published: {instructions}", 1), null);
+            }
+
             var pinning = await OutsideCodePinning.CheckRootAsync(Path.Combine(repository.WorkTree, manifest.Root), ct);
             if (pinning.Problems.Count > 0)
             {
@@ -135,6 +140,15 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
             ? null
             : $"the icon {icon} is not an SVG drawing: a whole <svg> document of the SVG namespace, at most {AppIcon.MaxBytes / 1024} KiB.";
     }
+
+    // The instructions the manifest names are what its asks are answered with: a file the commit will hold
+    // (never a link, which commits as one and reads as its target's name), read as an ask would read it.
+    private static async Task<string?> InstructionsProblemAsync(AppRepository repository, AppManifest manifest, CancellationToken ct) =>
+        manifest.Instructions is { } path
+        && AppAsks.ReadInstructions(path, await repository.TreeFileAsync(path, AppAsks.MaxInstructionsBytes + 1, ct))
+            is AppInstructionsRead.Refused { Problem: var problem }
+            ? problem
+            : null;
 
     // While the household shares the app as a space, its published origin is granted no more than an owner
     // approved: what the served manifest asks beyond that is named, for the agent to tell its person, since

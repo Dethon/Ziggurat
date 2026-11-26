@@ -151,6 +151,48 @@ public class AppsPublishingTests
         Stdout(await server.ExecAsync(AppsServer.Her, "/casa", "./history")).ShouldStartWith("no commits yet");
     }
 
+    // The instructions a manifest names are what the app's asks are answered with: a file of the commit,
+    // anywhere in the repository, within the bound the agent's prompt keeps for them. One missing, empty
+    // or over the bound refuses the publish naming it, and nothing is committed.
+    [Theory]
+    [InlineData(null, "are not a file of the app")]
+    [InlineData("", "are empty")]
+    [InlineData("over", "are over the 16000 bytes")]
+    public async Task Publish_RefusesInstructionsThatAreNoFileOrOverTheBound(string? content, string words)
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","root":"dist","instructions":"asks/casa.md"}""");
+        await server.CreateAsync(AppsServer.Her, "/casa/dist/index.html", "<h1>Casa</h1>");
+        if (content is not null)
+        {
+            await server.CreateAsync(AppsServer.Her, "/casa/asks/casa.md",
+                content == "over" ? new string('x', global::Domain.Apps.AppAsks.MaxInstructionsBytes + 1) : content);
+        }
+
+        var refused = await server.ExecAsync(AppsServer.Her, "/casa", "./publish");
+
+        refused["exitCode"]!.GetValue<int>().ShouldBe(1, refused.ToJsonString());
+        refused["stderr"]!.GetValue<string>().ShouldStartWith("nothing published");
+        refused["stderr"]!.GetValue<string>().ShouldContain($"the instructions asks/casa.md {words}");
+        Stdout(await server.ExecAsync(AppsServer.Her, "/casa", "./history")).ShouldStartWith("no commits yet");
+    }
+
+    // Outside the served root the instructions are the app's source, never served, and publish as any file.
+    [Fact]
+    public async Task Publish_TakesInstructionsOutsideTheServedRoot()
+    {
+        await using var server = await AppsServer.StartAsync();
+        await server.CreateAsync(AppsServer.Her, "/casa/app.json",
+            """{"name":"Casa","accentColor":"#c2410c","description":"Mine.","root":"dist","instructions":"asks/casa.md"}""");
+        await server.CreateAsync(AppsServer.Her, "/casa/dist/index.html", "<h1>Casa</h1>");
+        await server.CreateAsync(AppsServer.Her, "/casa/asks/casa.md", new string('x', global::Domain.Apps.AppAsks.MaxInstructionsBytes));
+
+        var published = await server.ExecAsync(AppsServer.Her, "/casa", "./publish");
+
+        published["exitCode"]!.GetValue<int>().ShouldBe(0, published.ToJsonString());
+    }
+
     [Fact]
     public async Task Publish_ServesTheIconsDrawingFromTheServedCommit()
     {

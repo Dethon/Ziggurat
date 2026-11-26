@@ -34,9 +34,15 @@ public sealed record AppManifest
     // colour's drawing. Its shape is checked here, the file itself at publish (AppIcon).
     public string? Icon { get; init; }
 
+    // The markdown file whose words answer the app's asks in place of the building agent's persona, by
+    // its path from the repository's root: never served for it, so it may sit outside the served root.
+    // None, and the app cannot ask. Its shape is checked here, the file itself at publish and at each ask
+    // (AppAsks.MaxInstructionsBytes).
+    public string? Instructions { get; init; }
+
     // Every field app.json takes; any other is refused.
     public static readonly IReadOnlyList<string> Fields =
-        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon"];
+        ["name", "shortName", "accentColor", "description", "root", "reads", "connect", "icon", "instructions"];
 
     public static AppManifestParse Parse(string json)
     {
@@ -71,6 +77,7 @@ public sealed record AppManifest
             var reads = Texts(root, "reads", problems);
             var connect = Texts(root, "connect", problems);
             var icon = Text(root, "icon", problems);
+            var instructions = Text(root, "instructions", problems);
 
             if (string.IsNullOrWhiteSpace(name) || name.Length > NameLength)
             {
@@ -112,6 +119,13 @@ public sealed record AppManifest
                              + "ending in .svg, never under /_app/ (the server's own), never climbing out with ..");
             }
 
+            if (instructions is not null && !IsInstructionsPath(instructions))
+            {
+                problems.Add($"instructions '{instructions}' must be the path of a markdown file of the repository, from its root, "
+                             + "such as instructions.md or asks/estimate.md: ending in .md, never starting with /, "
+                             + "never climbing out with .., never under node_modules or .git.");
+            }
+
             return problems.Count > 0
                 ? new AppManifestParse.Refused(problems)
                 : new AppManifestParse.Valid(new AppManifest
@@ -123,7 +137,8 @@ public sealed record AppManifest
                     Root = served.TrimEnd('/'),
                     Reads = reads,
                     Connect = connect,
-                    Icon = icon
+                    Icon = icon,
+                    Instructions = instructions
                 });
         }
     }
@@ -143,6 +158,11 @@ public sealed record AppManifest
         || (!path.StartsWith('/') && !path.Contains('\\')
             && path.TrimEnd('/').Split('/').All(segment =>
                 segment.Length > 0 && segment is not ("." or ".." or "node_modules" or ".git")));
+
+    private static bool IsInstructionsPath(string path) =>
+        path.EndsWith(".md", StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains('\\')
+        && path.Split('/').All(segment =>
+            segment.Length > 0 && !segment.Any(char.IsControl) && segment is not ("." or ".." or "node_modules" or ".git"));
 
     private static IEnumerable<string> Twice(IReadOnlyList<string> values) =>
         values.GroupBy(v => v, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key);
