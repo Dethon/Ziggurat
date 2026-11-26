@@ -304,8 +304,9 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 - **Nor is a failed ask**: a `/_ask` on the preview answered 400 or worse **with the tools' envelope** (any
   status: 400, 410, 422, 429, 503, 504) is a `failedAsks` entry (status, the ask's `text` when sent as JSON,
   code, message, hint, and the preview's `reply` or `failure`), its console line dropped, a summary line
-  `failed ask: <code>: <message>` with what the agent said or the reply beside it; an answer that is no
-  envelope (the origin's 404) stays a failed request. Neither changes the exit code.
+  `failed ask: <code>: <message>` with what the agent said or the reply beside it; an envelope naming no
+  code is `internal_error`, as the taxonomy reads one (`AppChecks.ReadFailedAsk`); an answer that is no
+  envelope (the origin's 404, fields that are not strings) stays a failed request. Neither changes the exit code.
 - **A check's asks are real turns** (`AppTurnAgentTests`, `AppsAsksTests`): the page asks as the check's
   person on its call token, against the tree's manifest and instructions, counted toward the app's cap,
   each waited on no longer than the check has left (`Checks:Settle` and every viewport reloading the page

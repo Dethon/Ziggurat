@@ -24,4 +24,4 @@ Formatting and mechanical style (file-scoped namespaces, `var`, braces) are owne
 
 ## HTTP calls
 
-- A catch for "the other side could not be reached" names `HttpRequestException or SocketException`: HttpClient now and then throws a reset as a bare `SocketException`, never wrapped (`PersonsAppsClientTests.AnAppsServerWhoseConnectionFailsBare_IsNoApps`). Never a bare `IOException`: HttpClient wraps its stream failures, and a missing file is an `IOException` too.
+- A catch for "the other side could not be reached" names `HttpRequestException or SocketException`: HttpClient now and then throws a reset as a bare `SocketException`, never wrapped (`PersonsAppsClientTests.AnAppsServerWhoseConnectionFailsBare_IsNoApps`). It adds no bare `IOException`, which no HttpClient call was seen to throw and which a missing file is too; only a try that is nothing but a stream transport throwing it itself (an MCP client call over a tunnel, `McpFileSystemBackend`; a streamed reply, `LemonadeChatClient`) names it.

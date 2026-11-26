@@ -109,10 +109,8 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
     {
         await using var apps = await AppsServer.StartAsync(services: s =>
             s.Replace(ServiceDescriptor.Singleton<TimeProvider>(new FakeTimeProvider(AccountsServer.StartedAt))));
-        await using var stack = await UsageStack.StartAsync(redis, apps);
-        var (casa, ana) = await stack.Accounts.SeedHouseholdAsync("Casa", "Ana");
-        await stack.Accounts.Service<HouseholdConfigStore>().SaveAsync(
-            casa, HouseholdSections.FeaturesSchema, new JsonObject { ["apps"] = true }, CancellationToken.None);
+        await using var stack = await UsageStack.StartAsync(redis, $"http://localhost:{apps.Settings.Listeners.Mcp}");
+        var (casa, ana) = await AppsHouseholdAsync(stack);
         var author = new Account(casa, ana);
         var glucose = AppsServer.IdIn(await apps.AppAsync(author, "glucose", "Glucose today"));
         await apps.CreateAsync(author, "/glucose/index.html", "<h1>Hi</h1>");
@@ -124,6 +122,20 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
         var usage = await stack.UsageAsync(ana, "2026-10");
 
         usage.Apps.ShouldBe([new UsageLine("Glucose today", 42, 0.05m, glucose), new UsageLine("gone00", 7, 0.01m, "gone00")]);
+    }
+
+    // The apps server not answering costs only the apps' names: the figures are still the household's.
+    [Fact]
+    public async Task WithTheAppsServerDown_AnAppsLineKeepsItsId()
+    {
+        await using var stack = await UsageStack.StartAsync(redis, DeadEnd.Url());
+        var (casa, ana) = await AppsHouseholdAsync(stack);
+        await stack.SeedAsync(
+            Tokens(casa, "jonas", "Jonas", "Ana", 40, 2, 0.05m) with { Channel = AppChannels.Apps, AppId = "a1b2c3" });
+
+        var usage = await stack.UsageAsync(ana, "2026-10");
+
+        usage.Apps.ShouldBe([new UsageLine("a1b2c3", 42, 0.05m, "a1b2c3")]);
     }
 
     // Each owner reads their own household, whoever asks for what: the admin route takes no household,
@@ -243,6 +255,15 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
         }
     }
 
+    // A household the operator gave the apps feature, and its owner.
+    private static async Task<(string Household, string Owner)> AppsHouseholdAsync(UsageStack stack)
+    {
+        var (household, owner) = await stack.Accounts.SeedHouseholdAsync("Casa", "Ana");
+        await stack.Accounts.Service<HouseholdConfigStore>().SaveAsync(
+            household, HouseholdSections.FeaturesSchema, new JsonObject { ["apps"] = true }, CancellationToken.None);
+        return (household, owner);
+    }
+
     private static TokenUsageEvent Tokens(
         string household, string agentId, string agentName, string sender, int input, int output, decimal cost,
         DateTimeOffset? at = null) => new()
@@ -262,12 +283,12 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
     {
         public AccountsServer Accounts => accounts;
 
-        // apps: the apps server whose listing names the household's published apps, which then verifies the
-        // service's assertions and reads its households' configuration as compose wires it.
-        public static async Task<UsageStack> StartAsync(RedisFixture redis, AppsServer? apps = null)
+        // appsUrl: where the apps server whose listing names the household's published apps listens, which then
+        // verifies the service's assertions and reads its households' configuration as compose wires it.
+        public static async Task<UsageStack> StartAsync(RedisFixture redis, string? appsUrl = null)
         {
             var port = TestPort.GetAvailable();
-            var accounts = await AccountsServer.StartAsync(s => apps is null
+            var accounts = await AccountsServer.StartAsync(s => appsUrl is null
                 ? s with { ObservabilityUrl = $"http://localhost:{port}" }
                 : s with
                 {
@@ -275,7 +296,7 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
                     Callers = new Dictionary<string, string> { ["mcp-apps"] = AppsCredential },
                     Redis = new() { ConnectionString = redis.ConnectionString },
                     Signing = new SigningKeySettings { PrivateKey = TestSigningKeys.Accounts },
-                    AppsUrl = $"http://localhost:{apps.Settings.Listeners.Mcp}"
+                    AppsUrl = appsUrl
                 });
 
             var builder = WebApplication.CreateBuilder();
