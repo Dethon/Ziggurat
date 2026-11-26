@@ -73,13 +73,17 @@ public sealed record AppErrorReport
             return new AppErrorReportParse.Refused("A report is one JSON object.");
         }
 
-        var problems = report.Problems().ToList();
+        var problems = report.OwnProblems()
+            .Concat(report.Read?.Problems() ?? [])
+            .Concat(report.Ask?.Envelope.Problems("ask.envelope") ?? [])
+            .ToList();
         return problems.Count == 0
             ? new AppErrorReportParse.Valid(report)
             : new AppErrorReportParse.Refused(string.Join(" ", problems));
     }
 
-    private IEnumerable<string> Problems()
+    // What is wrong with the report itself; a read's or an ask's own are theirs.
+    private IEnumerable<string> OwnProblems()
     {
         if (!AppErrors.Kinds.All.Contains(Kind))
         {
@@ -111,11 +115,6 @@ public sealed record AppErrorReport
         {
             yield return "ask is given for an ask's error and for no other.";
         }
-
-        foreach (var problem in (Read?.Problems() ?? []).Concat(Ask?.Envelope.Problems("ask.envelope") ?? []))
-        {
-            yield return problem;
-        }
     }
 }
 
@@ -136,7 +135,9 @@ public sealed record AppErrorRead
     public string? Path { get; init; }
     public required AppErrorEnvelope Envelope { get; init; }
 
-    internal IEnumerable<string> Problems()
+    internal IEnumerable<string> Problems() => OwnProblems().Concat(Envelope.Problems("read.envelope"));
+
+    private IEnumerable<string> OwnProblems()
     {
         if (!AppReads.Operations.All.Contains(Operation))
         {
@@ -146,11 +147,6 @@ public sealed record AppErrorRead
         if (Path is { Length: 0 or > AppErrorReport.MaxRoute } || Path is { } path && path[0] != '/')
         {
             yield return $"read.path is a virtual path, '/' and at most {AppErrorReport.MaxRoute} characters.";
-        }
-
-        foreach (var problem in Envelope.Problems("read.envelope"))
-        {
-            yield return problem;
         }
     }
 }

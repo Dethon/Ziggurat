@@ -34,7 +34,6 @@ public static class ConfigModule
             .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services
             // A built app's asks, sent to its building agent on this server's own channel and waited on whole.
             .AddSingleton<AskConversations>()
-            // How many asks each app was sent over the last day, on the volume, against its cap.
             .AddSingleton<AskCaps>()
             .AddSingleton<AskCounts>()
             .AddSingleton<AgentAsks>()

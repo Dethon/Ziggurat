@@ -242,25 +242,15 @@ public static partial class HouseholdSections
     }
 
     // An owner reads these on the apps page, beside the caps they name.
-    private static IEnumerable<string> AppAsksProblems(AppAsksSection section)
-    {
-        if (section.DailyCap is { } household && !AppAsksSection.IsCap(household))
-        {
-            yield return $"The household's daily cap must be 0–{AppAsksSection.MaxDailyCap} asks.";
-        }
-
-        foreach (var (app, cap) in section.Apps)
-        {
-            if (!BuiltAppId.IsValid(app))
-            {
-                yield return $"'{app}' is no built app's id, so it has no daily cap.";
-            }
-            else if (!AppAsksSection.IsCap(cap))
-            {
-                yield return $"The app {app}'s daily cap must be 0–{AppAsksSection.MaxDailyCap} asks.";
-            }
-        }
-    }
+    private static IEnumerable<string> AppAsksProblems(AppAsksSection section) =>
+        (section.DailyCap is { } household && !AppAsksSection.IsCap(household)
+            ? [$"The household's daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."]
+            : Array.Empty<string>())
+        .Concat(section.Apps
+            .Select(app => !BuiltAppId.IsValid(app.Key) ? $"'{app.Key}' is no built app's id, so it has no daily cap."
+                : !AppAsksSection.IsCap(app.Value) ? $"The app {app.Key}'s daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."
+                : null)
+            .OfType<string>());
 
     [GeneratedRegex("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant)]
     private static partial Regex LanguageTag();
@@ -432,7 +422,7 @@ public sealed record AppAsksSection
 
     public int? DailyCap { get; init; }
 
-    // Keyed by the app's id.
+    // By the app's id, never its slug, so a rename keeps the app's cap.
     public IReadOnlyDictionary<string, int> Apps { get; init; } = new Dictionary<string, int>();
 
     public static bool IsCap(int cap) => cap is >= 0 and <= MaxDailyCap;

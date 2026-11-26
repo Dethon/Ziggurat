@@ -21,7 +21,6 @@ public sealed class AskCounts(BuiltAppStore store, TimeProvider clock)
 
     private sealed record Minute(DateTimeOffset Start, int Asks);
 
-    // Counts the ask now unless the app has sent its limit already.
     public Task<AskCount> TryCountAsync(BuiltApp app, int limit, CancellationToken ct) =>
         OneAtATimeAsync<AskCount>(app, ct, async () =>
         {

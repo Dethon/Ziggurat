@@ -246,7 +246,8 @@ public sealed record AppAskRequest
 // to meet. Only what would refuse the request before any model reads it is judged here.
 public sealed partial record AppAskSchema
 {
-    // What a strict response format's name may be.
+    // The providers' own bound on a response format's name (with NameShape), judged here so a name past it is
+    // the page's 400 rather than a turn the provider refuses.
     public const int MaxNameLength = 64;
 
     public required string Name { get; init; }
