@@ -29,14 +29,14 @@ One Chromium case proves the served library end to end.
   only calls never needing approval, a refused one told to the model), `model`; `apps.ask(text, {schema, files,
   conversation, signal})` and both answers; strict mode's rules (unchecked here, refused by the provider); images
   (types, 4 of 5 MB, a model that sees images); follow-ups within a day; the 2-minute wait; `AskError`'s fields
-  and every code an ask is answered with, what to do for each, `envelope.freesAt` on `quota_exceeded` and the
+  and every code an ask is answered with, what to do for each (retry a retryable one once or on a tap, never in a loop: a failed ask still counts), `envelope.freesAt` on `quota_exceeded` and the
   200-a-day cap an owner may change. Checking: `failedAsks` in report.json, a failed ask's entry (`reply`,
   `failure` on the preview), and that a check's asks are real, counted, within the check's 30 seconds, made once
   per viewport if on load, so tested from an assertion that awaits them with one `--viewport`. Stale lines
   fixed: an app "writes nothing" (it may, through its asks' tools), an app space's approval (servers too),
   `./publish`'s refusals (the instructions file), the errors file (kind and field `ask`, the library reporting
   failed asks, a member's reduced to the ask's code).
-- **Budget**: body 1,840 -> **2,470** (measured 2,465), reason in the header. Description unchanged (96/110), no
+- **Budget**: body 1,840 -> **2,495** (measured 2,490), reason in the header. Description unchanged (96/110), no
   claim added, so the standing ratchet does not move. Only `Tests/Snapshots/skill.apps.md` changed.
 - **`AppsSkillTests`** (8 new cases, all red against the old skill): every manifest field taught; the ask fields
   shown as JSON merged into the worked manifest parse valid; the shared servers named are `SharedServers` keys;

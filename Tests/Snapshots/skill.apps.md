@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 2465 / 2470 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 2490 / 2495 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -57,7 +57,7 @@ A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` 
 Each ask is a turn of the agent that built the app, for the viewer, paid from the household's credit; it is in no chat and remembers only its own conversation. app.json declares:
 
 - `"instructions": "asks.md"`: the markdown file (a path from the repository root, at most 16,000 bytes) the turn follows in place of your persona: a system prompt for a model knowing nothing else (what the app sends, what to answer, language, shape). None, no asks.
-- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own. Only calls never needing a person's approval run; the model is told any other was refused.
+- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run; the model is told any other was refused.
 - `"model": "vendor/name"`: the model asks run on, if the agent may switch to it; else the agent's own.
 
 `apps.ask(text, {schema, files, conversation, signal})` → `{conversation, text}`, or `{conversation, value}` asked with a schema:
@@ -67,7 +67,7 @@ Each ask is a turn of the agent that built the app, for the viewer, paid from th
 - `conversation`: an earlier answer's, to follow up within a day of its last turn (same app and viewer), its turns and images kept.
 - `signal`: an `AbortSignal`; aborting stops the turn. An answer takes up to 2 minutes: show the wait.
 
-A refused ask throws `apps.AskError`, carrying `errorCode`, `message`, `retryable`, `hint`, `reply` and `envelope` (the whole answer). Show it in the page as a sentence; ask again only if `retryable` (`transient_dependency`, `timeout`). `invalid_argument`: a malformed ask; `permission_denied`: no instructions, or refused for this viewer or app; `invalid_reply`: the reply was no JSON; `conversation_expired`: ask afresh without it; `quota_exceeded`: the household's limit on this app (200 a day unless an owner sets another), free again at `envelope.freesAt`; `authentication`: reload to sign in.
+A refused ask throws `apps.AskError`, carrying `errorCode`, `message`, `retryable`, `hint`, `reply` and `envelope` (the whole answer). Show it in the page as a sentence; ask again only if `retryable` (`transient_dependency`, `timeout`), once or on the person's tap, never in a loop: a sent ask counts even when it fails. `invalid_argument`: a malformed ask; `permission_denied`: no instructions, or refused for this viewer or app; `invalid_reply`: the reply was no JSON; `conversation_expired`: ask afresh without it; `quota_exceeded`: the household's limit on this app (200 a day unless an owner sets another), free again at `envelope.freesAt`; `authentication`: reload to sign in.
 
 ### An npm build (a household with a sandbox)
 

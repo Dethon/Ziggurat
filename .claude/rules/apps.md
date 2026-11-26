@@ -64,7 +64,8 @@ by the apps server (`McpServerApps`, container `mcp-apps`); its **app manifest**
   refusal names the limit and its value.
 - **The `apps` skill** (`Domain/Prompts/Skills/apps.md`) is served by this server, so it reaches exactly the
   agents offered `/apps`; `AppsSkillTests` holds every name it teaches to the code — every manifest field,
-  library export, `apps.ask` option and answer key, every code an ask is answered with — and every ask
+  library export, `apps.ask` option and answer key, every code `AppAsks` spells, a malformed ask's and the
+  library's own (not the deleted-app race's `not_found`) — and every ask
   limit it states to the shipped settings, so changing a limit changes the sentence.
 - **Create, rename, delete, publish and rollback run one at a time per household**
   (`BuiltAppStore.OneAtATimeAsync`).
