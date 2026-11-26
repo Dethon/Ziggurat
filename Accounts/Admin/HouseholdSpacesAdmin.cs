@@ -34,7 +34,7 @@ public static class HouseholdSpacesAdmin
                 AdminCaller caller, HouseholdConfigStore store, MemberStore members, HouseholdAppsClient apps, CancellationToken ct) =>
             await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct) is { } spaces
             && await AgentsAsync(store, caller, ct) is { } agents
-                ? Results.Ok(await AnswerAsync(spaces, agents, await PublishedAsync(store, apps, caller, ct), members, caller, ct))
+                ? Results.Ok(await AnswerAsync(spaces, agents, await HouseholdPublishedApps.ReadAsync(store, apps, caller, ct), members, caller, ct))
                 : Results.NotFound());
 
         household.MapPut(path, async (
@@ -87,7 +87,7 @@ public static class HouseholdSpacesAdmin
             var approving = sent.Spaces.Where(s => s.IsApp && !Equals(s.Approved, before.Spaces.FirstOrDefault(b => b.Slug == s.Slug)?.Approved))
                 .Select(s => s.Slug).ToHashSet(StringComparer.Ordinal);
             // Asked whatever the save holds, since the answer is what the page shows next: the apps it may share.
-            var published = await PublishedAsync(store, apps, caller, ct);
+            var published = await HouseholdPublishedApps.ReadAsync(store, apps, caller, ct);
             if ((added.Count > 0 || approving.Count > 0) && published is null)
             {
                 return Results.Json(new AdminRefusal(AdminSpaces.AppsUnavailableMessage, []),
@@ -192,14 +192,6 @@ public static class HouseholdSpacesAdmin
         return space with { Approved = approved.IsEmpty ? null : approved };
     }
 
-    // The household's published apps, none for a household without the apps feature (the apps server is
-    // not asked), null when the apps server could not be. The apps page's too (HouseholdAppAsksAdmin).
-    internal static async Task<IReadOnlyList<PublishedApp>?> PublishedAsync(
-        HouseholdConfigStore store, HouseholdAppsClient apps, AdminCaller caller, CancellationToken ct) =>
-        await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct) is { Apps: true }
-            ? await apps.PublishedAsync(caller.Person, ct)
-            : [];
-
     private static async Task<AdminSpaces> AnswerAsync(
         SpacesSection spaces, IReadOnlyList<AdminSpaceAgent> agents, IReadOnlyList<PublishedApp>? published, MemberStore members,
         AdminCaller caller, CancellationToken ct)
@@ -209,15 +201,13 @@ public static class HouseholdSpacesAdmin
             return new AdminSpaces(SpaceListing.Ordered(spaces.Spaces), agents);
         }
 
-        var names = published.Count == 0
-            ? new Dictionary<string, string>()
-            : (await members.ListAsync(caller.HouseholdId, ct)).ToDictionary(m => m.Id, m => m.DisplayName);
+        var authorOf = await HouseholdPublishedApps.AuthorNamesAsync(published, members, caller, ct);
         return new AdminSpaces(
             SpaceListing.Ordered(spaces.Spaces.Select(space => Stamped(space, spaces, published))),
             agents,
             [
                 .. published.Select(app => new AdminSpaceApp(app.Id, app.Slug, app.Name, app.AccentColor, app.Description, app.AuthorId,
-                    names.GetValueOrDefault(app.AuthorId, ""), app.Reads, app.Connect, app.Url) { Asks = app.Asks })
+                    authorOf(app), app.Reads, app.Connect, app.Url) { Asks = app.Asks })
             ]);
     }
 

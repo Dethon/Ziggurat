@@ -27,7 +27,7 @@ public static class HouseholdAppAsksAdmin
         household.MapGet(path, async (
                 AdminCaller caller, HouseholdConfigStore store, MemberStore members, HouseholdAppsClient apps, CancellationToken ct) =>
             await store.ReadAsync(caller.HouseholdId, HouseholdSections.AppAsksSchema, ct) is { } caps
-                ? Results.Ok(await AnswerAsync(caps, await HouseholdSpacesAdmin.PublishedAsync(store, apps, caller, ct), members, caller, ct))
+                ? Results.Ok(await AnswerAsync(caps, await HouseholdPublishedApps.ReadAsync(store, apps, caller, ct), members, caller, ct))
                 : Results.NotFound());
 
         household.MapPut(path, async (
@@ -60,7 +60,7 @@ public static class HouseholdAppAsksAdmin
             var changed = sent.Apps.Where(app => !before.Apps.TryGetValue(app.Key, out var was) || was != app.Value)
                 .Select(app => app.Key).ToList();
             // Asked whatever the save holds, since the answer is what the page shows next: the apps it may cap.
-            var published = await HouseholdSpacesAdmin.PublishedAsync(store, apps, caller, ct);
+            var published = await HouseholdPublishedApps.ReadAsync(store, apps, caller, ct);
             if (changed.Count > 0 && published is null)
             {
                 return Results.Json(new AdminRefusal(AdminSpaces.AppsUnavailableMessage, []),
@@ -124,24 +124,20 @@ public static class HouseholdAppAsksAdmin
             return new AdminAppAsks(caps);
         }
 
-        var names = published.Count == 0
-            ? new Dictionary<string, string>()
-            : (await members.ListAsync(caller.HouseholdId, ct)).ToDictionary(m => m.Id, m => m.DisplayName);
+        var authorOf = await HouseholdPublishedApps.AuthorNamesAsync(published, members, caller, ct);
         return new AdminAppAsks(caps,
-        [
-            .. published.Select(app => new AdminCappedApp(app.Id, app.Name, app.AccentColor, names.GetValueOrDefault(app.AuthorId, ""), app.Url))
-        ]);
+            [.. published.Select(app => new AdminCappedApp(app.Id, app.Name, app.AccentColor, authorOf(app), app.Url))]);
     }
 
     // What changed, named by app id, never a cap's value.
     private static string Summary(AppAsksSection before, AppAsksSection after)
     {
-        var clauses = new List<string>();
-        clauses.AddRange(Changed("the household's daily cap", before.DailyCap, after.DailyCap));
-        clauses.AddRange(before.Apps.Keys.Union(after.Apps.Keys).Order(StringComparer.Ordinal)
-            .SelectMany(app => Changed($"app {app}'s daily cap",
-                before.Apps.TryGetValue(app, out var was) ? was : null,
-                after.Apps.TryGetValue(app, out var now) ? now : null)));
+        var clauses = Changed("the household's daily cap", before.DailyCap, after.DailyCap)
+            .Concat(before.Apps.Keys.Union(after.Apps.Keys).Order(StringComparer.Ordinal)
+                .SelectMany(app => Changed($"app {app}'s daily cap",
+                    before.Apps.TryGetValue(app, out var was) ? was : null,
+                    after.Apps.TryGetValue(app, out var now) ? now : null)))
+            .ToList();
         var summary = clauses.Count == 0 ? "saved the app caps unchanged" : string.Join("; ", clauses);
         return char.ToUpperInvariant(summary[0]) + summary[1..];
     }
