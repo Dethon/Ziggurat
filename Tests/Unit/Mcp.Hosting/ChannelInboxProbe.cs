@@ -16,6 +16,7 @@ internal sealed class ChannelInboxProbe
     private readonly ChannelInbox _inbox = new();
     private readonly Lock _gate = new();
     private readonly List<ChannelMessageNotification> _received = [];
+    private readonly List<ChannelCancelNotification> _cancels = [];
     private readonly string _subscriberId;
 
     // `live: false` leaves the subscriber unregistered, which is how production expresses "nobody
@@ -56,6 +57,16 @@ internal sealed class ChannelInboxProbe
         }
     }
 
+    // The cancels the emitter put in the inbox, drained as Received drains messages.
+    public IReadOnlyList<ChannelCancelNotification> Cancels()
+    {
+        Received();
+        lock (_gate)
+        {
+            return _cancels.ToArray();
+        }
+    }
+
     public async Task<ChannelMessageNotification> FirstAsync(TimeSpan timeout, CancellationToken ct = default) =>
         (await ReceivedAtLeastAsync(1, timeout, ct))[0];
 
@@ -91,18 +102,10 @@ internal sealed class ChannelInboxProbe
 
     private void Collect(IReadOnlyList<ChannelInboxItem> batch)
     {
-        var messages = batch
-            .Where(item => item.Kind == ChannelInboxItemKind.Message)
-            .Select(item => item.Message!)
-            .ToArray();
-        if (messages.Length == 0)
-        {
-            return;
-        }
-
         lock (_gate)
         {
-            _received.AddRange(messages);
+            _received.AddRange(batch.Where(item => item.Kind == ChannelInboxItemKind.Message).Select(item => item.Message!));
+            _cancels.AddRange(batch.Where(item => item.Kind == ChannelInboxItemKind.Cancel).Select(item => item.Cancel!));
         }
     }
 }

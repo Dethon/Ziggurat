@@ -65,6 +65,38 @@ public sealed class AgentTurnsTests
             .ShouldBe(new TurnReply.NotListening());
     }
 
+    // Messages are grouped by conversation and agent, so a cancel naming no agent never reaches the turn
+    // of a message that named one; one that named none is cancelled as it always was.
+    [Theory]
+    [InlineData("jonas")]
+    [InlineData(null)]
+    public async Task AnAbandonedTurn_IsCancelled_NamingTheAgentItsMessageNamed(string? agentId)
+    {
+        using var abandon = new CancellationTokenSource();
+        var reply = _turns.SendAsync(Message() with { AgentId = agentId }, _wait, TimeProvider.System, abandon.Token);
+        await _agent.FirstAsync(_wait);
+
+        await abandon.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(reply);
+        var cancel = _agent.Cancels().ShouldHaveSingleItem();
+        cancel.ConversationId.ShouldBe("conversation");
+        cancel.AgentId.ShouldBe(agentId);
+    }
+
+    [Fact]
+    public async Task ATurnThatOutlivesItsWait_IsCancelled_NamingTheAgentItsMessageNamed()
+    {
+        var clock = new ArmedClock();
+        var reply = _turns.SendAsync(Message() with { AgentId = "jonas" }, _wait, clock, CancellationToken.None);
+        await _agent.FirstAsync(_wait);
+
+        await clock.AdvancePastAsync(_wait);
+
+        (await reply.WaitAsync(_wait)).ShouldBe(new TurnReply.TimedOut());
+        _agent.Cancels().ShouldHaveSingleItem().AgentId.ShouldBe("jonas");
+    }
+
     private Task<TurnReply> Send() => _turns.SendAsync(Message(), _wait, TimeProvider.System, CancellationToken.None);
 
     private static ChannelMessageNotification Message() => new()

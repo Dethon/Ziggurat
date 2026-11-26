@@ -65,12 +65,12 @@ public sealed class AgentTurns(ChannelNotificationEmitter emitter, ILogger<Agent
         }
         catch (TimeoutException)
         {
-            await CancelAsync(message.ConversationId, clock);
+            await CancelAsync(message, clock);
             return new TurnReply.TimedOut();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await CancelAsync(message.ConversationId, clock);
+            await CancelAsync(message, clock);
             throw;
         }
     }
@@ -94,10 +94,13 @@ public sealed class AgentTurns(ChannelNotificationEmitter emitter, ILogger<Agent
 
     internal void Close(string turnKey) => _pending.TryRemove(turnKey, out _);
 
-    private Task<bool> CancelAsync(string conversationId, TimeProvider clock) =>
+    // Naming the agent the message named: the agent groups messages by conversation and agent, so a
+    // cancel naming none reaches only a turn whose message named none either.
+    private Task<bool> CancelAsync(ChannelMessageNotification message, TimeProvider clock) =>
         emitter.EmitCancelAsync(new ChannelCancelNotification
         {
-            ConversationId = conversationId,
+            ConversationId = message.ConversationId,
+            AgentId = message.AgentId,
             Timestamp = clock.GetUtcNow()
         });
 }
