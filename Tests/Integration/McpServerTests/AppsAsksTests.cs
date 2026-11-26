@@ -472,6 +472,25 @@ public sealed class AppsAsksTests : IAsyncLifetime
         body.ShouldNotContain("credits");
     }
 
+    // A turn that ends with no text — an ask whose model stopped on calls nobody could approve ends so — is
+    // answered as no answer, saying the likely why, so a check's report tells its author what to change.
+    [Fact]
+    public async Task ATurnEndingWithNoText_IsNoAnswer_NamingCallsNobodyCouldApprove()
+    {
+        var preview = _apps.Preview("glucose", _id);
+
+        var answer = _apps.AskAsync(preview, """{"text":"Hi"}""", _apps.SessionFor(AppsServer.Her, preview));
+        var turn = await NextTurnAsync(_agent);
+        await SendAsync(turn, ReplyContentType.StreamComplete, "", isComplete: true);
+
+        using var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        var envelope = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.TransientDependency);
+        envelope["message"]!.GetValue<string>().ShouldContain("no answer");
+        envelope["hint"]!.GetValue<string>().ShouldContain("approval");
+    }
+
     // What the agent said of a turn it failed — often the provider's own body, a strict schema it refused
     // among them — is the exception it caught, kept from a viewer; its author sees it on the preview alone, so
     // a check can say why and the schema be fixed.

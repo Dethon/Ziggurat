@@ -106,8 +106,12 @@ public static class AppAsks
         "This app's daily limit could not be checked for this person, so nothing was asked.",
         "Show that the app cannot ask just now; signing in again may help.");
 
+    // Most often an ask whose model stopped on calls that needed a person's approval, which an ask cannot get
+    // (it ends on its third such call): only its author, reading a check, can change that.
     public static readonly ToolErrorResult Unanswered = ToolError.TransientDependency(
-        "The assistant ended its turn with no answer.", "Ask again.");
+        "The assistant ended its turn with no answer.",
+        "Ask again. If it keeps happening, the assistant may be stopping on tools that need a person's approval, "
+        + "which an app's ask cannot get: its author changes the instructions or the servers the app asks with.");
 
     public static readonly ToolErrorResult NotListening = ToolError.TransientDependency(
         "The assistant is not listening just now, so nothing was asked.", "Ask again in a moment.");
