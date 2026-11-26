@@ -138,8 +138,9 @@ public class AppsServingInABrowserTests
 
     // A published app asks its assistant through the client library, from the module and the classic
     // script alike: the answer's text and conversation, a follow-up on it with a schema and an image from the
-    // page answered with the reply's JSON, and a refusal handed to the app as an AskError carrying the tools'
-    // envelope.
+    // page answered with the reply's JSON, a refusal handed to the app as an AskError carrying the tools'
+    // envelope, and, with the household's cap set at the three asks before it, a fourth refused on the cap,
+    // its envelope saying when the app may ask again (that nothing is sent is AppsAsksTests').
     [Fact]
     public async Task APublishedApp_AsksItsAssistantThroughTheClientLibrary_AndShowsTheAnswer()
     {
@@ -150,8 +151,9 @@ public class AppsServingInABrowserTests
             """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","instructions":"asks.md"}""",
             overwrite: true);
         await server.CreateAsync(AppsServer.Her, "/glucose/asks.md", "Answer in one word.");
+        server.AskCaps.Set(AppsServer.Her.TenantId, new global::Domain.DTOs.Household.AppAsksSection { DailyCap = 3 });
         await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
-            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="answer"></p><p id="value"></p><p id="refused"></p></body></html>""");
+            """<!doctype html><html><head><script type="module" src="/main.js"></script></head><body><p id="answer"></p><p id="value"></p><p id="refused"></p><p id="capped"></p></body></html>""");
         await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
             """
             import { ask, AskError } from '/_app/apps.mjs';
@@ -166,6 +168,12 @@ public class AppsServingInABrowserTests
             } catch (error) {
               document.getElementById('refused').textContent =
                 `${error instanceof AskError} ${error instanceof globalThis.apps.AskError} ${error.name} ${error.errorCode} ${error.retryable}`;
+            }
+            try {
+              await ask('Once more?');
+            } catch (error) {
+              document.getElementById('capped').textContent =
+                `${error instanceof AskError} ${error.errorCode} ${error.retryable} ${!Number.isNaN(Date.parse(error.envelope.freesAt))}`;
             }
             """);
         await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
@@ -197,16 +205,18 @@ public class AppsServingInABrowserTests
         await Assertions.Expect(page.Locator("#answer")).ToHaveTextAsync("Quietly. true");
         await Assertions.Expect(page.Locator("#value")).ToHaveTextAsync("calm false");
         await Assertions.Expect(page.Locator("#refused")).ToHaveTextAsync("true true AskError permission_denied false");
+        await Assertions.Expect(page.Locator("#capped")).ToHaveTextAsync("true quota_exceeded false true");
         violations.ShouldBeEmpty();
-        // The refusal reaches the app's runtime errors as the ask it was, its author's report keeping the
+        // Each refusal reaches the app's runtime errors as the ask it was, its author's report keeping the
         // envelope's words, never what was asked; caught by the app, it is no rejection besides.
         IReadOnlyList<System.Text.Json.Nodes.JsonNode> reported = [];
-        await Eventually.Until(async () => (reported = await ErrorsAsync(server)).Count > 0, "the failed ask is reported");
-        var ask = reported.ShouldHaveSingleItem();
-        ask["kind"]!.GetValue<string>().ShouldBe("ask");
-        ask["message"]!.GetValue<string>().ShouldContain("'jonas'");
-        ask["ask"]!["envelope"]!["errorCode"]!.GetValue<string>().ShouldBe("permission_denied");
-        ask.ToJsonString().ShouldNotContain("And now?");
+        await Eventually.Until(async () => (reported = await ErrorsAsync(server)).Count >= 2, "both failed asks are reported");
+        reported.Count.ShouldBe(2);
+        reported.ShouldAllBe(entry => entry["kind"]!.GetValue<string>() == "ask");
+        var refused = reported.Single(entry => entry["ask"]!["envelope"]!["errorCode"]!.GetValue<string>() == "permission_denied");
+        refused["message"]!.GetValue<string>().ShouldContain("'jonas'");
+        reported.ShouldContain(entry => entry["ask"]!["envelope"]!["errorCode"]!.GetValue<string>() == "quota_exceeded");
+        reported.ShouldAllBe(entry => !entry.ToJsonString().Contains("And now?") && !entry.ToJsonString().Contains("Once more?"));
     }
 
     private static Task ReplyAsync(
