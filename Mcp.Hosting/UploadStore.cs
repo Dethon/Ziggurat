@@ -1,34 +1,60 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
-using McpServerSugary.Settings;
 using Microsoft.Extensions.Logging;
 
-namespace McpServerSugary.Channel;
+namespace Mcp.Hosting;
 
-// Where the photos of a meal rest between the app sending them and the agent asking for them, for
-// as long as hydration might ask again (ADR-0020). A holding area, never a place anyone works: it is
-// not a mount (ADR-0021), nothing lists it, and its contents are reached only by naming a reference.
+// Where a channel server keeps it: inside the server's own volume, beside its data but never in it.
+public interface IUploadStoreSettings
+{
+    string StoragePath { get; }
+}
+
+// Where the files a channel server sends the agent rest between the request that carried them and
+// the agent asking for them, for as long as hydration might ask again (ADR-0020). A holding area,
+// never a place anyone works: it is not a mount (ADR-0021), nothing lists it, and its contents are
+// reached only by naming a reference.
 //
 // Files on disk in the server's own volume, the shape the WebChat upload store has: one directory
-// per attachment under one directory per conversation, the bytes beside a meta.json. Not her log's
-// database, which holds what she saved and is what she backs up; a photo nobody saved does not
-// belong in it, and nothing here is ever joined or rendered.
+// per attachment under one directory per conversation, the bytes beside a meta.json. Not the server's
+// database: a file nobody saved does not belong in what is backed up, and nothing here is ever joined
+// or rendered.
+//
+// One store holds every household's files, so a file stored for a household is handed only to a read
+// naming it. A file stored for none is handed to any read, as every file was before households were
+// kept, for a server whose fetches cannot yet say whose they are.
 public sealed class UploadStore(
-    UploadSettings settings, RetentionSettings retention, TimeProvider clock, ILogger<UploadStore> logger)
+    IUploadStoreSettings settings, RetentionSettings retention, TimeProvider clock, ILogger<UploadStore> logger)
 {
     private const string MetadataFileName = "meta.json";
 
     // An attachment's metadata is written after its bytes, so one without it may be a write still
-    // under way (a clip of a couple of hundred megabytes takes a moment). Past this it is one the
+    // under way (a file of a couple of hundred megabytes takes a moment). Past this it is one the
     // server died in the middle of, and goes without waiting out the window.
     private static readonly TimeSpan _unfinishedGrace = TimeSpan.FromHours(1);
 
-    private sealed record Metadata(string FileName, string MediaType, long SizeBytes, DateTimeOffset StoredAt);
+    // The household is left out when there is none, so a file stored for none is described byte for
+    // byte as the ones a running deployment's histories already name.
+    private sealed record Metadata(
+        string FileName, string MediaType, long SizeBytes, DateTimeOffset StoredAt,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Household = null);
 
-    public async Task<AttachmentReference> SaveAsync(
-        string conversationId, string fileName, string mediaType, byte[] bytes, CancellationToken ct)
+    public Task<AttachmentReference> SaveAsync(
+        string conversationId, string fileName, string mediaType, byte[] bytes, CancellationToken ct) =>
+        StoreAsync(null, conversationId, fileName, mediaType, bytes, ct);
+
+    public Task<AttachmentReference> SaveForHouseholdAsync(
+        string household, string conversationId, string fileName, string mediaType, byte[] bytes, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(household);
+        return StoreAsync(household, conversationId, fileName, mediaType, bytes, ct);
+    }
+
+    private async Task<AttachmentReference> StoreAsync(
+        string? household, string conversationId, string fileName, string mediaType, byte[] bytes, CancellationToken ct)
     {
         // Laid out as WebChat lays the same conversation out, so the copy WebChat keeps for a review
         // sits where deleting that topic removes its files.
@@ -40,7 +66,7 @@ public sealed class UploadStore(
 
         var name = SafeFileName(fileName);
         await File.WriteAllBytesAsync(Path.Combine(directory, name), bytes, ct);
-        var metadata = new Metadata(name, mediaType, bytes.LongLength, clock.GetUtcNow());
+        var metadata = new Metadata(name, mediaType, bytes.LongLength, clock.GetUtcNow(), household);
         await File.WriteAllTextAsync(
             Path.Combine(directory, MetadataFileName), JsonSerializer.Serialize(metadata), ct);
 
@@ -53,12 +79,17 @@ public sealed class UploadStore(
         };
     }
 
-    // Null for anything this store does not hold: swept, never stored, or an id shaped to reach
-    // outside it. The caller cannot do anything different about the three.
-    public async Task<byte[]?> ReadBytesAsync(string id, CancellationToken ct)
+    public Task<byte[]?> ReadBytesAsync(string id, CancellationToken ct) => ReadBytesAsync(id, null, ct);
+
+    // Null for anything this store does not hand to this household: swept, never stored, another
+    // household's, or an id shaped to reach outside it. The caller cannot do anything different about
+    // any of them.
+    public async Task<byte[]?> ReadBytesAsync(string id, string? household, CancellationToken ct)
     {
         var directory = Resolve(id);
-        if (directory is null || ReadMetadata(directory) is not { } metadata)
+        if (directory is null
+            || ReadMetadata(directory) is not { } metadata
+            || (metadata.Household is { } owner && owner != household))
         {
             return null;
         }
@@ -67,9 +98,9 @@ public sealed class UploadStore(
         return File.Exists(path) ? await File.ReadAllBytesAsync(path, ct) : null;
     }
 
-    // Age alone decides, unlike WebChat's store, which also waits for the topic to be gone: a meal's
-    // conversation is a handful of turns over a few minutes, so the window, the deployment's
-    // attachment retention, outlasts its hydration distance by months rather than by luck.
+    // Age alone decides, unlike WebChat's store, which also waits for the topic to be gone: a channel
+    // server's conversation is a handful of turns over minutes or hours, so the window, the
+    // deployment's attachment retention, outlasts its hydration distance by months rather than by luck.
     public int Sweep()
     {
         if (!Directory.Exists(settings.StoragePath))

@@ -2,11 +2,12 @@ using System.Collections.Concurrent;
 using System.Text;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Microsoft.Extensions.Logging;
 
-namespace McpServerSugary.Channel;
+namespace Mcp.Hosting;
 
-// What came back for a turn the app is waiting on. Only an answer carries text; everything else is
-// a reason the app is told why there is no estimate.
+// What came back for a turn somebody is waiting on. Only an answer carries text; everything else is
+// a reason the one waiting is told why there is none.
 public abstract record TurnReply
 {
     private TurnReply()
@@ -27,22 +28,55 @@ public abstract record TurnReply
     public sealed record TimedOut : TurnReply;
 }
 
-// The turns the app is waiting on, by the key each was sent under. The agent echoes the key on every
-// reply chunk, which is what lets a reply be matched to its request even when two estimates of one
-// conversation overlap, or a cancelled turn's last chunks arrive after the next has started.
-public sealed class AgentTurns
+// The turns a channel server is waiting on, by the key each was sent under. The agent echoes the key
+// on every reply chunk, which is what lets a reply be matched to its request even when two turns of
+// one conversation overlap, or a cancelled turn's last chunks arrive after the next has started.
+//
+// The clock and the deadline are the caller's, per send: a server waits on the agent on a clock of
+// its own, which a test may move without moving the inbox's liveness with it.
+public sealed class AgentTurns(ChannelNotificationEmitter emitter, ILogger<AgentTurns> logger)
 {
     private readonly ConcurrentDictionary<string, PendingTurn> _pending = new();
 
-    public PendingTurn Open()
+    // The message goes out as a turn of its own, under a key minted here, and the whole reply to it is
+    // waited for. A turn nobody waits on any more is cancelled: an answer nobody will read is not
+    // worth the rest of the turn.
+    public async Task<TurnReply> SendAsync(
+        ChannelMessageNotification message, TimeSpan timeout, TimeProvider clock, CancellationToken ct)
     {
-        var turn = new PendingTurn(Guid.NewGuid().ToString("N"), this);
-        _pending[turn.TurnKey] = turn;
-        return turn;
+        using var turn = Open();
+        if (!await emitter.EmitAsync(message with { TurnKey = turn.TurnKey }, ct))
+        {
+            return new TurnReply.NotListening();
+        }
+
+        try
+        {
+            var reply = await turn.Reply.WaitAsync(timeout, clock, ct);
+            // The agent's reason is the exception it caught, often with the provider's own body, and
+            // in English: kept here for whoever looks into it, never handed on to a person's screen.
+            if (reply is TurnReply.Failed failed)
+            {
+                logger.LogWarning("The agent failed turn {TurnKey} of {ConversationId}: {Reason}",
+                    turn.TurnKey, message.ConversationId, failed.Reason);
+            }
+
+            return reply;
+        }
+        catch (TimeoutException)
+        {
+            await CancelAsync(message.ConversationId, clock);
+            return new TurnReply.TimedOut();
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await CancelAsync(message.ConversationId, clock);
+            throw;
+        }
     }
 
-    // A chunk for a turn nobody is waiting on any more (it timed out, the phone gave up) is dropped:
-    // there is no one left to show it to.
+    // A chunk for a turn nobody is waiting on any more (it timed out, the request gave up) is
+    // dropped: there is no one left to show it to.
     public void Receive(SendReplyParams chunk)
     {
         if (chunk.TurnKey is { } key && _pending.TryGetValue(key, out var turn))
@@ -51,10 +85,24 @@ public sealed class AgentTurns
         }
     }
 
+    internal PendingTurn Open()
+    {
+        var turn = new PendingTurn(Guid.NewGuid().ToString("N"), this);
+        _pending[turn.TurnKey] = turn;
+        return turn;
+    }
+
     internal void Close(string turnKey) => _pending.TryRemove(turnKey, out _);
+
+    private Task<bool> CancelAsync(string conversationId, TimeProvider clock) =>
+        emitter.EmitCancelAsync(new ChannelCancelNotification
+        {
+            ConversationId = conversationId,
+            Timestamp = clock.GetUtcNow()
+        });
 }
 
-public sealed class PendingTurn : IDisposable
+internal sealed class PendingTurn : IDisposable
 {
     private readonly AgentTurns _turns;
     private readonly TaskCompletionSource<TurnReply> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);

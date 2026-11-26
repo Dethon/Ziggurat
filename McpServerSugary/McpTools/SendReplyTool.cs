@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using McpServerSugary.Channel;
+using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 

@@ -64,12 +64,10 @@ public static class ConfigModule
             .AddSingleton<GlucosePoller>()
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)
-            .AddSingleton<UploadStore>()
             // A meal's clip is read and made small with ffmpeg, in this server's image alone.
             .AddSingleton(settings.Clips)
             .AddSingleton<ClipTools>()
             .AddSingleton<ClipProcessor>()
-            .AddHostedService<UploadSweeper>()
             // What each model accepts, from the catalogue the agent registers on connect: the one
             // thing this channel needs to know about models, to refuse a photo one cannot see.
             .AddSingleton<MutableAgentCatalog>()
@@ -118,7 +116,8 @@ public static class ConfigModule
             .AddToolServer(settings, ToolResponse.Create)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
-            .WithTools<FetchAttachmentTool>()
+            // A meal's photos and clip, kept until the agent has fetched them for every turn that may.
+            .AddUploadStore(settings.Uploads, settings.Retention)
             .WithTools<RegisterAgentsTool>()
             // Gate-on-live: the app waits on its own request, so an estimate nobody is polling for
             // is answered as an error at once rather than buffered for an agent that may never come.

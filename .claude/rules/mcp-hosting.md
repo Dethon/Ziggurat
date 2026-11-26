@@ -74,6 +74,7 @@ reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for servers
   that offer the agent things to call. Tool server and channel server are independent: a dual-role
   server calls `AddToolServer` then `AddChannelServer`.
+- **A channel server that waits on its turns uses `Mcp.Hosting`'s pieces** (Sugary's estimates), written for none of them: `AgentTurns.SendAsync` (sent under a minted `TurnKey`, the last message's text is the answer, cancelled on the caller's deadline or abort; the clock is the caller's), `OpenConversations<TOwner, TCarried>` (the follow-up binding, keyed by an owner the server chooses, ids spelled as a `ConversationIdentity`), and `AddUploadStore` (`UploadStore`, its sweeper and `fetch_attachment`). A file saved for a household (`SaveForHouseholdAsync`) is handed only to a fetch whose call token names that household; one saved for none, Sugary's (its fetches act for nobody), to any, and is laid out byte for byte as before.
 - **The error filter is one shared registration, installed at most once** (`CallToolErrorFilter`): a
   cancelled call propagates as the abort it is; anything else is logged, reported as a `ToolCallFailed`
   `ErrorEvent` under the verified call's household (`.claude/rules/observability.md`, "Households"), and

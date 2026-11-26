@@ -2,7 +2,7 @@ using Domain.DTOs;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace McpServerSugary.Channel;
+namespace Mcp.Hosting;
 
 // The only thing between the upload store and unbounded disk growth.
 public sealed class UploadSweeper(UploadStore store, RetentionSettings retention, ILogger<UploadSweeper> logger)
@@ -21,7 +21,7 @@ public sealed class UploadSweeper(UploadStore store, RetentionSettings retention
                 if (swept > 0)
                 {
                     logger.LogInformation(
-                        "Swept {Count} photos older than {Window} from the upload store",
+                        "Swept {Count} files older than {Window} from the upload store",
                         swept, retention.AttachmentRetention);
                 }
             }
