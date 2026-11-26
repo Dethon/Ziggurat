@@ -2,6 +2,7 @@ using System.Text.Json;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Moq;
+using Observability;
 using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
@@ -50,7 +51,7 @@ public class MetricsQueryServiceTruncationTests
         ]);
 
         var result = await _sut.GetTokenGroupedAsync(
-            TokenDimension.Model, TokenMetric.TruncationCount, date, date);
+            TokenDimension.Model, TokenMetric.TruncationCount, MetricDateRange.Spanning(date, date));
 
         result["m-A"].ShouldBe(2m);
         result["m-B"].ShouldBe(1m);
@@ -69,7 +70,7 @@ public class MetricsQueryServiceTruncationTests
         ]);
 
         var result = await _sut.GetTokenGroupedAsync(
-            TokenDimension.User, TokenMetric.MessagesDropped, date, date);
+            TokenDimension.User, TokenMetric.MessagesDropped, MetricDateRange.Spanning(date, date));
 
         result["alice"].ShouldBe(4m);
         result["bob"].ShouldBe(2m);
@@ -87,7 +88,7 @@ public class MetricsQueryServiceTruncationTests
         ]);
 
         var result = await _sut.GetTokenGroupedAsync(
-            TokenDimension.Model, TokenMetric.TokensTrimmed, date, date);
+            TokenDimension.Model, TokenMetric.TokensTrimmed, MetricDateRange.Spanning(date, date));
 
         result["m-A"].ShouldBe(200m);
     }

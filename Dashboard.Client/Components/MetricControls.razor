@@ -4,7 +4,6 @@
 @using static Dashboard.Client.Components.PillSelector
 @implements IDisposable
 @inject LocalStorageService Storage
-@inject TimeProvider Time
 @inject DataLoadEffect DataLoad
 
 <header class="page-header">
@@ -15,7 +14,7 @@
             <p class="page-description">@Description</p>
         }
     </div>
-    <PillSelector Label="Time" Options="TimeOptions" Value="@_session.SelectedDays.ToString()"
+    <PillSelector Label="Time" Options="TimeWindows.Options" Value="@_session.SelectedDays.ToString()"
                   OnChanged="_session.ChangeDaysAsync" />
 </header>
 
@@ -46,13 +45,6 @@
     [Parameter] public IReadOnlyList<MetricChoice> ExtraChoices { get; set; } = [];
     [Parameter, EditorRequired] public RenderFragment<TState> ChildContent { get; set; } = default!;
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
-
     private static readonly IReadOnlySet<string> NoneUnavailable = new HashSet<string>();
 
     private MetricControlsSession _session = default!;
@@ -61,7 +53,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _session = new MetricControlsSession(Family, ExtraChoices, Storage, Time, DataLoad);
+        _session = new MetricControlsSession(Family, ExtraChoices, Storage, DataLoad);
         _state = Family.Store.State;
         _sub = Family.Store.StateObservable.Subscribe(state =>
         {

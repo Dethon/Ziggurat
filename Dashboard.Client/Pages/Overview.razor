@@ -7,7 +7,7 @@
 @using Dashboard.Client.State.Tools
 @using Dashboard.Client.State.Voice
 @using Domain.DTOs.Metrics.Enums
-@using static Dashboard.Client.Components.PillSelector
+@using System.Globalization
 @implements IDisposable
 @inject MetricsStore Metrics
 @inject HealthStore Health
@@ -26,7 +26,7 @@
             <h2>Overview</h2>
             <p class="page-description">Spend, tool use and service health across the deployment.</p>
         </div>
-        <PillSelector Label="Time" Options="TimeOptions" Value="@_selectedDays.ToString()"
+        <PillSelector Label="Time" Options="TimeWindows.Options" Value="@_selectedDays.ToString()"
                       OnChanged="OnTimeChanged" />
     </header>
 
@@ -84,24 +84,15 @@
     private MetricsState _metrics = new();
     private HealthState _health = new();
     private int _selectedDays = 1;
-    private DateOnly _from = DateOnly.FromDateTime(DateTime.UtcNow);
-    private DateOnly _to = DateOnly.FromDateTime(DateTime.UtcNow);
     private List<ActivityItem> _recentActivity = [];
     private long _voiceUtterances;
     private double _voiceLatency;
     private readonly List<IDisposable> _subscriptions = [];
 
-    private static readonly IReadOnlyList<PillOption> TimeOptions =
-    [
-        new("Today", "1"),
-        new("7d", "7"),
-        new("30d", "30"),
-    ];
-
     protected override async Task OnInitializedAsync()
     {
         var savedDays = await Storage.GetIntAsync("overview.days");
-        if (savedDays.HasValue) _selectedDays = savedDays.Value;
+        if (savedDays is > 0) _selectedDays = savedDays.Value;
 
         _subscriptions.Add(Metrics.StateObservable.Subscribe(s => InvokeAsync(() => { _metrics = s; StateHasChanged(); })));
         _subscriptions.Add(Health.StateObservable.Subscribe(s => InvokeAsync(() => { _health = s; StateHasChanged(); })));
@@ -120,19 +111,14 @@
             StateHasChanged();
         })));
 
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
-        await DataLoad.LoadAsync(_from, _to, Families.OverviewFamilies);
-
+        await DataLoad.LoadAsync(_selectedDays, Families.OverviewFamilies);
     }
 
     private async Task OnTimeChanged(string value)
     {
-        _selectedDays = int.Parse(value);
-        _to = DateOnly.FromDateTime(DateTime.UtcNow);
-        _from = _to.AddDays(-(_selectedDays - 1));
+        _selectedDays = int.Parse(value, CultureInfo.InvariantCulture);
         await Storage.SetAsync("overview.days", value);
-        await DataLoad.LoadAsync(_from, _to, Families.OverviewFamilies);
+        await DataLoad.LoadAsync(_selectedDays, Families.OverviewFamilies);
     }
 
     private void RebuildActivity()

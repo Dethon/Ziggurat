@@ -32,21 +32,21 @@ public sealed class OverviewFiguresTests : IDisposable
 
     // The KPI row's half of the same overlapping-load defect the families have: the thirty-day
     // summary is the slower request and used to land last, so the KPI row showed thirty days of
-    // totals under a Today header.
+    // totals under a 24h header.
     [Fact]
     public async Task LoadSummaryAsync_AnOlderReadAnswersLast_ItsTotalsAreNotApplied()
     {
         _handler.EnqueueResponse(Summary(3000), TimeSpan.FromMilliseconds(200));
         _handler.EnqueueResponse(Summary(10), TimeSpan.Zero);
 
-        _overview.SetDateRange(new DateOnly(2026, 2, 23), new DateOnly(2026, 3, 24));
+        _overview.SetDays(30);
         var older = _overview.LoadSummaryAsync();
         while (_handler.Requests.IsEmpty)
         {
             await Task.Delay(1);
         }
 
-        _overview.SetDateRange(new DateOnly(2026, 3, 24), new DateOnly(2026, 3, 24));
+        _overview.SetDays(1);
         await _overview.LoadSummaryAsync();
         await older;
 

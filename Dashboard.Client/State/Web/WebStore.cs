@@ -9,7 +9,7 @@ public record SetWebTrend(IReadOnlyList<LatencyTrendSeries> Trend) : IAction;
 public record SetWebBreakdown(Dictionary<string, decimal> Breakdown) : IAction;
 public record SetWebGroupBy(ModalDismissalDimension GroupBy) : IAction;
 public record SetWebMetric(ModalDismissalMetric Metric) : IAction;
-public record SetWebDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetWebDays(int Days) : IAction;
 public record SetWebAgg(Aggregation Agg) : IAction;
 public record SetWebKind(string Kind) : IAction;
 
@@ -35,8 +35,8 @@ public sealed class WebStore : Store<WebState>
     public void SetMetric(ModalDismissalMetric metric) =>
         Dispatch(new SetWebMetric(metric), static (s, a) => s with { Metric = a.Metric });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetWebDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetWebDays(days), static (s, a) => s with { Days = a.Days });
 
     public void SetAgg(Aggregation agg) =>
         Dispatch(new SetWebAgg(agg), static (s, a) => s with { Agg = a.Agg });

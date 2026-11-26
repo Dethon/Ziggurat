@@ -38,71 +38,37 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
 
-    public async Task<MetricsSummary> GetSummaryAsync(DateOnly from, DateOnly to, string? household = null)
+    // Added up from the events, not the daily totals hash: a rolling window starts part way through
+    // a day the hash can only count whole, and a call's cost carries more digits than the hash's
+    // whole ten-thousandths of a dollar kept, which dropped about four percent of the spend.
+    public async Task<MetricsSummary> GetSummaryAsync(MetricDateRange range, string? household = null)
     {
-        long inputTokens = 0, outputTokens = 0, costFixed = 0, toolCalls = 0, toolErrors = 0;
-        long recalls = 0, extractions = 0, dreamings = 0, memoriesStored = 0, memoriesMerged = 0, memoriesDecayed = 0;
+        var tokens = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, range, household);
+        var tools = await GetEventsAsync<ToolCallEvent>(MetricKeys.Tools, range, household);
+        var recalls = await GetEventsAsync<MemoryRecallEvent>(MetricKeys.MemoryRecall, range, household);
+        var extractions = await GetEventsAsync<MemoryExtractionEvent>(MetricKeys.MemoryExtraction, range, household);
+        var dreamings = await GetEventsAsync<MemoryDreamingEvent>(MetricKeys.MemoryDreaming, range, household);
 
-        foreach (var entry in (await TotalsAsync(from, to, household)).SelectMany(t => t.Entries))
-        {
-            var field = entry.Name.ToString();
-            var value = (long)entry.Value;
-            switch (field)
-            {
-                case "tokens:input":
-                    inputTokens += value;
-                    break;
-                case "tokens:output":
-                    outputTokens += value;
-                    break;
-                case "tokens:cost":
-                    costFixed += value;
-                    break;
-                case "tools:count":
-                    toolCalls += value;
-                    break;
-                case "tools:errors":
-                    toolErrors += value;
-                    break;
-                case "memory:recalls":
-                    recalls += value;
-                    break;
-                case "memory:extractions":
-                    extractions += value;
-                    break;
-                case "memory:dreamings":
-                    dreamings += value;
-                    break;
-                case "memory:stored":
-                    memoriesStored += value;
-                    break;
-                case "memory:merged":
-                    memoriesMerged += value;
-                    break;
-                case "memory:decayed":
-                    memoriesDecayed += value;
-                    break;
-            }
-        }
-
+        var input = tokens.Sum(e => (long)e.InputTokens);
+        var output = tokens.Sum(e => (long)e.OutputTokens);
         return new MetricsSummary(
-            inputTokens,
-            outputTokens,
-            inputTokens + outputTokens,
-            costFixed / 10000m,
-            toolCalls,
-            toolErrors,
-            recalls,
-            extractions,
-            dreamings,
-            memoriesStored,
-            memoriesMerged,
-            memoriesDecayed);
+            input,
+            output,
+            input + output,
+            tokens.Sum(e => e.Cost),
+            tools.Count,
+            tools.Count(e => !e.Success),
+            recalls.Count,
+            extractions.Count,
+            dreamings.Count,
+            extractions.Sum(e => (long)e.StoredCount),
+            dreamings.Sum(e => (long)e.MergedCount),
+            dreamings.Sum(e => (long)e.DecayedCount));
     }
 
     // The household an event is read back as is the key it was rolled up under, not anything in its
     // body, so a roll-up the migration moved into the home household reads as the home's.
-    public async Task<IReadOnlyList<T>> GetEventsAsync<T>(string family, DateOnly from, DateOnly to, string? household = null)
+    public async Task<IReadOnlyList<T>> GetEventsAsync<T>(string family, MetricDateRange range, string? household = null)
         where T : MetricEvent
     {
         var db = redis.GetDatabase();
@@ -110,9 +76,14 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
 
         foreach (var scope in await ScopesAsync(db, household))
         {
-            foreach (var date in EnumerateDates(from, to))
+            foreach (var date in range.Dates)
             {
-                var entries = await db.SortedSetRangeByScoreAsync(MetricKeys.Daily(family, scope, date));
+                // A member's score is its timestamp, so the window's edge days are cut in Redis.
+                var entries = await db.SortedSetRangeByScoreAsync(
+                    MetricKeys.Daily(family, scope, date),
+                    range.From.ToUnixTimeMilliseconds(),
+                    range.To.ToUnixTimeMilliseconds(),
+                    Exclude.Stop);
                 results.AddRange(entries
                     .Select(e => JsonSerializer.Deserialize<MetricEvent>(e.ToString(), _jsonOptions))
                     .OfType<T>()
@@ -161,28 +132,28 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     public async Task<IReadOnlyList<string>> GetHouseholdsAsync() =>
         await ScopesAsync(redis.GetDatabase(), null);
 
-    public async Task<LemonadeUsage> GetLemonadeUsageAsync(DateOnly from, DateOnly to, string? household = null) =>
-        Lemonade((await TotalsAsync(from, to, household)).SelectMany(t => t.Entries));
+    public async Task<LemonadeUsage> GetLemonadeUsageAsync(MetricDateRange range, string? household = null) =>
+        Lemonade((await TotalsAsync(range, household)).SelectMany(t => t.Entries));
 
     // Who uses what: every scope's use over the range, keyed by its household id or
     // MetricKeys.Deployment.
-    public async Task<Dictionary<string, LemonadeUsage>> GetLemonadeByHouseholdAsync(DateOnly from, DateOnly to) =>
-        (await TotalsAsync(from, to, null))
+    public async Task<Dictionary<string, LemonadeUsage>> GetLemonadeByHouseholdAsync(MetricDateRange range) =>
+        (await TotalsAsync(range, null))
             .GroupBy(t => t.Scope)
             .ToDictionary(g => g.Key, g => Lemonade(g.SelectMany(t => t.Entries)));
 
     // One household's tokens and cost per agent (labelled as the dashboard labels them) and per
     // person (by account, under the latest name their turns carried), costliest first, beside its
     // Lemonade use: what its owner reads in the admin area.
-    public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, DateOnly from, DateOnly to)
+    public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, MetricDateRange range)
     {
-        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
+        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, range, household);
         var agent = AgentLabels(events, "unknown");
         var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return new HouseholdUsage(
             Lines(events, e => (agent(e), null)),
             Lines(events, e => (person(e), e.UserId)),
-            await GetLemonadeUsageAsync(from, to, household));
+            await GetLemonadeUsageAsync(range, household));
     }
 
     private static IReadOnlyList<UsageLine> Lines(
@@ -196,9 +167,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             .ToList();
 
     public async Task<Dictionary<string, long>> GetTokenBreakdownAsync(
-        string prefix, DateOnly from, DateOnly to, string? household = null)
+        string prefix, MetricDateRange range, string? household = null)
     {
-        return (await TotalsAsync(from, to, household))
+        return (await TotalsAsync(range, household))
             .SelectMany(t => t.Entries)
             .Where(e => e.Name.ToString().StartsWith(prefix))
             .GroupBy(e => e.Name.ToString()[prefix.Length..])
@@ -217,13 +188,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     private async Task<IReadOnlyList<(string Scope, HashEntry[] Entries)>> TotalsAsync(
-        DateOnly from, DateOnly to, string? household)
+        MetricDateRange range, string? household)
     {
         var db = redis.GetDatabase();
         var totals = new List<(string, HashEntry[])>();
         foreach (var scope in await ScopesAsync(db, household))
         {
-            foreach (var date in EnumerateDates(from, to))
+            foreach (var date in range.Dates)
             {
                 totals.Add((scope, await db.HashGetAllAsync(MetricKeys.Daily(MetricKeys.Totals, scope, date))));
             }
@@ -243,22 +214,22 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 .ToList();
 
     public async Task<Dictionary<string, decimal>> GetTokenGroupedAsync(
-        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to, string? household = null)
+        TokenDimension dimension, TokenMetric metric, MetricDateRange range, string? household = null)
     {
         return metric switch
         {
             TokenMetric.Tokens or TokenMetric.Cost
-                => await GroupTokenUsageAsync(dimension, metric, from, to, household),
+                => await GroupTokenUsageAsync(dimension, metric, range, household),
             TokenMetric.TruncationCount or TokenMetric.MessagesDropped or TokenMetric.TokensTrimmed
-                => await GroupTruncationsAsync(dimension, metric, from, to, household),
+                => await GroupTruncationsAsync(dimension, metric, range, household),
             _ => throw new ArgumentOutOfRangeException(nameof(metric))
         };
     }
 
     private async Task<Dictionary<string, decimal>> GroupTokenUsageAsync(
-        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to, string? household = null)
+        TokenDimension dimension, TokenMetric metric, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
+        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, range, household);
         var agent = AgentLabels(events, "unknown");
         var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return events
@@ -280,9 +251,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     private async Task<Dictionary<string, decimal>> GroupTruncationsAsync(
-        TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to, string? household = null)
+        TokenDimension dimension, TokenMetric metric, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<ContextTruncationEvent>(MetricKeys.Truncations, from, to, household);
+        var events = await GetEventsAsync<ContextTruncationEvent>(MetricKeys.Truncations, range, household);
         var agent = AgentLabels(events, "unknown");
         var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return events
@@ -305,9 +276,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<Dictionary<string, decimal>> GetToolGroupedAsync(
-        ToolDimension dimension, ToolMetric metric, DateOnly from, DateOnly to, string? household = null)
+        ToolDimension dimension, ToolMetric metric, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<ToolCallEvent>(MetricKeys.Tools, from, to, household);
+        var events = await GetEventsAsync<ToolCallEvent>(MetricKeys.Tools, range, household);
         return events
             .GroupBy(e => dimension switch
             {
@@ -329,9 +300,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<Dictionary<string, int>> GetErrorGroupedAsync(
-        ErrorDimension dimension, DateOnly from, DateOnly to, string? household = null)
+        ErrorDimension dimension, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<ErrorEvent>(MetricKeys.Errors, from, to, household);
+        var events = await GetEventsAsync<ErrorEvent>(MetricKeys.Errors, range, household);
         return events
             .GroupBy(e => dimension switch
             {
@@ -343,12 +314,12 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<Dictionary<string, decimal>> GetMemoryGroupedAsync(
-        MemoryDimension dimension, MemoryMetric metric, DateOnly from, DateOnly to, string? household = null)
+        MemoryDimension dimension, MemoryMetric metric, MetricDateRange range, string? household = null)
     {
-        var recalls = await GetEventsAsync<MemoryRecallEvent>(MetricKeys.MemoryRecall, from, to, household);
-        var extractions = await GetEventsAsync<MemoryExtractionEvent>(MetricKeys.MemoryExtraction, from, to, household);
-        var dreamings = await GetEventsAsync<MemoryDreamingEvent>(MetricKeys.MemoryDreaming, from, to, household);
-        var judgments = await GetEventsAsync<MemoryJudgmentEvent>(MetricKeys.MemoryJudgment, from, to, household);
+        var recalls = await GetEventsAsync<MemoryRecallEvent>(MetricKeys.MemoryRecall, range, household);
+        var extractions = await GetEventsAsync<MemoryExtractionEvent>(MetricKeys.MemoryExtraction, range, household);
+        var dreamings = await GetEventsAsync<MemoryDreamingEvent>(MetricKeys.MemoryDreaming, range, household);
+        var judgments = await GetEventsAsync<MemoryJudgmentEvent>(MetricKeys.MemoryJudgment, range, household);
 
         // The outcome is an extraction's, so under it the share is over extractions alone.
         var allEvents = dimension == MemoryDimension.Outcome
@@ -364,7 +335,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         // Memory's events name only the account; the person's model calls name them too, so the
         // breakdown is under the name the token figures show them by.
         var person = dimension == MemoryDimension.User
-            ? AccountNames(await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household))
+            ? AccountNames(await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, range, household))
             : _ => null;
         return allEvents
             .GroupBy(e => dimension switch
@@ -447,9 +418,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<Dictionary<string, decimal>> GetLatencyGroupedAsync(
-        LatencyDimension dimension, Aggregation aggregation, DateOnly from, DateOnly to, string? household = null)
+        LatencyDimension dimension, Aggregation aggregation, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<LatencyEvent>(MetricKeys.Latency, from, to, household);
+        var events = await GetEventsAsync<LatencyEvent>(MetricKeys.Latency, range, household);
         var agent = AgentLabels(events, "unknown");
         return events
             .GroupBy(e => dimension switch
@@ -465,10 +436,10 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<IReadOnlyList<LatencyTrendSeries>> GetLatencyTrendAsync(
-        Aggregation aggregation, DateOnly from, DateOnly to, string? household = null)
+        Aggregation aggregation, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<LatencyEvent>(MetricKeys.Latency, from, to, household);
-        var hourly = to.DayNumber - from.DayNumber <= 2;
+        var events = await GetEventsAsync<LatencyEvent>(MetricKeys.Latency, range, household);
+        var hourly = Hourly(range);
 
         return events
             .GroupBy(e => e.Stage)
@@ -496,12 +467,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     public async Task<Dictionary<string, decimal>> GetVoiceGroupedAsync(
         VoiceDimension dimension,
         VoiceMetric metric,
-        DateOnly from,
-        DateOnly to,
+        MetricDateRange range,
         Aggregation aggregation = Aggregation.Avg,
         string? household = null)
     {
-        var events = await GetEventsAsync<VoiceEvent>(MetricKeys.Voice, from, to, household);
+        var events = await GetEventsAsync<VoiceEvent>(MetricKeys.Voice, range, household);
         var scoped = events.Where(e => e.Metric == metric);
 
         Func<VoiceEvent, string?> selector = dimension switch
@@ -532,12 +502,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     public async Task<Dictionary<string, decimal>> GetSkillPreloadGroupedAsync(
         SkillPreloadDimension dimension,
         SkillPreloadMetric metric,
-        DateOnly from,
-        DateOnly to,
+        MetricDateRange range,
         Aggregation aggregation = Aggregation.Avg,
         string? household = null)
     {
-        var events = await GetEventsAsync<SkillPreloadEvent>(MetricKeys.Skills, from, to, household);
+        var events = await GetEventsAsync<SkillPreloadEvent>(MetricKeys.Skills, range, household);
 
         // By skill, an event counts once per skill it preloaded and not at all when it preloaded
         // none: the question that dimension answers is "which skills arrive early".
@@ -576,12 +545,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     public async Task<Dictionary<string, decimal>> GetModalDismissalGroupedAsync(
         ModalDismissalDimension dimension,
         ModalDismissalMetric metric,
-        DateOnly from,
-        DateOnly to,
+        MetricDateRange range,
         Aggregation aggregation = Aggregation.Avg,
         string? household = null)
     {
-        var events = await GetEventsAsync<ModalDismissalEvent>(MetricKeys.Modals, from, to, household);
+        var events = await GetEventsAsync<ModalDismissalEvent>(MetricKeys.Modals, range, household);
 
         return events
             .GroupBy(e => dimension switch
@@ -605,22 +573,22 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     // One series per outcome, a count per bucket: the miss rate over time, and beside it the share
     // each path closed. Filtered to one kind when the page asks for it.
     public async Task<IReadOnlyList<LatencyTrendSeries>> GetModalDismissalTrendAsync(
-        DateOnly from, DateOnly to, string? kind = null, string? household = null)
+        MetricDateRange range, string? kind = null, string? household = null)
     {
-        var events = await GetEventsAsync<ModalDismissalEvent>(MetricKeys.Modals, from, to, household);
+        var events = await GetEventsAsync<ModalDismissalEvent>(MetricKeys.Modals, range, household);
 
         return CountTrend(
             events.Where(e => kind is null || e.Kind == kind),
             e => e.Outcome,
-            to.DayNumber - from.DayNumber <= 2);
+            Hourly(range));
     }
 
     // One series per outcome, a count per bucket: what "the preload rate over time" is read off.
-    public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(DateOnly from, DateOnly to, string? household = null)
+    public async Task<IReadOnlyList<LatencyTrendSeries>> GetSkillPreloadTrendAsync(MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<SkillPreloadEvent>(MetricKeys.Skills, from, to, household);
+        var events = await GetEventsAsync<SkillPreloadEvent>(MetricKeys.Skills, range, household);
 
-        return CountTrend(events, e => e.Outcome, to.DayNumber - from.DayNumber <= 2);
+        return CountTrend(events, e => e.Outcome, Hourly(range));
     }
 
     // A count per bucket, zero-filled across every bucket any series has an event in. These are
@@ -650,9 +618,9 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     }
 
     public async Task<Dictionary<string, int>> GetScheduleGroupedAsync(
-        ScheduleDimension dimension, DateOnly from, DateOnly to, string? household = null)
+        ScheduleDimension dimension, MetricDateRange range, string? household = null)
     {
-        var events = await GetEventsAsync<ScheduleExecutionEvent>(MetricKeys.Schedules, from, to, household);
+        var events = await GetEventsAsync<ScheduleExecutionEvent>(MetricKeys.Schedules, range, household);
         return events
             .GroupBy(e => dimension switch
             {
@@ -708,11 +676,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         return e => e.AgentId is { } id ? labels[id] : unknown;
     }
 
-    private static IEnumerable<DateOnly> EnumerateDates(DateOnly from, DateOnly to)
-    {
-        for (var date = from; date <= to; date = date.AddDays(1))
-        {
-            yield return date;
-        }
-    }
+    // A day or less is drawn by the hour, which takes in the last twenty-four hours (the window
+    // reaches to the end of today, so it spans up to two days) and up to three whole days asked by date.
+    private static bool Hourly(MetricDateRange range) => range.Length <= TimeSpan.FromDays(3);
 }

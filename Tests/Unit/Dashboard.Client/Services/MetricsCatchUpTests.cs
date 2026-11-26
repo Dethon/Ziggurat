@@ -19,8 +19,7 @@ namespace Tests.Unit.Dashboard.Client.Services;
 
 public sealed class MetricsCatchUpTests : IDisposable
 {
-    private static readonly DateOnly _from = new(2026, 3, 1);
-    private static readonly DateOnly _to = new(2026, 3, 2);
+    private const int Days = 7;
 
     private readonly FakeApiHandler _handler = new();
     private readonly TokensStore _tokensStore = new();
@@ -43,16 +42,16 @@ public sealed class MetricsCatchUpTests : IDisposable
             api, _tokensStore, _toolsStore, _errorsStore, _schedulesStore,
             _memoryStore, _latencyStore, _voiceStore, new SkillsStore(), new WebStore());
         var overview = new OverviewFigures(api, _metricsStore, _healthStore);
-        overview.SetDateRange(_from, _to);
+        overview.SetDays(Days);
         _catchUp = new MetricsCatchUp(_families, overview);
 
-        _tokensStore.SetDateRange(_from, _to);
-        _toolsStore.SetDateRange(_from, _to);
-        _errorsStore.SetDateRange(_from, _to);
-        _schedulesStore.SetDateRange(_from, _to);
-        _memoryStore.SetDateRange(_from, _to);
-        _latencyStore.SetDateRange(_from, _to);
-        _voiceStore.SetDateRange(_from, _to);
+        _tokensStore.SetDays(Days);
+        _toolsStore.SetDays(Days);
+        _errorsStore.SetDays(Days);
+        _schedulesStore.SetDays(Days);
+        _memoryStore.SetDays(Days);
+        _latencyStore.SetDays(Days);
+        _voiceStore.SetDays(Days);
     }
 
     public void Dispose()
@@ -101,7 +100,7 @@ public sealed class MetricsCatchUpTests : IDisposable
     public async Task CatchUpAsync_AnyFamily_ReloadsItForTheRangeTheFamilyHolds(
         string _, string eventsRequest, string breakdownRequest)
     {
-        var range = "from=2026-03-01&to=2026-03-02";
+        var range = "days=7";
 
         await CatchUpAsync();
 
@@ -126,8 +125,7 @@ public sealed class MetricsCatchUpTests : IDisposable
         _voiceStore.State.Agg.ShouldBe(Aggregation.P95);
         _tokensStore.State.GroupBy.ShouldBe(TokenDimension.Model);
         _tokensStore.State.Metric.ShouldBe(TokenMetric.Cost);
-        _tokensStore.State.From.ShouldBe(_from);
-        _tokensStore.State.To.ShouldBe(_to);
+        _tokensStore.State.Days.ShouldBe(Days);
     }
 
     // The Overview KPI row and the Service Health grid go as stale as the charts during an outage,

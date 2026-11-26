@@ -4,21 +4,16 @@ using Dashboard.Client.Services;
 
 namespace Dashboard.Client.Metrics;
 
-// What every breakdown page used to write out for itself: read the saved choices, derive the date
-// range from the selected day count, persist a pill that moves and reload. It holds no markup, so a
+// What every breakdown page used to write out for itself: read the saved choices, persist a pill that
+// moves and reload over the window it picks. It holds no markup, so a
 // change to any of it is reachable without a browser.
 public sealed class MetricControlsSession(
     MetricFamily family,
     IReadOnlyList<MetricChoice> extraChoices,
     LocalStorageService storage,
-    TimeProvider time,
     DataLoadEffect dataLoad)
 {
     public int SelectedDays { get; private set; } = 1;
-
-    public DateOnly From { get; private set; }
-
-    public DateOnly To { get; private set; }
 
     // Every choice this session can save is a choice it restores, extras included. A choice that is
     // written and never read back is how the voice aggregation quietly reset to Avg on every visit.
@@ -35,8 +30,7 @@ public sealed class MetricControlsSession(
             SelectedDays = savedDays.Value;
         }
 
-        DeriveRange();
-        await dataLoad.LoadAsync(From, To, [family]);
+        await dataLoad.LoadAsync(SelectedDays, [family]);
     }
 
     public async Task ChangeAsync(MetricChoice choice, string value)
@@ -66,9 +60,8 @@ public sealed class MetricControlsSession(
     public async Task ChangeDaysAsync(string value)
     {
         SelectedDays = int.Parse(value, CultureInfo.InvariantCulture);
-        DeriveRange();
         await storage.SetAsync(KeyFor("days"), value);
-        await dataLoad.LoadAsync(From, To, [family]);
+        await dataLoad.LoadAsync(SelectedDays, [family]);
     }
 
     // The dimension is restored last because applying it is what coerces a disallowed metric.
@@ -101,10 +94,4 @@ public sealed class MetricControlsSession(
     }
 
     private string KeyFor(string key) => $"{family.PreferenceKeyPrefix}{key}";
-
-    private void DeriveRange()
-    {
-        To = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
-        From = To.AddDays(-(SelectedDays - 1));
-    }
 }

@@ -4,7 +4,7 @@ public class MetricFamily(
     string name,
     MetricChoice dimension,
     MetricChoice? metric,
-    Action<DateOnly, DateOnly> setDateRange,
+    Action<int> setDays,
     Func<Task<Action>> loadEvents,
     Func<Task> refreshBreakdown)
 {
@@ -23,12 +23,12 @@ public class MetricFamily(
     // because there is no quantity to pick.
     public MetricChoice? Metric { get; } = metric;
 
-    public void SetDateRange(DateOnly from, DateOnly to) => setDateRange(from, to);
+    public void SetDays(int days) => setDays(days);
 
     // Fetching the events and writing them to the store are two steps, and the second only happens
     // while this load is still the latest one. Two quick time-pill clicks start two loads over
-    // different ranges: the thirty-day responses are the slower ones and used to land after Today's,
-    // leaving thirty days of events under a Today header until the next load. Unlike a breakdown,
+    // different ranges: the thirty-day responses are the slower ones and used to land after the last
+    // day's, leaving thirty days of events under a 24h header until the next load. Unlike a breakdown,
     // which the refresh coalescer brings back into line on its own, nothing re-reads an event list.
     public async Task LoadEventsAsync()
     {
@@ -110,10 +110,10 @@ public sealed class MetricFamily<TStore>(
     string name,
     MetricChoice dimension,
     MetricChoice? metric,
-    Action<DateOnly, DateOnly> setDateRange,
+    Action<int> setDays,
     Func<Task<Action>> loadEvents,
     Func<Task> refreshBreakdown)
-    : MetricFamily(name, dimension, metric, setDateRange, loadEvents, refreshBreakdown)
+    : MetricFamily(name, dimension, metric, setDays, loadEvents, refreshBreakdown)
     where TStore : class
 {
     public TStore Store { get; } = store;

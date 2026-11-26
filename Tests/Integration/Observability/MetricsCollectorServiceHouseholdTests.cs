@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
+using Observability;
 using Observability.Hubs;
 using Observability.Services;
 using Shouldly;
@@ -35,10 +36,43 @@ public sealed class MetricsCollectorServiceHouseholdTests(RedisFixture fixture) 
         await collector.ProcessEventAsync(Tokens(_other, 30), fixture.Connection.GetDatabase());
         await collector.ProcessEventAsync(Tokens(null, 5), fixture.Connection.GetDatabase());
 
-        (await Query().GetSummaryAsync(_day, _day, _home)).InputTokens.ShouldBe(100);
-        (await Query().GetSummaryAsync(_day, _day, _other)).InputTokens.ShouldBe(30);
-        (await Query().GetSummaryAsync(_day, _day, MetricKeys.Deployment)).InputTokens.ShouldBe(5);
-        (await Query().GetSummaryAsync(_day, _day)).InputTokens.ShouldBeGreaterThanOrEqualTo(135);
+        (await Query().GetSummaryAsync(MetricDateRange.Spanning(_day, _day), _home)).InputTokens.ShouldBe(100);
+        (await Query().GetSummaryAsync(MetricDateRange.Spanning(_day, _day), _other)).InputTokens.ShouldBe(30);
+        (await Query().GetSummaryAsync(MetricDateRange.Spanning(_day, _day), MetricKeys.Deployment)).InputTokens.ShouldBe(5);
+        (await Query().GetSummaryAsync(MetricDateRange.Spanning(_day, _day))).InputTokens.ShouldBeGreaterThanOrEqualTo(135);
+    }
+
+    // The last day is the twenty-four hours before the read, reaching into yesterday's keys and
+    // stopping where the window starts.
+    [Fact]
+    public async Task ARollingWindow_ReadsBackOnlyWhatFellInsideIt()
+    {
+        var collector = Collector();
+        var db = fixture.Connection.GetDatabase();
+        await collector.ProcessEventAsync(Tokens(_home, 1, _at.AddHours(-25), cost: 1m), db);
+        await collector.ProcessEventAsync(Tokens(_home, 2, _at.AddHours(-23), cost: 0.00003m), db);
+        await collector.ProcessEventAsync(Tokens(_home, 4, _at.AddMinutes(-1), cost: 0.00009m), db);
+
+        var window = MetricDateRange.Last(1, _at);
+
+        (await Query().GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, window, _home))
+            .Select(e => e.InputTokens).ShouldBe([2, 4]);
+        var summary = await Query().GetSummaryAsync(window, _home);
+        summary.InputTokens.ShouldBe(6);
+        summary.Cost.ShouldBe(0.00012m);
+    }
+
+    // A thirty-day window starts part way through the day thirty days back, so that day's keys
+    // must still be there when the window last reads them.
+    [Fact]
+    public async Task ADaysKeys_OutliveTheLongestWindowTheDashboardReads()
+    {
+        await Collector().ProcessEventAsync(Tokens(_home, 1), fixture.Connection.GetDatabase());
+
+        var ttl = await fixture.Connection.GetDatabase().KeyTimeToLiveAsync(MetricKeys.Daily(MetricKeys.Tokens, _home, _day));
+
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeGreaterThan(TimeSpan.FromDays(30) + TimeSpan.FromHours(23));
     }
 
     [Fact]
@@ -48,7 +82,7 @@ public sealed class MetricsCollectorServiceHouseholdTests(RedisFixture fixture) 
         await collector.ProcessEventAsync(Tokens(_home, 7), fixture.Connection.GetDatabase());
         await collector.ProcessEventAsync(Tokens(_other, 9), fixture.Connection.GetDatabase());
 
-        var events = await Query().GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, _day, _day, _other);
+        var events = await Query().GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, MetricDateRange.Spanning(_day, _day), _other);
 
         events.ShouldHaveSingleItem().InputTokens.ShouldBe(9);
         events[0].TenantId.ShouldBe(_other);
@@ -94,17 +128,17 @@ public sealed class MetricsCollectorServiceHouseholdTests(RedisFixture fixture) 
         await collector.ProcessEventAsync(Lemonade(_home, LemonadeUse.Speech, 40), db);
         await collector.ProcessEventAsync(Lemonade(_other, LemonadeUse.Embedding, 3), db);
 
-        (await Query().GetLemonadeUsageAsync(_day, _day, _home)).ShouldBe(new LemonadeUsage(3.75, 40, 0));
-        (await Query().GetLemonadeUsageAsync(_day, _day, _other)).ShouldBe(new LemonadeUsage(0, 0, 3));
-        var byHousehold = await Query().GetLemonadeByHouseholdAsync(_day, _day);
+        (await Query().GetLemonadeUsageAsync(MetricDateRange.Spanning(_day, _day), _home)).ShouldBe(new LemonadeUsage(3.75, 40, 0));
+        (await Query().GetLemonadeUsageAsync(MetricDateRange.Spanning(_day, _day), _other)).ShouldBe(new LemonadeUsage(0, 0, 3));
+        var byHousehold = await Query().GetLemonadeByHouseholdAsync(MetricDateRange.Spanning(_day, _day));
         byHousehold[_home].ShouldBe(new LemonadeUsage(3.75, 40, 0));
         byHousehold[_other].ShouldBe(new LemonadeUsage(0, 0, 3));
     }
 
-    private static TokenUsageEvent Tokens(string? tenantId, int input) => new()
+    private static TokenUsageEvent Tokens(string? tenantId, int input, DateTimeOffset? at = null, decimal cost = 0m) => new()
     {
-        Sender = "fran", Model = "z-ai/glm-5", InputTokens = input, OutputTokens = 0, Cost = 0m,
-        TenantId = tenantId, Timestamp = _at
+        Sender = "fran", Model = "z-ai/glm-5", InputTokens = input, OutputTokens = 0, Cost = cost,
+        TenantId = tenantId, Timestamp = at ?? _at
     };
 
     private static HeartbeatEvent Heartbeat(string tenantId) =>

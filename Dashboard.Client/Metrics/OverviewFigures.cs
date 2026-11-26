@@ -12,10 +12,10 @@ public sealed class OverviewFigures(
     MetricsStore metricsStore,
     HealthStore healthStore)
 {
-    private (DateOnly From, DateOnly To)? _range;
+    private int? _days;
     private int _summaryGeneration;
 
-    public void SetDateRange(DateOnly from, DateOnly to) => _range = (from, to);
+    public void SetDays(int days) => _days = days;
 
     // The summary is per range and catch-up is never told one, so it re-reads over the range the
     // last page load set, exactly as the family walk reads its range from the families. Before any
@@ -28,13 +28,13 @@ public sealed class OverviewFigures(
     // flight cannot land on top of a catch-up's derivation either.
     public async Task LoadSummaryAsync()
     {
-        if (_range is not { } range)
+        if (_days is not { } days)
         {
             return;
         }
 
         var generation = Interlocked.Increment(ref _summaryGeneration);
-        var summary = await api.GetSummaryAsync(range.From, range.To);
+        var summary = await api.GetSummaryAsync(days);
         if (summary is null || Volatile.Read(ref _summaryGeneration) != generation)
         {
             return;

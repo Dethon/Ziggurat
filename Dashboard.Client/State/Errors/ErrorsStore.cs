@@ -7,7 +7,7 @@ public record SetErrorEvents(IReadOnlyList<ErrorEvent> Events) : IAction;
 public record SetErrorBreakdown(Dictionary<string, int> Breakdown) : IAction;
 public record SetErrorGroupBy(ErrorDimension GroupBy) : IAction;
 public record AppendErrorEvent(ErrorEvent Event) : IAction;
-public record SetErrorDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetErrorDays(int Days) : IAction;
 
 public sealed class ErrorsStore : Store<ErrorsState>
 {
@@ -28,6 +28,6 @@ public sealed class ErrorsStore : Store<ErrorsState>
             Events = EventWindow.Append(s.Events, a.Event),
         });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetErrorDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetErrorDays(days), static (s, a) => s with { Days = a.Days });
 }

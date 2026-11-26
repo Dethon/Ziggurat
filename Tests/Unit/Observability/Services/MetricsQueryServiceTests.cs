@@ -1,4 +1,7 @@
+using System.Text.Json;
+using Domain.DTOs.Metrics;
 using Moq;
+using Observability;
 using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
@@ -18,49 +21,63 @@ public class MetricsQueryServiceTests
         _sut = new MetricsQueryService(_redis.Object);
     }
 
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private void SetupSortedSet(string key, params MetricEvent[] events) =>
+        _db.Setup(d => d.SortedSetRangeByScoreAsync(key, It.IsAny<double>(), It.IsAny<double>(),
+                It.IsAny<Exclude>(), It.IsAny<Order>(), It.IsAny<long>(), It.IsAny<long>(),
+                It.IsAny<CommandFlags>()))
+            .ReturnsAsync(events.Select(e => new RedisValue(JsonSerializer.Serialize(e, _jsonOptions))).ToArray());
+
+    private static TokenUsageEvent Call(decimal cost, DateTimeOffset at, int input = 10, int output = 5) =>
+        new() { Sender = "ana", Model = "m", InputTokens = input, OutputTokens = output, Cost = cost, Timestamp = at };
+
+    private static ToolCallEvent Tool(bool success, DateTimeOffset at) =>
+        new() { ToolName = "search", DurationMs = 5, Success = success, Timestamp = at };
+
     [Fact]
     public async Task GetSummaryAsync_MultipleDays_SumsAcrossDays()
     {
-        var from = new DateOnly(2026, 3, 14);
-        var to = new DateOnly(2026, 3, 15);
+        var day1 = new DateTimeOffset(2026, 3, 14, 9, 0, 0, TimeSpan.Zero);
+        var day2 = day1.AddDays(1);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-14", Call(0.01m, day1, 100, 50));
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15", Call(0.02m, day2, 200, 100));
+        SetupSortedSet("metrics:tools:deployment:2026-03-14", Tool(true, day1), Tool(false, day1));
+        SetupSortedSet("metrics:tools:deployment:2026-03-15", Tool(true, day2));
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-14", It.IsAny<CommandFlags>()))
-            .ReturnsAsync([
-                new HashEntry("tokens:input", 100),
-                new HashEntry("tokens:output", 50),
-                new HashEntry("tokens:cost", 100),
-                new HashEntry("tools:count", 10),
-                new HashEntry("tools:errors", 1)
-            ]);
-
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
-            .ReturnsAsync([
-                new HashEntry("tokens:input", 200),
-                new HashEntry("tokens:output", 100),
-                new HashEntry("tokens:cost", 200),
-                new HashEntry("tools:count", 20),
-                new HashEntry("tools:errors", 2)
-            ]);
-
-        var result = await _sut.GetSummaryAsync(from, to);
+        var result = await _sut.GetSummaryAsync(
+            MetricDateRange.Spanning(new DateOnly(2026, 3, 14), new DateOnly(2026, 3, 15)));
 
         result.InputTokens.ShouldBe(300);
         result.OutputTokens.ShouldBe(150);
         result.TotalTokens.ShouldBe(450);
         result.Cost.ShouldBe(0.03m);
-        result.ToolCalls.ShouldBe(30);
-        result.ToolErrors.ShouldBe(3);
+        result.ToolCalls.ShouldBe(3);
+        result.ToolErrors.ShouldBe(1);
+    }
+
+    // The cost is the calls' own, to the last digit they carry. Most calls cost less than a
+    // hundredth of a cent, and the total kept as whole ten-thousandths of a dollar dropped that
+    // remainder from every one of them: about four percent of a day's spend, on the Overview only.
+    [Fact]
+    public async Task GetSummaryAsync_CallsCheaperThanATenThousandthOfADollar_AllCount()
+    {
+        var at = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
+            Call(0.00003m, at), Call(0.00009m, at), Call(0.1234567m, at));
+
+        var result = await _sut.GetSummaryAsync(MetricDateRange.Spanning(new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 15)));
+
+        result.Cost.ShouldBe(0.1235767m);
     }
 
     [Fact]
     public async Task GetSummaryAsync_NoData_ReturnsZeros()
     {
-        var date = new DateOnly(2026, 3, 15);
-
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
-            .ReturnsAsync([]);
-
-        var result = await _sut.GetSummaryAsync(date, date);
+        var result = await _sut.GetSummaryAsync(MetricDateRange.Spanning(new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 15)));
 
         result.InputTokens.ShouldBe(0);
         result.OutputTokens.ShouldBe(0);
@@ -71,52 +88,25 @@ public class MetricsQueryServiceTests
     }
 
     [Fact]
-    public async Task GetSummaryAsync_IgnoresUnrelatedHashFields()
+    public async Task GetSummaryAsync_WithMemoryEvents_ReturnsMemoryTotals()
     {
-        var date = new DateOnly(2026, 3, 15);
+        var at = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:memory-recall:deployment:2026-03-15",
+            new MemoryRecallEvent { DurationMs = 1, MemoryCount = 3, UserId = "ana", Timestamp = at },
+            new MemoryRecallEvent { DurationMs = 1, MemoryCount = 0, UserId = "ana", Timestamp = at });
+        SetupSortedSet("metrics:memory-extraction:deployment:2026-03-15",
+            new MemoryExtractionEvent { DurationMs = 1, CandidateCount = 5, StoredCount = 4, UserId = "ana", Timestamp = at });
+        SetupSortedSet("metrics:memory-dreaming:deployment:2026-03-15",
+            new MemoryDreamingEvent { MergedCount = 7, DecayedCount = 2, ProfileRegenerated = false, UserId = "ana", Timestamp = at },
+            new MemoryDreamingEvent { MergedCount = 1, DecayedCount = 2, ProfileRegenerated = false, UserId = "bo", Timestamp = at });
 
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
-            .ReturnsAsync([
-                new HashEntry("tokens:input", 100),
-                new HashEntry("tokens:byUser:alice", 100),
-                new HashEntry("tokens:byModel:gpt-4", 100),
-                new HashEntry("tools:byName:search", 5)
-            ]);
+        var result = await _sut.GetSummaryAsync(MetricDateRange.Spanning(new DateOnly(2026, 3, 15), new DateOnly(2026, 3, 15)));
 
-        var result = await _sut.GetSummaryAsync(date, date);
-
-        result.InputTokens.ShouldBe(100);
-        result.OutputTokens.ShouldBe(0);
-        result.ToolCalls.ShouldBe(0);
-    }
-
-    [Fact]
-    public async Task GetSummaryAsync_WithMemoryFields_ReturnsMemoryTotals()
-    {
-        var date = new DateOnly(2026, 3, 15);
-        _db.Setup(d => d.HashGetAllAsync("metrics:totals:deployment:2026-03-15", It.IsAny<CommandFlags>()))
-            .ReturnsAsync(
-            [
-                new HashEntry("tokens:input", 100),
-                new HashEntry("tokens:output", 50),
-                new HashEntry("tokens:cost", 10000),
-                new HashEntry("tools:count", 10),
-                new HashEntry("tools:errors", 2),
-                new HashEntry("memory:recalls", 25),
-                new HashEntry("memory:extractions", 15),
-                new HashEntry("memory:dreamings", 3),
-                new HashEntry("memory:stored", 42),
-                new HashEntry("memory:merged", 7),
-                new HashEntry("memory:decayed", 4),
-            ]);
-
-        var result = await _sut.GetSummaryAsync(date, date);
-
-        result.TotalRecalls.ShouldBe(25);
-        result.TotalExtractions.ShouldBe(15);
-        result.TotalDreamings.ShouldBe(3);
-        result.MemoriesStored.ShouldBe(42);
-        result.MemoriesMerged.ShouldBe(7);
+        result.TotalRecalls.ShouldBe(2);
+        result.TotalExtractions.ShouldBe(1);
+        result.TotalDreamings.ShouldBe(2);
+        result.MemoriesStored.ShouldBe(4);
+        result.MemoriesMerged.ShouldBe(8);
         result.MemoriesDecayed.ShouldBe(4);
     }
 

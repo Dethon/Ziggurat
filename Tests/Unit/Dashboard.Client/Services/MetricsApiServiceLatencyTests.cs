@@ -27,15 +27,12 @@ public class MetricsApiServiceLatencyTests
         var handler = new CapturingHandler();
         var http = new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") };
         var api = new MetricsApiService(http);
-        var from = new DateOnly(2026, 3, 1);
-        var to = new DateOnly(2026, 3, 2);
-
-        await api.GetLatencyAsync(from, to);
-        handler.LastUri.ShouldContain("api/metrics/latency?from=2026-03-01&to=2026-03-02");
+        await api.GetLatencyAsync(7);
+        handler.LastUri.ShouldContain("api/metrics/latency?days=7");
 
         // latency/by is a grouped breakdown like every other family's, asserted in
         // MetricsApiServiceGroupedTests. The trend is latency's alone.
-        await api.GetLatencyTrendAsync(Aggregation.P95, from, to);
+        await api.GetLatencyTrendAsync(Aggregation.P95, 7);
         handler.LastUri.ShouldContain("api/metrics/latency/trend?metric=P95");
     }
 }
