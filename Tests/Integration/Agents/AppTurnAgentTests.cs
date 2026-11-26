@@ -183,7 +183,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         var (apps, _) = await RunAsync(
             Jonas() with { McpServerEndpoints = [_server.Endpoint, _kit.Endpoint, "vault"] },
             Chat(),
-            Ask("Both servers", [Kit, Sugary, "not-the-agents"], "ask-a"),
+            Ask("Both servers", [Kit, Sugary, "vault", "not-the-agents"], "ask-a"),
             Ask("The kit alone", [Kit], "ask-b"),
             Ask("Nothing at all", [], "ask-c"));
 
@@ -207,8 +207,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         bothPrompt.ShouldNotContain("You are Jonas");
         bothPrompt.ShouldNotContain("## Memory System");
         bothPrompt.ShouldNotContain("## Subagent Delegation");
-        // Only the declared household server would be named offline: vault was not declared.
-        both.Body.ToJsonString().ShouldNotContain("Offline household servers");
+        // A declared household server that is offline is named so, as on any turn.
+        both.Body.ToJsonString().ShouldContain("Offline household servers: vault.");
 
         var kit = RequestFor("The kit alone");
         kit.ToolNames.ShouldContain($"mcp__{Kit}__whoami");
@@ -218,6 +218,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         kitPrompt.ShouldContain("`/machine`");
         kitPrompt.ShouldNotContain("`/sugary`");
         kitPrompt.ShouldNotContain("<skill>");
+        kit.Body.ToJsonString().ShouldNotContain("Offline household servers");
 
         var none = RequestFor("Nothing at all");
         (none.Body["tools"] as JsonArray ?? []).ShouldBeEmpty($"tools went out: {none.Body["tools"]?.ToJsonString()}");
@@ -249,6 +250,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
             Ask("Run it on my laptop", [Kit], "ask-c"));
 
         _kitCalls.Ran.ShouldBeEmpty();
+        // Each scripted call was offered and made: a call to a tool the ask lacked would end it in an error.
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
         apps.AskedApprovals.ShouldBeEmpty();
         apps.OfferedApprovals.ShouldBeEmpty();
         apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
