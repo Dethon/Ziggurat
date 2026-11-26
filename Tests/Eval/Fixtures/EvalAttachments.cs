@@ -32,7 +32,8 @@ public sealed class EvalAttachments(EvalTurn turn) : IAttachmentSource
         }
     }
 
-    public async Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
+    public async Task<byte[]?> FetchAsync(
+        string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
     {
         if (channelId != _channel)
         {

@@ -931,7 +931,7 @@ public class SugaryEstimateApiTests
     // The agent's own IAttachmentSource over its own connection to this channel: what
     // AttachmentHydration asks when the turn goes to the model.
     private static Task<byte[]?> FetchAsync(McpChannelConnection agent, AttachmentReference reference) =>
-        new ChannelAttachmentSource([agent]).FetchAsync("sugary", reference.Id, CancellationToken.None);
+        new ChannelAttachmentSource([agent]).FetchAsync("sugary", null, reference.Id, null, CancellationToken.None);
 
     private static async Task<ChannelMessage> NextTurnAsync(McpChannelConnection agent)
     {

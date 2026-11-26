@@ -271,7 +271,8 @@ public sealed class OpenRouterChatClientVideoTests
 
     private sealed class IdBytesAttachmentSource : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct) =>
             Task.FromResult<byte[]?>(Encoding.UTF8.GetBytes(attachmentId));
     }
 }

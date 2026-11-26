@@ -20,7 +20,7 @@ public class ChannelAttachmentSourceTests
 
         foreach (var _ in Enumerable.Range(0, 8))
         {
-            (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None))
+            (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None))
                 .ShouldBe([1, 2, 3]);
         }
 
@@ -34,7 +34,7 @@ public class ChannelAttachmentSourceTests
         var source = new ChannelAttachmentSource([channel]);
 
         var fetches = Enumerable.Range(0, 5)
-            .Select(_ => source.FetchAsync("signalr", "7-42/abc", CancellationToken.None))
+            .Select(_ => source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None))
             .ToList();
         channel.Gate.SetResult();
         await Task.WhenAll(fetches);
@@ -50,9 +50,9 @@ public class ChannelAttachmentSourceTests
         var channel = new CountingChannel { Bytes = null };
         var source = new ChannelAttachmentSource([channel]);
 
-        (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None)).ShouldBeNull();
         channel.Bytes = [9];
-        (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None)).ShouldBe([9]);
+        (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None)).ShouldBe([9]);
 
         channel.Fetches.ShouldBe(2);
     }
@@ -62,7 +62,7 @@ public class ChannelAttachmentSourceTests
     {
         var source = new ChannelAttachmentSource([new CountingChannel()]);
 
-        (await source.FetchAsync("telegram", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("telegram", null, "7-42/abc", null, CancellationToken.None)).ShouldBeNull();
     }
 
     // Two households' servers of one name each keep their own files: a reference is asked of the

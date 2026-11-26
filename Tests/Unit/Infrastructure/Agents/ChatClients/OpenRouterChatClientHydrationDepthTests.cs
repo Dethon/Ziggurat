@@ -233,13 +233,15 @@ public class OpenRouterChatClientHydrationDepthTests
 
     private sealed class StubAttachmentSource : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
             => Task.FromResult<byte[]?>([1, 2, 3, 4]);
     }
 
     private sealed class EmptyAttachmentSource : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
             => Task.FromResult<byte[]?>(null);
     }
 }

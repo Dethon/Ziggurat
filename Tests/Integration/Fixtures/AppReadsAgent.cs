@@ -206,6 +206,9 @@ public sealed class AgentHouseholds : IHouseholdConfiguration
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         throw new NotSupportedException();
 
+    public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         throw new NotSupportedException();
 

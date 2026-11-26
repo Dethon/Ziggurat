@@ -454,7 +454,8 @@ public class OpenRouterChatClientReadImageTests
 
     private sealed class StubAttachmentSource : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct) =>
             Task.FromResult<byte[]?>(_bytes);
     }
 

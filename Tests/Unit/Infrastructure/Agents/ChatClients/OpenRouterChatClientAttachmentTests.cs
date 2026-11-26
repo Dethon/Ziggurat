@@ -155,9 +155,6 @@ public class OpenRouterChatClientAttachmentTests
 
         public List<ConversationContext?> Turns { get; } = [];
 
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
-            FetchAsync(channelId, null, attachmentId, null, ct);
-
         public Task<byte[]?> FetchAsync(
             string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
         {
@@ -169,7 +166,8 @@ public class OpenRouterChatClientAttachmentTests
 
     private sealed class StubAttachmentSource(byte[] bytes) : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct)
             => Task.FromResult<byte[]?>(bytes);
     }
 }

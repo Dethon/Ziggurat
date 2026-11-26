@@ -29,8 +29,8 @@ public sealed class EvalAttachmentsTests : IDisposable
         var id = EvalAttachments.References(Turn).Single().Id;
 
         source.Served.ShouldBeEmpty();
-        (await source.FetchAsync("sugary", id, CancellationToken.None)).ShouldBe([9, 8, 7]);
-        (await source.FetchAsync("sugary", id, CancellationToken.None)).ShouldBe([9, 8, 7]);
+        (await source.FetchAsync("sugary", null, id, null, CancellationToken.None)).ShouldBe([9, 8, 7]);
+        (await source.FetchAsync("sugary", null, id, null, CancellationToken.None)).ShouldBe([9, 8, 7]);
 
         // Distinct: a turn that calls a tool sends the photo again with its second request.
         source.Served.ShouldBe([id]);
@@ -56,8 +56,8 @@ public sealed class EvalAttachmentsTests : IDisposable
         var source = new EvalAttachments(Turn);
         var id = EvalAttachments.References(Turn).Single().Id;
 
-        (await source.FetchAsync("sugary", "not-an-attachment", CancellationToken.None)).ShouldBeNull();
-        (await source.FetchAsync("signalr", id, CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("sugary", null, "not-an-attachment", null, CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("signalr", null, id, null, CancellationToken.None)).ShouldBeNull();
         source.Served.ShouldBeEmpty();
     }
 

@@ -25,9 +25,6 @@ public sealed class ChannelAttachmentSource(
     private readonly ConcurrentDictionary<string, Task<byte[]?>> _cache = new();
     private readonly ConcurrentQueue<string> _order = new();
 
-    public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
-        FetchAsync(channelId, null, attachmentId, null, ct);
-
     // Asked of the connection that took the file: a household's own server's for its household, the
     // deployment's otherwise — never another household's server of the same name. Signed as the turn
     // asking, so a file the channel keeps for a household reaches that household's turns alone.
