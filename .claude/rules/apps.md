@@ -197,7 +197,7 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   store (`AskUploads`, `<volume>/.uploads`, under a name no household id takes) **for the app's household**
   under the ask's conversation, named on the message's `Attachments` in the order sent; **taken back**
   (`UploadStore.Remove`) when nobody was listening; swept after the shared `attachmentRetention`. The agent
-  fetches them on this channel signed for the turn's person, so only the app's household is ever handed one;
+  fetches them on this channel signed for the turn's person, so only a turn of the ask's own conversation, in the app's household, is ever handed one;
   a follow-up sends none and its history hydrates the first ask's. Nothing checks the model can see images
   (the apps server reads no catalogue, and the agent does not check a third time): one that cannot is sent
   them anyway.

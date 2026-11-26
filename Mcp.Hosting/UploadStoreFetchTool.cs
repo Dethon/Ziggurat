@@ -9,7 +9,7 @@ namespace Mcp.Hosting;
 // The agent's way to the files a channel server's upload store holds, the same contract as WebChat's:
 // hidden from the model like every channel-protocol tool, because one store holds every
 // conversation's files (ADR-0021). A file stored for a household is handed over only on a call the
-// agent signed for that household.
+// agent signed for that household, for a turn of the conversation it was stored under.
 [McpServerToolType]
 public sealed class UploadStoreFetchTool
 {
@@ -22,7 +22,7 @@ public sealed class UploadStoreFetchTool
         CancellationToken cancellationToken)
     {
         var bytes = await services.GetRequiredService<UploadStore>()
-            .ReadBytesAsync(attachmentId, context.Household?.Id, cancellationToken);
+            .ReadBytesAsync(attachmentId, context.Household?.Id, context.Turn?.ConversationId, cancellationToken);
 
         // An empty answer rather than an error: a swept file is ordinary, and the agent turns it into
         // a placeholder naming the file.

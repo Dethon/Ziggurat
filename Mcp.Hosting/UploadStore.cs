@@ -24,9 +24,11 @@ public interface IUploadStoreSettings
 // or rendered.
 //
 // One store holds every household's files, so a file stored for a household is handed only to a read
-// naming it: the agent signs each fetch for the turn it hydrates, so that is the household asking now. A
-// file stored for none is handed to any read, as every file was before households were kept: Sugary's,
-// whose histories already name files stored that way.
+// naming it and the conversation it was stored under: the agent signs each fetch for the turn it
+// hydrates, so that is the household asking now, and the turn's conversation is the one whose history
+// names the file — another app's or member's conversation of the same household is not. A file stored
+// for none is handed to any read, as every file was before households were kept: Sugary's, whose
+// histories already name files stored that way.
 public sealed class UploadStore(
     IUploadStoreSettings settings, RetentionSettings retention, TimeProvider clock, ILogger<UploadStore> logger)
 {
@@ -80,17 +82,16 @@ public sealed class UploadStore(
         };
     }
 
-    public Task<byte[]?> ReadBytesAsync(string id, CancellationToken ct) => ReadBytesAsync(id, null, ct);
-
-    // Null for anything this store does not hand to this household: swept, never stored, another
-    // household's, or an id shaped to reach outside it. The caller cannot do anything different about
-    // any of them.
-    public async Task<byte[]?> ReadBytesAsync(string id, string? household, CancellationToken ct)
+    // Null for anything this store does not hand to this household and conversation: swept, never stored,
+    // another household's or conversation's, or an id shaped to reach outside it. The caller cannot do
+    // anything different about any of them.
+    public async Task<byte[]?> ReadBytesAsync(string id, string? household, string? conversationId, CancellationToken ct)
     {
         var directory = Resolve(id);
         if (directory is null
             || ReadMetadata(directory) is not { } metadata
-            || (metadata.Household is { } owner && owner != household))
+            || (metadata.Household is { } owner
+                && (owner != household || !IsStoredUnder(id, conversationId))))
         {
             return null;
         }
@@ -144,6 +145,12 @@ public sealed class UploadStore(
             .ForEach(conversation => TryDelete(conversation));
         return swept;
     }
+
+    // The id's first segment is the conversation's directory, spelled as StoreAsync spelled it.
+    private static bool IsStoredUnder(string id, string? conversationId) =>
+        conversationId is not null
+        && SafeSegment(AttachmentEndpointPaths.ConversationDirectory(conversationId)) is { } conversation
+        && id.StartsWith($"{conversation}/", StringComparison.Ordinal);
 
     private string? Resolve(string id)
     {

@@ -8,8 +8,8 @@ using Shouldly;
 namespace Tests.Unit.Mcp.Hosting;
 
 // A channel server's upload store holds every household's files in one place, so a file stored for
-// a household is handed only to a read naming that household (the apps server's). A server that keeps
-// its files for none (Sugary) has them read as they always were.
+// a household is handed only to a read naming that household and the conversation it was stored under
+// (the apps server's). A server that keeps its files for none (Sugary) has them read as they always were.
 public sealed class HouseholdUploadsTests : IDisposable
 {
     private sealed record Storage(string StoragePath) : IUploadStoreSettings;
@@ -36,7 +36,7 @@ public sealed class HouseholdUploadsTests : IDisposable
     {
         var stored = await _store.SaveForHouseholdAsync("household-a", "conversation", "photo.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
 
-        (await _store.ReadBytesAsync(stored.Id, "household-a", CancellationToken.None)).ShouldBe([1, 2, 3]);
+        (await _store.ReadBytesAsync(stored.Id, "household-a", "conversation", CancellationToken.None)).ShouldBe([1, 2, 3]);
     }
 
     [Fact]
@@ -44,9 +44,22 @@ public sealed class HouseholdUploadsTests : IDisposable
     {
         var stored = await _store.SaveForHouseholdAsync("household-a", "conversation", "photo.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
 
-        (await _store.ReadBytesAsync(stored.Id, "household-b", CancellationToken.None)).ShouldBeNull();
-        (await _store.ReadBytesAsync(stored.Id, null, CancellationToken.None)).ShouldBeNull();
-        (await _store.ReadBytesAsync(stored.Id, CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(stored.Id, "household-b", "conversation", CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(stored.Id, null, "conversation", CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(stored.Id, null, null, CancellationToken.None)).ShouldBeNull();
+    }
+
+    // The household alone is not enough: an app's images belong to the conversation its ask opened, so another
+    // conversation of the same household — another app's, or another member's — is never handed them, nor a
+    // read naming no conversation. The id is matched as the store spelled it, ':' included.
+    [Fact]
+    public async Task AFileStoredForAHousehold_IsNeverReadForAnotherConversationOfThatHousehold()
+    {
+        var stored = await _store.SaveForHouseholdAsync("household-a", "apps:ask-1", "photo.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
+
+        (await _store.ReadBytesAsync(stored.Id, "household-a", "apps:ask-1", CancellationToken.None)).ShouldBe([1, 2, 3]);
+        (await _store.ReadBytesAsync(stored.Id, "household-a", "apps:ask-2", CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(stored.Id, "household-a", null, CancellationToken.None)).ShouldBeNull();
     }
 
     [Fact]
@@ -54,8 +67,8 @@ public sealed class HouseholdUploadsTests : IDisposable
     {
         var stored = await _store.SaveAsync("conversation", "photo.jpg", "image/jpeg", [1, 2, 3], CancellationToken.None);
 
-        (await _store.ReadBytesAsync(stored.Id, CancellationToken.None)).ShouldBe([1, 2, 3]);
-        (await _store.ReadBytesAsync(stored.Id, "household-a", CancellationToken.None)).ShouldBe([1, 2, 3]);
+        (await _store.ReadBytesAsync(stored.Id, null, null, CancellationToken.None)).ShouldBe([1, 2, 3]);
+        (await _store.ReadBytesAsync(stored.Id, "household-a", "another", CancellationToken.None)).ShouldBe([1, 2, 3]);
     }
 
     // Histories on a running deployment name files stored before households were kept, so a file
@@ -86,7 +99,7 @@ public sealed class HouseholdUploadsTests : IDisposable
         clock.Advance(retention.AttachmentRetention + TimeSpan.FromDays(1));
 
         store.Sweep().ShouldBe(1);
-        (await store.ReadBytesAsync(stored.Id, "household-a", CancellationToken.None)).ShouldBeNull();
+        (await store.ReadBytesAsync(stored.Id, "household-a", "conversation", CancellationToken.None)).ShouldBeNull();
     }
 
     // A file whose message was never delivered is taken back at once, rather than kept for a retention
@@ -99,9 +112,9 @@ public sealed class HouseholdUploadsTests : IDisposable
 
         _store.Remove([taken]);
 
-        (await _store.ReadBytesAsync(taken.Id, "household-a", CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(taken.Id, "household-a", "conversation", CancellationToken.None)).ShouldBeNull();
         Directory.Exists(Path.Combine(_root, "conversation")).ShouldBeFalse();
-        (await _store.ReadBytesAsync(kept.Id, "household-a", CancellationToken.None)).ShouldBe([2]);
+        (await _store.ReadBytesAsync(kept.Id, "household-a", "other", CancellationToken.None)).ShouldBe([2]);
     }
 
     // Only a reference this store could have made is removed: one shaped to reach outside it removes nothing.
@@ -115,6 +128,6 @@ public sealed class HouseholdUploadsTests : IDisposable
 
         _store.Remove([new AttachmentReference { Id = id, FileName = "a.jpg", MediaType = "image/jpeg", SizeBytes = 1 }]);
 
-        (await _store.ReadBytesAsync(kept.Id, CancellationToken.None)).ShouldBe([1]);
+        (await _store.ReadBytesAsync(kept.Id, null, null, CancellationToken.None)).ShouldBe([1]);
     }
 }

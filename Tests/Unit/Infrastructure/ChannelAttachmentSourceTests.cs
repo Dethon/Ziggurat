@@ -98,8 +98,24 @@ public class ChannelAttachmentSourceTests
         channel.Turns.ShouldBe([ours, theirs]);
     }
 
-    private static ConversationContext TurnOf(string household) =>
-        new("jonas", "7:42", "user", new ReplyTarget("apps", "7:42"))
+    // A channel may keep a file for one conversation alone (an app's ask), so a turn of another conversation of
+    // the same household is asked of the channel too, never answered from the first one's fetch.
+    [Fact]
+    public async Task AFetch_IsNeverAnotherConversationsCacheHit()
+    {
+        var channel = new CountingChannel { ChannelId = "apps" };
+        var source = new ChannelAttachmentSource([channel]);
+        var ours = TurnOf("household-a");
+        var another = TurnOf("household-a", "7:43");
+
+        await source.FetchAsync("apps", null, "7-42/abc", ours, CancellationToken.None);
+        await source.FetchAsync("apps", null, "7-42/abc", another, CancellationToken.None);
+
+        channel.Turns.ShouldBe([ours, another]);
+    }
+
+    private static ConversationContext TurnOf(string household, string conversation = "7:42") =>
+        new("jonas", conversation, "user", new ReplyTarget("apps", conversation))
         {
             Identity = IdentityClaims.Person("user", household, "apps", [])
         };

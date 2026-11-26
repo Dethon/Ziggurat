@@ -40,9 +40,10 @@ public sealed class ChannelAttachmentSource(
             return Task.FromResult<byte[]?>(null);
         }
 
-        // Keyed by the household the fetch is signed for as well: a channel serving every household
-        // answers each for its own, so bytes handed to one household's turn are never another's hit.
-        var key = $"{channelId}/{householdId}/{turn?.Identity?.TenantId}/{attachmentId}";
+        // Keyed by the household the fetch is signed for and the turn's conversation as well: a channel
+        // serving every household answers each for its own, and may keep a file for one conversation
+        // (an app's ask), so bytes handed to one turn are never another household's or conversation's hit.
+        var key = $"{channelId}/{householdId}/{turn?.Identity?.TenantId}/{turn?.ConversationId}/{attachmentId}";
         if (_cache.TryGetValue(key, out var cached))
         {
             return cached;

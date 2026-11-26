@@ -810,8 +810,9 @@ public sealed class AppsAsksTests : IAsyncLifetime
 
     // An ask's images are kept on the apps server for the app's household and named on the message by
     // reference, each the type its bytes are, whatever the page called it. The agent fetches them on the apps
-    // channel, signed as it signs the turn's calls: anyone of the household is handed them, another
-    // household's turn or a call for nobody nothing.
+    // channel, signed as it signs the turn's calls: a turn of the ask's conversation, of anyone of the
+    // household, is handed them; a turn of another conversation of that household, another household's turn
+    // or a call for nobody nothing.
     [Fact]
     public async Task AnAsksImages_AreNamedOnTheMessage_AsTheirBytesAre_AndFetchedForTheAppsHouseholdAlone()
     {
@@ -830,6 +831,8 @@ public sealed class AppsAsksTests : IAsyncLifetime
         (await FetchAsync(images[0], turn, AppsServer.Her)).ShouldBe(plate);
         (await FetchAsync(images[1], turn, AppsServer.Him)).ShouldBe(side);
         (await FetchAsync(images[0], turn, AppsServer.Neighbour)).ShouldBeNull();
+        (await FetchAsync(_agent, images[0], turn with { ConversationId = $"{turn.ConversationId}-other" }, AppsServer.Her))
+            .ShouldBeNull();
         (await _agent.FetchAttachmentAsync(images[0].Id, null, CancellationToken.None)).ShouldBeNull();
         await ReplyAsync(turn, "Rice and an egg.");
         using var response = await answer;
