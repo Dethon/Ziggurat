@@ -494,11 +494,11 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
         """{"filePath":"/schedules/jonas/water/schedule.json","content":"{\"prompt\":\"Tell me to drink water\",\"cron\":\"0 8 * * *\"}"}""";
 
     // A model that keeps calling what cannot be asked would loop to the invocation limit within the ask's
-    // timeout, the exec screen asking Jev each time: the third refused call of an ask ends it, as a person's
-    // no ends theirs, and the model is not asked again. Two of the three are one site's as-person calls, the
-    // second refused by the first's answer rather than asked, and counted all the same.
+    // timeout, the exec screen asking Jev each time: the third round with a refused call ends an ask, as a
+    // person's no ends theirs, and the model is not asked again. Two of the three are one site's as-person
+    // calls, the second refused by the first's answer rather than asked, and counted all the same.
     [Fact]
-    public async Task AnAsksThirdRefusedCall_EndsIt_WithNoFurtherRequest()
+    public async Task AnAsksThirdRoundWithARefusedCall_EndsIt_WithNoFurtherRequest()
     {
         _model.Script(
             FakeOpenRouter.CallingToolNamed("browse", """{"url":"https://bank.example.com/account","asMe":true}"""),
@@ -514,6 +514,23 @@ public sealed class AppTurnAgentTests(RedisFixture redis) : IClassFixture<RedisF
             .ShouldBe(["ask-a"]);
         AnswerOf(apps, "ask-a").ShouldBeEmpty();
         apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+        apps.AskedApprovals.ShouldBeEmpty();
+    }
+
+    // Calls a model writes together are one round, however many of them are refused: the model reads every
+    // refusal and answers, where counting calls ended the ask before it read any (the page got no answer and
+    // was told to ask again, which would fail the same way).
+    [Fact]
+    public async Task ThreeRefusedCallsInOneRound_AreOneRound_AndTheAskAnswers()
+    {
+        _model.Script(
+            FakeOpenRouter.CallingToolsNamed(("unlock_door", "{}"), ("unlock_door", "{}"), ("unlock_door", "{}")),
+            _ => FakeOpenRouter.Saying(Answered));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Unlock every door", [KitName], "ask-a"));
+
+        _kitCalls.Ran.ShouldBeEmpty();
+        _model.Requests.Last().ToolOutputs.Count.ShouldBe(3);
+        AnswerOf(apps, "ask-a").ShouldBe(Answered);
         apps.AskedApprovals.ShouldBeEmpty();
     }
 

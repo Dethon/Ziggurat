@@ -30,8 +30,11 @@ public static partial class FakeModelReplies
         public string Id { get; } = $"call_{Guid.NewGuid():N}";
     }
 
-    // The reply as items in the order the model emits them: reasoning (when asked for), then text or
-    // one tool call.
+    // Several calls in one message, as a model writes calls it means to run together.
+    public sealed record ToolCalls(IReadOnlyList<ToolCall> Calls) : Output;
+
+    // The reply as items in the order the model emits them: reasoning (when asked for), then text, one
+    // tool call or several.
     // Its own ids, as a provider's are: the agent and the chat key a streamed message by its id, so two
     // replies in one conversation must never share one.
     public sealed record Reply(string? Reasoning, Output Output)

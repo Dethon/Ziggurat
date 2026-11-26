@@ -62,12 +62,14 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
     // A turn that asks nobody goes on past a refused call, so a model that keeps calling what cannot be asked
     // would loop to the invocation limit within the ask's timeout, the exec screen asking Jev each time.
-    // Three leaves room to try another way after a refusal or two; the third ends the turn.
-    private const int RefusedCallsPerUnaskedTurn = 3;
+    // Counted in rounds, not calls: calls written together are one attempt, and counting them ended an ask
+    // whose first message held three before the model read any refusal. Three rounds leave room to try
+    // another way after a refusal or two; the third ends the turn.
+    private const int RefusingRoundsPerUnaskedTurn = 3;
 
-    // The calls refused in a turn that asks nobody, found by the turn's history as the written order is,
-    // so the count is each turn's own; incremented by calls a message hands over at once.
-    private readonly ConditionalWeakTable<IList<ChatMessage>, StrongBox<int>> _refusedUnasked = new();
+    // The rounds of a turn that asks nobody in which a call was refused, found by the turn's history as the
+    // written order is, so the count is each turn's own; written by the calls of one message at once.
+    private readonly ConditionalWeakTable<IList<ChatMessage>, ConcurrentDictionary<int, byte>> _refusingRounds = new();
 
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
     // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
@@ -300,8 +302,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     }
 
     // A person who said no ends the turn on it. A turn that asks nobody goes on, the refusal its tool's
-    // result: nobody turned it down, and the app waits on an answer the model can still write — until its
-    // refusals reach the bound, which ends it as a person's no would.
+    // result: nobody turned it down, and the app waits on an answer the model can still write — until the
+    // rounds with a refusal reach the bound, which ends it as a person's no would.
     private object? Rejected(FunctionInvocationContext context, string toolName)
     {
         if (!AsksNobody(context.Options))
@@ -310,8 +312,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             return ApprovalRejection.ResultFor(toolName);
         }
 
-        var refused = _refusedUnasked.GetValue(context.Messages, _ => new StrongBox<int>());
-        context.Terminate = Interlocked.Increment(ref refused.Value) >= RefusedCallsPerUnaskedTurn;
+        var rounds = _refusingRounds.GetValue(context.Messages, _ => new ConcurrentDictionary<int, byte>());
+        rounds.TryAdd(context.Iteration, 0);
+        context.Terminate = rounds.Count >= RefusingRoundsPerUnaskedTurn;
         return ApprovalRejection.UnaskableResultFor(toolName);
     }
 

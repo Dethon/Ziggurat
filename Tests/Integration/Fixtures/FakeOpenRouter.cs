@@ -67,6 +67,15 @@ public sealed class FakeOpenRouter : IAsyncDisposable
         CallingTool(FakeModelReplies.ToolNamed(request, tool)
                     ?? throw new InvalidOperationException($"The request offered no tool named {tool}"), arguments);
 
+    // A reply calling several tools at once, each named as the request offered it.
+    public static Func<JsonObject, string> CallingToolsNamed(params (string Tool, string Arguments)[] calls) => request =>
+        FakeResponsesWire.Stream(new FakeModelReplies.Reply(null, new FakeModelReplies.ToolCalls(
+        [
+            .. calls.Select(call => new FakeModelReplies.ToolCall(
+                FakeModelReplies.ToolNamed(request, call.Tool)
+                ?? throw new InvalidOperationException($"The request offered no tool named {call.Tool}"), call.Arguments))
+        ])));
+
     public static string Saying(string text) =>
         FakeResponsesWire.Stream(new FakeModelReplies.Reply(null, new FakeModelReplies.Text([text], TimeSpan.Zero)));
 
