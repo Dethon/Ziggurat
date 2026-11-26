@@ -32,7 +32,11 @@ public sealed class McpChannelConnection(
     // gate asks one for: an approval is signed for the turn it guards, and the rest — the poll, a
     // reply, the catalog — for nobody, since the agent makes them for no person. Null signs nothing,
     // and a gated channel server refuses every call.
-    CallTokens? callTokens = null)
+    CallTokens? callTokens = null,
+    // How long one health probe may take before the link counts as down: the interval it runs at
+    // unless said otherwise. A test ticking every few milliseconds to see a change sooner gives the
+    // probe longer, or a busy machine answering one late reads as a dead link and reconnects.
+    TimeSpan? healthCheckTimeout = null)
     : IChannelConnection, IAlertChannel, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
@@ -931,7 +935,7 @@ public sealed class McpChannelConnection(
             // timeout (an approval waits on a person), so one that took the probe and never answered
             // would otherwise hold the run for good. Not answered by the next tick is not healthy.
             using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            probe.CancelAfter(healthCheckInterval ?? _defaultHealthCheckInterval);
+            probe.CancelAfter(healthCheckTimeout ?? healthCheckInterval ?? _defaultHealthCheckInterval);
             var tools = await client.ListToolsAsync(cancellationToken: probe.Token);
             if (ReferenceEquals(_client, client))
             {

@@ -27,6 +27,10 @@ public class McpChannelConnectionRunTests
     private static int _registerCalls;
     private static int _unhealthy;
 
+    // The runs tick every 50 ms to see a change soon, but a probe bounded by that tick fails whenever the
+    // machine is busy for longer, and the reconnect it causes is a registration no case here is about.
+    private static readonly TimeSpan _patientProbe = TimeSpan.FromSeconds(30);
+
     private static readonly IReadOnlyList<AgentCatalogEntry> _catalog =
         [new AgentCatalogEntry("jonas", "Jonas", "general")];
 
@@ -55,7 +59,7 @@ public class McpChannelConnectionRunTests
 
         await using var server = await StartServerAsync();
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
@@ -86,7 +90,7 @@ public class McpChannelConnectionRunTests
         var catalog = _catalog;
         await using var server = await StartServerAsync();
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var run = connection.RunAsync(server.Endpoint, () => catalog, cts.Token);
@@ -127,7 +131,7 @@ public class McpChannelConnectionRunTests
         };
         await using var server = await StartServerAsync();
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50))
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe)
         {
             HouseholdLemonadeModels = () => lemonade
         };
@@ -159,7 +163,7 @@ public class McpChannelConnectionRunTests
         var endpoint = $"http://localhost:{port}/mcp";
 
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var run = connection.RunAsync(endpoint, () => _catalog, cts.Token);
 
@@ -186,7 +190,7 @@ public class McpChannelConnectionRunTests
         var port = TestPort.GetAvailable();
         await using var server = await StartSessionExpiringServerAsync(port);
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var run = connection.RunAsync($"http://localhost:{port}/mcp", () => _catalog, cts.Token);
@@ -217,7 +221,7 @@ public class McpChannelConnectionRunTests
         var port = TestPort.GetAvailable();
         await using var server = await StartFlakyRegisterServerAsync(port);
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var run = connection.RunAsync($"http://localhost:{port}/mcp", () => _catalog, cts.Token);
@@ -243,7 +247,7 @@ public class McpChannelConnectionRunTests
 
         await using var server = await StartRefusingRegisterServerAsync();
         await using var connection = new McpChannelConnection(
-            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
@@ -297,6 +301,26 @@ public class McpChannelConnectionRunTests
         probeHeld.Release();
     }
 
+    // A probe given longer than its tick (_patientProbe) waits that long: answered after the tick, the link
+    // is still healthy, and nothing reconnects.
+    [Fact]
+    public async Task IsHealthyAsync_AProbeAnsweredAfterTheTickButWithinItsBound_IsHealthy()
+    {
+        using var probeArrived = new SemaphoreSlim(0);
+        using var probeHeld = new SemaphoreSlim(0);
+        await using var server = await StartGatedListToolsServerAsync(probeArrived, probeHeld, gateFrom: 1);
+        await using var connection = new McpChannelConnection(
+            "test", healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+
+        var health = connection.IsHealthyAsync(CancellationToken.None);
+        (await probeArrived.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeTrue();
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+        probeHeld.Release();
+
+        (await health.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task RunAsync_CancelledDuringTheHealthCheck_StopsWithoutCallingItAFailedCheck()
     {
@@ -310,7 +334,7 @@ public class McpChannelConnectionRunTests
         await using var connection = new McpChannelConnection(
             "test",
             logger: new LoggerFactory([logs]).CreateLogger<McpChannelConnection>(),
-            healthCheckInterval: TimeSpan.FromMilliseconds(50));
+            healthCheckInterval: TimeSpan.FromMilliseconds(50), healthCheckTimeout: _patientProbe);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var run = connection.RunAsync(server.Endpoint, () => _catalog, cts.Token);
