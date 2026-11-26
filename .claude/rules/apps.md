@@ -203,8 +203,8 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's
   instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
   a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
-  as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; a
-  shared app's are narrowed `Within` its approval for every viewer, its author too (an unapproved server is left
+  as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; on
+  a shared app, those `Within` its approval, for every viewer, its author too (an unapproved server is left
   out, never the ask refused). The page's schema is the message's
   `ResponseFormat` (strict, as written: ADR 0044), and the same manifest's **`model`** (a model id's shape
   alone, `vendor/name`) its `ConfigPatch.Model`; neither is sent when absent. Whether the agent may be

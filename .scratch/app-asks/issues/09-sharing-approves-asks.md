@@ -8,7 +8,7 @@ A publish that asks beyond the approval says what waits on an owner, as reads do
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] `AppReach` carries `asks`; `Within` and `Beyond` cover it.
 - [x] The section's approved reach saves and reads it back, with shape checks.
