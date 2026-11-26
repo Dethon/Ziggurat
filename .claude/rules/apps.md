@@ -176,89 +176,66 @@ An **app space** is a household space sharing a published app (`HouseholdSpace.A
 
 ## App asks
 
-Spec: `.scratch/app-asks/spec.md`; wire in `Domain/Apps/AppAsks`; the client library's `apps.ask` and
-`apps.AskError` (the envelope, as `ReadError`). **The apps server is also a channel** (dual-role,
-gate-on-live, `AddAgentTurns`): the agent dials it as the `apps` channel endpoint at the address it serves
-as `sharedServers.apps` (`AgentAppSettingsTests`), with no default agent. What the agent believes of an
-ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification.AppTurn`).
+Spec `.scratch/app-asks/spec.md`; wire `Domain/Apps/AppAsks`; the library's `apps.ask` and `apps.AskError`
+(the envelope, as `ReadError`). **The apps server is also a channel** (dual-role, gate-on-live,
+`AddAgentTurns`), dialled as the `apps` endpoint at `sharedServers.apps`'s address with no default agent
+(`AgentAppSettingsTests`). What the agent believes and does with an ask: `channels.md` (`AppTurn`).
 
-- **`POST /_ask` on the origin** (`AgentAsks`), `{ "text", "schema"?, "conversation"? }` parsed strictly (`AppAskRequest`: an
-  unknown field refuses it whole, `Asks:MaxTextLength`; `schema` is `{ name, schema }`, the name
-  `[A-Za-z0-9_-]{1,64}`, the schema a JSON object of at most `Asks:MaxSchemaBytes` as written, never
-  rewritten or checked for strict mode's rules): **settled exactly as a read** — from a page of that origin alone, the viewer
-  before the app, the one 404 before the body is looked at — and answered `no-store`.
-- **Images** (`apps.ask(text, { files })`): the ask becomes a `multipart/form-data` of exactly one `ask` field
-  (the same JSON) and a `files` part per image (`AppAsks.AskField`, `FilesField`); anything else in the form,
-  more than `Asks:MaxImages`, one over `Asks:MaxImageBytes` or empty, or one whose **bytes** are no type in
-  `Asks:ImageTypes` (`AppAskImages.Sniff`: JPEG, PNG, WebP, GIF; the page's declared type is never believed,
-  and the sniffed one is what the model is sent; the code's default takes none, the shipped file names the
-  four) is 400 `invalid_argument` **before any turn, before counting**. The request body is bounded to the
-  JSON plus the images' bounds. Kept only once the ask is counted and its conversation settled, in the upload
-  store (`AskUploads`, `<volume>/.uploads`, under a name no household id takes) **for the app's household**
-  under the ask's conversation, named on the message's `Attachments` in the order sent; **taken back**
-  (`UploadStore.Remove`) when nobody was listening; swept after the shared `attachmentRetention`. The agent
-  fetches them on this channel signed for the turn's person, so only a turn of the ask's own conversation, in the app's household, is ever handed one;
-  a follow-up sends none and its history hydrates the first ask's. Nothing checks the model can see images
-  (the apps server reads no catalogue, and the agent does not check a third time): one that cannot is sent
-  them anyway.
-- **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
-  (renewed first if due) — or, from a check's session, **its call token as `CheckCallToken` in the
-  assertion's place**, never both (Checks, below) — a label
-  principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's
-  instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
-  a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
-  as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; on
-  a shared app, those `Within` its approval, for every viewer, its author too (an unapproved server is left
-  out, never the ask refused). The page's schema is the message's
-  `ResponseFormat` (strict, as written: ADR 0044), and the same manifest's **`model`** (a model id's shape
-  alone, `vendor/name`) its `ConfigPatch.Model`; neither is sent when absent. Whether the agent may be
-  patched to that model is the agent's (`channels.md`): off its `patchableModels` the ask runs on its own. Sent by `AgentTurns` under its own
-  key, waited on for `Asks:Timeout` (a check's, no longer than its session has left); the page giving up or the wait running out cancels the turn **naming
-  the agent** (the agent groups by conversation and agent).
+- **`POST /_ask`** (`AgentAsks`): `{ text, schema?, conversation? }`, strict (`AppAskRequest`: an unknown
+  field refuses it whole; `Asks:MaxTextLength`; `schema` `{ name, schema }`, name `[A-Za-z0-9_-]{1,64}`,
+  schema a JSON object ≤ `Asks:MaxSchemaBytes`, sent as written, never checked for strict mode's rules).
+  **Settled exactly as a read** (origin's own page, viewer before app, the one 404 before the body); `no-store`.
+- **Images** (`apps.ask(text, { files })`): a `multipart/form-data` of exactly one `ask` field (the same
+  JSON) and a `files` part each (`AppAsks.AskField`, `FilesField`). Anything else in the form, more than
+  `Asks:MaxImages`, empty or over `Asks:MaxImageBytes`, or **bytes** of no type in `Asks:ImageTypes`
+  (`AppAskImages.Sniff`; the page's type is never believed, the sniffed one is sent; the code's default takes none) is 400
+  `invalid_argument` **before any turn or count**; the body is bounded to the JSON plus the images' bounds.
+  Kept only once counted and the conversation settled, in the upload store (`AskUploads`,
+  `<volume>/.uploads`) **for the app's household under the ask's conversation**, named on `Attachments` in
+  order; taken back (`UploadStore.Remove`) when nobody listened; swept after `attachmentRetention`. Handed
+  only to a fetch for a turn of that conversation in that household (`mcp-hosting.md`, `AddUploadStore`); a
+  follow-up sends none and its history hydrates the first ask's. Nothing checks the model sees images.
+- **The message**: `AgentId` from `app.meta.json`; the session's `apps` assertion (renewed if due) or, from a
+  check's session, its call token as `CheckCallToken`, never both; label principal `("apps", user id,
+  Account)`; `AppTurn` with the origin's own manifest's instructions and `asks` (servers **by configured
+  name**: a `sharedServers` key or a household server's own name, shape `TunnelCredentialProtocol.IsServerName`)
+  — the served commit's, the preview the tree's; on a shared app those `Within` its approval for every
+  viewer, an unapproved server left out, never the ask refused. The page's schema is `ResponseFormat`
+  (strict, ADR 0044), the manifest's `model` (`vendor/name` shape) `ConfigPatch.Model`; absent, neither is
+  sent; off the agent's `patchableModels` the ask runs on its own model. Sent by `AgentTurns` under its own
+  key, waited `Asks:Timeout` (a check's no longer than its session has left); the page leaving or the wait
+  ending cancels the turn **naming the agent** (the agent groups by conversation and agent).
 - **Conversations** (`AskConversations` over `OpenConversations`, keyed by app id and viewer `Account`,
-  carrying the building agent): an ask naming none opens one; one naming a `conversation` is a turn on it
-  **only if this app and viewer opened it, within `Asks:FollowUpWindow` of its last turn, and the app's
-  building agent is still the one it was opened on** (the agent keeps its history under conversation and
-  agent; a changed one holds none, so the app starts afresh). Anything else — never minted, another app's
-  or viewer's (published and preview are one app), past the window, after a restart (**in memory by
-  design**), evicted at the table's ceiling (`AskConversations.Ceiling`: the one longest without a turn
-  goes) — is one answer, 410 `conversation_expired`, **before any turn**, checked after the ask's every
-  other refusal, since continuing restarts the window. Each ask carries its own `schema`: a follow-up with none is answered in text.
-  The ceiling is deployment-wide, so one household's apps can push another's conversations out; the cap
-  bounds how fast (an ask past it opens none).
-- **The daily cap** (`AskCounts`, `AskCaps`): asks are counted **per app** — every viewer, published and
-  preview alike, sharing one count; another app or household's app its own — over a **rolling 24 hours**,
-  by the minute sent in (a minute stops counting a day after it began). An ask is counted **once nothing
-  else refuses it, before the conversation is looked at**, under a per-app lock (two asks never both take
-  the last slot), and **given back** if its conversation is refused or nobody was listening (never
-  delivered; a conversation it opened is forgotten too, `OpenConversations.Forget`): an ask past the cap
-  opens no conversation, and one never delivered keeps none. Counts live at `<app>/asks` (the minutes still
-  counting, JSON), durable across restarts, gone with the app, never listed, committed or counted toward
-  the quota. **The limit is `AskCaps.LimitAsync`'s alone**, read at each ask from the household's `app-asks`
-  view (`ICallHousehold.AppAsksAsync`, on the viewer's `apps` assertion; a check's on its call's own household, `call.Household`, carried on `ViewerProof.CheckCall`),
-  kept a minute or until a save is heard: the app's own cap, else the household's `dailyCap`, else
-  `Asks:DailyCap` (200) (`AppAsksSection.LimitOf`). **Never lifted**: refused is 422 `permission_denied` (`CapRefused`), anything else unreadable (an
-  outage, a timeout, an answer that does not parse) 503 `transient_dependency` (`AppAsks.CapUnreadable`), both
-  before counting or sending, never the deployment's value. Owners set the caps on `/admin/apps`
-  (`admin-owner-pages.md`, "Apps"). A check's asks count as anyone's.
-- **`instructions`** (`AppManifest`): a repository-relative `.md` path, shape judged on every way in. Its
-  file is read at publish (`./publish` refuses none, a link, empty, not UTF-8 or over
-  `AppAsks.MaxInstructionsBytes`) and again at each ask (the preview never published). The bound is a
-  constant, not a setting: 16,000 bytes keep the `app_instructions` section within its 4,000-token budget
-  (`AppAsksTests`).
-- **Answers**: 200 `{ conversation, text }` (the last message's text; the conversation opened or continued), or, asked with a schema,
-  `{ conversation, value }` (that text parsed as JSON whole, `AppAsks.ReadReply`; never both keys); else the
-  tools' envelope — 400 `invalid_argument` (body), 422 `invalid_reply` (a reply to a schema that is no JSON,
-  not retryable; **its words ride as `reply` on the preview alone**, `AppAsks.InvalidReply`, clipped, since
-  the published origin's viewers may be any member), 422 `permission_denied` (no instructions, a refusal:
-  `RefusalAnswers.CodeOf`'s sentence as the message, `unchecked` as `transient_dependency`), 422 `transient_dependency` for a failed
-  turn whose words are the agent's exception (logged; shown on the preview alone, below) or no answer (an ask ended on its refused
-  calls with no text is one), 410 `conversation_expired` (not retryable: ask without it), 429
-  `quota_exceeded` past the daily cap (not retryable; names the limit, and `freesAt` when an ask is next
-  counted, absent for a cap of none: `AppAsks.Capped`), 503 nobody polling, 504 `timeout`. **On the preview
-  alone** a failed turn's own words (the agent's exception, often a provider's body: a strict schema or a
-  model it refused) ride as `failure` (`AppAsks.Failed`, clipped as `reply`), so its author can fix it; the
-  published origin's viewers never read them, and the log keeps them either way.
+  carrying the building agent): none named opens one; a named one continues only if this app and viewer
+  opened it, within `Asks:FollowUpWindow` of its last turn, on the same building agent (the agent's history
+  is per conversation and agent). Anything else — unknown, another app's or viewer's (published and preview
+  are one app), expired, lost to a restart (**in memory by design**) or to the deployment-wide ceiling
+  (`AskConversations.Ceiling`, longest idle goes) — is 410 `conversation_expired` before any turn, checked
+  after every other refusal since continuing restarts the window. Each ask carries its own `schema` (a
+  follow-up without one is answered in text).
+- **The daily cap** (`AskCounts`, `AskCaps`): counted **per app** (every viewer, published and preview one
+  count) over a **rolling 24 hours** by the minute sent in, **once nothing else refuses, before the
+  conversation is looked at**, under a per-app lock; **given back** if the conversation is refused or
+  nobody listened (a conversation it opened forgotten, `OpenConversations.Forget`). Counts at `<app>/asks`,
+  durable, gone with the app, never listed, committed or counted toward the quota. **The limit is
+  `AskCaps.LimitAsync`'s alone**: the `app-asks` view (`ICallHousehold.AppAsksAsync`, on the viewer's
+  assertion; a check's on `call.Household`, carried on `ViewerProof.CheckCall`), kept a minute or until a
+  save is heard — the app's cap, else the household's `dailyCap`, else `Asks:DailyCap` (200)
+  (`AppAsksSection.LimitOf`). **Never lifted**: refused is 422 `permission_denied` (`CapRefused`), anything
+  else unreadable (an unparseable answer included) 503 `transient_dependency` (`CapUnreadable`), before
+  counting. Owners set caps on `/admin/apps` (`admin-owner-pages.md`, "Apps"). A check's asks count.
+- **`instructions`** (`AppManifest`): a repository-relative `.md` path, judged on every way in; the file is
+  read at publish (`./publish` refuses none, a link, empty, not UTF-8, over `AppAsks.MaxInstructionsBytes`)
+  and at each ask. The bound is a constant: 16,000 bytes keep `app_instructions` within its 4,000-token
+  budget (`AppAsksTests`).
+- **Answers**: 200 `{ conversation, text }` or, with a schema, `{ conversation, value }` (the text parsed
+  whole, `AppAsks.ReadReply`; never both). Else the envelope: 400 `invalid_argument`; 422 `invalid_reply`
+  (not retryable); 422 `permission_denied` (no instructions; a refusal, its `RefusalAnswers` sentence as the
+  message, `RefusalAnswers.Codes.Unchecked` as `transient_dependency`); 422 `transient_dependency` (a failed
+  turn, or none answered — an ask ended on refused calls); 410 `conversation_expired`; 429 `quota_exceeded`
+  (names the limit, `freesAt` unless the cap is none: `AppAsks.Capped`); 503 nobody polling; 504 `timeout`.
+  **On the preview alone**, since published viewers may be any member: an unparsed reply rides as `reply`
+  (`InvalidReply`), a failed turn's own words (often a provider's refusal) as `failure` (`Failed`), clipped.
 
 ## App sign-in
 

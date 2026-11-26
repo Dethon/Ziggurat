@@ -87,8 +87,8 @@ check, handed back by the apps server. It is believed on an app turn from the de
 channel endpoint alone (`AppTurns.Believed` drops it anywhere else) and only as `CheckCallVerifier`
 believes a check's reads — the agent's own key, in date, audience `TokenAudiences.CallTo(sharedServers.apps)`,
 naming a person; the guest, nobody or another server's token is refused, and **both together are
-refused** (`TurnAdmission.BothAnAssertionAndACheck`). The person it names acts on the `apps` channel
-(the identity's channel restamped), then standing, the `apps` feature and the building agent apply as
+refused** (`TurnAdmission.BothAnAssertionAndACheck`; `AppViewerCredential` is that rule for asks and reads
+alike). The person it names acts on the `apps` channel (`CheckCallVerifier` restamps it), then standing, the `apps` feature and the building agent apply as
 to any ask. Why: nobody is signed in to a check's preview, and the token is the agent's own word that
 this person's turn asked for it, good for the check's deadline (`ChatMonitor`'s optional
 `CheckCallVerifier`; none refuses every check's ask).
