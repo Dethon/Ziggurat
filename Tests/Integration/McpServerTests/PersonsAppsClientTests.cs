@@ -57,6 +57,26 @@ public class PersonsAppsClientTests
         (await ClientFor(accounts, DeadEnd.Url()).ListAsync(fran.UserId, session, [], CancellationToken.None)).ShouldBeNull();
     }
 
+    // A reset connection now and then surfaces from HttpClient as a bare SocketException, never wrapped in
+    // an HttpRequestException: it is as unreachable as any other, not an error the hub reports.
+    [Fact]
+    public async Task AnAppsServerWhoseConnectionFailsBare_IsNoApps()
+    {
+        await using var accounts = await StartAccountsAsync();
+        var (fran, session) = await SignedInAsync(accounts);
+        var client = new PersonsAppsClient(
+            new AccountsResolverClient(new HttpClient { BaseAddress = accounts.Address }, HubCredential),
+            new HttpClient(new FailsBare()), DeadEnd.Url(), TimeSpan.FromSeconds(3), NullLogger<PersonsAppsClient>.Instance);
+
+        (await client.ListAsync(fran.UserId, session, [], CancellationToken.None)).ShouldBeNull();
+    }
+
+    private sealed class FailsBare : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
+            throw new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset);
+    }
+
     // A deployment with no apps server lists nobody's apps, and asks the accounts service nothing for it.
     [Fact]
     public async Task NoAppsServer_IsNoApps_AskedOfNobody()

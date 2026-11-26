@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
@@ -179,7 +180,7 @@ public class ChatMonitor(
         {
             return which(await agentDefinitions.ForHouseholdAsync(householdId, ct));
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read the default agent of the household of {ConversationId}",

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -70,7 +71,7 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
         }
         // An outage is not a stranger: nobody is told to ask for an invite, and nothing is
         // remembered about them, so their next message is answered as it should have been.
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "The accounts service did not answer for Telegram chat {ChatId}", message.Chat.Id);
             await ReplyAsync(bot.Client, message, "I can't check who you are right now. Try again in a moment.", ct);

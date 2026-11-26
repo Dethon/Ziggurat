@@ -21,3 +21,7 @@ Formatting and mechanical style (file-scoped namespaces, `var`, braces) are owne
 
 - No XML documentation comments
 - Only comment to explain "why", never "what"
+
+## HTTP calls
+
+- A catch for "the other side could not be reached" names `HttpRequestException or SocketException or IOException`: HttpClient now and then throws a reset as a bare `SocketException`, never wrapped (`PersonsAppsClientTests.AnAppsServerWhoseConnectionFailsBare_IsNoApps`).

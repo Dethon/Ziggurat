@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
@@ -37,7 +38,7 @@ public sealed class ChatAgents(IChatAgentChoices choices, IHouseholdConfiguratio
         {
             agents = await households.AgentNamesAsync(household, HouseholdProof.OfAssertion(person.Assertion), ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException or TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException or TaskCanceledException
                                    && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read the agents of household {Household} for Telegram chat {ChatId}", household, chatId);

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -264,7 +265,7 @@ public class MemoryRecallHook(
         {
             return await agentDefinitionProvider.GetByIdAsync(agentId, account?.TenantId, account, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or IOException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read agent {AgentId}; recalling as for an unknown agent", agentId);
