@@ -196,7 +196,7 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   fetches them on this channel signed for the turn's person, so only the app's household is ever handed one;
   a follow-up sends none and its history hydrates the first ask's. Nothing checks the model can see images
   (the apps server reads no catalogue, and the agent does not check a third time): one that cannot is sent
-  them anyway, and its provider's refusal fails the ask (422 `transient_dependency`).
+  them anyway.
 - **The message**: `AgentId` the building agent from `app.meta.json`, the session's `apps` assertion
   (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
   principal `("apps", user id, Account)`, a conversation (below), and an `AppTurn` with the origin's own manifest's

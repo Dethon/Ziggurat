@@ -59,8 +59,14 @@ back from history.
 - **Deviation**: the spec says a reference is served for its "household and conversation"; it is served for
   the household only (the ticket's wording). Ids are unguessable GUIDs under the conversation's directory.
 - **Not checked**: whether the model can see images. The apps server reads no catalogue and the agent does
-  not check a third time, so an app on a model without vision sends them anyway and the provider's refusal
-  fails the ask (422 `transient_dependency`). 10/11 may want `./check` or the skill to say so.
+  not check a third time, so an app on a model without vision sends them anyway. What the page then gets is
+  unverified (likely the provider refusing the request, a failed turn, 422 `transient_dependency`); 10/11
+  may want `./check` or the skill to say so.
+- **Also**: images are accepted on a follow-up too (kept under the same conversation); a timed-out, failed or
+  aborted ask's images stay until the sweep; landing (into a declared sandbox) is signed for the turn but has
+  no test of its own; the uploads path is derived from `StoragePath`, so there is no storage setting and no
+  compose change. The binder appending to a non-empty default list was checked by a throwaway probe
+  (`["a","b"]` plus a configured `c` binds `a,b,c`).
 - **Tests**: `AppAsksTests` (sniffing whatever the name, limits naming why, none), `HouseholdUploadsTests`
   (remove, a reference shaped to reach outside removes nothing), `ChannelAttachmentSourceTests` (fetched for the
   turn asking, never another household's cache hit), `OpenRouterChatClientAttachmentTests` (every file, an
