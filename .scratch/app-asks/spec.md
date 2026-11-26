@@ -50,7 +50,7 @@ app space sees and approves which servers its asks may use, as they approve its 
 19. As the building agent, I want an ask from the preview to use the working tree's instructions and manifest, so that I can iterate without publishing.
 20. As a viewer of a published app, I want asks to use the published commit's instructions and manifest, so that an unpublished edit changes nothing I see.
 21. As a household owner, I want to see which servers a shared app's asks may use when I approve sharing it, so that a shared app cannot quietly operate the household's devices.
-22. As a household owner, I want asks to servers I have not approved refused, so that a publish that widens an app waits on me.
+22. As a household owner, I want servers I have not approved left out of a shared app's asks, so that a publish that widens an app waits on me.
 23. As a household owner, I want to set a default daily cap on asks for the household's apps, so that a runaway app can't spend the household's credit.
 24. As a household owner, I want to change the cap for one app, so that an app people use a lot isn't starved and a test app stays cheap.
 25. As a household owner, I want app asks to show in usage as the app channel, under the person who asked, so that I can see what apps cost.
@@ -82,10 +82,13 @@ answers `no-store`:
 
 - 200 with the conversation id and either the parsed JSON (schema asked) or the text.
 - A refusal in the tools' envelope shape, with codes the client library maps to `apps.AskError`.
-  The codes cover: the cap reached, permission denied (no instructions, an unapproved server, a
-  building agent the household no longer has, standing), an unknown or expired conversation, a
-  reply that did not parse against the schema (the raw text is kept for the author only), timeout,
-  and the agent unavailable.
+  The codes cover: the cap reached, permission denied (no instructions, a building agent the
+  household no longer has, standing), an unknown or expired conversation, a reply that did not parse
+  against the schema (the raw text is kept for the author only), timeout, and the agent unavailable.
+  An unapproved server is no refusal: it is left out of the ask (below). On the preview alone, which
+  only the author opens, a failed turn also carries `failure`, the agent's own words for it (often the
+  provider's reason: a strict schema or a model it would not take), so the author can fix it; the
+  published origin's viewers never read it.
 
 Limits on text length, file count, file size and image types are apps-server settings.
 
@@ -121,7 +124,8 @@ any patch does. The schema travels as the existing response format, strict.
   stable across its asks, so it caches as a prefix.
 - **Tools.** The turn's session is built from the building agent's servers intersected with the
   app turn's servers, so tools, mounts, prompts and skills come from those servers alone. The
-  agent's whitelist still applies.
+  agent's whitelist still applies. Outposts are never offered to an ask, whatever the agent's
+  `usesOutposts` says: a machine is somebody's own computer, reached for the person at it.
 - **Approvals.** Any call whose approval would be asked, by the whitelist, the exec screen, Jev or
   as-person browsing, is refused at once with the usual rejection result. It is not sent to the
   anchor and not offered on any channel.
