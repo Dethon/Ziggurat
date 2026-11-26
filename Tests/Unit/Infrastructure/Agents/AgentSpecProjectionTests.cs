@@ -177,6 +177,26 @@ public sealed class AgentSpecProjectionTests
             ]);
     }
 
+    // What a built app's ask declares each server by rides on its endpoint, named from the household's
+    // shared servers: a shared server's key, a household server's own name, nothing for any other address.
+    [Fact]
+    public void ForAgent_EachEndpoint_CarriesTheNameItIsConfiguredUnder()
+    {
+        var definition = _agentDefinition with
+        {
+            McpServerEndpoints = ["http://mcp-sugary:8080/mcp", "vault", "http://mcp-vault:8080/mcp"]
+        };
+        var household = HouseholdAgents.Fixed([definition]) with
+        {
+            SharedServers = new SharedServers { Sugary = "http://mcp-sugary:8080/mcp" }
+        };
+
+        AgentSpecProjection.ForAgent(
+                definition, new AgentKey("conv-1", "jack"), "fran", _openRouter, _patchable, lemonadeHostAddress: null,
+                _credentials, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null, household: household)
+            .McpServerEndpoints.Select(e => e.ConfiguredName).ShouldBe(["sugary", "vault", null]);
+    }
+
     // An agent that calls nothing is dialled for its servers' prompts alone; one that also enabled a
     // feature or opted into outposts would be configured for something it never does, so it is
     // refused where it was written rather than built quietly without either.

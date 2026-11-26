@@ -271,6 +271,17 @@ public class AgentAppSettingsTests
         shared.Apps.ShouldBe("http://mcp-apps:8080/mcp", "the apps feature withholds it by this address");
     }
 
+    // A built app's manifest declares a shared server by its key here (`asks`: `sugary`, `apps`, …), so each
+    // server's name is the key it is configured under, never its host and port.
+    [Fact]
+    public void ASharedServersName_IsItsKeyInTheSettings()
+    {
+        var shared = BoundConfig().GetSection("sharedServers").Get<SharedServers>()!;
+        var configured = Root()["sharedServers"]!.AsObject().ToList();
+
+        configured.Select(s => shared.NameOf(s.Value!.GetValue<string>())).ShouldBe(configured.Select(s => s.Key));
+    }
+
     // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled
     // for the estimating words it serves, and nothing reaches the model to call — not her log, not a
     // skill, not memory to recall an old meal into a new estimate, not a worker. A turn that read

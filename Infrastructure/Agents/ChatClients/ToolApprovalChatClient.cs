@@ -282,9 +282,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         }
     }
 
+    // A person who said no ends the turn on it. A turn that asks nobody goes on, the refusal its tool's
+    // result: nobody turned it down, and the app waits on an answer the model can still write.
     private static object? Rejected(FunctionInvocationContext context, string toolName)
     {
-        context.Terminate = true;
+        context.Terminate = !AsksNobody(context.Options);
         return ApprovalRejection.ResultFor(toolName);
     }
 

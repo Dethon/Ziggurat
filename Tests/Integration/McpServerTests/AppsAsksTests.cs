@@ -98,7 +98,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
     public async Task TheServersAnAskMayUse_AreItsOriginsOwnManifests()
     {
         await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
-            Manifest("asks/glucose.md", asks: """["vault","mcp-sugary-8080"]"""), overwrite: true);
+            Manifest("asks/glucose.md", asks: """["vault","sugary"]"""), overwrite: true);
         await _apps.ExecAsync(AppsServer.Her, "/glucose", "./publish");
         await _apps.CreateAsync(AppsServer.Her, "/glucose/app.json",
             Manifest("asks/glucose.md", asks: """["vault","homeassistant"]"""), overwrite: true);
@@ -106,7 +106,7 @@ public sealed class AppsAsksTests : IAsyncLifetime
         var published = await ServersAskedFromAsync(_apps.Published("glucose", _id));
         var preview = await ServersAskedFromAsync(_apps.Preview("glucose", _id));
 
-        published.ShouldBe(["vault", "mcp-sugary-8080"]);
+        published.ShouldBe(["vault", "sugary"]);
         preview.ShouldBe(["vault", "homeassistant"]);
     }
 

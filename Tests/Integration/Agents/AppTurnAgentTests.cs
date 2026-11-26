@@ -61,6 +61,11 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     private readonly List<MetricEvent> _published = [];
     private readonly MemoryExtractionQueue _extractions = new();
     private readonly Mock<IEmbeddingService> _embeddings = new();
+    private const string Answered = "Nothing was done: nobody here may approve that.";
+
+    // What the person answers a question on their own chat.
+    private ToolApprovalResult _personAnswers = ToolApprovalResult.Approved;
+
     private readonly ScriptedJudge _judge = new(_ => new JudgmentOutcome.Absent(AbsenceReason.Error));
 
     public async Task InitializeAsync()
@@ -181,10 +186,10 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     public async Task EachAsk_IsOfferedOnlyItsDeclaredServers_AndALaterAskWithFewerIsOfferedFewer()
     {
         var (apps, _) = await RunAsync(
-            Jonas() with { McpServerEndpoints = [_server.Endpoint, _kit.Endpoint, "vault"] },
+            Jonas() with { McpServerEndpoints = [_server.Endpoint, KitName, "vault"] },
             Chat(),
-            Ask("Both servers", [Kit, Sugary, "vault", "not-the-agents"], "ask-a"),
-            Ask("The kit alone", [Kit], "ask-b"),
+            Ask("Both servers", [KitName, "sugary", "vault", "not-the-agents"], "ask-a"),
+            Ask("The kit alone", [KitName], "ask-b"),
             Ask("Nothing at all", [], "ask-c"));
 
         var ordinary = RequestFor(ChatText);
@@ -235,19 +240,19 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     public async Task ACallThatWouldBeAsked_IsRefusedAtOnce_AndPutToNobody()
     {
         ScriptTheAskedCalls();
-        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [_kit.Endpoint] }, Chat());
+        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Chat());
 
         ownChat.AskedApprovals.SelectMany(a => a.Requests).Select(r => r.ToolName)
             .ShouldBe([$"mcp__{Kit}__unlock_door", $"mcp__{Kit}__browse", "domain__filesystem__exec"]);
         _kitCalls.Ran.ShouldBe(["unlock_door", "browse", "exec"]);
         _kitCalls.Clear();
 
-        ScriptTheAskedCalls();
+        ScriptTheAskedCalls(answeringEach: true);
         var (apps, chat) = await RunAsync(
-            Jonas() with { McpServerEndpoints = [_kit.Endpoint] },
-            Ask("Unlock the door", [Kit], "ask-a"),
-            Ask("Read my bank page", [Kit], "ask-b"),
-            Ask("Run it on my laptop", [Kit], "ask-c"));
+            Jonas() with { McpServerEndpoints = [KitName] },
+            Ask("Unlock the door", [KitName], "ask-a"),
+            Ask("Read my bank page", [KitName], "ask-b"),
+            Ask("Run it on my laptop", [KitName], "ask-c"));
 
         _kitCalls.Ran.ShouldBeEmpty();
         // Each scripted call was offered and made: a call to a tool the ask lacked would end it in an error.
@@ -257,9 +262,12 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         apps.NotifyAutoApprovedCalls.ShouldBeEmpty();
         chat.AskedApprovals.ShouldBeEmpty();
         chat.OfferedApprovals.ShouldBeEmpty();
-        // Each ask ended as a refused call ends a turn, and the exec screen was asked of the third.
+        // Each ask went on past its refused call to an answer, and the exec screen was asked of the third.
         apps.SentReplies.Where(r => r.ContentType == ReplyContentType.StreamComplete).Select(r => r.TurnKey)
             .ShouldBe(["ask-a", "ask-b", "ask-c"]);
+        AnswerOf(apps, "ask-a").ShouldBe(Answered);
+        AnswerOf(apps, "ask-b").ShouldBe(Answered);
+        AnswerOf(apps, "ask-c").ShouldBe(Answered);
         _judge.Asked.ShouldContain(r => r.Caller.ConversationId == "ask-1");
     }
 
@@ -269,7 +277,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
     public async Task ACallThatNeverAsks_Runs_ActingAsTheViewer()
     {
         _model.Script(FakeOpenRouter.CallingToolNamed("whoami", "{}"));
-        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [_kit.Endpoint] }, Ask("Who am I?", [Kit], "ask-a"));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Who am I?", [KitName], "ask-a"));
 
         _kitCalls.Ran.ShouldBe(["whoami"]);
         _kitCalls.Callers.ShouldBe([_viewer.UserId]);
@@ -278,16 +286,75 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         apps.AskedApprovals.ShouldBeEmpty();
     }
 
-    private void ScriptTheAskedCalls() =>
-        _model.Script(
+    // An app declares a server by the name it is configured under — a shared server by its `sharedServers`
+    // key, a household's own server by its own name — never by how its tools are qualified, which spells
+    // the deployment's hosts and ports and would break a published app when they move.
+    [Fact]
+    public async Task AnAsk_DeclaresServersByTheirConfiguredNames_NeverByTheNamesTheirToolsCarry()
+    {
+        var (apps, _) = await RunAsync(
+            Jonas() with { McpServerEndpoints = [_server.Endpoint, KitName] },
+            Ask("By their names", ["sugary", KitName], "ask-a"),
+            Ask("By what their tools carry", [Sugary, Kit], "ask-b"));
+
+        var named = RequestFor("By their names");
+        named.SystemPrompt.ShouldNotBeNull().ShouldContain("`/sugary`");
+        named.ToolNames.ShouldContain($"mcp__{Kit}__whoami");
+
+        var qualified = RequestFor("By what their tools carry");
+        (qualified.Body["tools"] as JsonArray ?? []).ShouldBeEmpty($"tools went out: {qualified.Body["tools"]?.ToJsonString()}");
+        qualified.SystemPrompt.ShouldNotBeNull().ShouldNotContain("`/sugary`");
+
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
+    // A refused call is the tool's result, and the ask goes on to its answer: the app waits on words, and
+    // the model may say it could not, or answer without it. A person who turns a call down in their own
+    // chat ends their turn there, as ever: the model is not asked again.
+    [Fact]
+    public async Task ARefusedCall_IsTheToolsResult_AndTheAskGoesOnToItsAnswer_WhereAPersonsNoEndsTheirTurn()
+    {
+        _personAnswers = ToolApprovalResult.Rejected;
+        _model.Script(FakeOpenRouter.CallingToolNamed("unlock_door", "{}"));
+        var (_, ownChat) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Chat());
+
+        ownChat.AskedApprovals.ShouldHaveSingleItem();
+        _model.Requests.Count(r => r.Body["input"]!.ToJsonString().Contains(ChatText, StringComparison.Ordinal))
+            .ShouldBe(1, "the model was asked again after the person said no");
+
+        _model.Script(FakeOpenRouter.CallingToolNamed("unlock_door", "{}"), _ => FakeOpenRouter.Saying(Answered));
+        var (apps, _) = await RunAsync(Jonas() with { McpServerEndpoints = [KitName] }, Ask("Unlock the door", [KitName], "ask-a"));
+
+        _kitCalls.Ran.ShouldBeEmpty();
+        _model.Requests.Last().ToolOutputs.ShouldHaveSingleItem()
+            .ShouldBe(ApprovalRejection.ResultFor($"mcp__{Kit}__unlock_door"));
+        AnswerOf(apps, "ask-a").ShouldBe(Answered);
+        apps.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
+    // The three calls, one after another in one turn; or, for three asks, each followed by the ask's answer.
+    private void ScriptTheAskedCalls(bool answeringEach = false)
+    {
+        Func<JsonObject, string>[] calls =
+        [
             FakeOpenRouter.CallingToolNamed("unlock_door", "{}"),
             FakeOpenRouter.CallingToolNamed("browse", """{"url":"https://bank.example.com/account","asMe":true}"""),
-            FakeOpenRouter.CallingToolNamed("exec", """{"path":"/machine","command":"ls"}"""));
+            FakeOpenRouter.CallingToolNamed("exec", """{"path":"/machine","command":"ls"}""")
+        ];
+        _model.Script(answeringEach ? [.. calls.SelectMany(c => new[] { c, _ => FakeOpenRouter.Saying(Answered) })] : calls);
+    }
 
-    // The names the agent's tools carry these servers under, which an app declares them by.
-    private string Kit => McpServerEndpoint.Configured(_kit.Endpoint).Qualifier!;
+    private static string AnswerOf(FakeChannelConnection apps, string turnKey) =>
+        string.Concat(apps.SentReplies.Where(r => r.TurnKey == turnKey && r.ContentType == ReplyContentType.Text).Select(r => r.Content));
 
-    private string Sugary => McpServerEndpoint.Configured(_server.Endpoint).Qualifier!;
+    // The kit is a household server of the household's own, which an app declares by its own name, as it
+    // declares a shared server by its `sharedServers` key.
+    private const string KitName = "kit";
+
+    // The name the agent's tools carry the kit under, which is its address's, not the name it is declared by.
+    private string Kit => McpServerEndpoint.Configured(_kit.Endpoint).Server!.Qualifier;
+
+    private string Sugary => McpServerEndpoint.Configured(_server.Endpoint).Server!.Qualifier;
 
     private FakeOpenRouter.Request RequestFor(string text) =>
         _model.Requests.Where(r => r.Path.Contains("responses", StringComparison.Ordinal))
@@ -339,7 +406,8 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         var apps = new FakeChannelConnection { ChannelId = AppChannels.Apps };
         var chat = new FakeChannelConnection
         {
-            ChannelId = ChannelIds.SignalR, HostsReviewCopies = true, ConversationIdToReturn = "topic-1"
+            ChannelId = ChannelIds.SignalR, HostsReviewCopies = true, ConversationIdToReturn = "topic-1",
+            ApprovalAnswer = _personAnswers
         };
         foreach (var message in messages)
         {
@@ -350,9 +418,9 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
         chat.Complete();
 
         var households = new AgentHouseholds();
-        households.Add(Household, [jonas], new FeaturesSection { Apps = true }, ownServers: ["vault"]);
+        households.Add(Household, [jonas], new FeaturesSection { Apps = true }, ownServers: ["vault", KitName]);
         var definitions = new AgentDefinitionProvider(
-            new HouseholdAgentSource(households, new SharedServers()), new CustomAgentRegistry());
+            new HouseholdAgentSource(households, new SharedServers { Sugary = _server.Endpoint }), new CustomAgentRegistry());
 
         var monitor = new ChatMonitor(
             [apps, chat],
@@ -392,7 +460,7 @@ public sealed class AppTurnAgentTests : IAsyncLifetime
             .AddSingleton(TimeProvider.System)
             .AddSingleton(Mock.Of<IThreadStateStore>())
             .AddSingleton(Mock.Of<IHouseholdKeyReports>())
-            .AddSingleton<IOwnServers>(new InProcessOwnServers(new Dictionary<string, string>()))
+            .AddSingleton<IOwnServers>(new InProcessOwnServers(new Dictionary<string, string> { [KitName] = _kit.Endpoint }))
             .AddSingleton(McpTestSecret.Credentials)
             .AddSingleton(McpTestSecret.CallTokens)
             // The real screen over the judge, which never answers here: a command headed for a person's own

@@ -45,10 +45,10 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
         private init;
     }
 
-    // The name its tools are qualified with (mcp__<name>__…), which a built app's ask declares the servers
-    // it may use by: a household's server is its own name whether or not its tunnel is resolved yet. Null
-    // for an address that is no URL.
-    public string? Qualifier => NamesOwnServer ? Address : Server?.Qualifier;
+    // The name a definition's endpoint is configured under (SharedServers.NameOf), which a built app's ask
+    // declares the servers it may use by; set where the definition is read (AgentSpecProjection). Null for
+    // an endpoint no ask can declare.
+    public string? ConfiguredName { get; init; }
 
     // A household's own server, named rather than addressed (Address is its name): which one, and how
     // it is reached, is asked when a session is built, of the turn's household (IOwnServers).

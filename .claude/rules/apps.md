@@ -184,8 +184,9 @@ ask and does with it is `.claude/rules/channels.md` (`ChannelMessageNotification
   (renewed first if due; a check's session has none and is refused, never sent unsigned), a label
   principal `("apps", user id, Account)`, a conversation minted through `AskConversations`
   (`OpenConversations` keyed by app and viewer), and an `AppTurn` with the origin's own manifest's
-  instructions and `asks` (the servers its tools may come from, by the names the agent's tools carry them
-  under; shape judged as `ServerAddress.IsQualifier`) — the served commit's, the preview the tree's; a
+  instructions and `asks` (the servers its tools may come from, **by the names they are configured under**:
+  a shared server's `sharedServers` key, a household server's own name, never a host and port; shape judged
+  as `TunnelCredentialProtocol.IsServerName`) — the served commit's, the preview the tree's; a
   shared app's asks are granted none, since an approval names none yet. Sent by `AgentTurns` under its own
   key, waited on for `Asks:Timeout`; the page giving up or the wait running out cancels the turn **naming
   the agent** (the agent groups by conversation and agent).

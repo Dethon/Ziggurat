@@ -41,34 +41,4 @@ public sealed class McpServerEndpointTests
         endpoint.Secret.ShouldBeNull();
         endpoint.Server.ShouldBeNull();
     }
-
-    // The name a built app's manifest declares a server by (`asks`) is the one its tools carry
-    // (mcp__<name>__…): a household's server by its own name, before and after its tunnel is resolved,
-    // and a URL's server by host and port. Every such name passes the manifest's shape check.
-    [Theory]
-    [InlineData("vault", "vault")]
-    [InlineData("http://mcp-sugary:8080/mcp", "mcp-sugary-8080")]
-    [InlineData("https://tools.example.org/mcp", "tools.example.org")]
-    [InlineData("http://127.0.0.1:5000/mcp", "127.0.0.1-5000")]
-    public void AnEndpointsName_IsWhatItsToolsAreQualifiedWith_AndAManifestMayDeclareIt(string address, string name)
-    {
-        var endpoint = McpServerEndpoint.Of(address, Credentials);
-
-        endpoint.Qualifier.ShouldBe(name);
-        ServerAddress.IsQualifier(name).ShouldBeTrue();
-    }
-
-    [Fact]
-    public void AResolvedHouseholdServer_KeepsTheNameItWasDeclaredBy()
-    {
-        var resolved = McpServerEndpoint.Relayed(ServerAddress.Tunnelled("fedcba9876543210", "vault"), new HttpClient());
-
-        resolved.Qualifier.ShouldBe(McpServerEndpoint.OwnServer("vault").Qualifier);
-    }
-
-    [Fact]
-    public void AnAddressThatIsNeither_HasNoName()
-    {
-        McpServerEndpoint.Of("not a url", Credentials).Qualifier.ShouldBeNull();
-    }
 }

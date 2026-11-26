@@ -69,18 +69,18 @@ internal sealed class SessionReach(
         return new ServerReach(own, OutpostEndpoints.Compose(own.Endpoints, outposts, usesOutposts, tenantId), narrowedTo);
     }
 
-    // The same agent's servers a built app's ask declared (`servers`, by the names their tools carry), in
-    // the definition's order: narrowed before anything is resolved, so an undeclared household server is not
+    // The same agent's servers a built app's ask declared (`servers`, by the names they are configured under,
+    // McpServerEndpoint.ConfiguredName), in the definition's order: narrowed before anything is resolved, so an undeclared household server is not
     // even looked up, and never joined by a machine, whose tunnel is somebody's own computer — an app reaches
     // the household's data, as its reads do. Null when the agent dials none of them.
     public SessionReach? NarrowedTo(IReadOnlyList<string> servers)
     {
         List<McpServerEndpoint> declared =
-            [.. endpoints.Where(e => e.Qualifier is { } name && servers.Contains(name, StringComparer.Ordinal))];
+            [.. endpoints.Where(e => e.ConfiguredName is { } name && servers.Contains(name, StringComparer.Ordinal))];
         return declared.Count == 0
             ? null
             : new SessionReach(declared, tenantId, withheldServers, household, ownServers, outposts: null, usesOutposts: false,
-                [.. declared.Select(e => e.Qualifier!)]);
+                [.. declared.Select(e => e.ConfiguredName!)]);
     }
 
     public static async Task<ThreadSession> BuildAsync(ServerReach reach, SessionShape shape, CancellationToken ct)

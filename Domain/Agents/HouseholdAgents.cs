@@ -47,6 +47,10 @@ public sealed record HouseholdAgents
 
     public FeaturesSection Features { get; init; } = new();
 
+    // The deployment's shared servers its agents were built against, which name each agent's servers as a
+    // built app's ask declares them (SharedServers.NameOf).
+    public SharedServers SharedServers { get; init; } = new();
+
     // The shared servers the household's features turned off: no agent of its, and no worker one
     // spawns, reaches them.
     public IReadOnlyList<string> WithheldServers { get; init; } = [];
@@ -98,6 +102,7 @@ public sealed record HouseholdAgents
             VoiceAgent = VoiceAgentOf(configuration.Agents),
             TimeZone = configuration.Settings.TimeZone,
             Features = configuration.Features,
+            SharedServers = shared,
             WithheldServers = withheld,
             Configuration = configuration,
             Problems =

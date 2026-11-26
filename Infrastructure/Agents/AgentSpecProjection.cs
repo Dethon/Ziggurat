@@ -53,7 +53,7 @@ internal static class AgentSpecProjection
             //
             // A household's own server is named rather than addressed, and presents no deployment
             // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
-            McpServerEndpoints = Endpoints(definition, credentials, deployment),
+            McpServerEndpoints = Endpoints(definition, credentials, deployment, household?.SharedServers ?? new SharedServers()),
             TenantId = tenantId,
             // Who pays was settled where the household was read: a household that cannot pay never
             // reaches here.
@@ -73,12 +73,13 @@ internal static class AgentSpecProjection
         };
 
     // A definition's endpoints as every session of it dials them: a turn's, and a registry read outside
-    // any conversation (AgentReadRegistries).
+    // any conversation (AgentReadRegistries); each named as a built app's ask declares it.
     public static IReadOnlyList<McpServerEndpoint> Endpoints(
-        AgentDefinition definition, McpCredentials credentials, DeploymentEndpoints deployment) =>
+        AgentDefinition definition, McpCredentials credentials, DeploymentEndpoints deployment, SharedServers shared) =>
     [
         .. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Of(
-            address, server => deployment.Names(server) ? credentials.For(server) : null))
+                address, server => deployment.Names(server) ? credentials.For(server) : null)
+            with { ConfiguredName = shared.NameOf(address) })
     ];
 
     // A conversation keeps the session it was built with: a window that turns mid-conversation

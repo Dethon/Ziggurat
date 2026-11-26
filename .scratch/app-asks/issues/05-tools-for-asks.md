@@ -51,3 +51,35 @@ screen, Jev, and as-person browsing.
   three; a never-asking call signed as the viewer), `AppsAsksTests` (published vs preview `asks`, a shared app
   granted none), `AppManifestTests`, `McpServerEndpointTests`.
 
+
+**Follow-up (2026-11-26): names and refused calls.** Supersedes the first two and the approvals bullets above
+where they differ.
+
+- **`asks` names a server by the name it is configured under**, never by its tools' qualifier, which spelled
+  the deployment's topology (`mcp-sugary-8080`) into every manifest and onto 09's approval page, and broke a
+  published app on a port change. A shared server is its `sharedServers` key (`scheduling`, `timers`,
+  `sugary`, `idealista`, `apps`), a household's own server its own name (`vault`, `homeassistant`, ...).
+  The map is `SharedServers.NameOf` (Domain; the keys sit in `SharedServers.Listed()`, the one table,
+  compared as `ServerAddress`es; `AgentAppSettingsTests` pins each key to its address). It is applied where
+  a definition is read (`AgentSpecProjection.Endpoints`, from `HouseholdAgents.SharedServers`, the instance
+  the household's definitions were filtered with) and rides on `McpServerEndpoint.ConfiguredName`, which
+  `SessionReach.NarrowedTo` matches. `McpServerEndpoint.Qualifier` and `ServerAddress.IsQualifier` are gone;
+  `AppManifest` shape-checks with `TunnelCredentialProtocol.IsServerName` (one DNS label), so a dotted host
+  is refused. Consequences: **a definition's URL endpoint that is no shared server cannot be declared at
+  all** (none ships; a seeded definition naming one would need it added to `sharedServers`), and **an own
+  server named as a shared key** (`sugary`, ...) **has no name**, so a name never picks two servers (fail
+  closed). Workers' endpoints carry no names (no app turn spawns one).
+- **A refused call no longer ends an ask.** It was by design, for every turn: `ToolApprovalChatClient.Rejected`
+  set `FunctionInvocationContext.Terminate`, so the loop never asked the model again, and an ask whose model
+  called an asked tool ended with no text (the origin's 422 "no answer"). Now it terminates only where somebody
+  was asked: under `AsksNobodyKey` the usual `ApprovalRejection` result is the tool's result and the model
+  goes on to its answer. A person's own no still ends their turn with no second request (pinned beside it).
+  Two things the fake cannot show: the usual result reads "rejected by user ... Waiting for new input", which
+  may steer a real model to stop with nothing (the empty-reply retry then asks once more); and a model that
+  keeps calling a refused tool now loops up to `MaximumIterationsPerRequest` (50) within `Asks:Timeout`, the
+  exec screen asking Jev each time. 10 should watch both in the check asks.
+- **Tests**: `SharedServersTests`, `AgentSpecProjectionTests.ForAgent_EachEndpoint_CarriesTheNameItIsConfiguredUnder`,
+  `AgentAppSettingsTests.ASharedServersName_IsItsKeyInTheSettings`, `AppManifestTests` (a dotted host refused),
+  `AppTurnAgentTests` (the kit is now an own server `kit`; `sugary` and `kit` offer their servers where their
+  tools' qualifiers offer nothing; a refused call is the tool's result and the ask answers, where a person's
+  no sends no second request; the three refused asks each answer).

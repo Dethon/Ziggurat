@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Domain.DTOs.Tunnel;
 
 namespace Domain.Security;
@@ -14,7 +13,7 @@ namespace Domain.Security;
 // Equal as servers, not as strings: a URL's scheme, host, port, path and user info, so two servers
 // on one host are two addresses, and one that carries credentials of its own is never the same
 // server as the one it reads like.
-public sealed partial record ServerAddress
+public sealed record ServerAddress
 {
     private ServerAddress(string name, string qualifier, string cacheKey, string locator, bool carriesCredentials)
     {
@@ -46,14 +45,6 @@ public sealed partial record ServerAddress
     public bool CarriesCredentials { get; }
 
     private string Locator { get; }
-
-    // Whether a value is spelled as a qualifier can be: a host's DNS labels, dotted, with the port after a
-    // hyphen where it is not the scheme's own (an IP's digits read as labels too). What a built app's
-    // manifest names a server by (`asks`), judged where no endpoint is known.
-    public static bool IsQualifier(string? value) => value is { Length: > 0 and <= 260 } && QualifierShape().IsMatch(value);
-
-    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\z", RegexOptions.CultureInvariant)]
-    private static partial Regex QualifierShape();
 
     // A server dialled at a URL. Null for an address that is not an absolute http(s) URL with a host,
     // which no server answers to — and which a household's server, named rather than addressed, must
