@@ -2064,13 +2064,18 @@ h1, h2, h3 {
     cursor: zoom-in;
 }
 
+/* At its own size the picture stays centred: auto margins centre it while it fits and, unlike centring
+   the stage's content, still let every edge be scrolled to once it is larger than the screen. */
 .image-viewer-stage.zoomed {
-    display: block;
+    align-items: flex-start;
+    justify-content: flex-start;
     overflow: auto;
     padding: 0;
 }
 
 .image-viewer-stage.zoomed img {
+    flex: none;
+    margin: auto;
     max-width: none;
     max-height: none;
     border-radius: 0;

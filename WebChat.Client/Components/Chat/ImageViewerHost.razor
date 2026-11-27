@@ -28,7 +28,7 @@
             </button>
         </div>
 
-        <div class="image-viewer-stage @(_zoomed ? "zoomed" : "")" @onclick="Viewer.Close">
+        <div class="image-viewer-stage @(_zoomed ? "zoomed" : "")" @ref="_stage" @onclick="Viewer.Close">
             @if (_url is { } url)
             {
                 <img src="@url" alt="@picture.FileName" @onclick="ToggleZoom" @onclick:stopPropagation="true"
@@ -58,6 +58,8 @@
 
 @code {
     private ElementReference _dialog;
+    private ElementReference _stage;
+    private bool _center;
     private ViewedPicture? _shown;
     private string? _url;
     private bool _zoomed;
@@ -97,6 +99,12 @@
             _focus = false;
             await _dialog.FocusAsync();
         }
+
+        if (_center)
+        {
+            _center = false;
+            await Js.InvokeVoidAsync("imageViewer.center", _stage);
+        }
     }
 
     private async Task MintAsync(ViewedPicture picture)
@@ -127,7 +135,11 @@
         await MintAsync(picture);
     }
 
-    private void ToggleZoom() => _zoomed = !_zoomed;
+    private void ToggleZoom()
+    {
+        _zoomed = !_zoomed;
+        _center = _zoomed;
+    }
 
     private async Task DownloadAsync()
     {

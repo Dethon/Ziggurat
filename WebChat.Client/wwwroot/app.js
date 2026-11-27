@@ -190,6 +190,18 @@ window.outsidePress = {
 // Attachments
 // ===================================
 
+// The picture viewer, zoomed to a picture's own size: scrolled to its middle, so it opens where it was.
+window.imageViewer = {
+    center: function (stage) {
+        if (!stage) {
+            return;
+        }
+
+        stage.scrollLeft = (stage.scrollWidth - stage.clientWidth) / 2;
+        stage.scrollTop = (stage.scrollHeight - stage.clientHeight) / 2;
+    }
+};
+
 window.attachments = {
     open: function (url, fileName) {
         const link = document.createElement('a');
