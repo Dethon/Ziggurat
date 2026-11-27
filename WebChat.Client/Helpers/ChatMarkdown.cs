@@ -45,6 +45,10 @@ public static class ChatMarkdown
         return document.ToHtml(_pipeline);
     }
 
+    // The words a message shows, without its markup or where its links lead: text, never markup, so it is
+    // only ever set as text.
+    public static string ToPlainText(string content) => Markdown.ToPlainText(content, _pipeline);
+
     // A destination with no scheme is a path or a fragment of this site; anything else names its scheme
     // before the first ':' that comes before any '/', '?' or '#'.
     private static bool IsSafe(string? url)
