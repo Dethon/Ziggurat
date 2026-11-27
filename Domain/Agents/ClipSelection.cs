@@ -9,12 +9,12 @@ namespace Domain.Agents;
 // pictures. A model that would see nothing of the clip has the turn refused rather than answering
 // as if no clip had been sent.
 //
-// Past the hydration distance only placeholders go, and one for the clip says what eight for its
-// frames would, so there the clip stands for its stills whatever the model.
+// Past the picture cap only placeholders go, and one for the clip says what eight for its frames
+// would, so there the clip stands for its stills whatever the model.
 internal static class ClipSelection
 {
     public static IReadOnlyList<AttachmentReference> For(
-        IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs, bool withinDepth)
+        IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs, bool withinCap)
     {
         var clips = attachments.Where(a => AttachmentKinds.IsVideo(a.MediaType)).ToList();
         if (clips.Count == 0)
@@ -22,7 +22,7 @@ internal static class ClipSelection
             return attachments;
         }
 
-        if (inputs.Video || !withinDepth)
+        if (inputs.Video || !withinCap)
         {
             return ClipStills.Without(attachments);
         }
@@ -45,6 +45,13 @@ internal static class ClipSelection
 
         return attachments.Where(a => !AttachmentKinds.IsVideo(a.MediaType)).ToList();
     }
+
+    // How many pictures the message puts in a request: its images, a clip's stills among them unless
+    // the model watches the clip instead. Never refuses: the cap is counted before a message is known
+    // to be shown, and one past it is never refused over a clip it will not be sent.
+    public static int PicturesIn(IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs) =>
+        (inputs.Video ? ClipStills.Without(attachments) : attachments)
+        .Count(a => AttachmentKinds.IsImage(a.MediaType));
 
     private static string Names(IEnumerable<AttachmentReference> clips) =>
         string.Join(", ", clips.Select(c => c.FileName));

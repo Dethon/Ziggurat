@@ -237,9 +237,10 @@ _Avoid_: attachment store, staging mount, uploads folder
 **Hydration**:
 Putting bytes back where a reference to them sits, on the way to the model and never
 on the way in, whoever put the reference there — a person who sent an attachment, or
-the model itself reading an image off a mount. It reaches back a fixed distance, so
-bytes stop being visible to the model long before the reference leaves the history. A
-reference whose bytes are gone hydrates to a placeholder naming the file.
+the model itself reading an image off a mount. It reaches back the whole conversation:
+only a request's pictures past the newest hundred become placeholders, under the
+providers' own caps. A reference whose bytes are gone hydrates to a placeholder naming
+the file.
 _Avoid_: rehydration, inlining, resolving, expansion
 
 **Read image**:

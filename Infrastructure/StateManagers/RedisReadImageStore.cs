@@ -14,9 +14,10 @@ public sealed class RedisReadImageStore(IConnectionMultiplexer redis) : IReadIma
     private const string MediaTypeField = "mediaType";
     private const string BytesField = "bytes";
 
-    // The backstop, not the bound. Hydration deletes an image on the send it drops out of view, so
-    // this only catches a conversation that stopped before that send ever happened.
-    public static readonly TimeSpan Horizon = TimeSpan.FromHours(24);
+    // The bound on an image the model read: hydration keeps it in view for the whole conversation and
+    // deletes it only on the send it falls past the picture cap, so this is how long a resumed
+    // conversation still has its screenshots — a week, which Redis, holding them in memory, can afford.
+    public static readonly TimeSpan Horizon = TimeSpan.FromDays(7);
 
     public static string KeyFor(string conversationId, string callId) =>
         $"{KeyPrefix}{conversationId}:{callId}";

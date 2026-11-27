@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Exceptions;
@@ -137,7 +138,7 @@ public sealed class OpenRouterChatClientVideoTests
     [Theory]
     [InlineData(Watches)]
     [InlineData(SeesPictures)]
-    public async Task AClipWithinTheDistance_IsSentAgainOnAFollowUpTurn(string model)
+    public async Task AClipWithinTheCap_IsSentAgainOnAFollowUpTurn(string model)
     {
         var wire = new RecordingResponsesHandler();
         var store = new JsonThreadStore();
@@ -152,17 +153,17 @@ public sealed class OpenRouterChatClientVideoTests
         ImageUrls(followUp).Count.ShouldBe(model == Watches ? 1 : 3);
     }
 
-    // Past the distance only placeholders go, and one naming the clip says what one per frame
+    // Past the picture cap only placeholders go, and one naming the clip says what one per frame
     // would — nor is a turn refused over a clip its model is no longer being shown.
     [Theory]
     [InlineData(Watches)]
     [InlineData(SeesPictures)]
     [InlineData(TextOnly)]
-    public async Task AClipPastTheDistance_BecomesOnePlaceholderNamingIt(string model)
+    public async Task AClipPastTheCap_BecomesOnePlaceholderNamingIt(string model)
     {
         var wire = new RecordingResponsesHandler();
         var store = new JsonThreadStore();
-        await using var agent = CreateAgent(wire, Watches, store.Object, hydrationDepthMessages: 1);
+        await using var agent = CreateAgent(wire, Watches, store.Object, maxPicturesPerRequest: 0);
         var session = await agent.CreateSessionAsync();
         await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
         var followUp = new ChatMessage(ChatRole.User, "and the bread?");
@@ -215,7 +216,7 @@ public sealed class OpenRouterChatClientVideoTests
         RecordingResponsesHandler wire,
         string model,
         IThreadStateStore? store = null,
-        int hydrationDepthMessages = 20)
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures)
     {
         var client = new OpenRouterChatClient(
             "http://localhost/api/v1",
@@ -223,7 +224,7 @@ public sealed class OpenRouterChatClientVideoTests
             model,
             transportHandler: wire,
             attachmentSource: new IdBytesAttachmentSource(),
-            hydrationDepthMessages: hydrationDepthMessages,
+            maxPicturesPerRequest: maxPicturesPerRequest,
             modelAcceptsImages: m => _kinds[m].Contains(AttachmentKind.Image),
             modelAcceptsVideo: m => _kinds[m].Contains(AttachmentKind.Video));
         return new McpAgent(

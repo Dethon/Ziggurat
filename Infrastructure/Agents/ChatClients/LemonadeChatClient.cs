@@ -32,7 +32,7 @@ public sealed class LemonadeChatClient : IChatClient
         string? sessionId = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
@@ -57,7 +57,7 @@ public sealed class LemonadeChatClient : IChatClient
                 InnerHandler = transportHandler ?? HostedConnectionPool.Shared
             },
             attachmentSource: attachmentSource,
-            hydrationDepthMessages: hydrationDepthMessages,
+            maxPicturesPerRequest: maxPicturesPerRequest,
             readImageStore: readImageStore,
             modelAcceptsImages: modelAcceptsImages,
             contextWindowFor: contextWindowFor,

@@ -35,7 +35,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IReadImageStore? _readImageStore;
     private readonly Func<string, bool> _modelAcceptsImages;
     private readonly Func<string, bool> _modelAcceptsVideo;
-    private readonly int _hydrationDepthMessages;
+    private readonly int _maxPicturesPerRequest;
     private readonly bool _asksAgainAfterEmptyReply;
 
     public OpenRouterChatClient(
@@ -49,7 +49,7 @@ public sealed class OpenRouterChatClient : IChatClient
         ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
@@ -66,7 +66,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
-        _hydrationDepthMessages = hydrationDepthMessages;
+        _maxPicturesPerRequest = maxPicturesPerRequest;
         _asksAgainAfterEmptyReply = maxRetries != 0;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
@@ -81,7 +81,7 @@ public sealed class OpenRouterChatClient : IChatClient
         IMetricsPublisher? metricsPublisher = null,
         TimeProvider? timeProvider = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
@@ -98,7 +98,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
-        _hydrationDepthMessages = hydrationDepthMessages;
+        _maxPicturesPerRequest = maxPicturesPerRequest;
         _asksAgainAfterEmptyReply = maxRetries != 0;
         _client = innerClient;
     }
@@ -145,7 +145,7 @@ public sealed class OpenRouterChatClient : IChatClient
             _attachmentSource,
             turnContext,
             new ReadImageContext(_readImageStore, turnContext?.ConversationId, inputs.Images),
-            _hydrationDepthMessages,
+            _maxPicturesPerRequest,
             ct,
             inputs);
 

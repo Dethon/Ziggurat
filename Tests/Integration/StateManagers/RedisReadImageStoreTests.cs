@@ -74,6 +74,15 @@ public sealed class RedisReadImageStoreTests(RedisFixture fixture) : IClassFixtu
         (await _store.GetAsync(Unique(), "call-missing", default)).ShouldBeNull();
     }
 
+    // With pictures kept for the whole conversation, the horizon is what bounds an image the model
+    // read: a build resumed within the week still has its screenshots, and Redis, which keeps them in
+    // memory, holds about a week of reads (user, 2026-11-27).
+    [Fact]
+    public void TheHorizon_IsAWeek()
+    {
+        RedisReadImageStore.Horizon.ShouldBe(TimeSpan.FromDays(7));
+    }
+
     [Fact]
     public async Task AStoredImage_CarriesTheHorizonOnItsKey()
     {
@@ -84,7 +93,7 @@ public sealed class RedisReadImageStoreTests(RedisFixture fixture) : IClassFixtu
             .KeyTimeToLiveAsync(RedisReadImageStore.KeyFor(conversation, "call-1"));
 
         // Redis counts the TTL down on its host's clock, which this machine's WSL steps by seconds now and
-        // then: read just after a step back it is a little over the horizon it was given (24h + 2.65s, once).
+        // then: read just after a step back it is a little over the horizon it was given (by 2.65s, once).
         ttl.ShouldNotBeNull();
         ttl.Value.ShouldBeLessThanOrEqualTo(RedisReadImageStore.Horizon + TimeSpan.FromSeconds(30));
         ttl.Value.ShouldBeGreaterThan(RedisReadImageStore.Horizon - TimeSpan.FromMinutes(1));

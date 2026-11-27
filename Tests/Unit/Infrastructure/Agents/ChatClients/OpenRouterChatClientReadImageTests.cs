@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
@@ -139,24 +140,24 @@ public class OpenRouterChatClientReadImageTests
         AllDataContents(captured).ShouldBeEmpty();
     }
 
-    // An image stays in front of the model for the rest of the exchange about it, on the same
-    // distance an attachment lives for, and then gets out of the way.
+    // An image stays in front of the model as an attachment does: for the whole conversation,
+    // within the request's picture cap.
     [Fact]
-    public async Task AnImageWithinTheDistance_IsStillShown()
+    public async Task AnImageFarBackInTheConversation_IsStillShown()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
-        var captured = await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+        var captured = await SendAsync(ConversationOfLength(60, readAt: 0));
 
         AllDataContents(captured).ShouldHaveSingleItem();
     }
 
     [Fact]
-    public async Task AnImagePastTheDistance_BecomesAPlaceholderNamingThePathAndInvitingAReread()
+    public async Task AnImagePastTheCap_BecomesAPlaceholderNamingThePathAndInvitingAReread()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
-        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), maxPictures: 0);
 
         AllDataContents(captured).ShouldBeEmpty();
         var placeholder = ResultText(captured, "call-1");
@@ -164,14 +165,14 @@ public class OpenRouterChatClientReadImageTests
         placeholder.ShouldContain("Read the file again");
     }
 
-    // The message window is the real bound, so the bytes go on the send the image drops out of view
-    // rather than waiting out the store's own horizon.
+    // Past the cap an image never comes back (only newer pictures are ever added), so its bytes go on
+    // the send it drops out of view rather than waiting out the store's own horizon.
     [Fact]
     public async Task TheSendAnImageDropsOutOfView_DeletesItsStoredBytes()
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
-        await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+        await SendAsync(ConversationOfLength(6, readAt: 0), maxPictures: 0);
 
         _store.Deleted.ShouldContain($"{Conversation}:call-1");
     }
@@ -190,7 +191,7 @@ public class OpenRouterChatClientReadImageTests
                 It.IsAny<CancellationToken>()))
             .Returns(AsyncEnumerable.Empty<ChatResponseUpdate>());
         var sut = new OpenRouterChatClient(
-            _innerClient.Object, "test-model", readImageStore: _store, hydrationDepthMessages: 3);
+            _innerClient.Object, "test-model", readImageStore: _store, maxPicturesPerRequest: 0);
 
         foreach (var _ in Enumerable.Range(0, 2))
         {
@@ -207,7 +208,7 @@ public class OpenRouterChatClientReadImageTests
     {
         _store.Put(Conversation, "call-1", ScreenshotPath);
 
-        await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+        await SendAsync(ConversationOfLength(6, readAt: 4));
 
         _store.Deleted.ShouldBeEmpty();
     }
@@ -232,7 +233,7 @@ public class OpenRouterChatClientReadImageTests
     // Expired, evicted, or never written at all: the model is told which image it lost rather than
     // left to invent what was in it.
     [Fact]
-    public async Task AStoreMissWithinTheDistance_BecomesTheSamePlaceholder()
+    public async Task AStoreMissWithinTheCap_BecomesTheSamePlaceholder()
     {
         var captured = await SendAsync(TurnThatRead(("call-1", ScreenshotPath)));
 
@@ -241,11 +242,10 @@ public class OpenRouterChatClientReadImageTests
         placeholder.ShouldContain("Read the file again");
     }
 
-    // Protecting the person: a picture the model went looking for must never push out a photo they
-    // actually sent. Tool messages are excluded from the distance count, so twenty reads move an
-    // attachment no further away.
+    // The cap is the providers' count of a request's images, so a picture the model read and a photo
+    // a person sent are counted alike, the newest kept.
     [Fact]
-    public async Task ImagesTheModelRead_DoNotShortenHowLongAPersonsAttachmentIsHydrated()
+    public async Task ThePictureCap_CountsImagesTheModelReadAlongsideAPersonsPhotos()
     {
         var messages = new List<ChatMessage> { UserTurnWithPhoto() };
         foreach (var callId in new[] { "call-1", "call-2", "call-3" })
@@ -258,10 +258,10 @@ public class OpenRouterChatClientReadImageTests
         }
 
         var captured = await SendAsync(
-            messages, _store, depth: 2, attachments: new StubAttachmentSource());
+            messages, _store, maxPictures: 3, attachments: new StubAttachmentSource());
 
-        captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem()
-            .MediaType.ShouldBe("image/png");
+        captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
+        AllDataContents(captured).Count.ShouldBe(3);
     }
 
     // The truncation metric reports whose turn overflowed, and nothing this pass adds is a user
@@ -382,16 +382,16 @@ public class OpenRouterChatClientReadImageTests
         List<ChatMessage> messages,
         bool shown = true,
         bool withContext = true,
-        int? depth = null,
+        int? maxPictures = null,
         bool acceptsImages = true) =>
-        SendAsync(messages, _store, shown, withContext, depth, acceptsImages: acceptsImages);
+        SendAsync(messages, _store, shown, withContext, maxPictures, acceptsImages: acceptsImages);
 
     private async Task<IReadOnlyList<ChatMessage>> SendAsync(
         List<ChatMessage> messages,
         FakeReadImageStore? store,
         bool shown = true,
         bool withContext = true,
-        int? depth = null,
+        int? maxPictures = null,
         bool acceptsImages = true,
         IMetricsPublisher? publisher = null,
         int? maxContextTokens = null,
@@ -428,7 +428,7 @@ public class OpenRouterChatClientReadImageTests
             metricsPublisher: publisher,
             attachmentSource: attachments,
             readImageStore: store,
-            hydrationDepthMessages: depth ?? 20,
+            maxPicturesPerRequest: maxPictures ?? AttachmentHydration.DefaultMaxPictures,
             modelAcceptsImages: _ => acceptsImages);
 
         await foreach (var _ in sut.GetStreamingResponseAsync(messages, Options(withContext)))
