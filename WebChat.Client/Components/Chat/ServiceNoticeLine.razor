@@ -4,6 +4,9 @@
     [Parameter] public ChatMessageModel Message { get; set; } = new();
     [Parameter] public string Line { get; set; } = "";
 
+    // The turn this line starts on the rail (TurnRail).
+    [Parameter] public int? TurnIndex { get; set; }
+
     private bool _open;
 
     private string? Time => Message.Timestamp?.ToLocalTime().ToString("HH:mm");
@@ -11,7 +14,7 @@
 
 @* A turn a service started (ServiceNotice): one line saying what happened, its instructions to the
    model behind the toggle for whoever wants to read them. *@
-<div class="service-notice" role="note">
+<div class="service-notice" role="note" data-turn="@TurnIndex">
     <button class="service-notice-toggle" @onclick="() => _open = !_open" aria-expanded="@(_open ? "true" : "false")">
         <Icon Glyph="Icons.Triangle" Size="10" Class="@(_open ? "toggle-icon open" : "toggle-icon")" />
         <span>@Line</span>

@@ -17,6 +17,9 @@
     [Parameter] public EventCallback<string> OnRerun { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
+    // The turn the message being edited starts on the rail (TurnRail).
+    [Parameter] public int? TurnIndex { get; set; }
+
     private string _text = "";
     private bool _warned;
 
@@ -36,7 +39,7 @@
     }
 }
 
-<div class="message-editor">
+<div class="message-editor" data-turn="@TurnIndex">
     <textarea class="message-editor-text" @bind="_text" @bind:event="oninput" rows="4" aria-label="Edit message"></textarea>
 
     @if (_warned)

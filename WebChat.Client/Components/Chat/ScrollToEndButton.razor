@@ -1,0 +1,14 @@
+@inject IJSRuntime Js
+
+@* Back to the end of the conversation once the reader has scrolled away from it. Always drawn: whether
+   it shows is the scroll's, so chatScroll toggles it each frame rather than this re-rendering. Its own
+   component so a press re-renders the button, never the conversation. The press keeps the composer's
+   focus, so a phone's keyboard stays up. *@
+<button type="button" class="scroll-to-end" @onclick="ToEnd" @onmousedown:preventDefault>
+    <Icon Glyph="Icons.ChevronDown" Size="16" />
+    <span>Scroll to end</span>
+</button>
+
+@code {
+    private Task ToEnd() => Js.InvokeVoidAsync("chatScroll.scrollToEnd").AsTask();
+}

@@ -1,0 +1,184 @@
+@implements IDisposable
+@inject IJSRuntime Js
+
+@* The rail beside the conversation (TurnRail): a strip per turn, at its share of the rail's height. What
+   the scroll decides each frame — which strips are lit, whether a turn lies before or after the one being
+   read — chatScroll writes onto the strips and the step buttons itself; this draws the strips and answers
+   the pointer. *@
+<div class="turn-rail" data-empty="@(Items.Count < TurnRail.MinItems)" @ref="_root">
+    <div class="turn-rail-strip" style="height: @TurnRail.HeightStyle(Items.Count)">
+        <button type="button" class="turn-rail-nav previous" aria-label="Previous turn" title="Previous turn"
+                @onclick="() => Step(-1)" @onmousedown:preventDefault>
+            <Icon Glyph="Icons.ChevronUp" Size="16" />
+        </button>
+        <button type="button" class="turn-rail-track" aria-label="@TrackLabel"
+                @onmousemove="Point" @onmouseleave="Leave" @onclick="Press" @onmousedown:preventDefault
+                @onfocus="Focus" @onblur="Leave" @onkeydown="Key">
+            @if (Items.Count >= TurnRail.MinItems)
+            {
+                var marks = TurnRail.MarkCount(Items.Count, _railHeight);
+                int? activeMark = _active is { } a ? TurnRail.MarkOf(a, Items.Count, marks) : null;
+                @foreach (var (mark, first, last) in Marks(marks))
+                {
+                    <span class="turn-rail-mark" data-first="@first" data-last="@last"
+                          style="top: @Percent(TurnRail.TopPercent(mark, marks)); --swell: @Number(TurnRail.Swell(activeMark is { } m ? Math.Abs(mark - m) : null))"></span>
+                }
+
+                @if (_active is { } index && index < Items.Count)
+                {
+                    var item = Items[index];
+                    var answered = TurnRail.Preview(item.Answered);
+                    <span class="turn-rail-preview" style="top: @Percent(TurnRail.TopPercent(index, Items.Count))">
+                        <span class="asked">@(TurnRail.Preview(item.Asked) ?? "Message")</span>
+                        @if (answered is not null)
+                        {
+                            <span class="answered">@answered</span>
+                        }
+                    </span>
+                }
+            }
+        </button>
+        <button type="button" class="turn-rail-nav next" aria-label="Next turn" title="Next turn"
+                @onclick="() => Step(1)" @onmousedown:preventDefault>
+            <Icon Glyph="Icons.ChevronDown" Size="16" />
+        </button>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<TurnRailItem> Items { get; set; } = [];
+
+    private ElementReference _root;
+    private DotNetObjectReference<TurnRailView>? _self;
+    private IReadOnlyList<TurnRailItem> _drawn = [];
+    private double _railHeight;
+    private int? _active;
+
+    // Every streamed chunk renders the conversation again; the rail only when its turns or the pointer
+    // moved, since the pointer alone fires many times a second.
+    private bool _changed = true;
+
+    private IJSInProcessRuntime Page => (IJSInProcessRuntime)Js;
+
+    private string TrackLabel =>
+        _active is { } index && index < Items.Count && TurnRail.Preview(Items[index].Asked) is { } asked
+            ? $"Jump to message: {asked}"
+            : "Jump to a turn";
+
+    protected override void OnParametersSet()
+    {
+        if (Items.SequenceEqual(_drawn))
+        {
+            return;
+        }
+
+        _drawn = Items;
+        _changed = true;
+        if (_active >= Items.Count)
+        {
+            _active = null;
+        }
+    }
+
+    protected override bool ShouldRender() => _changed;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _changed = false;
+        if (firstRender)
+        {
+            _self = DotNetObjectReference.Create(this);
+            Page.InvokeVoid("chatScroll.attachRail", _root, _self);
+        }
+        else
+        {
+            // Strips drawn anew carry no lit state until the scroll's next frame writes it.
+            Page.InvokeVoid("chatScroll.refresh");
+        }
+    }
+
+    [JSInvokable]
+    public void RailResized(double height)
+    {
+        if (Math.Abs(height - _railHeight) < 0.5)
+        {
+            return;
+        }
+
+        _railHeight = height;
+        _changed = true;
+        StateHasChanged();
+    }
+
+    // The strips the rail has room for, each with the first and last turn it stands for.
+    private IEnumerable<(int Mark, int First, int Last)> Marks(int markCount) =>
+        Enumerable.Range(0, Items.Count)
+            .GroupBy(item => TurnRail.MarkOf(item, Items.Count, markCount))
+            .Select(group => (group.Key, group.First(), group.Last()));
+
+    private void Point(MouseEventArgs e) => Activate(TurnRail.IndexAt(e.OffsetY, _railHeight, Items.Count));
+
+    private void Leave() => Activate(null);
+
+    private void Focus() => Activate(_active ?? Page.Invoke<int?>("chatScroll.currentTurn") ?? 0);
+
+    // A press by pointer lands on the turn under it; Enter or Space (a click with no detail) on the one
+    // the arrows chose.
+    private void Press(MouseEventArgs e)
+    {
+        if ((e.Detail == 0 ? _active : TurnRail.IndexAt(e.OffsetY, _railHeight, Items.Count)) is { } index)
+        {
+            Page.InvokeVoid("chatScroll.scrollToTurn", index);
+        }
+    }
+
+    private void Key(KeyboardEventArgs e)
+    {
+        var last = Items.Count - 1;
+        switch (e.Key)
+        {
+            case "ArrowDown":
+                Activate(Math.Min(last, (_active ?? -1) + 1));
+                break;
+            case "ArrowUp":
+                Activate(Math.Max(0, (_active ?? 1) - 1));
+                break;
+            case "Home":
+                Activate(0);
+                break;
+            case "End":
+                Activate(last);
+                break;
+        }
+    }
+
+    private void Step(int by) => Page.InvokeVoid("chatScroll.stepTurn", by);
+
+    private void Activate(int? index)
+    {
+        if (index == _active)
+        {
+            return;
+        }
+
+        _active = index;
+        _changed = true;
+    }
+
+    private static string Percent(double value) => $"{Number(value)}%";
+
+    private static string Number(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+    public void Dispose()
+    {
+        try
+        {
+            Page.InvokeVoid("chatScroll.detachRail");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+
+        _self?.Dispose();
+    }
+}

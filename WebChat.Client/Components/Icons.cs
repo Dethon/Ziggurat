@@ -84,6 +84,8 @@ public static class Icons
 
     public static readonly IconGlyph ChevronUp = Filled("M12 10.8 7.4 15.4 6 14l6-6 6 6-1.4 1.4Z");
 
+    public static readonly IconGlyph ChevronDown = Filled("M12 13.2 16.6 8.6 18 10l-6 6-6-6 1.4-1.4Z");
+
     public static readonly IconGlyph Lock = Filled(
         "M6 22q-.825 0-1.412-.587Q4 20.825 4 20V10q0-.825.588-1.412Q5.175 8 6 8h1V6q0-2.075 1.463-3.538Q9.925 "
         + "1 12 1t3.538 1.462Q17 3.925 17 6v2h1q.825 0 1.413.588Q20 9.175 20 10v10q0 .825-.587 1.413Q18.825 22 18 "

@@ -28,6 +28,9 @@
     [Parameter] public string? TopicOwnerId { get; set; }
     [Parameter] public string? TopicOwnerName { get; set; }
 
+    // The turn this row starts on the rail (TurnRail), which finds the turn on the page by it.
+    [Parameter] public int? TurnIndex { get; set; }
+
     private bool _copied;
 
     private async Task CopyMessage()
@@ -109,7 +112,7 @@
 
 }
 
-<div class="@GetMessageWrapperClass()">
+<div class="@GetMessageWrapperClass()" data-turn="@TurnIndex">
     @if (Message.Role != "assistant")
     {
         var (avatarUrl, displayName) = GetSenderInfo();
