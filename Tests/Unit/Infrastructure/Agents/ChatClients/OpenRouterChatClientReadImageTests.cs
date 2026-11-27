@@ -264,6 +264,26 @@ public class OpenRouterChatClientReadImageTests
         AllDataContents(captured).Count.ShouldBe(3);
     }
 
+    // An image the model read is weighed by the size its envelope names, as a photo by its reference.
+    [Fact]
+    public async Task ThePictureByteCap_WeighsImagesTheModelRead()
+    {
+        var messages = new List<ChatMessage> { new(ChatRole.User, "look at the screens") };
+        foreach (var callId in new[] { "call-1", "call-2", "call-3" })
+        {
+            _store.Put(Conversation, callId, ScreenshotPath);
+            messages.Add(new ChatMessage(ChatRole.Assistant,
+                [new FunctionCallContent(callId, "domain__filesystem__file_read", null)]));
+            messages.Add(new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent(callId, Envelope(ScreenshotPath, shown: true))]));
+        }
+
+        var captured = await SendAsync(messages, _store, maxPictureBytes: 8);
+
+        AllDataContents(captured).Count.ShouldBe(2);
+        ResultText(captured, "call-1").ShouldContain("Read the file again");
+    }
+
     // The truncation metric reports whose turn overflowed, and nothing this pass adds is a user
     // message, so the last user message stays the person's.
     [Fact]
@@ -394,6 +414,7 @@ public class OpenRouterChatClientReadImageTests
         int? maxPictures = null,
         bool acceptsImages = true,
         IMetricsPublisher? publisher = null,
+        long? maxPictureBytes = null,
         int? maxContextTokens = null,
         IAttachmentSource? attachments = null)
     {
@@ -429,6 +450,7 @@ public class OpenRouterChatClientReadImageTests
             attachmentSource: attachments,
             readImageStore: store,
             maxPicturesPerRequest: maxPictures ?? AttachmentHydration.DefaultMaxPictures,
+            maxPictureBytesPerRequest: maxPictureBytes ?? AttachmentHydration.DefaultMaxPictureBytes,
             modelAcceptsImages: _ => acceptsImages);
 
         await foreach (var _ in sut.GetStreamingResponseAsync(messages, Options(withContext)))

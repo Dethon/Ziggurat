@@ -37,7 +37,7 @@ internal static class ReadImageHydration
     {
         if (FsImageReadResult.TryRead(result) is { Shown: true } file)
         {
-            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount)];
+            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount, SizeBytes: file.SizeBytes ?? 0)];
         }
 
         // A page result can carry several envelopes: view_image takes a list, and the bridge joins
@@ -53,7 +53,7 @@ internal static class ReadImageHydration
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
-                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page)]
+                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page, SizeBytes: single.SizeBytes ?? 0)]
                 : [];
         }
 
@@ -65,7 +65,7 @@ internal static class ReadImageHydration
             .Select((envelope, index) => (Envelope: envelope, Index: index))
             .Where(e => e.Envelope is { Shown: true })
             .Select(e => new ReadImageReference(
-                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index))
+                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index, e.Envelope.SizeBytes ?? 0))
             .ToList();
     }
 
@@ -267,6 +267,7 @@ internal enum ReadImageOrigin
 }
 
 // One image a tool result promised the model, and what to name if the bytes cannot be found — a
-// mount path, or the label the page's entry gave the picture.
+// mount path, or the label the page's entry gave the picture. Its size is the envelope's, what the
+// picture cap weighs it by; an envelope naming none weighs nothing.
 internal sealed record ReadImageReference(
-    string CallId, string Name, ReadImageOrigin Origin, int Index = 0);
+    string CallId, string Name, ReadImageOrigin Origin, int Index = 0, long SizeBytes = 0);

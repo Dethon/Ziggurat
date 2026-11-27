@@ -307,6 +307,7 @@ public sealed class MultiAgentFactory(
             transportHandler: transportHandler,
             attachmentSource: attachmentSource,
             maxPicturesPerRequest: openRouterConfig.MaxPicturesPerRequest,
+            maxPictureBytesPerRequest: openRouterConfig.MaxPictureBytesPerRequest,
             readImageStore: readImageStore,
             modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
             modelAcceptsVideo: m => Accepts(m, AttachmentKind.Video, lemonade),
@@ -332,6 +333,7 @@ public sealed class MultiAgentFactory(
             transportHandler: lemonade.Transport ?? lemonadeTransportHandler,
             attachmentSource: attachmentSource,
             maxPicturesPerRequest: openRouterConfig.MaxPicturesPerRequest,
+            maxPictureBytesPerRequest: openRouterConfig.MaxPictureBytesPerRequest,
             readImageStore: readImageStore,
             modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
             contextWindowFor: model => LemonadeWindow(model, effectiveContext, lemonade),
@@ -350,5 +352,6 @@ public record OpenRouterConfig
     public ProviderRouting? ProviderRouting { get; init; }
     public IReadOnlyList<string>? PatchableModelIds { get; init; }
     public int MaxPicturesPerRequest { get; init; } = AttachmentHydration.DefaultMaxPictures;
+    public long MaxPictureBytesPerRequest { get; init; } = AttachmentHydration.DefaultMaxPictureBytes;
     public long MaxInlineImageBytes { get; init; } = ReadImageSupport.DefaultMaxBytes;
 }

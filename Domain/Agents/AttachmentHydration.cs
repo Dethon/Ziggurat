@@ -13,8 +13,9 @@ namespace Domain.Agents;
 // Every attachment is sent for the whole conversation (user, 2026-11-27): swapping one for a
 // placeholder rewrites the prompt where it sits and bills everything after it again uncached, while
 // a picture left in the cached prefix costs a tenth of its tokens. The one bound is the providers'
-// own cap on a request's pictures: past the newest maxPictures, counted from the end, a message's
-// pictures become placeholders naming each file — as does any reference whose bytes are gone — so
+// own caps on a request: past the newest maxPictures, or past maxPictureBytes of them (a request is
+// uploaded whole on every tool round, and Anthropic refuses one over 32 MB), counted from the end,
+// a message's pictures become placeholders naming each file — as does any reference whose bytes are gone — so
 // the model says the file is gone rather than inventing what it contained. Only newer pictures are
 // ever added, so a message past the cap stays past it and costs one cache miss, once. A document is
 // no picture and is always sent.
@@ -25,6 +26,7 @@ namespace Domain.Agents;
 public static class AttachmentHydration
 {
     public const int DefaultMaxPictures = 100;
+    public const long DefaultMaxPictureBytes = 20L * 1024 * 1024;
 
     // turn: the turn this send is for, whose identity every fetch is signed as, the earlier messages'
     // files included: a follow-up's photos are fetched for the person asking now, never as whoever
@@ -35,6 +37,7 @@ public static class AttachmentHydration
         ConversationContext? turn,
         ReadImageContext readImages,
         int maxPictures,
+        long maxPictureBytes,
         CancellationToken ct,
         ModelInputs? inputs = null)
     {
@@ -52,7 +55,7 @@ public static class AttachmentHydration
         }
 
         var takes = inputs ?? ModelInputs.Everything("The model");
-        var withinCap = WithinCap(messages, imageReads, takes, maxPictures);
+        var withinCap = WithinCap(messages, imageReads, takes, maxPictures, maxPictureBytes);
 
         // The turn's own message is the one a model that cannot see its files is refused over; an
         // earlier one, kept in every request for good, only names what this model is not shown.
@@ -79,28 +82,34 @@ public static class AttachmentHydration
         return hydrated;
     }
 
-    // Whether each message's pictures fit under the cap, counting from the newest message back. A
+    // Whether each message's pictures fit under both caps, counting from the newest message back. A
     // message goes whole, never split, so a turn's photos are shown or named together; one with no
     // pictures always fits.
     private static bool[] WithinCap(
         IReadOnlyList<ChatMessage> messages,
         IReadOnlyList<IReadOnlyList<ReadImageReference>> imageReads,
         ModelInputs inputs,
-        int maxPictures)
+        int maxPictures,
+        long maxPictureBytes)
     {
-        var counts = messages
+        var weights = messages
             .Select((message, index) =>
-                ClipSelection.PicturesIn(message.GetAttachments() ?? [], inputs)
-                + (inputs.Images ? imageReads[index].Count : 0))
+            {
+                var attached = ClipSelection.PicturesOf(message.GetAttachments() ?? [], inputs);
+                var read = inputs.Images ? imageReads[index] : [];
+                return (Count: attached.Count + read.Count,
+                    Bytes: attached.Sum(a => a.SizeBytes) + read.Sum(r => r.SizeBytes));
+            })
             .ToList();
 
         // A running total from the end, in one pass: every send runs this over the whole history.
-        var withinCap = new bool[counts.Count];
-        var newerAndOwn = 0;
-        for (var index = counts.Count - 1; index >= 0; index--)
+        var withinCap = new bool[weights.Count];
+        var (count, bytes) = (0, 0L);
+        for (var index = weights.Count - 1; index >= 0; index--)
         {
-            newerAndOwn += counts[index];
-            withinCap[index] = counts[index] == 0 || newerAndOwn <= maxPictures;
+            count += weights[index].Count;
+            bytes += weights[index].Bytes;
+            withinCap[index] = weights[index].Count == 0 || (count <= maxPictures && bytes <= maxPictureBytes);
         }
 
         return withinCap;

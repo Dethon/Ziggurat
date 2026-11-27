@@ -106,6 +106,10 @@ public record AttachmentConfiguration
     // The most pictures one request carries, the newest kept: under every provider's own cap
     // (Anthropic's is about a hundred), so a long conversation never fails its turns on it.
     public int MaxPicturesPerRequest { get; [UsedImplicitly] init; } = AttachmentHydration.DefaultMaxPictures;
+
+    // And the most of their bytes: a request is uploaded whole on every tool round, and Anthropic
+    // refuses one over 32 MB, which 20 MB of pictures stays under once base64 makes it 27.
+    public long MaxPictureBytesPerRequest { get; [UsedImplicitly] init; } = AttachmentHydration.DefaultMaxPictureBytes;
 }
 
 // A single-host tunable, so it lives here alone: no compose entry and no shared policy file, because

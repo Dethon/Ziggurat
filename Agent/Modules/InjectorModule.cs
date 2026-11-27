@@ -49,6 +49,7 @@ public static class InjectorModule
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
                 PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
                 MaxPicturesPerRequest = settings.Attachments.MaxPicturesPerRequest,
+                MaxPictureBytesPerRequest = settings.Attachments.MaxPictureBytesPerRequest,
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 

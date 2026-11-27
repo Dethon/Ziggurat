@@ -89,6 +89,22 @@ public class OpenRouterChatClientPictureCapTests
         text.ShouldContain("does not accept images");
     }
 
+    // A request is uploaded whole on every tool round, and Anthropic refuses one over 32 MB: the
+    // newest pictures are kept while their bytes fit too, whichever bound comes first.
+    [Fact]
+    public async Task PicturesPastTheByteCap_ReachTheModelAsPlaceholders()
+    {
+        var messages = Conversation(attachmentAt: 0, length: 5, attachment: _photo with { SizeBytes = 15 * 1024 * 1024 });
+        messages[2] = WithAttachment(
+            new ChatMessage(ChatRole.User, "and this one"), _newerPhoto with { SizeBytes = 15 * 1024 * 1024 });
+
+        var captured = await SendAsync(messages);
+
+        captured[2].Contents.OfType<DataContent>().ShouldHaveSingleItem();
+        captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
+        AttachmentHydration.DefaultMaxPictureBytes.ShouldBe(20L * 1024 * 1024);
+    }
+
     [Fact]
     public async Task TheCapDefaultsToAHundredPictures()
     {

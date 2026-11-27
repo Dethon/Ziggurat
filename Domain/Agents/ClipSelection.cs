@@ -53,14 +53,16 @@ internal static class ClipSelection
         return attachments.Where(a => !AttachmentKinds.IsVideo(a.MediaType)).ToList();
     }
 
-    // How many pictures the message puts in a request: its images, a clip's stills among them unless
-    // the model watches the clip instead. Never refuses: the cap is counted before a message is known
-    // to be shown, and one past it is never refused over a clip it will not be sent.
-    public static int PicturesIn(IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs) =>
+    // The pictures the message puts in a request: its images, a clip's stills among them unless the
+    // model watches the clip instead. Never refuses: the cap is counted before a message is known to
+    // be shown, and one past it is never refused over a clip it will not be sent.
+    public static IReadOnlyList<AttachmentReference> PicturesOf(
+        IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs) =>
         !inputs.Images
-            ? 0
+            ? []
             : (inputs.Video ? ClipStills.Without(attachments) : attachments)
-            .Count(a => AttachmentKinds.IsImage(a.MediaType));
+            .Where(a => AttachmentKinds.IsImage(a.MediaType))
+            .ToList();
 
     private static string Names(IEnumerable<AttachmentReference> clips) =>
         string.Join(", ", clips.Select(c => c.FileName));
