@@ -250,15 +250,28 @@ internal sealed class TunnelledServer : IAsyncDisposable
     public sealed class WaitTools
     {
         private static readonly ConcurrentDictionary<string, bool> _waiting = new();
+        private static readonly ConcurrentDictionary<string, bool> _cancelled = new();
 
         public static bool IsWaiting(string call) => _waiting.ContainsKey(call);
+
+        // The server's own token for the call fired: the caller's cancel reached the tool.
+        public static bool WasCancelled(string call) => _cancelled.ContainsKey(call);
 
         [McpServerTool(Name = "wait")]
         [Description("Waits until the call is cancelled.")]
         public static async Task<string> Wait(string call, CancellationToken ct)
         {
             _waiting[call] = true;
-            await Task.Delay(Timeout.Infinite, ct);
+            try
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                _cancelled[call] = true;
+                throw;
+            }
+
             return call;
         }
     }

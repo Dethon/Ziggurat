@@ -141,6 +141,27 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         error.Message.ShouldContain("vault went offline");
     }
 
+    // A person's stop cancels the turn, and the turn's token is what a tool call waits on: the
+    // cancel has to reach the server's tool through the tunnel, or a stopped turn leaves its work
+    // running there with nobody waiting for it.
+    [Fact]
+    public async Task ACallItsTurnCancels_IsCancelledOnTheServer()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await using var agent = await DialAsync(_relay, "vault");
+        var call = Guid.NewGuid().ToString("N");
+        var wait = agent.Tools.OfType<AIFunction>().Single(t => t.Name == "mcp__vault__wait");
+        using var turn = new CancellationTokenSource();
+
+        var answer = wait.InvokeAsync(new AIFunctionArguments { ["call"] = call }, turn.Token).AsTask();
+        await Eventually.Until(() => TunnelledServer.WaitTools.IsWaiting(call), "the call reaches the server");
+        await turn.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(answer.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Eventually.Until(() => TunnelledServer.WaitTools.WasCancelled(call), "the cancel reaches the server's tool");
+    }
+
     // A turn that waited — on an approval, say — while its server's tunnel dropped and opened again
     // calls the closed one: the call is never sent, and the answer says the server is back and that
     // asking again works, rather than that it is offline and that what it did is unknown (pass 19:

@@ -1157,4 +1157,27 @@ public class TabProtocolTests
         (await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult("again")))
             .ShouldBeOfType<TabOutcome<string>.Ran>().Result.ShouldBe("again");
     }
+
+    [Fact]
+    public async Task AWedgedWorkWhoseCallIsCancelled_ClosesItsTabThen_AndTheSameUrlBrowsesAgain()
+    {
+        // A person's stop reaches the server as the call's token, which Playwright's reads never
+        // look at: closing the page is what actually stops a page's work, so a stop is not left
+        // holding the tab until the deadline. No clock moves here — the cancel alone ends it.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var (manager, _) = DeadlineManager();
+        await using var owned = manager;
+        var (work, entered) = Wedged<bool>();
+        using var stop = new CancellationTokenSource();
+
+        var browse = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, work, stop.Token);
+        await entered;
+        await stop.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(browse.WaitAsync(TimeSpan.FromSeconds(10)));
+        pages[0].Closed.ShouldBeTrue();
+        (await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult("again"))
+                .WaitAsync(TimeSpan.FromSeconds(10)))
+            .ShouldBeOfType<TabOutcome<string>.Ran>().Result.ShouldBe("again");
+    }
 }

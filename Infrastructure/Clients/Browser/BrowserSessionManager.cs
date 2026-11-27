@@ -309,7 +309,7 @@ public class BrowserSessionManager : IAsyncDisposable
 
                 // Each phase is bounded on its own, so a wedge closes the page that wedged: the
                 // acting tab for the act and its answer, the popup for the popup's.
-                var acted = await WithinDeadlineAsync(tab, ctx, () => act(ctx));
+                var acted = await WithinDeadlineAsync(tab, ctx, () => act(ctx), ct);
                 if (!acted.Finished)
                 {
                     return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
@@ -331,7 +331,7 @@ public class BrowserSessionManager : IAsyncDisposable
                         }
                     }
 
-                    var answered = await WithinDeadlineAsync(tab, ctx, () => answer(ctx));
+                    var answered = await WithinDeadlineAsync(tab, ctx, () => answer(ctx), ct);
                     if (!answered.Finished)
                     {
                         return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
@@ -380,7 +380,7 @@ public class BrowserSessionManager : IAsyncDisposable
             T result;
             try
             {
-                var answered = await WithinDeadlineAsync(popupTab, ctx, () => popup.Answer(ctx));
+                var answered = await WithinDeadlineAsync(popupTab, ctx, () => popup.Answer(ctx), ct);
                 if (!answered.Finished)
                 {
                     return new TabOutcome<T>.Unresponsive(popupTab.RequestedUrl);
@@ -461,7 +461,7 @@ public class BrowserSessionManager : IAsyncDisposable
             T result;
             try
             {
-                var done = await WithinDeadlineAsync(tab, ctx, () => work(ctx));
+                var done = await WithinDeadlineAsync(tab, ctx, () => work(ctx), ct);
                 if (!done.Finished)
                 {
                     return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
@@ -495,13 +495,14 @@ public class BrowserSessionManager : IAsyncDisposable
     // A page whose script holds its thread answers no call made on it, and Playwright gives
     // page.content() and evaluate no timeout of their own: one browse waited on such a page for
     // good, holding its tab's lock and the turn that asked. The work finds a hung page itself when
-    // a bounded read says so (PageReads); past the deadline it is abandoned instead — its context
+    // a bounded read says so (PageReads); past the deadline, or once the call is cancelled — a
+    // person's stop, which Playwright's reads never look at — it is abandoned instead: its context
     // gives the stamp lease back and refuses it another. Either way the page is closed, which ends
     // every call still pending on it, so an abandoned work unwinds alone.
     private async Task<(bool Finished, T Result)> WithinDeadlineAsync<T>(
-        BrowserTab tab, TabWorkContext ctx, Func<Task<T>> run)
+        BrowserTab tab, TabWorkContext ctx, Func<Task<T>> run, CancellationToken ct)
     {
-        using var stopClock = new CancellationTokenSource();
+        using var stopClock = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var deadline = Task.Delay(_workDeadline, _timeProvider, stopClock.Token);
         var work = Started(run);
         if (await Task.WhenAny(work, deadline) == work)
@@ -522,6 +523,7 @@ public class BrowserSessionManager : IAsyncDisposable
         _ = work.ContinueWith(t => _ = t.Exception,
             CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
         await CloseUnresponsiveAsync(tab);
+        ct.ThrowIfCancellationRequested();
         return (false, default!);
     }
 
