@@ -26,12 +26,15 @@ public class McpFootprintTests
             .ConflictsWith(Of<McpWebActionTool>(Call(("ref", "e-3"), ("action", "Click")))).ShouldBeTrue();
 
     [Fact]
-    public void ASnapshotOrAPictureFetch_ConflictsWithAnAction()
+    public void ASnapshotAPictureFetchOrAScreenshot_ConflictsWithAnAction()
     {
         var action = Of<McpWebActionTool>(Call(("action", "Back")));
 
         Of<McpWebSnapshotTool>(_none).ConflictsWith(action).ShouldBeTrue();
         Of<McpViewImageTool>(Call(("refs", new[] { "i-1" }))).ConflictsWith(action).ShouldBeTrue();
+        // Which screen it shows depends on where the action left the page, and a screen asked for
+        // scrolls the tab the action is about to use.
+        Of<McpWebScreenshotTool>(_none).ConflictsWith(action).ShouldBeTrue();
     }
 
     [Fact]

@@ -684,7 +684,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         tools.Order().ShouldBe(new[]
         {
             "channel_receive", "request_approval", "send_reply",
-            "view_image", "web_action", "web_browse", "web_login", "web_logins", "web_search", "web_snapshot"
+            "view_image", "web_action", "web_browse", "web_login", "web_logins", "web_screenshot", "web_search", "web_snapshot"
         }.Order());
     }
 

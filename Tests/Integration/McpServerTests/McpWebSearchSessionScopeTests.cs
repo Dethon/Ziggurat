@@ -106,6 +106,7 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
     [InlineData("web_browse")]
     [InlineData("web_snapshot")]
     [InlineData("web_action")]
+    [InlineData("web_screenshot")]
     public async Task BrowseTools_WithoutConversationContext_ReturnInvalidArgument(string toolName)
     {
         await using var client = await CreateClientAsync();

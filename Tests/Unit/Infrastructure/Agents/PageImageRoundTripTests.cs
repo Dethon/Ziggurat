@@ -6,6 +6,7 @@ using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Protocol;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Agents;
@@ -40,6 +41,35 @@ public class PageImageRoundTripTests
         reads.Count.ShouldBe(pictures);
         // The keys hydration will ask the store for must be keys the bridge actually wrote.
         reads.ShouldBeSubsetOf(store.Keys);
+    }
+
+    // web_screenshot answers on view_image's wire, so its picture is lifted and found again by the
+    // same counting -- and read back as a screenshot, which is what its note depends on.
+    [Fact]
+    public async Task AScreenshot_IsFoundAgainByHydrationAsAScreenshot()
+    {
+        var browser = new Mock<IWebBrowser>();
+        browser.Setup(b => b.ScreenshotAsync(It.IsAny<ScreenshotRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ScreenshotResult("s", ScreenshotStatus.Success, "https://example.com", "Example",
+                "image/jpeg", [1, 2, 3])
+            { Screen = 1, Screens = 2 });
+        var shot = await new Screenshooter(browser.Object).ShootAsync();
+        var store = new RecordingStore();
+
+        var result = await McpImageLift.ApplyAsync(
+            AsAgentSees(ToolResponse.Create(shot.Envelope, [shot.Image!]).Content.ToList()),
+            store, Conversation, CallId, CancellationToken.None);
+        var message = new ChatMessage(
+            ChatRole.Tool, [new FunctionResultContent(CallId, QualifiedMcpTool.Flatten(result))]);
+
+        var read = ReadImageHydration.Reads(message).ShouldHaveSingleItem();
+        read.Origin.ShouldBe(ReadImageOrigin.Screenshot);
+        McpImageLift.KeyFor(read.CallId, read.Index).ShouldBe(store.Keys.ShouldHaveSingleItem());
+    }
+
+    private sealed class Screenshooter(IWebBrowser browser) : WebScreenshotTool(browser)
+    {
+        public Task<WebScreenshotToolResult> ShootAsync() => RunAsync("s", null, CancellationToken.None);
     }
 
     [Fact]
