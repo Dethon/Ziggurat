@@ -226,72 +226,316 @@ document.addEventListener('input', function (e) {
 // Chat Scroll Utilities
 // ===================================
 
+// The conversation's scroll: it follows the end while the reader is there, and the turn rail
+// (TurnRailView) and the "Scroll to end" pill read it. What changes every frame — which turns are on
+// screen, which one is being read, whether the pill shows — is decided here and written onto their
+// elements, never sent to .NET per scroll tick.
 window.chatScroll = {
-    _stickyState: true,  // Track if we should stick to bottom
+    _stickyState: true,  // Follow the end: the reader is at it, or asked to go there
     _element: null,
     _scrollHandler: null,
+    _interruptHandler: null,
+    _contentResize: null,
+    _contentMutation: null,
+    _rail: null,
+    _railRef: null,
+    _railResize: null,
+    _railWheel: null,
+    _frame: 0,
+    _current: null,
+    _pillTimer: 0,
+    _glide: null,  // A smooth scroll the page started: { target, sticky, timer }
 
-    // Check if user is scrolled to near the bottom (within threshold)
-    isAtBottom: function (element) {
+    // Where a jump leaves its turn's first row: below the edge, so the question reads as a heading.
+    _turnOffset: 24,
+    _followZone: 50,  // pixels from the end still counted as at it
+    _pillDelay: 150,  // showing waits this long, so a topic switch's first frames never flash it
+
+    isAtBottom: function (element, threshold) {
         if (!element) return true;
-        const threshold = 50; // pixels from bottom to consider "at bottom"
-        return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+        return element.scrollHeight - element.scrollTop - element.clientHeight <= (threshold ?? this._followZone);
     },
 
-    // Scroll element to the bottom with smooth animation
     scrollToBottom: function (element, smooth) {
         if (!element) return;
-        this._stickyState = true;  // Reset sticky state when forcing scroll
+        this._endGlide();
+        this._stickyState = true;
         requestAnimationFrame(() => {
             if (smooth) {
-                element.scrollTo({
-                    top: element.scrollHeight,
-                    behavior: 'smooth'
-                });
+                element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' });
             } else {
                 element.scrollTop = element.scrollHeight;
             }
         });
     },
 
-    // Initialize scroll tracking for an element
     initStickyScroll: function (element) {
         if (!element) return;
-
-        // Clean up previous handler if exists
-        if (this._element && this._scrollHandler) {
-            this._element.removeEventListener('scroll', this._scrollHandler);
-        }
+        this._detachContent();
 
         this._element = element;
         this._stickyState = true;
 
-        // Track scroll position to detect user scrolling away
         const self = this;
         this._scrollHandler = () => {
-            self._stickyState = self.isAtBottom(element);
+            const glide = self._glide;
+            if (glide && self._arrived(element, glide)) {
+                self._endGlide();
+            }
+            // A smooth scroll passes through the follow zone on its way somewhere else, or has not
+            // reached the end it is going to: neither says where the reader wants to be.
+            self._stickyState = self._glide ? self._glide.sticky : self.isAtBottom(element);
+            self.refresh();
         };
+        element.addEventListener('scroll', this._scrollHandler, { passive: true });
 
-        element.addEventListener('scroll', this._scrollHandler, {passive: true});
+        // The reader taking the wheel ends a smooth scroll the page started.
+        this._interruptHandler = () => self._endGlide();
+        for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+            element.addEventListener(type, this._interruptHandler, { passive: true });
+        }
+
+        // A row grows with no scroll and no render of the list: an image loading, a group opening, a
+        // reply streaming into its bubble. Each row is watched, and rows come and go with the list.
+        this._contentResize = new ResizeObserver(() => self.refresh());
+        this._contentResize.observe(element);
+        for (const child of element.children) this._contentResize.observe(child);
+        this._contentMutation = new MutationObserver(records => {
+            for (const record of records) {
+                for (const node of record.addedNodes) {
+                    if (node.nodeType === Node.ELEMENT_NODE) self._contentResize.observe(node);
+                }
+                for (const node of record.removedNodes) {
+                    if (node.nodeType === Node.ELEMENT_NODE) self._contentResize.unobserve(node);
+                }
+            }
+            self.refresh();
+        });
+        this._contentMutation.observe(element, { childList: true });
+
+        this.refresh();
     },
 
-    // Scroll to bottom only if sticky state is true
+    // Asked again when the frame comes: a jump made in between (TurnRailView) has stopped following, and
+    // a snap queued before it would cancel the jump.
     scrollToBottomIfSticky: function (element) {
-        if (!element) return;
-        if (this._stickyState) {
-            requestAnimationFrame(() => {
-                element.scrollTop = element.scrollHeight;
-            });
+        if (!element || !this._stickyState) return;
+        requestAnimationFrame(() => {
+            if (this._stickyState) element.scrollTop = element.scrollHeight;
+        });
+    },
+
+    // The pill: to the end, following it from there on.
+    scrollToEnd: function () {
+        const area = this._element;
+        if (!area) return;
+        this._showPill(false);
+        this._glideTo(area, area.scrollHeight - area.clientHeight, true);
+    },
+
+    // A strip on the rail: to that turn's first row, and no longer following the end — a reply
+    // streaming in would otherwise pull the reader straight back.
+    scrollToTurn: function (index) {
+        const area = this._element;
+        const row = area?.querySelector(`[data-turn="${index}"]`);
+        if (!row) return;
+        const top = row.getBoundingClientRect().top - area.getBoundingClientRect().top + area.scrollTop;
+        this._glideTo(area, top - this._turnOffset, false);
+    },
+
+    // The rail's step buttons: the turn before or after the one being read.
+    stepTurn: function (by) {
+        if (this._current === null) return;
+        this.scrollToTurn(this._current + by);
+    },
+
+    currentTurn: function () {
+        return this._current;
+    },
+
+    attachRail: function (root, dotNetRef) {
+        this.detachRail();
+        if (!root) return;
+        this._rail = root;
+        this._railRef = dotNetRef;
+
+        const track = root.querySelector('.turn-rail-track');
+        this._railResize = new ResizeObserver(entries => {
+            const height = entries[0]?.contentRect.height ?? 0;
+            dotNetRef.invokeMethodAsync('RailResized', height);
+        });
+        if (track) this._railResize.observe(track);
+
+        // The rail stands beside the conversation, not in it, so a wheel turned over it would scroll
+        // nothing: it is handed on.
+        const self = this;
+        this._railWheel = e => {
+            const area = self._element;
+            if (!area || e.ctrlKey || e.deltaY === 0) return;
+            e.preventDefault();
+            self._endGlide();
+            const unit = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+                : e.deltaMode === WheelEvent.DOM_DELTA_PAGE ? area.clientHeight : 1;
+            area.scrollBy({ top: e.deltaY * unit });
+        };
+        root.addEventListener('wheel', this._railWheel, { passive: false });
+        this.refresh();
+    },
+
+    detachRail: function () {
+        this._railResize?.disconnect();
+        if (this._rail && this._railWheel) {
+            this._rail.removeEventListener('wheel', this._railWheel);
+        }
+        this._rail = null;
+        this._railRef = null;
+        this._railResize = null;
+        this._railWheel = null;
+    },
+
+    // At most once a frame, however many scrolls, resizes and renders asked for it.
+    refresh: function () {
+        if (this._frame) return;
+        this._frame = requestAnimationFrame(() => {
+            this._frame = 0;
+            this._update();
+        });
+    },
+
+    _update: function () {
+        const area = this._element;
+        if (!area) return;
+
+        const areaTop = area.getBoundingClientRect().top;
+        const turns = [...area.querySelectorAll('[data-turn]')]
+            .map(row => {
+                const rect = row.getBoundingClientRect();
+                const top = rect.top - areaTop + area.scrollTop;
+                return { index: Number(row.dataset.turn), top, bottom: top + rect.height };
+            })
+            .sort((a, b) => a.index - b.index);
+
+        const viewTop = area.scrollTop;
+        const viewBottom = viewTop + area.clientHeight;
+        const end = area.scrollHeight;
+
+        // A turn runs from its first row to the next turn's, so a long reply keeps its strip lit.
+        const inView = turns.map((turn, i) =>
+            turn.top < viewBottom && (turns[i + 1]?.top ?? end) > viewTop);
+
+        // The turn being read: the first whose first row shows (below where a jump leaves one, so
+        // stepping on never lands on the same turn again), else the one whose reply fills the screen.
+        const readFrom = viewTop + this._turnOffset + 1;
+        let current = null;
+        for (let i = 0; i < turns.length; i++) {
+            if (turns[i].bottom > readFrom) {
+                current = turns[i].top < viewBottom ? i : (i > 0 ? i - 1 : null);
+                break;
+            }
+            current = i;
+        }
+        this._current = current;
+
+        // The exact end, not the follow zone: a step can still move inside the zone.
+        const atEnd = end - viewBottom <= 1;
+        const rail = this._rail;
+        if (rail) {
+            for (const mark of rail.querySelectorAll('.turn-rail-mark')) {
+                const first = Number(mark.dataset.first);
+                const last = Number(mark.dataset.last);
+                let lit = false;
+                for (let i = first; i <= last && !lit; i++) lit = inView[i] === true;
+                const next = lit ? 'true' : 'false';
+                if (mark.dataset.inView !== next) mark.dataset.inView = next;
+            }
+            const previous = rail.querySelector('.turn-rail-nav.previous');
+            const following = rail.querySelector('.turn-rail-nav.next');
+            if (previous) previous.disabled = current === null || current <= 0;
+            if (following) following.disabled = current === null || atEnd || current + 1 >= turns.length;
+        }
+
+        const away = !this.isAtBottom(area) && !(this._glide?.sticky);
+        if (!away) {
+            this._showPill(false);
+        } else if (!this._pillTimer && !this._pill()?.classList.contains('visible')) {
+            this._pillTimer = setTimeout(() => {
+                this._pillTimer = 0;
+                const now = this._element;
+                if (now && !this.isAtBottom(now) && !(this._glide?.sticky)) this._showPill(true);
+            }, this._pillDelay);
         }
     },
 
-    // Dispose scroll tracking
-    dispose: function () {
-        if (this._element && this._scrollHandler) {
-            this._element.removeEventListener('scroll', this._scrollHandler);
+    _pill: function () {
+        return this._element?.parentElement?.querySelector('.scroll-to-end') ?? null;
+    },
+
+    _showPill: function (show) {
+        if (!show && this._pillTimer) {
+            clearTimeout(this._pillTimer);
+            this._pillTimer = 0;
         }
-        this._element = null;
+        this._pill()?.classList.toggle('visible', show);
+    },
+
+    _glideTo: function (area, top, sticky) {
+        this._endGlide();
+        const target = Math.max(0, Math.min(top, area.scrollHeight - area.clientHeight));
+        this._stickyState = sticky;
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduced || Math.abs(area.scrollTop - target) <= 1) {
+            area.scrollTop = target;
+            return;
+        }
+        // Ended by arriving, by the reader scrolling, or — should the browser stop short — in time.
+        const glide = { target, sticky, timer: 0 };
+        glide.timer = setTimeout(() => {
+            if (this._glide === glide) this._endGlide();
+        }, 1500);
+        this._glide = glide;
+        area.scrollTo({ top: target, behavior: 'smooth' });
+    },
+
+    _arrived: function (area, glide) {
+        return glide.sticky
+            ? this.isAtBottom(area, 1)
+            : Math.abs(area.scrollTop - glide.target) <= 2;
+    },
+
+    _endGlide: function () {
+        if (!this._glide) return;
+        clearTimeout(this._glide.timer);
+        this._glide = null;
+    },
+
+    _detachContent: function () {
+        const element = this._element;
+        if (element && this._scrollHandler) {
+            element.removeEventListener('scroll', this._scrollHandler);
+        }
+        if (element && this._interruptHandler) {
+            for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+                element.removeEventListener(type, this._interruptHandler);
+            }
+        }
+        this._contentResize?.disconnect();
+        this._contentMutation?.disconnect();
+        this._contentResize = null;
+        this._contentMutation = null;
         this._scrollHandler = null;
+        this._interruptHandler = null;
+    },
+
+    dispose: function () {
+        this._detachContent();
+        this.detachRail();
+        this._endGlide();
+        if (this._frame) cancelAnimationFrame(this._frame);
+        if (this._pillTimer) clearTimeout(this._pillTimer);
+        this._frame = 0;
+        this._pillTimer = 0;
+        this._element = null;
+        this._current = null;
         this._stickyState = true;
     }
 };
@@ -715,16 +959,26 @@ window.alertTone = {
     }
 };
 
-// A bubble's actions menu opens below its button unless the messages area has no room for it there
-// and more above: a menu past the area's bottom sits under the composer, where a thumb must scroll to it.
+// A bubble's actions menu opens below its button and leftward from it, under the bubble's end. It opens
+// up where the messages area has no room below and more above — a menu past the area's bottom sits under
+// the composer, where a thumb must scroll to it — and rightward where there is no room on the left and
+// more on the right: a stopped reply keeps its button at the column's start, and the scroller clips what
+// runs past its edge.
 window.messageActions = {
-    opensUp: function (button, menuHeight) {
-        if (!button) return false;
+    placement: function (button, menuHeight, menuWidth) {
+        if (!button) return { up: false, start: false };
         const area = button.closest('.messages-area');
-        const bounds = area ? area.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        const bounds = area
+            ? area.getBoundingClientRect()
+            : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
         const rect = button.getBoundingClientRect();
         const below = bounds.bottom - rect.bottom;
         const above = rect.top - bounds.top;
-        return below < menuHeight && above > below;
+        const left = rect.right - bounds.left;
+        const right = bounds.right - rect.left;
+        return {
+            up: below < menuHeight && above > below,
+            start: left < menuWidth && right > left
+        };
     }
 };

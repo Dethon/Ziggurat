@@ -11,6 +11,10 @@
 
 @code {
     private IReadOnlyList<ChatMessageModel> _messages = [];
+
+    // The conversation's turns for the rail, and the turn each row that starts one starts.
+    private IReadOnlyList<TurnRailItem> _turns = [];
+    private Dictionary<int, int> _turnAt = [];
     private string? _topicId;
     private bool _isStreaming;
     private AgentCatalogEntry? _selectedAgent;
@@ -83,7 +87,11 @@
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
         _messages = TurnLayout.Rows(_isStreaming && LiveMessage(raw) is { } live ? [.. raw, live] : raw);
+        _turns = TurnRail.Items(_messages);
+        _turnAt = _turns.Select((turn, index) => (turn.RowIndex, index)).ToDictionary(t => t.RowIndex, t => t.index);
     }
+
+    private int? TurnAt(int row) => _turnAt.TryGetValue(row, out var turn) ? turn : null;
 
     // A message the store holds is drawn from there: a kept message is never written through the live
     // buffer again (a late chunk updates its bubble), so a live copy under its id is the sampled content
@@ -318,86 +326,37 @@
     }
 }
 
-<div class="messages-area" @ref="_messagesArea">
-    @if (_messages.Count == 0 && !_isStreaming)
-    {
-        <EmptyState SelectedAgent="_selectedAgent" RemovedAgentName="@_removedAgentName" OnSuggestionClicked="HandleSuggestionClicked"/>
-    }
-    else
-    {
-        @foreach (var (message, index) in _messages.Select((m, i) => (m, i)))
+<div class="messages-viewport">
+    <div class="messages-area" @ref="_messagesArea">
+        @if (_messages.Count == 0 && !_isStreaming)
         {
-            if (ServiceNotice.Of(message) is { } line)
+            <EmptyState SelectedAgent="_selectedAgent" RemovedAgentName="@_removedAgentName" OnSuggestionClicked="HandleSuggestionClicked"/>
+        }
+        else
+        {
+            @foreach (var (message, index) in _messages.Select((m, i) => (m, i)))
             {
-                <ServiceNoticeLine Message="@message" Line="@line" />
-                continue;
-            }
-
-            if (message is { NoReply: true, Versions: { } slotVersions })
-            {
-                // A reply streaming in is the answer this line stood for.
-                if (!_isStreaming)
+                if (ServiceNotice.Of(message) is { } line)
                 {
-                    <div class="no-reply-line">
-                        <span>No reply</span>
-                        <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
-                                         OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
-                        @if (MayRewrite && index == _messages.Count - 1 && AnswersAPerson(index))
-                        {
-                            <button class="btn-retry" @onclick="@(() => Reroll(null))">
-                                <Icon Glyph="Icons.Retry" Size="14" />
-                                Answer again
-                            </button>
-                        }
-                    </div>
+                    <ServiceNoticeLine Message="@message" Line="@line" TurnIndex="@TurnAt(index)" />
+                    continue;
                 }
 
-                continue;
-            }
-
-            if (_editingEntryId is not null && message.EntryId == _editingEntryId)
-            {
-                <MessageEditor Text="@message.Content"
-                               Tools="@MessageActionsLogic.ToolsFrom(_messages, index)"
-                               AllowSave="true"
-                               AllowRerun="@(message.Role == "user")"
-                               OnSave="@(text => HandleEditInPlace(message, text))"
-                               OnRerun="@(text => HandleEditAndRerun(message, text))"
-                               OnCancel="@(() => _editingEntryId = null)" />
-                continue;
-            }
-
-            if (message is { Role: "assistant", IsError: false, Activity: { } activity })
-            {
-                var live = IsLive(index);
-                var answered = !string.IsNullOrEmpty(message.Content);
-                if (activity.Count > 0)
+                if (message is { NoReply: true, Versions: { } slotVersions })
                 {
-                    <TurnActivity
-                                  Steps="@activity"
-                                  Live="@live"
-                                  Answered="@answered"
-                                  GroupKey="@TurnLayout.KeyOf(message, index)"
-                                  Expansion="@_expansion" />
-                }
-
-                if (!answered && message.Attachments is not { Count: > 0 })
-                {
-                    // A reply cut before it answered keeps what a bubble would offer: its versions and
-                    // its actions, under the group.
-                    var actions = ActionsFor(message, index);
-                    if (!live && (actions.Count > 0 || message.Versions is not null))
+                    // A reply streaming in is the answer this line stood for.
+                    if (!_isStreaming)
                     {
-                        <div class="activity-footer">
-                            @if (message.Versions is { } versions)
+                        <div class="no-reply-line">
+                            <span>No reply</span>
+                            <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
+                                             OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
+                            @if (MayRewrite && index == _messages.Count - 1 && AnswersAPerson(index))
                             {
-                                <VersionSwitcher Versions="@versions" Enabled="@MayRewrite"
-                                                 OnSwitch="@(i => HandleSwitchVersion(versions, i))" />
-                            }
-                            @if (actions.Count > 0)
-                            {
-                                <MessageActions Actions="@actions" OnAction="@(action => HandleAction(message, action))"
-                                                Models="@RerollModels" Tools="@(message.ToolsCalled ?? [])" />
+                                <button class="btn-retry" @onclick="@(() => Reroll(null))">
+                                    <Icon Glyph="Icons.Retry" Size="14" />
+                                    Answer again
+                                </button>
                             }
                         </div>
                     }
@@ -405,40 +364,95 @@
                     continue;
                 }
 
+                if (_editingEntryId is not null && message.EntryId == _editingEntryId)
+                {
+                    <MessageEditor Text="@message.Content"
+                                   Tools="@MessageActionsLogic.ToolsFrom(_messages, index)"
+                                   AllowSave="true"
+                                   AllowRerun="@(message.Role == "user")"
+                                   OnSave="@(text => HandleEditInPlace(message, text))"
+                                   OnRerun="@(text => HandleEditAndRerun(message, text))"
+                                   OnCancel="@(() => _editingEntryId = null)"
+                                   TurnIndex="@TurnAt(index)" />
+                    continue;
+                }
+
+                if (message is { Role: "assistant", IsError: false, Activity: { } activity })
+                {
+                    var live = IsLive(index);
+                    var answered = !string.IsNullOrEmpty(message.Content);
+                    if (activity.Count > 0)
+                    {
+                        <TurnActivity
+                                      Steps="@activity"
+                                      Live="@live"
+                                      Answered="@answered"
+                                      GroupKey="@TurnLayout.KeyOf(message, index)"
+                                      Expansion="@_expansion" />
+                    }
+
+                    if (!answered && message.Attachments is not { Count: > 0 })
+                    {
+                        // A reply cut before it answered keeps what a bubble would offer: its versions and
+                        // its actions, under the group.
+                        var actions = ActionsFor(message, index);
+                        if (!live && (actions.Count > 0 || message.Versions is not null))
+                        {
+                            <div class="activity-footer">
+                                @if (message.Versions is { } versions)
+                                {
+                                    <VersionSwitcher Versions="@versions" Enabled="@MayRewrite"
+                                                     OnSwitch="@(i => HandleSwitchVersion(versions, i))" />
+                                }
+                                @if (actions.Count > 0)
+                                {
+                                    <MessageActions Actions="@actions" OnAction="@(action => HandleAction(message, action))"
+                                                    Models="@RerollModels" Tools="@(message.ToolsCalled ?? [])" />
+                                }
+                            </div>
+                        }
+
+                        continue;
+                    }
+
+                    <ChatMessage Message="@message"
+                                 IsStreaming="@live"
+                                 ShowRetry="@MessageActionsLogic.OffersRetry(_messages, index, _isStreaming, _currentUserId)"
+                                 OnRetry="@(() => HandleRetry(index))"
+                                 Actions="@ActionsFor(message, index)"
+                                 RerollModels="@RerollModels"
+                                 AgentModel="@AgentModel"
+                                 MaySwitchVersions="@MayRewrite"
+                                 OnSwitchVersion="@(i => HandleSwitchVersion(message.Versions!, i))"
+                                 OnAction="@(action => HandleAction(message, action))"
+                                 TopicOwnerId="@_topic?.OwnerId"
+                                 TopicOwnerName="@_topic?.OwnerName" />
+                    continue;
+                }
+
                 <ChatMessage Message="@message"
-                             IsStreaming="@live"
+                             ShowAvatar="@ShouldShowAvatar(index)"
+                             IsOwnMessage="@IsOwnMessage(message)"
                              ShowRetry="@MessageActionsLogic.OffersRetry(_messages, index, _isStreaming, _currentUserId)"
                              OnRetry="@(() => HandleRetry(index))"
                              Actions="@ActionsFor(message, index)"
                              RerollModels="@RerollModels"
                              AgentModel="@AgentModel"
                              MaySwitchVersions="@MayRewrite"
-                             OnSwitchVersion="@(i => HandleSwitchVersion(message.Versions!, i))"
+                             OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
                              OnAction="@(action => HandleAction(message, action))"
                              TopicOwnerId="@_topic?.OwnerId"
-                             TopicOwnerName="@_topic?.OwnerName" />
-                continue;
+                             TopicOwnerName="@_topic?.OwnerName"
+                             TurnIndex="@TurnAt(index)" />
             }
 
-            <ChatMessage Message="@message"
-                         ShowAvatar="@ShouldShowAvatar(index)"
-                         IsOwnMessage="@IsOwnMessage(message)"
-                         ShowRetry="@MessageActionsLogic.OffersRetry(_messages, index, _isStreaming, _currentUserId)"
-                         OnRetry="@(() => HandleRetry(index))"
-                         Actions="@ActionsFor(message, index)"
-                         RerollModels="@RerollModels"
-                         AgentModel="@AgentModel"
-                         MaySwitchVersions="@MayRewrite"
-                         OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
-                         OnAction="@(action => HandleAction(message, action))"
-                         TopicOwnerId="@_topic?.OwnerId"
-                         TopicOwnerName="@_topic?.OwnerName" />
+            @if (AwaitsFirstWord)
+            {
+                <TurnActivity Steps="@([])" Live="true" Answered="false"
+                              GroupKey="awaiting" Expansion="@_expansion" />
+            }
         }
-
-        @if (AwaitsFirstWord)
-        {
-            <TurnActivity Steps="@([])" Live="true" Answered="false"
-                          GroupKey="awaiting" Expansion="@_expansion" />
-        }
-    }
+    </div>
+    <TurnRailView Items="@_turns" />
+    <ScrollToEndButton />
 </div>
