@@ -1048,8 +1048,96 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    public Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default) =>
-        throw new NotImplementedException();
+    // A picture of the current tab -- the one the last call of any kind touched, as web_snapshot
+    // and back address. No restamp: a screenshot between two fills must leave the form's refs
+    // standing, so it reads the page and moves nothing but the scroll it was asked for.
+    public async Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            var outcome = await _sessions.OnCurrentTabAsync(request.SessionId, StampPolicy.None,
+                ctx => CaptureScreenAsync(request, ctx.Page), ct);
+
+            return outcome switch
+            {
+                TabOutcome<ScreenshotResult>.Ran ran => ran.Result,
+                TabOutcome<ScreenshotResult>.Closed closed => new ScreenshotResult(
+                    request.SessionId, ScreenshotStatus.TabClosed, Url: closed.Url),
+                _ => new ScreenshotResult(request.SessionId, ScreenshotStatus.SessionNotFound)
+            };
+        }
+        catch (Exception ex) when (IsConnectionClosed(ex))
+        {
+            // The page went with the connection; a reconnect would only photograph a blank tab.
+            _sessions.Remove(request.SessionId);
+            return new ScreenshotResult(request.SessionId, ScreenshotStatus.SessionNotFound);
+        }
+        catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+        {
+            return new ScreenshotResult(request.SessionId, ScreenshotStatus.Error, ErrorMessage: ex.Message);
+        }
+    }
+
+    // A screen is a viewport's height of the document, so a picture is always the viewport's size:
+    // a whole-page capture of a long page is either an oversized request or a downscale nobody can
+    // read. JPEG, because a 1920x1080 PNG of a photo-heavy page runs to megabytes the model does
+    // not see any better.
+    private static async Task<ScreenshotResult> CaptureScreenAsync(ScreenshotRequest request, IPage page)
+    {
+        var position = await page.EvaluateAsync<int[]>(ScreenPositionScript, request.Screen);
+        var bytes = await page.ScreenshotAsync(new PageScreenshotOptions
+        {
+            Type = ScreenshotType.Jpeg,
+            Quality = ScreenshotQuality,
+            Timeout = ScreenshotTimeoutMs
+        });
+
+        return new ScreenshotResult(
+            request.SessionId, ScreenshotStatus.Success, BrowserSessionManager.SafeUrl(page),
+            await page.TitleAsync(), "image/jpeg", bytes)
+        {
+            Screen = position[0],
+            Screens = position[1]
+        };
+    }
+
+    private const int ScreenshotQuality = 80;
+    private const int ScreenshotTimeoutMs = 10_000;
+
+    // Scrolls to the screen asked for (the last, past the end), then answers [screen, screens].
+    // The measure is the document's own scroll: a page that scrolls an inner pane instead counts as
+    // one screen, and only its current view can be shown.
+    // Instant, because a page styled with smooth scrolling would otherwise be photographed mid-way.
+    // A picture lazily loaded by the scroll is waited for, briefly: a screen of grey boxes is not
+    // what a person scrolling there would see, and one that never loads must not hold the call.
+    private const string ScreenPositionScript =
+        """
+        async (screen) => {
+            const viewport = window.innerHeight || 1;
+            const height = Math.max(
+                document.documentElement?.scrollHeight ?? 0, document.body?.scrollHeight ?? 0);
+            const screens = Math.max(1, Math.ceil(height / viewport));
+            if (screen != null) {
+                window.scrollTo({ top: (Math.min(screen, screens) - 1) * viewport, behavior: 'instant' });
+                await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+                const pending = [...document.images].filter(img => {
+                    const box = img.getBoundingClientRect();
+                    return !img.complete && box.bottom > 0 && box.top < viewport;
+                });
+                await Promise.race([
+                    Promise.all(pending.map(img => new Promise(r => {
+                        img.addEventListener('load', r, { once: true });
+                        img.addEventListener('error', r, { once: true });
+                    }))),
+                    new Promise(r => setTimeout(r, 3000))
+                ]);
+            }
+            // The last screen is usually a partial one, so the scroll can never reach its top:
+            // a view at the bottom is the last screen, whatever the division says.
+            const atBottom = window.scrollY + viewport >= height - 1;
+            return [atBottom ? screens : Math.min(screens, Math.round(window.scrollY / viewport) + 1), screens];
+        }
+        """;
 
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
