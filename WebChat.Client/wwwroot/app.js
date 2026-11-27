@@ -959,16 +959,26 @@ window.alertTone = {
     }
 };
 
-// A bubble's actions menu opens below its button unless the messages area has no room for it there
-// and more above: a menu past the area's bottom sits under the composer, where a thumb must scroll to it.
+// A bubble's actions menu opens below its button and leftward from it, under the bubble's end. It opens
+// up where the messages area has no room below and more above — a menu past the area's bottom sits under
+// the composer, where a thumb must scroll to it — and rightward where there is no room on the left and
+// more on the right: a stopped reply keeps its button at the column's start, and the scroller clips what
+// runs past its edge.
 window.messageActions = {
-    opensUp: function (button, menuHeight) {
-        if (!button) return false;
+    placement: function (button, menuHeight, menuWidth) {
+        if (!button) return { up: false, start: false };
         const area = button.closest('.messages-area');
-        const bounds = area ? area.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+        const bounds = area
+            ? area.getBoundingClientRect()
+            : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth };
         const rect = button.getBoundingClientRect();
         const below = bounds.bottom - rect.bottom;
         const above = rect.top - bounds.top;
-        return below < menuHeight && above > below;
+        const left = rect.right - bounds.left;
+        const right = bounds.right - rect.left;
+        return {
+            up: below < menuHeight && above > below,
+            start: left < menuWidth && right > left
+        };
     }
 };

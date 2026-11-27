@@ -1579,10 +1579,16 @@ h1, h2, h3 {
     text-align: left;
 }
 
-/* Up, where the messages area has no room below and more above (messageActions.opensUp). */
+/* Up, where the messages area has no room below and more above (messageActions.placement). */
 .message-actions-menu.up {
     top: auto;
     bottom: calc(100% + 0.25rem);
+}
+
+/* Rightward from the button, where the messages area has no room on its left and more on its right. */
+.message-actions-menu.start {
+    right: auto;
+    left: 0;
 }
 
 .message-action {

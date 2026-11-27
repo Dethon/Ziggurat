@@ -200,6 +200,34 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // A bubble's menu opens leftward from its button, under the bubble's end. A button with no room on its
+    // left — a reply stopped before it answered keeps its actions at the column's start, under its
+    // activity — opens it rightward, inside the conversation rather than past the edge the scroller clips.
+    [SkippableFact]
+    public async Task AMenuWithNoRoomOnItsLeft_OpensInsideTheConversation()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await OpenAsync();
+
+        await SendAsync(page, $"Room {tag}: answer only OK. Do not call any tools.");
+        await RepliesAsync(page, 1);
+
+        // The reply's bubble narrowed until its button stands at the column's start, where a stopped
+        // reply's stands.
+        await page.AddStyleTagAsync(new PageAddStyleTagOptions
+        {
+            Content = ".chat-message.assistant { width: 5rem !important; min-width: 0 !important; max-width: 5rem !important; overflow: visible !important; }"
+        });
+        await ClickThroughApprovalsAsync(page,
+            Replies(page).Last.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Message actions" }));
+
+        var menu = (await page.Locator(".message-actions-menu").BoundingBoxAsync())!;
+        var area = (await page.Locator(".messages-area").BoundingBoxAsync())!;
+        menu.X.ShouldBeGreaterThanOrEqualTo(area.X, "the menu runs past the conversation's left edge");
+        (menu.X + menu.Width).ShouldBeLessThanOrEqualTo(area.X + area.Width, "the menu runs past the conversation's right edge");
+    }
+
     private async Task<IPage> OpenAsync()
     {
         var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
