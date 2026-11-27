@@ -297,6 +297,10 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
 `./check` (`AppChecks`) opens the preview in a headless Chromium of its own as the turn's person, in the
 `apps-browser` container, never in `mcp-apps` (whose image has the Playwright driver alone).
 
+- **`--only <file>.js`** (repeatable, `checks/` optional) runs those assertion files alone, a name no file
+  has exit 2 naming those there are; a viewport whose assertions ran is shot again after them
+  (`<W>x<H>-after.png`, `screenshotAfter`). A build moved files out of `checks/` and back to run one, and
+  never saw the page an assertion drove to.
 - **What went wrong is in its output** (`AppActions.CheckSummary`): per viewport, the counts, then failed
   assertions, console errors (each led by where it came from, the preview's own by path: Chromium names a failed
   load's address nowhere else), failed requests, policy violations, refused reads and failed asks, a line each (first line,

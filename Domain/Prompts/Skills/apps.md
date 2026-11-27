@@ -16,8 +16,10 @@ description-budget: 110
 # a failed ask, and that a failed ask still counts, so a page retrying in a loop drains the cap (measured
 # 2,490 on 2026-11-26). 2530 since writing a schedule or a watch is refused in an ask, which an agent
 # would otherwise build an app around, and a schema the provider refused is no retry but a fix (measured
-# 2,524 on 2026-11-26).
-body-budget: 2530
+# 2,524 on 2026-11-26). 2600 since a check's page was learned by trial over a build's rounds (a fresh
+# browser per viewport, assertions sharing one page, a reload ending one), assertion files were moved out
+# of checks/ to run one, and the page an assertion drove to was never seen (measured 2,596 on 2026-11-27).
+body-budget: 2600
 served-by: mcp-apps
 claims:
 # The trigger claim: a request of this kind loads the skill. No scenario cites it yet: the eval stack
@@ -93,13 +95,13 @@ Keep the project in the sandbox home (`~/apps/<slug>`) and install and build the
 
 ### Checking
 
-`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
+`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`; `--only <file>.js`, repeatable, to run some of `checks/`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
-- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like; `icon-512.png`, `icon-64.png` the installed icon.
+- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like, `<W>x<H>-after.png` where the assertions left it; `icon-512.png`, `icon-64.png` the installed icon.
 - `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `failedAsks` (asks refused or failed), `accessibility` (the page's text and structure) and `assertions`.
 - A failed ask's entry: `status`, `text`, `errorCode`, `message`, `hint`, and on the preview `reply` (a reply that was no JSON) or `failure` (the assistant's own words, such as a provider refusing the schema or model).
 
-Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.
+Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails. Each viewport is a fresh browser, storage empty; its assertions run in order in one page, so one's state is the next's, and a reload ends the one running.
 
 ```js
 const meals = document.querySelectorAll('#meals li');

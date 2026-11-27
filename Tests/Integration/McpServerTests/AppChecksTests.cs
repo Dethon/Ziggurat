@@ -65,6 +65,45 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         viewports.ShouldAllBe(v => v!["accessibility"]!.GetValue<string>().Contains("heading \"Glucose today\" [level=1]"));
     }
 
+    // A check of one assertion file runs that file alone, so the agent never moves the others out of
+    // checks/ and back (an app build lost track of one it had moved); a name no file has is refused,
+    // naming the files there are.
+    [Fact]
+    public async Task ACheckOfOnlySomeAssertionFiles_RunsThoseAlone()
+    {
+        await using var server = await StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/one.js", "return 'one';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/two.js", "return 'two';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/three.js", "throw new Error('three');");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600 --only two.js --only checks/one.js");
+        var unknown = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --only four.js");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        (await ReportAsync(server, "glucose"))["viewports"]![0]!["assertions"]!.AsArray()
+            .Select(a => a!["file"]!.GetValue<string>()).ShouldBe(["checks/one.js", "checks/two.js"]);
+        unknown["exitCode"]!.GetValue<int>().ShouldBe(2, unknown.ToJsonString());
+        unknown["stderr"]!.GetValue<string>().ShouldContain("four.js is not in checks/: one.js, three.js, two.js");
+    }
+
+    // The screenshot before the assertions shows the page as it loads; an assertion that drives it
+    // somewhere (a story read to its end) is seen too, in a second one taken after them.
+    [Fact]
+    public async Task AViewportWhoseAssertionsRan_IsShownAfterThemToo()
+    {
+        await using var server = await StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/drive.js", "document.body.style.background = 'red'; return 'driven';");
+
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        (await ReportAsync(server, "glucose"))["viewports"]![0]!["screenshotAfter"]!.GetValue<string>().ShouldBe("800x600-after.png");
+        (await BytesAsync(server, "/glucose/.checks/latest/800x600-after.png"))[..4].ShouldBe(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+    }
+
     // What a page gets wrong reaches the agent before the person: an error it logs or throws, a request
     // answered 404, and what its content policy refused, each with what it was about.
     [Fact]

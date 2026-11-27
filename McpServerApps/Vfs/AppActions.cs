@@ -32,10 +32,10 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         $"Run an app's action in its directory: ./{Publish} commits the working tree and serves it, answering "
         + "the app's link (refused while a served page loads outside code without an exact version and integrity hash); "
         + $"./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
-        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] opens "
+        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] [--only <file>.js]... opens "
         + "the preview in a headless browser as the person (a phone and a desktop unless named), runs each "
         + $"{AssertionsDirectory}/*.js in the page (an async function body: returning passes, throwing fails) and "
-        + $"writes one PNG per viewport and report.json (console, failed requests, policy violations, an "
+        + $"writes one PNG per viewport (another, -after, once its assertions ran) and report.json (console, failed requests, policy violations, an "
         + $"accessibility snapshot, assertions) to {AppsFileSystem.ChecksOutput}/latest/. Not a shell — anything else returns exit 127.";
 
     // Who runs an action, as the mount's call carries it: the turn's agent (named in a publish's commit),
@@ -185,11 +185,11 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
     // token, which the agent believes for that person's reads while the check runs.
     private async Task<FsResult<FsExecResult>> CheckAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, Caller caller, CancellationToken ct)
     {
-        if (CheckArguments(args) is not var (viewports, route))
+        if (CheckArguments(args) is not var (viewports, route, only))
         {
             return Exec(cwd, "",
-                $"usage: ./{Check} [--viewport WxH]... [--path /route] — at most {MaxViewports} viewports, each side "
-                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /.", 2);
+                $"usage: ./{Check} [--viewport WxH]... [--path /route] [--only <file>.js]... — at most {MaxViewports} viewports, each side "
+                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /; --only names files in {AssertionsDirectory}/.", 2);
         }
 
         if (caller.CallToken is not { } callToken || caller.Household is not { } household)
@@ -212,6 +212,16 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 .Order(StringComparer.Ordinal)
                 .Select(async file => new CheckAssertion($"{AssertionsDirectory}/{Path.GetFileName(file)}", await File.ReadAllTextAsync(file, ct))))
             : [];
+        if (only.Count > 0)
+        {
+            var named = assertions.Select(a => a.File[(AssertionsDirectory.Length + 1)..]).ToList();
+            if (only.FirstOrDefault(name => !named.Contains(name, StringComparer.Ordinal)) is { } missing)
+            {
+                return Exec(cwd, "", $"{missing} is not in {AssertionsDirectory}/: {(named.Count == 0 ? "it has none" : string.Join(", ", named))}.", 2);
+            }
+
+            assertions = [.. assertions.Where(a => only.Contains(a.File[(AssertionsDirectory.Length + 1)..]))];
+        }
         var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken, household), ct);
         return outcome switch
         {
@@ -223,10 +233,12 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         };
     }
 
-    // `--viewport WxH` (repeatable) and `--path /route`, or null for anything else.
-    private static (IReadOnlyList<CheckViewport> Viewports, string Path)? CheckArguments(IReadOnlyList<string> args)
+    // `--viewport WxH` (repeatable), `--path /route` and `--only <file>` (repeatable: a file of checks/,
+    // with or without the directory), or null for anything else.
+    private static (IReadOnlyList<CheckViewport> Viewports, string Path, IReadOnlyList<string> Only)? CheckArguments(IReadOnlyList<string> args)
     {
         var viewports = new List<CheckViewport>();
+        var only = new List<string>();
         var route = "/";
         for (var i = 0; i < args.Count; i += 2)
         {
@@ -246,12 +258,27 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 case ("--path", var asked) when asked.StartsWith('/') && asked.Length <= 512 && !asked.Any(char.IsWhiteSpace):
                     route = asked;
                     break;
+                case ("--only", var file) when AssertionName(file) is { } name:
+                    only.Add(name);
+                    break;
                 default:
                     return null;
             }
         }
 
-        return viewports.Count > MaxViewports ? null : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route);
+        return viewports.Count > MaxViewports
+            ? null
+            : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route, only.Distinct().ToList());
+    }
+
+    // An assertion file's name in checks/, however the agent spelled it: `relato.js`, `checks/relato.js`,
+    // `./checks/relato.js` or `relato`. Null for a path anywhere else.
+    private static string? AssertionName(string file)
+    {
+        var name = file.StartsWith("./", StringComparison.Ordinal) ? file[2..] : file;
+        name = name.StartsWith($"{AssertionsDirectory}/", StringComparison.Ordinal) ? name[(AssertionsDirectory.Length + 1)..] : name;
+        name = name.EndsWith(".js", StringComparison.Ordinal) ? name : $"{name}.js";
+        return name.Length > 3 && !name.Contains('/') && !name.Contains('\\') && name != ".js" ? name : null;
     }
 
     // Counts per viewport, then what went wrong, so a fix needs no read of the report: a viewport that saw
@@ -277,7 +304,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         var stopped = report.DeadlineHit ? $"stopped at its deadline of {Spoken(report.Deadline)}; " : "";
         var cut = report.DeadlineHit ? lines.Concat(Cut(report)).ToList() : lines;
         return $"checked the preview of {app.Slug} at {report.Path}: {waitedFor}{stopped}\n{string.Join("\n", cut)}\n"
-               + $"screenshots, the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
+               + $"screenshots (each viewport's -after.png once its assertions ran), the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
                + $"{AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ (file_read shows a picture)\n";
     }
 

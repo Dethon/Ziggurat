@@ -355,6 +355,21 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             seen.Assertions.Add(onPreview() ? outcome : outcome with { Passed = false, Message = LeftThePreview });
         }
 
+        // Where the assertions left the page (a story read to its end), which the first screenshot,
+        // taken as it loaded, cannot show.
+        if (seen.Assertions.Count > 0 && onPreview())
+        {
+            await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(run, viewport.ScreenshotAfter), Timeout = 0 });
+            if (onPreview())
+            {
+                seen.ScreenshotAfter = viewport.ScreenshotAfter;
+            }
+            else
+            {
+                File.Delete(Path.Combine(run, viewport.ScreenshotAfter));
+            }
+        }
+
         if (!onPreview())
         {
             seen.Error = $"{LeftThePreview}; nothing it showed after that is kept";
@@ -611,6 +626,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public ConcurrentQueue<string> EnvelopeUrls { get; } = new();
         public List<AssertionOutcome> Assertions { get; } = [];
         public string? Screenshot { get; set; }
+        public string? ScreenshotAfter { get; set; }
         public string? Accessibility { get; set; }
         public bool Settled { get; set; }
         public bool Finished { get; set; }
@@ -628,6 +644,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             Width = viewport.Width,
             Height = viewport.Height,
             Screenshot = Screenshot,
+            ScreenshotAfter = ScreenshotAfter,
             Settled = Settled,
             Finished = Finished,
             Error = Error,
@@ -649,6 +666,7 @@ public sealed record CheckViewport(int Width, int Height)
 {
     public string Name => $"{Width}x{Height}";
     public string Screenshot => $"{Name}.png";
+    public string ScreenshotAfter => $"{Name}-after.png";
 }
 
 // One assertion file of the app's `checks/`, by its path in the app, and its text.
@@ -698,6 +716,9 @@ public sealed record ViewportReport
     public required int Width { get; init; }
     public required int Height { get; init; }
     public string? Screenshot { get; init; }
+
+    // The page once its assertions ran, where they drove it; none where none ran.
+    public string? ScreenshotAfter { get; init; }
 
     // Whether the network went quiet within Checks:Settle before the page was shown.
     public required bool Settled { get; init; }
