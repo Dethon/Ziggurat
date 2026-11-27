@@ -32,17 +32,18 @@ The service's own contracts are `.claude/rules/accounts.md`.
 
 ## Sections
 
-Five JSON documents per household (`HouseholdSections`), each with a `schemaVersion`, read and written
+Six JSON documents per household (`HouseholdSections`), each with a `schemaVersion`, read and written
 with the strict `SectionSchema.Json`. A section never saved reads as its defaults — never a 404. A
 document's problems name the field, never its value, which may be a key.
 
 | Section | Record | Notes |
 |---|---|---|
-| `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation) |
+| `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation), `maxToolRounds` (1–`MaxToolRoundsLimit`; none: no bound) |
 | `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
 | `keys` | `KeysSection` | `openRouter`, `idealista`, `braveSearch`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
-| `features` | `FeaturesSection` | six bools; default all on but Idealista |
-| `spaces` | `SpacesSection` | at least one space |
+| `features` | `FeaturesSection` | seven bools; default all on but Idealista and `apps`, which only the operator sets (an owner's save keeps the stored value, `HouseholdFeaturesAdmin`) |
+| `app-asks` | `AppAsksSection` | the daily caps on the household's apps' asks: `dailyCap` (none: the deployment's) and `apps: { <app id>: cap }`, each 0–`MaxDailyCap`; `LimitOf` is the one resolution (the app's, else the household's, else the deployment's) |
+| `spaces` | `SpacesSection` | at least one space; an app space names a built app's id (`appId`): one space per app, opening on no agent, never the default space; it may carry the reach an owner approved (`approved`: `reads` mount points, `connect` bare https origins, `asks` server names, absent read as none; none on a chat space) |
 
 - An owner changes only an agent's name and custom instructions (4c): a definition entry carrying a
   `name`/`customInstructions` beside its definition is refused, so each has one place.
@@ -88,7 +89,9 @@ to its callers (`InternalCallers`' view table); anyone else is 403 before a row 
 | `idealista` | `mcp-idealista` | call token | Idealista's two |
 | `brave-search` | `household-websearch` (`InternalCallers.HouseholdWebSearch`) | its live tunnel credential **and** a call token signed for that server, acting for that household (`HouseholdProofs.OwnWebSearchAsync`) | Brave's key |
 | `spaces`, `member-names` (disabled members too: their topics are kept) | `mcp-channel-signalr` | the session refresh's assertion (hub bullet below) | none |
-| `agent-names` (`HouseholdAgents.Names`, never custom instructions) | `mcp-scheduling` | call token | none |
+| `agent-names` (`HouseholdAgents.Names`, never custom instructions) | `mcp-scheduling`, `mcp-apps` | call token | none |
+| `spaces` (which apps are app spaces, `.claude/rules/apps.md`) | `mcp-apps` | call token (a delete) / the viewer's `apps` assertion (an app origin) | none |
+| `app-asks` (the daily caps an app's asks meet) | `mcp-apps` | the viewer's `apps` assertion (an ask) / call token (a check's ask) | none |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | the person's assertion on the asker's channel | none |
 | `sugary-people` (no disabled member; each one's grant and whether Sugary is on for them; one answer for the whole household: readers keep it per household) | `mcp-sugary` | call token (the mount) / assertion (the app) | none |
 | `telegram-bots` (every household's) | `mcp-channel-telegram` | none (exception 2) | the bots' tokens |
@@ -144,6 +147,12 @@ Built per turn from the household's view (`HouseholdAgents.Of` over `HouseholdAg
   stamp beside a household-zone prompt gives the model two clocks. A write's bare `runAt` is read in the
   same zone (`McpAgent.Zone` → `ThreadSession`'s `localZone`), as the scheduling server reads it. Language
   fills every agent that pins none; the household's name is not in the prompt.
+- **A turn's tool rounds are the household's `maxToolRounds`, unbounded by default** (user, 2026-11-27):
+  `AgentSpec.MaxToolRounds` → `ToolApprovalChatClient`'s `MaximumIterationsPerRequest` (none is
+  `int.MaxValue`), a worker's its parent's (`SpawnContext.MaxToolRounds`), part of `AgentAsBuilt`. A fixed
+  50 stopped a long app-building turn three times mid-work with no word. At the bound the model's last ask
+  is offered no tools (the library's `PrepareOptionsForLastIteration`), and a call it writes anyway is
+  answered "Not run: … limit of N rounds" (`ToolApprovalChatClient.NotRun`), never kept without a result.
 - **The features withhold** their `SharedServers` address from every definition — the household's, a
   person's registered agent's — and every worker (`SpawnContext.WithheldServers`). Only the household's
   own agents' endpoints present deployment credentials.

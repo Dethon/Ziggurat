@@ -235,6 +235,26 @@ public class McpServerContractTests
             $"{id} is a tool row, so an emitter means the row is mislabelled");
     }
 
+    // A hub method may take a service of its own ([FromServices]) rather than widen the hub's
+    // constructor; SignalR resolves it only when the method is called, so one the channel's module does
+    // not register fails that call alone and nothing at start-up.
+    [Fact]
+    public void EveryServiceAChatHubMethodTakes_IsRegisteredByTheChannelsModule()
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get("signalr"));
+        var registered = server.Provider.GetRequiredService<IServiceProviderIsService>();
+
+        var taken = typeof(global::McpChannelSignalR.Hubs.ChatHub).GetMethods()
+            .SelectMany(method => method.GetParameters())
+            .Where(parameter => parameter.IsDefined(typeof(Microsoft.AspNetCore.Mvc.FromServicesAttribute), inherit: false))
+            .Select(parameter => parameter.ParameterType)
+            .Distinct()
+            .ToList();
+
+        taken.ShouldNotBeEmpty();
+        taken.Where(type => !registered.IsService(type)).ShouldBeEmpty();
+    }
+
     public static TheoryData<string> ChannelServers =>
         McpServerRegistrations.Ids(McpServerRegistrations.ChannelServers);
 

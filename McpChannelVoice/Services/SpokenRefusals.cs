@@ -31,6 +31,10 @@ public static class SpokenRefusals
         [RefusalAnswers.SugaryOff] =
             "Sugary está desactivado en tu hogar, así que no se ha estimado nada. "
             + "Quien administra el hogar puede volver a activarlo en la página de funciones.",
+        // Voice opens no app's ask either; spoken for the same completeness.
+        [RefusalAnswers.AppsOff] =
+            "Las aplicaciones no están activadas en tu hogar, así que esta aplicación no pudo preguntar a su asistente. "
+            + "Quien lleva el servicio puede activarlas.",
         [RefusalAnswers.SetupFailed] =
             "Algo falló al preparar al asistente, así que no lo he contestado. Vuelve a decírmelo en un momento."
     };

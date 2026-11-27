@@ -24,6 +24,7 @@ app.UseWebSockets();
 
 app.MapAgents(settings.AgentApi.SharedSecret);
 app.MapVfsBridge();
+app.MapAppReads();
 app.MapAgentKeys();
 app.MapTopicMinting();
 app.MapTunnel();

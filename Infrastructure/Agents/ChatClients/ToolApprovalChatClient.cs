@@ -37,6 +37,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
+    private readonly int? _maxToolRounds;
     private readonly IExecScreen? _execScreen;
     private readonly string? _agentId;
     private readonly ModelPayer _payer;
@@ -46,6 +47,30 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     // rather than per client because a call can open a request of its own on a client like this
     // one — a worker — and its calls must not queue behind the call that is waiting for them.
     private readonly ConditionalWeakTable<IList<ChatMessage>, WrittenOrder> _writtenOrders = new();
+
+    // The person's answer about each site a call acted as them on, for the rest of the turn it was
+    // given in, found by the turn's history as the written order is. A plain yes to the first of a
+    // site's calls is a yes to the rest of them: a profile read and then three of its pages asked
+    // twice, and calls of one message, asked together before any answer, would ask once each.
+    private readonly ConditionalWeakTable<IList<ChatMessage>, ConcurrentDictionary<AsPersonSubject, TaskCompletionSource<ToolApprovalResult>>>
+        _turnAnswers = new();
+
+    // Set on the options of a turn nobody may be asked in: a built app's ask, whose person waits on an answer
+    // in an app whose code — and whatever web text it carried in — wrote the request. Every call that would be
+    // asked is refused at once, whoever would have asked (the whitelist, the exec screen, acting as the
+    // person), and nothing reaches any channel about a call, asked or not.
+    public const string AsksNobodyKey = "AsksNobody";
+
+    // A turn that asks nobody goes on past a refused call, so a model that keeps calling what cannot be asked
+    // would loop to the invocation limit within the ask's timeout, the exec screen asking Jev each time.
+    // Counted in rounds, not calls: calls written together are one attempt, and counting them ended an ask
+    // whose first message held three before the model read any refusal. Three rounds leave room to try
+    // another way after a refusal or two; the third ends the turn.
+    private const int RefusingRoundsPerUnaskedTurn = 3;
+
+    // The rounds of a turn that asks nobody in which a call was refused, found by the turn's history as the
+    // written order is, so the count is each turn's own; written by the calls of one message at once.
+    private readonly ConditionalWeakTable<IList<ChatMessage>, ConcurrentDictionary<int, byte>> _refusingRounds = new();
 
     // Approved for every agent without a whitelist entry: loading a skill reads prose this repo
     // ships and changes nothing, and a load that stalled a turn on a prompt nobody sees would cost
@@ -62,7 +87,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         IToolInvocationObserver? observer = null,
         IExecScreen? execScreen = null,
         string? agentId = null,
-        ModelPayer? payer = null)
+        ModelPayer? payer = null,
+        int? maxToolRounds = null)
         : base(innerClient)
     {
         _observer = observer;
@@ -79,7 +105,10 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         _conversationId = conversationId;
 
         IncludeDetailedErrors = true;
-        MaximumIterationsPerRequest = 50;
+        // The household's bound, or none: a long job (an app built and playtested) runs well past any
+        // fixed count, and a turn cut off there stops mid-work with no word.
+        MaximumIterationsPerRequest = maxToolRounds ?? int.MaxValue;
+        _maxToolRounds = maxToolRounds;
         // Every call of a message is handed over at once; which of them actually run at once is
         // decided call by call, by what each says it touches (WrittenOrder). It must stay on for
         // steering too: a steered turn's Terminate on the sequential path would leave the batch's
@@ -126,26 +155,61 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             toolName,
             ToReadOnlyDictionary(context.CallContent.Arguments));
 
+        // A turn that asks nobody leaves nothing a later turn acts on, whatever the whitelist says: what it
+        // wrote would run later as a full turn of the person, outside every bound this one has. Refused as a
+        // call that would be asked is, so the model is told the same and the bound counts it.
+        if (AsksNobody(context.Options) && StartsLaterTurns.Of(context.Function, request.Arguments))
+        {
+            return Rejected(context, toolName);
+        }
+
         // A call acting as the person is asked about by its site, whatever the whitelist or a
         // remembered tool says: the flag is the model's to set, and a page's own text can ask it
         // to, so nothing but the person's own yes for that site lets it run.
         if (AsPersonSubject.Of(toolName, request.Arguments) is { } subject && !IsUnpromptedFire(context.Options))
         {
-            if (subject.Site is not null && _approvedSubjects.ContainsKey(subject))
+            var asked = request with { Screen = [ExecScreenCodes.AsPerson] };
+
+            // A call with no site has nothing to scope the yes to, so it is asked every time.
+            if (subject.Site is null)
+            {
+                return await AskAsync(context, asked, place, cancellationToken, remember: () => { });
+            }
+
+            if (_approvedSubjects.ContainsKey(subject))
             {
                 return await RunUnaskedAsync(context, request, place, cancellationToken);
             }
 
-            return await AskAsync(
-                context, request with { Screen = [ExecScreenCodes.AsPerson] }, place, cancellationToken,
-                remember: () =>
-                {
-                    // A call with no site has nothing to scope the yes to, so it is asked again.
-                    if (subject.Site is not null)
-                    {
-                        _approvedSubjects.TryAdd(subject, 0);
-                    }
-                });
+            var answers = _turnAnswers.GetValue(context.Messages, _ => new());
+            var mine = new TaskCompletionSource<ToolApprovalResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var answer = answers.GetOrAdd(subject, mine);
+            if (answer != mine)
+            {
+                var given = await answer.Task.WaitAsync(cancellationToken);
+                return given is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember or ToolApprovalResult.AutoApproved
+                    ? await RunUnaskedAsync(context, request, place, cancellationToken)
+                    : Rejected(context, toolName);
+            }
+
+            ToolApprovalResult result;
+            try
+            {
+                result = await RequestAsync(context, asked, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                // Nobody answered: the calls waiting on this one hear the same, never a yes, and
+                // the site's next call asks again rather than being handed the failure.
+                answers.TryRemove(KeyValuePair.Create(subject, mine));
+                mine.TrySetException(ex);
+                _ = mine.Task.Exception;
+                throw;
+            }
+
+            mine.TrySetResult(result);
+            return await AnsweredAsync(
+                context, toolName, result, place, cancellationToken, remember: () => _approvedSubjects.TryAdd(subject, 0));
         }
 
         if (RunsUnasked(toolName))
@@ -173,8 +237,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         WrittenOrder.Place place,
         CancellationToken cancellationToken)
     {
-        var notifyTask = _approvalHandler.NotifyAutoApprovedAsync(
-            _conversationId, [request], cancellationToken);
+        var notifyTask = AsksNobody(context.Options)
+            ? Task.CompletedTask
+            : _approvalHandler.NotifyAutoApprovedAsync(_conversationId, [request], cancellationToken);
         var invokeTask = InvokeInTurnAsync(context, request.ToolName, place, cancellationToken).AsTask();
         await Task.WhenAll(notifyTask, invokeTask);
         return await invokeTask;
@@ -199,13 +264,32 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         CancellationToken cancellationToken,
         Action? remember = null)
     {
-        var toolName = request.ToolName;
-        // The turn rides with the question as a field of it, so whose question it is never depends
-        // on which call happens to be in flight.
-        var result = await _approvalHandler.RequestApprovalAsync(
-            ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
-            cancellationToken);
+        var result = await RequestAsync(context, request, cancellationToken);
+        return await AnsweredAsync(context, request.ToolName, result, place, cancellationToken, remember);
+    }
 
+    // The turn rides with the question as a field of it, so whose question it is never depends on
+    // which call happens to be in flight. Every question passes here, so a turn that asks nobody is
+    // refused here, once for every reason a call could be asked.
+    private Task<ToolApprovalResult> RequestAsync(
+        FunctionInvocationContext context, ToolApprovalRequest request, CancellationToken cancellationToken) =>
+        AsksNobody(context.Options)
+            ? Task.FromResult(ToolApprovalResult.Rejected)
+            : _approvalHandler.RequestApprovalAsync(
+                ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
+                cancellationToken);
+
+    private static bool AsksNobody(ChatOptions? options) =>
+        options?.AdditionalProperties?.GetValueOrDefault(AsksNobodyKey) is true;
+
+    private async ValueTask<object?> AnsweredAsync(
+        FunctionInvocationContext context,
+        string toolName,
+        ToolApprovalResult result,
+        WrittenOrder.Place place,
+        CancellationToken cancellationToken,
+        Action? remember)
+    {
         switch (result)
         {
             case ToolApprovalResult.ApprovedAndRemember:
@@ -218,9 +302,25 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
             case ToolApprovalResult.Rejected:
             default:
-                context.Terminate = true;
-                return ApprovalRejection.ResultFor(toolName);
+                return Rejected(context, toolName);
         }
+    }
+
+    // A person who said no ends the turn on it. A turn that asks nobody goes on, the refusal its tool's
+    // result: nobody turned it down, and the app waits on an answer the model can still write — until the
+    // rounds with a refusal reach the bound, which ends it as a person's no would.
+    private object? Rejected(FunctionInvocationContext context, string toolName)
+    {
+        if (!AsksNobody(context.Options))
+        {
+            context.Terminate = true;
+            return ApprovalRejection.ResultFor(toolName);
+        }
+
+        var rounds = _refusingRounds.GetValue(context.Messages, _ => new ConcurrentDictionary<int, byte>());
+        rounds.TryAdd(context.Iteration, 0);
+        context.Terminate = rounds.Count >= RefusingRoundsPerUnaskedTurn;
+        return ApprovalRejection.UnaskableResultFor(toolName);
     }
 
     // The one question every unasked path answers: always approved, whitelisted, or remembered for
@@ -235,7 +335,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     {
         if (_execScreen is null
             || context.Function.GetService<ExecReach>() is not { } reach
-            || CallArguments.Text(context.Arguments, "path") is not { } path
+            || reach.WorkingDirectory(CallArguments.Text(context.Arguments, "path")) is not { } path
             || reach.Of(path, CallArguments.Text(context.Arguments, "command") ?? "") is not { } shellReach)
         {
             return null;
@@ -265,6 +365,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         CancellationToken cancellationToken = default)
     {
         var response = await base.GetResponseAsync(messages, options, cancellationToken);
+        if (NotRun(response.Messages.SelectMany(m => m.Contents)) is { } notRun)
+        {
+            response.Messages.Add(new ChatMessage(ChatRole.Tool, notRun.Contents));
+        }
+
         ObserveTurn(options);
         return response;
     }
@@ -274,13 +379,42 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var contents = new List<AIContent>();
         await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
         {
+            contents.AddRange(update.Contents);
             yield return update;
+        }
+
+        if (NotRun(contents) is { } notRun)
+        {
+            yield return notRun;
         }
 
         // After the stream, not before it: the route is only known once a provider has answered.
         ObserveTurn(options);
+    }
+
+    // At the household's bound the library offers the last ask no tools and runs no call it writes
+    // anyway, and returns it with no result: kept so, the next turn read it as done (a file it never
+    // wrote). Each is answered as not run, and why.
+    private ChatResponseUpdate? NotRun(IEnumerable<AIContent> contents)
+    {
+        if (_maxToolRounds is not { } limit)
+        {
+            return null;
+        }
+
+        var seen = contents.ToList();
+        var answered = seen.OfType<FunctionResultContent>().Select(r => r.CallId).ToHashSet(StringComparer.Ordinal);
+        var unrun = seen.OfType<FunctionCallContent>().Where(c => !c.InformationalOnly && !answered.Contains(c.CallId)).ToList();
+        return unrun.Count == 0
+            ? null
+            : new ChatResponseUpdate(ChatRole.Tool,
+            [
+                .. unrun.Select(call => new FunctionResultContent(call.CallId,
+                    $"Not run: this turn reached its household's limit of {limit} rounds of tool calls. Say where the work stands; the person can ask you to go on."))
+            ]);
     }
 
     private void ObserveTurn(ChatOptions? options) =>

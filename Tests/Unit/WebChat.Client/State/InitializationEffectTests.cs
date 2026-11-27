@@ -79,6 +79,7 @@ public sealed class InitializationEffectTests : IDisposable
         _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        using var switcher = _dispatcher.RegisterHandler<LoadSwitcher>(_ => _calls.Record("load-switcher"));
         _calls.Reset();
 
         await _effect.HandleInitializeAsync();
@@ -94,9 +95,12 @@ public sealed class InitializationEffectTests : IDisposable
             // No agentConfigPatch read here: per-agent settings hang off SetAgents, which
             // AgentSettingsEffect handles, so they load on every catalog rather than this one.
             "storage-get:selectedAgentId",
-            "topics:agent-1"
+            "topics:agent-1",
             // No history: opening the client costs one page of rows and nothing per
             // conversation. A transcript is fetched when its conversation is opened.
+            // The space switcher's list last: the hub answers a connection's calls one at a time, and
+            // its ask waits on the apps server, so it never stands in front of the chat's own.
+            "load-switcher"
         ]);
     }
 

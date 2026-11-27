@@ -57,7 +57,11 @@ public interface IChannelConnection : IHouseholdChannel
     // An attachment's bytes, by naming its reference. Where they rest is never mounted, so this is
     // the only way in (ADR 0021). Null is "not connected", and also "the file could not be had":
     // both hydrate to a placeholder naming the file rather than failing the turn.
-    Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct);
+    //
+    // The fetch is signed as the turn it is made for (its context's verified identity), as any of
+    // that turn's calls is, because a channel that keeps a household's files hands them only to a
+    // call acting for that household. Null is a fetch for no turn, signed as nobody.
+    Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct);
 
     // A copy of another channel's attachment kept on this one under the reference's own id, for a
     // review copy to show (ADR 0046). False is "not connected", "this channel keeps no copies" and

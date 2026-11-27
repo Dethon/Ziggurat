@@ -15,7 +15,6 @@ using Dashboard.Client.State.Web;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.Unit.Dashboard.Client.Fixtures;
 
@@ -23,8 +22,6 @@ namespace Tests.Unit.Dashboard.Client.Metrics;
 
 public class MetricControlsSessionTests : IDisposable
 {
-    private static readonly DateOnly _today = new(2026, 3, 24);
-
     private readonly FakeApiHandler _handler = new();
     private readonly FakeJsRuntime _js = new();
     private readonly TokensStore _tokensStore = new();
@@ -67,8 +64,7 @@ public class MetricControlsSessionTests : IDisposable
     }
 
     private MetricControlsSession SessionFor(MetricFamily family, params MetricChoice[] extraChoices) =>
-        new(family, extraChoices, _storage, new FakeTimeProvider(
-            new DateTimeOffset(_today, TimeOnly.MinValue, TimeSpan.Zero)), _dataLoad);
+        new(family, extraChoices, _storage, _dataLoad);
 
     // Every family, by the preference keys its page has always used.
     public static TheoryData<string, string, string?> Families => new()
@@ -122,12 +118,13 @@ public class MetricControlsSessionTests : IDisposable
         _handler.Requests.ShouldContain(u => u != null && u.Contains($"/{name}", StringComparison.Ordinal));
     }
 
+    // The pill names a window the server resolves against its own clock on every read, so a reload
+    // or a catch-up hours later reads the last day as it stands then, not a calendar day.
     [Theory]
-    [InlineData(1, "2026-03-24")]
-    [InlineData(7, "2026-03-18")]
-    [InlineData(30, "2026-02-23")]
-    public async Task ChangeDaysAsync_ADayCountIsChosen_DerivesTheRangeFromTheTimeProvider(
-        int days, string expectedFrom)
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(30)]
+    public async Task ChangeDaysAsync_ADayCountIsChosen_ReadsTheLastThatManyDays(int days)
     {
         var session = SessionFor(_families.Tokens);
         await session.InitializeAsync();
@@ -135,9 +132,9 @@ public class MetricControlsSessionTests : IDisposable
         await session.ChangeDaysAsync(days.ToString());
 
         session.SelectedDays.ShouldBe(days);
-        session.From.ShouldBe(DateOnly.Parse(expectedFrom));
-        session.To.ShouldBe(_today);
-        _tokensStore.State.From.ShouldBe(DateOnly.Parse(expectedFrom));
+        _tokensStore.State.Days.ShouldBe(days);
+        _handler.Requests.ShouldContain(u => u != null && u.Contains($"api/metrics/tokens?days={days}", StringComparison.Ordinal));
+        _handler.Requests.ShouldNotContain(u => u != null && u.Contains("from=", StringComparison.Ordinal));
     }
 
     // A page's time pill moves that page's family, and nothing else. Voice keeps the thirty days its
@@ -145,19 +142,19 @@ public class MetricControlsSessionTests : IDisposable
     [Fact]
     public async Task ChangeDaysAsync_ADayCountIsChosen_StampsOnlyTheSessionsOwnFamily()
     {
-        var chosenOnTheVoicePage = new DateOnly(2026, 2, 23);
-        _voiceStore.SetDateRange(chosenOnTheVoicePage, _today);
+        const int chosenOnTheVoicePage = 30;
+        _voiceStore.SetDays(chosenOnTheVoicePage);
         var session = SessionFor(_families.Tokens);
         await session.InitializeAsync();
 
         await session.ChangeDaysAsync("1");
 
-        _tokensStore.State.From.ShouldBe(_today);
-        _voiceStore.State.From.ShouldBe(chosenOnTheVoicePage);
+        _tokensStore.State.Days.ShouldBe(1);
+        _voiceStore.State.Days.ShouldBe(chosenOnTheVoicePage);
     }
 
     [Fact]
-    public async Task InitializeAsync_ADayCountIsSaved_DerivesTheRangeFromIt()
+    public async Task InitializeAsync_ADayCountIsSaved_ReadsThatManyDays()
     {
         _js.Storage["tokens.days"] = "7";
 
@@ -165,7 +162,7 @@ public class MetricControlsSessionTests : IDisposable
         await session.InitializeAsync();
 
         session.SelectedDays.ShouldBe(7);
-        session.From.ShouldBe(new DateOnly(2026, 3, 18));
+        _tokensStore.State.Days.ShouldBe(7);
     }
 
     // Voice's aggregate pill is the one choice the shared header does not own, so it is the one at

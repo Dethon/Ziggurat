@@ -91,6 +91,29 @@ fn a_file_made_where_one_was_deleted_commits_after_the_delete() {
     assert_eq!(vfs.bridge().mutations(), ["delete /vault/a.md", "write /vault/a.md create again\n"]);
 }
 
+// `rm -r dist && cp -r dist …`, a build copied over the last one: the old directory goes as one
+// delete, ahead of every file of the new one, so nothing the last build left is kept.
+#[test]
+fn a_directory_made_again_where_one_was_deleted_commits_after_the_delete() {
+    let vfs = mounts();
+    let timers = ino(&vfs, "/timers");
+    let eggs = ino(&vfs, "/timers/eggs");
+
+    names(&vfs, "/timers/eggs").iter().for_each(|n| vfs.unlink(eggs, n).unwrap());
+    vfs.rmdir(timers, "eggs").unwrap();
+    let again = vfs.mkdir(timers, "eggs").unwrap().ino;
+    assert!(names(&vfs, "/timers/eggs").is_empty());
+    let (_, fh) = vfs.create(again, "timer.json").unwrap();
+    vfs.write(fh, 0, b"{\"new\":1}").unwrap();
+    vfs.release(fh);
+    vfs.finish();
+
+    assert_eq!(
+        vfs.bridge().mutations(),
+        ["delete /timers/eggs", "write /timers/eggs/timer.json create {\"new\":1}"]
+    );
+}
+
 // A rename inside one mount arrives as one rename, never a delete and a create.
 #[test]
 fn mv_within_a_mount_is_the_bridges_rename() {

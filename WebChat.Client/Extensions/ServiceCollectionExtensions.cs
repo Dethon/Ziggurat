@@ -70,6 +70,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<HouseholdFeaturesEffect>();
             services.AddScoped<HouseholdSpacesStore>();
             services.AddScoped<HouseholdSpacesEffect>();
+            services.AddScoped<HouseholdAppAsksStore>();
+            services.AddScoped<HouseholdAppAsksEffect>();
             services.AddScoped<HouseholdServersStore>();
             services.AddScoped<HouseholdServersEffect>();
             services.AddScoped<HouseholdUsageStore>();

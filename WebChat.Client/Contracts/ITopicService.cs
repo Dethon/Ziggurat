@@ -57,4 +57,8 @@ public interface ITopicService
     // The signed-in person's household's spaces, in the order it puts them: the hub's to say, from
     // the household's configuration, since this page's host knows nobody.
     Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync();
+
+    // Every place the space switcher offers: the household's spaces (an app space with its app's link)
+    // and the person's own apps no space shares.
+    Task<HubResult<IReadOnlyList<SwitcherEntry>>> GetSpacesAndAppsAsync();
 }

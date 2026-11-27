@@ -43,6 +43,10 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         // The longest classes that start nothing but their own in-process servers: a class is
         // serialised, so its sum is its length.
         "McpWebBrowseAsMeTests",
+        // A Chromium per check, and checks held open to their limits and deadline.
+        "AppChecksTests",
+        // A Chromium per case, ten of them: about ten seconds alone, more under the full run.
+        "AppsServingInABrowserTests",
         // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until
         // the integration loader has run — seconds on an idle machine, but it was being offered a
         // thread behind every unit test and then racing a three-minute readiness cap against a

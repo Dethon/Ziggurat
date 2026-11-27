@@ -44,6 +44,21 @@ public class AdminServiceEditTests
     }
 
     [Fact]
+    public async Task SavingAppCaps_SendsTheCapsThePageLoaded()
+    {
+        var handler = new Recording(HttpStatusCode.OK, """{"value":{"caps":{"dailyCap":5,"apps":{}},"apps":[]}}""");
+        var loaded = new AppAsksSection { Apps = new Dictionary<string, int> { ["a1b2c3"] = 3 } };
+
+        var answer = await Service(handler).SaveAppAsksAsync(loaded with { DailyCap = 5 }, loaded);
+
+        handler.Request!.RequestUri!.AbsolutePath.ShouldBe(AdminProtocol.AppAsks);
+        var body = JsonNode.Parse(handler.Sent!)!;
+        ((int)body["dailyCap"]!).ShouldBe(5);
+        ((int)body[AdminEdit.Loaded]!["apps"]!["a1b2c3"]!).ShouldBe(3);
+        answer.ShouldBeOfType<AdminAnswer<AdminAppAsks>.Answered>().Value.Caps.DailyCap.ShouldBe(5);
+    }
+
+    [Fact]
     public async Task SavingSettingsAndFeatures_SendWhatThePageLoaded()
     {
         var settings = new Recording(HttpStatusCode.OK, """{"value":{"name":"Casa","timeZone":"Europe/Madrid"}}""");

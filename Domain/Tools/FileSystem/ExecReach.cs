@@ -9,10 +9,17 @@ namespace Domain.Tools.FileSystem;
 // It travels on the exec function itself, so the approval client reads it off the very call it
 // is deciding: an agent can hold several sessions, and a lookup held anywhere else would have to
 // guess which one a call came from.
-public sealed class ExecReach(Func<string, string, ShellReach?> reachOf)
+public sealed class ExecReach(Func<string, string, ShellReach?> reachOf, Func<string?>? workspace = null)
 {
-    // Null for a path no mount serves, and for a mount with no shell (/ha) that no sandbox runs.
-    public ShellReach? Of(string path, string command) => reachOf(path, command);
+    // Where a call runs: the path it names, else the session's sandbox workspace (VfsExecTool), so the
+    // screen and the footprint judge a call that named none where it will actually run. Null where it
+    // named none and there is no sandbox.
+    public string? WorkingDirectory(string? path) => path ?? workspace?.Invoke();
+
+    // Null for a path no mount serves, for a mount with no shell (/ha) that no sandbox runs, and for a
+    // call naming no path in a session with no sandbox.
+    public ShellReach? Of(string? path, string command) =>
+        WorkingDirectory(path) is { } at ? reachOf(at, command) : null;
 
     // `reroutes`: an exec on a mount with no shell of its own runs in the session's sandbox
     // (VfsExecTool), so it reaches as far as the sandbox does — when there is a sandbox to run it in.
@@ -32,7 +39,14 @@ public sealed class ExecReach(Func<string, string, ShellReach?> reachOf)
                ?? (reroutes && SandboxFor(mounts, resolution.MountPoint) is not null && BareAction.Parse(command) is null
                    ? ShellReach.Contained
                    : null);
-    });
+    }, () => Workspace(registry.GetMounts() ?? []));
+
+    // The sandbox's workspace as a virtual path: where a person's files land, and where an exec naming
+    // no working directory runs. Null with no sandbox, or one declaring no workspace.
+    public static string? Workspace(IReadOnlyList<FileSystemMount> mounts) =>
+        Sandbox(mounts) is { Workspace: { } workspace } sandbox
+            ? FileSystemResolution.ToVirtualPath(sandbox.MountPoint, workspace)
+            : null;
 
     // The sandbox an exec on the mount at `mountPoint` runs in instead of the mount: the session's
     // contained shell, when the mount is one a command is served. Null for a mount with a shell of

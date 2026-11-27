@@ -87,7 +87,8 @@ public class ChatMonitorReviewCopyTests
 
     // The photos rest in the channel's own store, which the review host cannot reach, and the history
     // the two share names them by the channel's reference. So the host is handed a copy of each under
-    // that same reference, fetched from the channel that holds it; the turn does not wait for it.
+    // that same reference, fetched from the channel that holds it for the turn's person; the turn does
+    // not wait for it.
     [Fact]
     public async Task AReviewCopyOfATurnWithPhotos_KeepsACopyOfEachOnTheHost_UnderItsOwnReference()
     {
@@ -109,6 +110,8 @@ public class ChatMonitorReviewCopyTests
         stored.ConversationId.ShouldBe(Conversation);
         stored.Attachment.ShouldBe(photo);
         stored.Bytes.ShouldBe(new byte[] { 1, 2, 3 });
+        // Fetched as the turn's own calls are signed, for the household it acts for.
+        sugary.Fetches.ShouldHaveSingleItem().Turn!.Identity!.TenantId.ShouldBe(MonitorTestMocks.GuestHousehold);
     }
 
     // The review shows what a video model was sent: the clip, and her photos, but not the stills

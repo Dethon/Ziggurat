@@ -3,6 +3,7 @@ using Mcp.Hosting;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
+using McpServerApps.Modules;
 using McpServerHomeAssistant.Modules;
 using McpServerIdealista.Modules;
 using McpServerLibrary.Modules;
@@ -15,6 +16,7 @@ using McpServerTimers.Modules;
 using McpServerVault.Modules;
 using McpServerWebSearch.Modules;
 using Microsoft.Extensions.DependencyInjection;
+using AppsSettings = McpServerApps.Settings;
 using HaSettings = McpServerHomeAssistant.Settings;
 using IdealistaSettings = McpServerIdealista.Settings;
 using LibrarySettings = McpServerLibrary.Settings;
@@ -219,6 +221,15 @@ public static class McpServerRegistrations
         Row("timers", "McpServerTimers", McpServerRole.DualRole,
             new TimersSettings.TimerSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureTimers(settings),
+            DeliveryPolicy.GateOnLive),
+
+        // The volume is never touched at registration: a repository is made by the first app.json a
+        // person writes. Dual-role: the mount for the agent that builds apps, and the channel a built
+        // app's asks reach it through. Gate-on-live, as Sugary's, because the page waits on its own
+        // request: an ask nobody is polling for is answered unavailable at once.
+        Row("apps", "McpServerApps", McpServerRole.DualRole,
+            new AppsSettings.AppsSettings { StoragePath = "/data", AppsDomain = "apps.test", Mcp = DeploymentGate },
+            (services, settings) => services.ConfigureApps(settings),
             DeliveryPolicy.GateOnLive),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,

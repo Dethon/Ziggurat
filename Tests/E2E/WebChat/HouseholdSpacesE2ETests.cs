@@ -100,8 +100,11 @@ public partial class HouseholdSpacesE2ETests(WebChatE2EFixture fixture)
         await page.GotoAsync(fixture.DefaultSpaceUrl + "admin/features");
 
         var toggles = page.GetByRole(AriaRole.Checkbox);
-        await Assertions.Expect(toggles).ToHaveCountAsync(6, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
+        // Six the owners set, and apps, which they see and only the operator sets.
+        await Assertions.Expect(toggles).ToHaveCountAsync(7, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
         await Assertions.Expect(page.GetByRole(AriaRole.Checkbox, new PageGetByRoleOptions { Name = "Memory" })).ToBeVisibleAsync();
+        // A checkbox is named by its label and its hint together, so Apps is the one whose name begins so.
+        await Assertions.Expect(page.GetByRole(AriaRole.Checkbox, new PageGetByRoleOptions { NameRegex = new Regex("^Apps ") })).ToBeDisabledAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Save" })).ToBeEnabledAsync();
     }
 

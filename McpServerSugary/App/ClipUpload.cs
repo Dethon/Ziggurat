@@ -1,6 +1,6 @@
 using System.Globalization;
 using Domain.DTOs.Channel;
-using McpServerSugary.Channel;
+using Mcp.Hosting;
 using McpServerSugary.Clips;
 using McpServerSugary.Settings;
 using Microsoft.AspNetCore.Http;

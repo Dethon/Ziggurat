@@ -6,11 +6,12 @@ purpose: The mounts this session actually has, and which one a path belongs unde
 priority: FileSystem
 # The section's own words are about 500 tokens (the machines and shell parts included); the rest is
 # the session's mount list, each line the description its server writes (60-250 tokens a mount, the
-# schedules mount cut to a pointer at its skill). The home's Jonas — vault, sandbox, schedules, timers,
-# Sugary, printer and a machine — measured 2,778 live before that cut, about 2,500 after; the budget is
-# that session with room for one more mount, so a warning means a description grew, not that an agent
-# was given its mounts.
-budget: 2800
+# schedules and apps mounts cut to a pointer at their skills). The home's Jonas — vault, sandbox,
+# schedules, timers, Sugary, printer, a machine, Home Assistant and its watches, and apps — measured
+# 3,321 live (smoke stack with a demo Home Assistant, 2026-11-25; the 2,800 before was measured with Home
+# Assistant offline); the budget is that session with room for one more mount, so a warning means a
+# description grew, not that an agent was given its mounts.
+budget: 3600
 # Main body: the tree's mount list; the 'machines' and 'shell' parts each as a block with a blank
 # line either side, or nothing; and one of the two 'reach-' sentences. 'machines': the outpost
 # address scheme and the machines' list. 'shell': the sandbox's mount point, the places a command

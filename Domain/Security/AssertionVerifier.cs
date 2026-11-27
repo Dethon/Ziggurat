@@ -116,6 +116,16 @@ public abstract record TurnAdmission
     public const string WrongChannel = "WrongChannel";
     public const string NamesNobody = "NamesNobody";
 
+    // A built app's ask acts for a person, never the guest: an app is opened by somebody signed in.
+    public const string NotAPerson = "NotAPerson";
+
+    // A message on the deployment's `apps` channel that is no app's ask: that channel starts app turns
+    // alone, never an ordinary turn with the agent's persona, tools and memory.
+    public const string NotAnAppTurn = "NotAnAppTurn";
+
+    // A check's call token beside an assertion: two answers to who a read or an ask is for, so neither.
+    public const string BothAnAssertionAndACheck = "BothAnAssertionAndACheck";
+
     public sealed record Admitted(IdentityClaims Identity) : TurnAdmission;
 
     public sealed record Refused(string Reason) : TurnAdmission;

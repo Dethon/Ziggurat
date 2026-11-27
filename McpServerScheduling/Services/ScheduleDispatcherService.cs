@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs;
 using Mcp.Hosting;
@@ -135,7 +136,7 @@ public sealed class ScheduleDispatcherService(
                 schedule.Id, ex.Refusal.Reason);
             return timeProvider.LocalTimeZone;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read schedule {ScheduleId}'s household zone; leaving it due", schedule.Id);
             return null;

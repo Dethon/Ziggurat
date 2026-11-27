@@ -339,10 +339,15 @@ public sealed partial class SugaryFileSystem(
         if (location is { Person: null, IsPeople: false })
         {
             var node = SugaryPath.Parse(location.Rest);
-            return await UsesSugaryAsync(reader, ct)
-                   || (listing && node.Kind == SugaryNodeKind.Root && await OthersAsync(reader, ct) is not null)
+            if (await UsesSugaryAsync(reader, ct))
+            {
+                return new FsResult<Target>.Ok(new Target(reader, node));
+            }
+
+            var readable = await OthersAsync(reader, ct);
+            return listing && node.Kind == SugaryNodeKind.Root && readable is not null
                 ? new FsResult<Target>.Ok(new Target(reader, node))
-                : Fail<Target>(ToolError.Codes.PermissionDenied, OffForReader);
+                : Fail<Target>(ToolError.Codes.PermissionDenied, OffForReader, ReadableInstead(readable));
         }
 
         if (await OthersAsync(reader, ct) is not { } others)
@@ -391,6 +396,16 @@ public sealed partial class SugaryFileSystem(
         (await PeopleAsync(reader, ct))?.FirstOrDefault(person => person.UserId == reader.UserId)?.UsesSugary ?? true;
 
     private static string PrefixOf(OtherLog other) => $"/{SugaryPath.PeopleDirName}/{other.Folder}";
+
+    // Where a granted reader with no log of their own may read instead, each log with its own README; a
+    // reader without the grant is named nobody.
+    private string? ReadableInstead(IReadOnlyList<OtherLog>? readable) =>
+        readable is { Count: > 0 }
+            ? "The logs this person may read are "
+              + string.Join(", ", readable.Select(other => $"{MountPoint}{PrefixOf(other)}/"))
+              + $", each with the same tables and a README.md explaining them (as {MountPoint}{PrefixOf(readable[0])}/README.md); "
+              + $"a query asked at {MountPoint}{PrefixOf(readable[0])} reads that person's log."
+            : null;
 
     // Asked once per operation, of the reader the configuration client keeps, and only by an
     // operation that reads a time.

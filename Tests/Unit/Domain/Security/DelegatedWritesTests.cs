@@ -1,6 +1,10 @@
+using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Sugary;
 using Domain.Security;
+using Domain.Security.Signing;
+using Domain.Tools.FileSystem;
 using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Scheduling.Vfs;
 using Domain.Tools.Sugary.Watches;
@@ -42,6 +46,40 @@ public class DelegatedWritesTests
     {
         DelegatedWrites.Delegates(filesystem, path).ShouldBeFalse();
         DelegatedWrites.Of(filesystem, path, Watch, null, _writer, TimeZoneInfo.Utc).ShouldBeNull();
+    }
+
+    // A path as a session resolved it: /watchers is a union whose own name is neither member's, so each
+    // member is asked; a mount of its own is asked by its name.
+    [Theory]
+    [InlineData("laura-sugar-high/watch.json", true)]
+    [InlineData("laura-sugar-high/status.json", false)]
+    public void AResolvedPath_DelegatesAsItsMountsWouldWrite(string path, bool delegates)
+    {
+        var watchers = new UnionFileSystem(
+        [
+            new UnionFileSystem.Member("ha-watches", new FileSystemUnion("/triggers/*/trigger", [], Fallback: true), new Named(HaWatchFileSystem.Name)),
+            new UnionFileSystem.Member("sugary-watches", new FileSystemUnion("/triggers/*/trigger", ["glucose"]), new Named(SugaryWatchFileSystem.Name))
+        ]);
+
+        DelegatedWrites.Delegates(new FileSystemResolution(watchers, path, "/watchers")).ShouldBe(delegates);
+        DelegatedWrites.Delegates(new FileSystemResolution(new Named(HaWatchFileSystem.Name), path, "/watchers")).ShouldBe(delegates);
+        DelegatedWrites.Delegates(new FileSystemResolution(new Named("vault"), path, "/vault")).ShouldBeFalse();
+    }
+
+    // Only a built app's ask, which acts on the apps channel, may leave nothing a later turn acts on.
+    [Fact]
+    public void AnAppsAsk_MayLeaveNoLaterTurn_AndAnyOtherTurnMay()
+    {
+        DelegatedWrites.MayBeLeftBy(IdentityClaims.Person("fran", "household", AppChannels.Apps, ["member"])).ShouldBeFalse();
+        DelegatedWrites.MayBeLeftBy(IdentityClaims.Person("fran", "household", "signalr", ["member"])).ShouldBeTrue();
+        DelegatedWrites.MayBeLeftBy(null).ShouldBeTrue();
+    }
+
+    private sealed class Named(string name) : FileSystemBackendBase
+    {
+        public override string FilesystemName => name;
+
+        public override string DescribeMount => name;
     }
 
     [Fact]

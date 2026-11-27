@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security.Signing;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -14,9 +15,11 @@ namespace Domain.Monitor;
 public class DeliveryTargetResolver(
     IEnumerable<IChannelConnection> channels, ILogger logger, IConversationFactory? topics = null)
 {
+    // identity: who the turn acts for, as admitted, which a review copy's files are fetched as.
     public async Task<IReadOnlyList<DeliveryTarget>> ResolveAsync(
         ChannelMessage message,
         IChannelConnection originChannel,
+        IdentityClaims? identity,
         CancellationToken ct)
     {
         var household = HouseholdChannels.HouseholdOfTurn(message, originChannel);
@@ -48,7 +51,9 @@ public class DeliveryTargetResolver(
         {
             // Started, not awaited: the channel's answer must never wait on the review host. A clip's
             // stills stay behind: the review shows what a video model was sent, which is the clip.
-            _ = CopyAttachmentsAsync(originChannel, review, ClipStills.Without(attachments), ct);
+            _ = CopyAttachmentsAsync(
+                originChannel, BuildConversationContext(message, targets) with { Identity = identity }, review,
+                ClipStills.Without(attachments), ct);
         }
 
         return targets;
@@ -61,14 +66,14 @@ public class DeliveryTargetResolver(
     // the order sent, so at most one file is held here at once. Never faults: a copy that fails
     // costs the review a picture and nothing else.
     private async Task CopyAttachmentsAsync(
-        IChannelConnection origin, DeliveryTarget review, IReadOnlyList<AttachmentReference> attachments,
-        CancellationToken ct)
+        IChannelConnection origin, ConversationContext turn, DeliveryTarget review,
+        IReadOnlyList<AttachmentReference> attachments, CancellationToken ct)
     {
         try
         {
             foreach (var attachment in attachments)
             {
-                var bytes = await origin.FetchAttachmentAsync(attachment.Id, ct);
+                var bytes = await origin.FetchAttachmentAsync(attachment.Id, turn, ct);
                 var kept = bytes is not null
                            && await review.Channel.StoreAttachmentAsync(review.ConversationId, attachment, bytes, ct);
                 if (!kept)

@@ -15,11 +15,6 @@ public class DrawnIconConformanceTests
 {
     private static readonly string[] _clients = ["WebChat.Client", "Dashboard.Client"];
 
-    // The one exemption, named rather than pattern-matched, so removing it is a decision. The
-    // suggestion chips are content a person reads rather than controls, and their emoji are the
-    // point of them.
-    private static readonly string[] _exempt = ["SuggestionChips.razor"];
-
     // A right arrow inside a sentence is punctuation, not an icon: the dashboard labels a span by
     // its two ends ("speech end → audio"), and drawing that would be absurd. It is the only
     // character above the threshold that reads as prose here.
@@ -82,7 +77,6 @@ public class DrawnIconConformanceTests
                 Path.Combine(TestHelpers.FindSolutionRoot(), client),
                 "*.razor",
                 SearchOption.AllDirectories))
-            .Where(f => !_exempt.Contains(Path.GetFileName(f)))
             .Order();
 
     private static IEnumerable<string> GlyphsIn(string file) =>

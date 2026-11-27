@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Shouldly;
 using WebChat.Client.State;
 using WebChat.Client.State.Space;
@@ -54,6 +55,29 @@ public sealed class SpaceStoreTests : IDisposable
         _dispatcher.Dispatch(new InvalidSpace());
 
         _store.State.Named.ShouldBeFalse();
+    }
+
+    // What the switcher offers is the hub's last answer, whichever space is open: moving between spaces
+    // keeps it, and only the hub's next answer replaces it.
+    [Fact]
+    public void TheSwitcher_HoldsTheHubsLastAnswer_AcrossSpacesSelectedAndJoined()
+    {
+        IReadOnlyList<SwitcherEntry> listed =
+        [
+            new("Main", "#112233", "default", null),
+            new("Pantry", "#2a9d8f", "pantry", "https://pantry-a1b2c3.apps.example/"),
+            new("Diary", "#445566", null, "https://diary-d1d2d3.apps.example/", Private: true)
+        ];
+
+        _dispatcher.Dispatch(new SwitcherLoaded(listed));
+        _dispatcher.Dispatch(new SelectSpace("kitchen"));
+        _dispatcher.Dispatch(new SpaceValidated("kitchen", "Kitchen", "#112233"));
+
+        _store.State.Switcher.ShouldBe(listed);
+
+        _dispatcher.Dispatch(new SwitcherLoaded([listed[0]]));
+
+        _store.State.Switcher.ShouldBe([listed[0]]);
     }
 
     public void Dispose() => _store.Dispose();

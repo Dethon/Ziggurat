@@ -91,7 +91,7 @@ public record GlucoseSettings
     public int PollSeconds { get; init; } = 60;
 }
 
-public record UploadSettings
+public record UploadSettings : IUploadStoreSettings
 {
     // Inside the server's own volume, beside the database but never in it.
     public string StoragePath { get; init; } = "/data/uploads";

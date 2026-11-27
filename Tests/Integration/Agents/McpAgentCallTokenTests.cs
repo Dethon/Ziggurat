@@ -52,13 +52,14 @@ public class McpAgentCallTokenTests
     public async Task ATurnRunningPastTheFirstTokensLifetime_KeepsPresentingValidTokens()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 30, 12, 0, 0, TimeSpan.Zero));
+        var tokens = new CallTokenSettings();
         await using var server = await StartAsync(clock);
         var record = RecordTool(server);
         var model = new ScriptedChatClient(
             Call(record, "1"),
             Call(record, "2"),
-            Call(record, "3", before: () => clock.Advance(TimeSpan.FromSeconds(100))),
-            Call(record, "4", before: () => clock.Advance(TimeSpan.FromMinutes(5))),
+            Call(record, "3", before: () => clock.Advance(tokens.Lifetime - tokens.RefreshMargin + TimeSpan.FromSeconds(10))),
+            Call(record, "4", before: () => clock.Advance(tokens.Lifetime)),
             Answer("Done"));
         await using var agent = Agent(model, server.Endpoint, new CallTokens(TestSigningKeys.Store(TestSigningKeys.Agent), clock));
 

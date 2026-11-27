@@ -49,6 +49,7 @@ public static class InternalCallers
     public const string Scheduling = "mcp-scheduling";
     public const string Sugary = "mcp-sugary";
     public const string Timers = "mcp-timers";
+    public const string Apps = "mcp-apps";
 
     // Sugary's channel, which its server serves people on.
     public const string SugaryChannel = ChannelIds.Sugary;
@@ -58,13 +59,17 @@ public static class InternalCallers
 
     private static readonly Dictionary<string, string[]> _channels = new(StringComparer.Ordinal)
     {
-        [SignalR] = [ChannelIds.SignalR],
+        // The hub also asks for a session's person on persons-apps, the apps server's listing of their apps
+        // for WebChat's space switcher, which nothing else may ask for.
+        [SignalR] = [ChannelIds.SignalR, AppChannels.PersonsApps],
         [Telegram] = [TelegramLinks.Channel],
         [Voice] = [ChannelIds.Voice],
         [Agent] = [Tunnels],
         [HouseholdServer] = [ChannelIds.Voice],
         // Sugary asks whether the session that subscribed a phone still lives, before a reminder.
-        [Sugary] = [SugaryChannel]
+        [Sugary] = [SugaryChannel],
+        // The apps server redeems the app sign-in's codes and renews its app sessions, on `apps`.
+        [Apps] = [AppChannels.Apps]
     };
 
     // Which views of a household's configuration each caller may ask for: the agent its own, each
@@ -85,6 +90,10 @@ public static class InternalCallers
             HouseholdConfigProtocol.SugaryOffView
         ],
         [Timers] = [HouseholdConfigProtocol.SettingsView],
+        // Only the household's own agents build apps: the apps server checks a turn's agent against them.
+        // The spaces say which of its apps the household shares (app spaces), so every member may open one
+        // and none is deleted while shared. The app asks say how many asks a day each app may send.
+        [Apps] = [HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AppAsksView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.MemberNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };
@@ -95,7 +104,9 @@ public static class InternalCallers
     {
         [SignalR] = ChannelIds.SignalR,
         [Telegram] = ChannelIds.Telegram,
-        [Sugary] = SugaryChannel
+        [Sugary] = SugaryChannel,
+        // The viewer of a built app's origin, as the app sign-in and the session refresh vouch for them.
+        [Apps] = AppChannels.Apps
     };
 
     // The entries whose credential this request presented; none is a caller this service does not know.

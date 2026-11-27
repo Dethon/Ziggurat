@@ -30,7 +30,7 @@ public class ToolApprovalChatClientExecScreenTests
 
     private static AIFunction ExecFunction(List<string>? ran = null) =>
         ExecReach.Carried(
-            AIFunctionFactory.Create((string path, string command) =>
+            AIFunctionFactory.Create((string command, string? path = null) =>
             {
                 lock (ran ?? [])
                 {
@@ -39,7 +39,8 @@ public class ToolApprovalChatClientExecScreenTests
 
                 return "ok";
             }, Exec),
-            new ExecReach(ReachOf));
+            // A call naming no path runs in the sandbox's workspace.
+            new ExecReach(ReachOf, () => "/sandbox/home/sandbox_user"));
 
     private static Dictionary<string, object?> ExecArgs(string path, string command) =>
         new() { ["path"] = path, ["command"] = command };
@@ -84,6 +85,28 @@ public class ToolApprovalChatClientExecScreenTests
         ran.ShouldBeEmpty();
         response.Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>().ShouldHaveSingleItem()
             .Result!.ToString().ShouldBe($"Tool execution was rejected by user: {Exec}. Waiting for new input.");
+    }
+
+    // An exec naming no working directory runs in the sandbox, so it is screened as the sandbox's,
+    // never let through for want of a path to judge.
+    [Fact]
+    public async Task AnExecNamingNoPath_IsScreened()
+    {
+        var handler = new TestApprovalHandler(ToolApprovalResult.Approved);
+        var screened = new List<ExecScreenRequest>();
+        var screen = new ScriptedExecScreen(request =>
+        {
+            screened.Add(request);
+            return ExecScreenVerdict.Ask(ExecScreenCodes.SendsOut);
+        });
+        var inner = new FakeChatClient();
+        inner.SetNextResponse(CreateToolCallResponse(Exec, "c1", new Dictionary<string, object?> { ["command"] = "rm -rf ~" }));
+
+        await AskAsync(Client(inner, handler, screen), ExecFunction());
+
+        var request = screened.ShouldHaveSingleItem();
+        (request.Reach, request.WorkingDirectory).ShouldBe((ShellReach.Contained, "/sandbox/home/sandbox_user"));
+        handler.RequestedApprovals.ShouldHaveSingleItem().ShouldHaveSingleItem().Screen.ShouldBe([ExecScreenCodes.SendsOut]);
     }
 
     [Fact]

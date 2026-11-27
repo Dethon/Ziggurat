@@ -9,5 +9,7 @@ public static class TurnFailure
     // What a person is told when their turn failed: a refusal's own sentence, anything else as the
     // error it was. The reply shows it, and the conversation keeps it in the same words.
     public static string Answer(Exception failure) =>
-        failure is TurnRefusedException ? failure.Message : $"An error occurred: {failure.Message}";
+        failure is TurnRefusedException ? failure.Message : $"{ErrorOpening}{failure.Message}";
+
+    public const string ErrorOpening = "An error occurred: ";
 }

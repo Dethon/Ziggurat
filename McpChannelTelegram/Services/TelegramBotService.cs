@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
@@ -339,7 +340,7 @@ public sealed class TelegramBotService : BackgroundService
             return await _agents.AgentAsync(
                 person.Account.TenantId, HouseholdProof.OfAssertion(person.Assertion), agentId, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException or TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException or TaskCanceledException
                                    && !ct.IsCancellationRequested)
         {
             _logger.LogWarning(ex, "Could not read the agents of household {Household}; attachments are not checked",

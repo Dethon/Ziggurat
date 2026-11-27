@@ -9,7 +9,7 @@ public record SetSkillsTrend(IReadOnlyList<LatencyTrendSeries> Trend) : IAction;
 public record SetSkillsBreakdown(Dictionary<string, decimal> Breakdown) : IAction;
 public record SetSkillsGroupBy(SkillPreloadDimension GroupBy) : IAction;
 public record SetSkillsMetric(SkillPreloadMetric Metric) : IAction;
-public record SetSkillsDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetSkillsDays(int Days) : IAction;
 public record SetSkillsAgg(Aggregation Agg) : IAction;
 
 public sealed class SkillsStore : Store<SkillsState>
@@ -34,8 +34,8 @@ public sealed class SkillsStore : Store<SkillsState>
     public void SetMetric(SkillPreloadMetric metric) =>
         Dispatch(new SetSkillsMetric(metric), static (s, a) => s with { Metric = a.Metric });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetSkillsDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetSkillsDays(days), static (s, a) => s with { Days = a.Days });
 
     public void SetAgg(Aggregation agg) =>
         Dispatch(new SetSkillsAgg(agg), static (s, a) => s with { Agg = a.Agg });

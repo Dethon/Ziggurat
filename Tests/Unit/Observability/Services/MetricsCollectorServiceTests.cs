@@ -61,7 +61,6 @@ public class MetricsCollectorServiceTests
             [
                 ("tokens:input", 100),
                 ("tokens:output", 50),
-                ("tokens:cost", 25),
                 ("tokens:byUser:alice", 150),
                 ("tokens:byModel:gpt-4", 150)
             ]),
@@ -80,7 +79,6 @@ public class MetricsCollectorServiceTests
             [
                 ("tokens:input", 100),
                 ("tokens:output", 50),
-                ("tokens:cost", 25),
                 ("tokens:byUser:acc-alice", 150),
                 ("tokens:byModel:gpt-4", 150)
             ]),

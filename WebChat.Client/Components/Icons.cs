@@ -90,6 +90,10 @@ public static class Icons
         + "22Zm6-5q.825 0 1.413-.587Q14 15.825 14 15t-.587-1.413Q12.825 13 12 13t-1.412.587Q10 14.175 10 15t.588 "
         + "1.413Q11.175 17 12 17ZM9 8h6V6q0-1.25-.875-2.125T12 3q-1.25 0-2.125.875T9 6Z");
 
+    // A grid of nine: a built app in the space switcher, beside a chat space's colour dot.
+    public static readonly IconGlyph Apps = Filled(
+        "M4 8h4V4H4Zm6 12h4v-4h-4Zm-6 0h4v-4H4Zm0-6h4v-4H4Zm6 0h4v-4h-4Zm6-10v4h4V4Zm-6 4h4V4h-4Zm6 6h4v-4h-4Zm0 6h4v-4h-4Z");
+
     // Two people: a conversation the household shares, beside Lock for one that is its owner's alone.
     public static readonly IconGlyph People = Filled(
         "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 "
@@ -183,6 +187,13 @@ public static class Icons
         """);
 
     public static readonly IconGlyph Moon = Stroked("""<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />""");
+
+    // The empty chat's "Capabilities" suggestion: what the assistant can do, as a spark.
+    public static readonly IconGlyph Sparkles = Stroked(
+        """
+        <path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0Z" />
+        <path d="M20 3v4" /><path d="M22 5h-4" /><path d="M4 17v2" /><path d="M5 18H3" />
+        """);
 
     // Drawn a line lighter than the rest, because it is an illustration filling the empty chat
     // rather than a control someone has to find.

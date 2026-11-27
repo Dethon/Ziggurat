@@ -24,6 +24,10 @@ public sealed class HouseholdSpacesAccounts : IHouseholdConfiguration
         return Saved.GetValueOrDefault(householdId) ?? new SpacesSection();
     }
 
+    // The chat hub reads no app caps.
+    public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        throw new NotSupportedException();
+
     public async Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct)
     {
         await RequireProvenAsync(householdId, proof, ct);

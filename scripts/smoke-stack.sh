@@ -68,8 +68,9 @@ fi
 
 # Every shared server an agent dials at a URL is here, since a session whose configured URL does not
 # answer fails to build; a household's server it names is offline instead, never fatal.
-SERVICES=(redis accounts-volume agent-volume mcp-sugary-volume accounts mcp-idealista mcp-channel-signalr
-          mcp-scheduling mcp-timers mcp-sugary agent webui observability caddy)
+SERVICES=(redis accounts-volume agent-volume mcp-sugary-volume mcp-apps-volume accounts mcp-idealista
+          mcp-channel-signalr mcp-scheduling mcp-timers mcp-sugary mcp-apps apps-browser agent webui observability
+          caddy)
 
 # Local values for every secret the started servers ask for. The real ones come from the project's
 # user secrets (mounted by the OS override), which win over these where both exist.

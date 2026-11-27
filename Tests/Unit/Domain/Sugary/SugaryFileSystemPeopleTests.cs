@@ -222,6 +222,35 @@ public class SugaryFileSystemPeopleTests
             .ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
     }
 
+    // Their own paths refused, such a reader is told where the logs they may read are, README and all;
+    // a reader without the grant is told nobody's name.
+    [Fact]
+    public async Task AGrantedReaderSugaryIsOffFor_IsRefusedTheirOwnPaths_NamingTheLogsTheyMayRead()
+    {
+        var granted = Mount(reader: Dethon, new HouseholdSugaryPeople([
+            new SugaryPerson(Dethon, "Dethon", ReadsEveryLog: true, UsesSugary: false),
+            new SugaryPerson(Tradaly, "Tradaly", ReadsEveryLog: false)
+        ]));
+        var notGranted = Mount(reader: Dethon, new HouseholdSugaryPeople([
+            new SugaryPerson(Dethon, "Dethon", ReadsEveryLog: false, UsesSugary: false),
+            new SugaryPerson(Tradaly, "Tradaly", ReadsEveryLog: false)
+        ]));
+
+        var refusals = new[]
+        {
+            Error(await granted.ReadAsync("/README.md", null, null, CancellationToken.None)),
+            Error(await granted.QueryAsync("/", "select count(*) from glucose", 10, CancellationToken.None)),
+            Error(await granted.InfoAsync("/README.md", CancellationToken.None))
+        };
+        var unnamed = Error(await notGranted.ReadAsync("/README.md", null, null, CancellationToken.None));
+
+        refusals.ShouldAllBe(r => r.ErrorCode == ToolError.Codes.PermissionDenied
+                                  && r.Hint!.Contains("/sugary/people/tradaly/")
+                                  && r.Hint.Contains("/sugary/people/tradaly/README.md"));
+        unnamed.ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        (unnamed.Hint ?? "").ShouldNotContain("tradaly");
+    }
+
     private static HouseholdSugaryPeople People(string granted) => new([
         new SugaryPerson(Dethon, "Dethon", Dethon == granted),
         new SugaryPerson(Tradaly, "Tradaly", Tradaly == granted),

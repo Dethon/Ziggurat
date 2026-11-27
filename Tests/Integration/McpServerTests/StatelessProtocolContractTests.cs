@@ -1,4 +1,6 @@
 using System.Net;
+using McpServerApps.Modules;
+using McpServerApps.Settings;
 using McpServerHomeAssistant.Modules;
 using McpServerIdealista.Modules;
 using McpServerPrinter.Modules;
@@ -89,6 +91,10 @@ public class StatelessProtocolContractTests
         {
             "timers",
             services => services.ConfigureTimers(new TimerSettings { Mcp = McpTestSecret.Gate })
+        },
+        {
+            "apps",
+            services => services.ConfigureApps(new AppsSettings { AppsDomain = "apps.test", Mcp = McpTestSecret.Gate })
         }
     };
 

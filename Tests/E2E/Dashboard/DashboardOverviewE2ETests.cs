@@ -26,6 +26,10 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
         labels.ShouldContain("Tool Calls");
         labels.ShouldContain("Errors");
 
+        // The shortest window is the last twenty-four hours, never a calendar "Today".
+        var timePills = page.Locator(".page-header .pill");
+        (await timePills.AllTextContentsAsync()).Select(t => t.Trim()).ShouldBe(["24h", "7d", "30d"]);
+
         var healthGrid = page.Locator(".health-grid");
         (await healthGrid.CountAsync()).ShouldBeGreaterThan(0);
 

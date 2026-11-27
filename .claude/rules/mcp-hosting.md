@@ -69,10 +69,12 @@ reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never
   listener and for `/browse` on the other; inserted first, ahead of the gate, so `/mcp` is absent there.
   The proxy reaches the pages through the relay alone, by the `pages` tag the server registers
   (`.claude/rules/tunnel-forwarding.md`, "Browse pages"); no route names the server
-  (`DeploymentConformanceTests`). `WebIdentityServerHarness` opens both listeners.
+  (`DeploymentConformanceTests`). `WebIdentityServerHarness` opens both listeners. The apps server's
+  app origins are the second instance (`AppPagesListener`, `.claude/rules/apps.md`).
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for servers
   that offer the agent things to call. Tool server and channel server are independent: a dual-role
   server calls `AddToolServer` then `AddChannelServer`.
+- **A channel server that waits on its turns uses `Mcp.Hosting`'s pieces** (Sugary's estimates), written for none of them: `AddAgentTurns` (the table and its `send_reply`/refusing `request_approval`), `AgentTurns.SendAsync` (sent under a minted `TurnKey`, the last message's text is the answer, cancelled on the caller's deadline or abort, the cancel naming the agent the message named since the agent groups by conversation and agent; the clock is the caller's), `OpenConversations<TOwner, TCarried>` (the follow-up binding, keyed by an owner the server chooses, ids spelled as a `ConversationIdentity`, in memory, bounded by a ceiling each server passes: at it the one longest without a turn is forgotten, never a new one refused), and `AddUploadStore` (`UploadStore`, its sweeper and `fetch_attachment`). A file saved for a household (`SaveForHouseholdAsync`, the apps server's) is handed only to a fetch whose call token names that household and whose turn is the conversation it was saved under (`call.Turn`; the agent signs and caches each fetch per turn, `ChannelAttachmentSource`); one saved for none, Sugary's, to any, and is laid out byte for byte as before. `UploadStore.Remove` takes back the files of a message never delivered.
 - **The error filter is one shared registration, installed at most once** (`CallToolErrorFilter`): a
   cancelled call propagates as the abort it is; anything else is logged, reported as a `ToolCallFailed`
   `ErrorEvent` under the verified call's household (`.claude/rules/observability.md`, "Households"), and
@@ -83,7 +85,9 @@ reference itself and says why (Telegram, for transcription); `Mcp.Hosting` never
   `call.TryScope`); its principal is the identity the call token verified (`call.Identity`), never the
   one `_meta` claims. The household is `call.Household` (`Mcp.Hosting/CallHousehold.cs`), proven to the
   accounts service with the verified token, so a tool reads its own section of that household's
-  configuration and no other's (`.claude/rules/household-config.md`, "A shared server's accessor"). No
+  configuration and no other's (`.claude/rules/household-config.md`, "A shared server's accessor").
+  `call.VerifiedToken` is the token itself, handed back to the agent alone (the apps mount's checks;
+  `service-identity.md`, "Call tokens"). No
   server parses the raw `_meta` for the turn or the token (`CallTurnConformanceTests`; the token is read
   in `CallTokenGate.cs` alone); the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for that
   alone. A filesystem backend gets the caller through `FileSystemBackendBase.For(FileSystemCaller)` per

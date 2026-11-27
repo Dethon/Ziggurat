@@ -63,8 +63,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private static readonly DateOnly _from = new(2026, 3, 1);
-    private static readonly DateOnly _to = new(2026, 3, 2);
+    private const int Days = 7;
 
     // Every family, in the general form of the aggregation bug: whatever the store holds is what
     // goes out, and whatever comes back is what the family charts.
@@ -85,7 +84,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
                 self._tokensStore.SetGroupBy(TokenDimension.Model);
                 self._tokensStore.SetMetric(TokenMetric.Cost);
             },
-            "api/metrics/tokens/by/Model?metric=Cost&from=2026-03-01&to=2026-03-02",
+            "api/metrics/tokens/by/Model?metric=Cost&days=7",
             new Dictionary<string, decimal> { ["gpt"] = 12m },
             self => self._tokensStore.State.Breakdown,
             null),
@@ -96,21 +95,21 @@ public class MetricsHubBinderTests : IAsyncDisposable
                 self._toolsStore.SetGroupBy(ToolDimension.Status);
                 self._toolsStore.SetMetric(ToolMetric.AvgDuration);
             },
-            "api/metrics/tools/by/Status?metric=AvgDuration&from=2026-03-01&to=2026-03-02",
+            "api/metrics/tools/by/Status?metric=AvgDuration&days=7",
             new Dictionary<string, decimal> { ["ok"] = 30m },
             self => self._toolsStore.State.Breakdown,
             null),
         ["errors"] = (
             t => t.Errors,
             self => self._errorsStore.SetGroupBy(ErrorDimension.ErrorType),
-            "api/metrics/errors/by/ErrorType?from=2026-03-01&to=2026-03-02",
+            "api/metrics/errors/by/ErrorType?days=7",
             new Dictionary<string, int> { ["timeout"] = 4 },
             self => self._errorsStore.State.Breakdown,
             null),
         ["schedules"] = (
             t => t.Schedules,
             self => self._schedulesStore.SetGroupBy(ScheduleDimension.Status),
-            "api/metrics/schedules/by/Status?from=2026-03-01&to=2026-03-02",
+            "api/metrics/schedules/by/Status?days=7",
             new Dictionary<string, int> { ["ok"] = 9 },
             self => self._schedulesStore.State.Breakdown,
             null),
@@ -121,7 +120,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
                 self._memoryStore.SetGroupBy(MemoryDimension.Agent);
                 self._memoryStore.SetMetric(MemoryMetric.AvgDuration);
             },
-            "api/metrics/memory/by/Agent?metric=AvgDuration&from=2026-03-01&to=2026-03-02",
+            "api/metrics/memory/by/Agent?metric=AvgDuration&days=7",
             new Dictionary<string, decimal> { ["nabu"] = 80m },
             self => self._memoryStore.State.Breakdown,
             null),
@@ -132,7 +131,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
                 self._latencyStore.SetGroupBy(LatencyDimension.Model);
                 self._latencyStore.SetMetric(Aggregation.P99);
             },
-            "api/metrics/latency/by/Model?metric=P99&from=2026-03-01&to=2026-03-02",
+            "api/metrics/latency/by/Model?metric=P99&days=7",
             new Dictionary<string, decimal> { ["m1"] = 900m },
             self => self._latencyStore.State.Breakdown,
             new List<LatencyTrendSeries>()),
@@ -144,7 +143,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
                 self._voiceStore.SetMetric(VoiceMetric.SttLatencyMs);
                 self._voiceStore.SetAgg(Aggregation.P95);
             },
-            "api/metrics/voice/by/Identity?metric=SttLatencyMs&agg=P95&from=2026-03-01&to=2026-03-02",
+            "api/metrics/voice/by/Identity?metric=SttLatencyMs&agg=P95&days=7",
             new Dictionary<string, decimal> { ["frank"] = 210m },
             self => self._voiceStore.State.Breakdown,
             null),
@@ -193,9 +192,9 @@ public class MetricsHubBinderTests : IAsyncDisposable
     public async Task LoadAsync_AnyFamily_IssuesItsEventsAndBreakdownRequestsForTheGivenRange(
         string _, string eventsRequest, string breakdownRequest)
     {
-        var range = "from=2026-03-01&to=2026-03-02";
+        var range = "days=7";
 
-        await NewDataLoadEffect().LoadAsync(_from, _to, _families.All);
+        await NewDataLoadEffect().LoadAsync(Days, _families.All);
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains(eventsRequest + range, StringComparison.Ordinal));
         _handler.Requests.ShouldContain(u => u != null && u.Contains(breakdownRequest + range, StringComparison.Ordinal));
@@ -203,13 +202,13 @@ public class MetricsHubBinderTests : IAsyncDisposable
 
     private void SetDateRangeOnEveryStore()
     {
-        _tokensStore.SetDateRange(_from, _to);
-        _toolsStore.SetDateRange(_from, _to);
-        _errorsStore.SetDateRange(_from, _to);
-        _schedulesStore.SetDateRange(_from, _to);
-        _memoryStore.SetDateRange(_from, _to);
-        _latencyStore.SetDateRange(_from, _to);
-        _voiceStore.SetDateRange(_from, _to);
+        _tokensStore.SetDays(Days);
+        _toolsStore.SetDays(Days);
+        _errorsStore.SetDays(Days);
+        _schedulesStore.SetDays(Days);
+        _memoryStore.SetDays(Days);
+        _latencyStore.SetDays(Days);
+        _voiceStore.SetDays(Days);
     }
 
     private static readonly
@@ -485,7 +484,7 @@ public class MetricsHubBinderTests : IAsyncDisposable
         // request, and DataLoadEffect swallows the resulting 404s from the unstaffed FakeApiHandler.
         _voiceStore.SetAgg(Aggregation.P95);
 
-        await NewDataLoadEffect().LoadAsync(new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 24), _families.All);
+        await NewDataLoadEffect().LoadAsync(30, _families.All);
 
         _handler.Requests.ShouldContain(u => u != null && u.Contains("voice/by") && u.Contains("agg=P95"));
     }

@@ -59,7 +59,8 @@ public sealed partial class AccountsServer : IAsyncDisposable
     public static readonly string MasterKey = Convert.ToBase64String(SealingKey.Generate().Export());
 
     public static async Task<AccountsServer> StartAsync(
-        Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null)
+        Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null,
+        Action<IServiceCollection>? services = null)
     {
         var ownsDirectory = directory is null;
         directory ??= Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
@@ -84,6 +85,7 @@ public sealed partial class AccountsServer : IAsyncDisposable
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
             builder.Services.AddAccounts(settings, new AccountsClock(clock));
+            services?.Invoke(builder.Services);
             // The model diff EF makes on every migration is asked once, by MigrationsMatchTheModelTests;
             // a store copied from the template has nothing left to migrate.
             builder.Services.ConfigureDbContext<AccountsDbContext>(options =>
@@ -95,7 +97,9 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return new AccountsServer(app, settings, clock, port, directory, ownsDirectory);
     }
 
-    private static readonly DateTimeOffset StartedAt = new(2026, 10, 29, 9, 0, 0, TimeSpan.Zero);
+    // Where every service's clock starts, so a server the test starts beside it (the apps server, which
+    // verifies its assertions) can be handed a clock that agrees before the two can be told of each other.
+    public static readonly DateTimeOffset StartedAt = new(2026, 10, 29, 9, 0, 0, TimeSpan.Zero);
 
     // A store migrated and seeded once per run, as the service prepares one at its first start, copied
     // for each server whose file does not exist yet: migrating a fresh SQLite file per test was the

@@ -23,16 +23,24 @@ public sealed class OneChangeAtATime
                 return await next(context);
             }
 
-            var turn = http.RequestServices.GetRequiredService<OneChangeAtATime>()
-                ._households.GetOrAdd(caller.HouseholdId, _ => new SemaphoreSlim(1, 1));
-            await turn.WaitAsync(http.RequestAborted);
-            try
-            {
-                return await next(context);
-            }
-            finally
-            {
-                turn.Release();
-            }
+            return await http.RequestServices.GetRequiredService<OneChangeAtATime>()
+                .InTurnAsync(caller.HouseholdId, () => next(context).AsTask(), http.RequestAborted);
         });
+
+    // A change of the household named, made once the one before it is done. An operator's route that
+    // saves a section an owner's change also saves (the apps feature) takes the turn of the household
+    // its path names, not of its caller's.
+    public async Task<T> InTurnAsync<T>(string householdId, Func<Task<T>> change, CancellationToken ct)
+    {
+        var turn = _households.GetOrAdd(householdId, _ => new SemaphoreSlim(1, 1));
+        await turn.WaitAsync(ct);
+        try
+        {
+            return await change();
+        }
+        finally
+        {
+            turn.Release();
+        }
+    }
 }

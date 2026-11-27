@@ -5,6 +5,7 @@ using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
 using Domain.Tools.Sugary.Labels;
+using Mcp.Hosting;
 using McpServerSugary.Channel;
 using McpServerSugary.Settings;
 using Microsoft.AspNetCore.Builder;

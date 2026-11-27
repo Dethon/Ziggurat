@@ -19,4 +19,9 @@ public class FeatureHintsTests
         FeatureHints.Timers.ShouldContain("voice satellites");
         FeatureHints.Timers.ShouldContain("message");
     }
+
+    // The owners see whether their agents build apps but cannot change it: the page says who can.
+    [Fact]
+    public void Apps_IsTheOperatorsToTurnOnOrOff() =>
+        FeatureHints.Apps.ShouldContain("deployment's operator");
 }

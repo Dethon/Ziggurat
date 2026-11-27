@@ -25,7 +25,8 @@ namespace Infrastructure.Agents.Mcp;
 // it, signed here as the same person: a filesystem write says what it delegates under the agent's own
 // request key (McpFileSystemBackend, for the schedules and watches it writes), and web_login is a
 // login handoff by its name, delegated off the asking turn's own context. A call acting for no person
-// delegates nothing, and nothing a caller wrote under either key leaves unsigned.
+// delegates nothing, nor does a built app's ask (DelegatedWrites.MayBeLeftBy), and nothing a caller wrote
+// under either key leaves unsigned.
 public sealed class SigningClientTransport(IClientTransport inner, CallTokens tokens, string audience) : IClientTransport
 {
     public string Name => inner.Name;
@@ -65,7 +66,7 @@ public sealed class SigningClientTransport(IClientTransport inner, CallTokens to
             var delegated = Requested(meta) ?? (turn is not null && LoginUrlOf(parameters) is { } url ? LoginDelegation.Of(turn, url) : null);
             meta.Remove(ChannelProtocol.DelegateMetaKey);
             meta.Remove(ChannelProtocol.DelegationMetaKey);
-            if (delegated is not null && identity.Account is not null)
+            if (delegated is not null && identity.Account is not null && DelegatedWrites.MayBeLeftBy(identity))
             {
                 meta[ChannelProtocol.DelegationMetaKey] = tokens.Delegate(identity, delegated);
             }

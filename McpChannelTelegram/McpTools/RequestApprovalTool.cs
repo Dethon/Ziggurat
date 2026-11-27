@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net.Sockets;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
@@ -83,7 +84,7 @@ public sealed class RequestApprovalTool
             {
                 await router.ShowInPrivateChatAsync(id, asker, p.Requests, botClient, access, CancellationToken.None);
             }
-            catch (Exception ex) when (ex is HttpRequestException or ApiRequestException)
+            catch (Exception ex) when (ex is HttpRequestException or SocketException or ApiRequestException)
             {
                 // The group already shows it; a private chat the person never opened with this bot, or
                 // an accounts service that could not say which it is, costs only the second copy.

@@ -41,7 +41,7 @@ public sealed class MetricFamilyTable
             "tokens",
             dimension: MetricChoice.For("groupBy", () => tokens.State.GroupBy, tokens.SetGroupBy),
             metric: MetricChoice.For("metric", () => tokens.State.Metric, tokens.SetMetric),
-            setDateRange: tokens.SetDateRange,
+            setDays: tokens.SetDays,
             // Truncations are a grouped count rather than one of the family's events, but they are
             // the tokens page's fourth headline figure, so they load with them.
             // A load fetches here and hands back the store write, which MetricFamily runs only if
@@ -49,9 +49,9 @@ public sealed class MetricFamilyTable
             loadEvents: async () =>
             {
                 var state = tokens.State;
-                var events = api.GetTokensAsync(state.From, state.To);
+                var events = api.GetTokensAsync(state.Days);
                 var truncations = api.GetGroupedAsync<decimal>(
-                    $"tokens/by/{TokenDimension.Model}", state.From, state.To,
+                    $"tokens/by/{TokenDimension.Model}", state.Days,
                     [("metric", nameof(TokenMetric.TruncationCount))]);
                 await Task.WhenAll(events, truncations);
                 var loaded = await events ?? [];
@@ -66,7 +66,7 @@ public sealed class MetricFamilyTable
             {
                 var state = tokens.State;
                 var breakdown = await api.GetGroupedAsync<decimal>(
-                    $"tokens/by/{state.GroupBy}", state.From, state.To,
+                    $"tokens/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString())]);
                 tokens.SetBreakdown(breakdown ?? []);
             });
@@ -85,18 +85,18 @@ public sealed class MetricFamilyTable
                 }
             }),
             metric: MetricChoice.For("metric", () => tools.State.Metric, tools.SetMetric),
-            setDateRange: tools.SetDateRange,
+            setDays: tools.SetDays,
             loadEvents: async () =>
             {
                 var state = tools.State;
-                var loaded = await api.GetToolsAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetToolsAsync(state.Days) ?? [];
                 return () => tools.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
                 var state = tools.State;
                 var breakdown = await api.GetGroupedAsync<decimal>(
-                    $"tools/by/{state.GroupBy}", state.From, state.To,
+                    $"tools/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString())]);
                 tools.SetBreakdown(breakdown ?? []);
             });
@@ -106,18 +106,18 @@ public sealed class MetricFamilyTable
             "errors",
             dimension: MetricChoice.For("groupBy", () => errors.State.GroupBy, errors.SetGroupBy),
             metric: null,
-            setDateRange: errors.SetDateRange,
+            setDays: errors.SetDays,
             loadEvents: async () =>
             {
                 var state = errors.State;
-                var loaded = await api.GetErrorsAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetErrorsAsync(state.Days) ?? [];
                 return () => errors.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
                 var state = errors.State;
                 var breakdown = await api.GetGroupedAsync<int>(
-                    $"errors/by/{state.GroupBy}", state.From, state.To);
+                    $"errors/by/{state.GroupBy}", state.Days);
                 errors.SetBreakdown(breakdown ?? []);
             });
 
@@ -126,18 +126,18 @@ public sealed class MetricFamilyTable
             "schedules",
             dimension: MetricChoice.For("groupBy", () => schedules.State.GroupBy, schedules.SetGroupBy),
             metric: null,
-            setDateRange: schedules.SetDateRange,
+            setDays: schedules.SetDays,
             loadEvents: async () =>
             {
                 var state = schedules.State;
-                var loaded = await api.GetSchedulesAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetSchedulesAsync(state.Days) ?? [];
                 return () => schedules.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
                 var state = schedules.State;
                 var breakdown = await api.GetGroupedAsync<int>(
-                    $"schedules/by/{state.GroupBy}", state.From, state.To);
+                    $"schedules/by/{state.GroupBy}", state.Days);
                 schedules.SetBreakdown(breakdown ?? []);
             });
 
@@ -155,14 +155,14 @@ public sealed class MetricFamilyTable
                 }
             }),
             metric: MetricChoice.For("metric", () => memory.State.Metric, memory.SetMetric),
-            setDateRange: memory.SetDateRange,
+            setDays: memory.SetDays,
             loadEvents: async () =>
             {
                 var state = memory.State;
-                var recall = api.GetMemoryRecallAsync(state.From, state.To);
-                var extraction = api.GetMemoryExtractionAsync(state.From, state.To);
-                var dreaming = api.GetMemoryDreamingAsync(state.From, state.To);
-                var judgments = api.GetMemoryJudgmentsAsync(state.From, state.To);
+                var recall = api.GetMemoryRecallAsync(state.Days);
+                var extraction = api.GetMemoryExtractionAsync(state.Days);
+                var dreaming = api.GetMemoryDreamingAsync(state.Days);
+                var judgments = api.GetMemoryJudgmentsAsync(state.Days);
                 await Task.WhenAll(recall, extraction, dreaming, judgments);
                 var loadedRecall = await recall ?? [];
                 var loadedExtraction = await extraction ?? [];
@@ -180,7 +180,7 @@ public sealed class MetricFamilyTable
             {
                 var state = memory.State;
                 var breakdown = await api.GetGroupedAsync<decimal>(
-                    $"memory/by/{state.GroupBy}", state.From, state.To,
+                    $"memory/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString())]);
                 memory.SetBreakdown(breakdown ?? []);
             });
@@ -190,11 +190,11 @@ public sealed class MetricFamilyTable
             "latency",
             dimension: MetricChoice.For("groupBy", () => latency.State.GroupBy, latency.SetGroupBy),
             metric: MetricChoice.For("metric", () => latency.State.Metric, latency.SetMetric),
-            setDateRange: latency.SetDateRange,
+            setDays: latency.SetDays,
             loadEvents: async () =>
             {
                 var state = latency.State;
-                var loaded = await api.GetLatencyAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetLatencyAsync(state.Days) ?? [];
                 return () => latency.SetEvents(loaded);
             },
             // The trend is the second panel on the latency page. It is fetched alongside the
@@ -203,9 +203,9 @@ public sealed class MetricFamilyTable
             {
                 var state = latency.State;
                 var breakdown = api.GetGroupedAsync<decimal>(
-                    $"latency/by/{state.GroupBy}", state.From, state.To,
+                    $"latency/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString())]);
-                var trend = api.GetLatencyTrendAsync(state.Metric, state.From, state.To);
+                var trend = api.GetLatencyTrendAsync(state.Metric, state.Days);
                 await Task.WhenAll(breakdown, trend);
                 latency.SetBreakdown(await breakdown ?? []);
                 latency.SetTrend(await trend ?? []);
@@ -216,18 +216,18 @@ public sealed class MetricFamilyTable
             "voice",
             dimension: MetricChoice.For("groupBy", () => voice.State.GroupBy, voice.SetGroupBy),
             metric: MetricChoice.For("metric", () => voice.State.Metric, voice.SetMetric),
-            setDateRange: voice.SetDateRange,
+            setDays: voice.SetDays,
             loadEvents: async () =>
             {
                 var state = voice.State;
-                var loaded = await api.GetVoiceEventsAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetVoiceEventsAsync(state.Days) ?? [];
                 return () => voice.SetEvents(loaded);
             },
             refreshBreakdown: async () =>
             {
                 var state = voice.State;
                 var breakdown = await api.GetGroupedAsync<decimal>(
-                    $"voice/by/{state.GroupBy}", state.From, state.To,
+                    $"voice/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
                 voice.SetBreakdown(breakdown ?? []);
             });
@@ -237,11 +237,11 @@ public sealed class MetricFamilyTable
             "skills",
             dimension: MetricChoice.For("groupBy", () => skills.State.GroupBy, skills.SetGroupBy),
             metric: MetricChoice.For("metric", () => skills.State.Metric, skills.SetMetric),
-            setDateRange: skills.SetDateRange,
+            setDays: skills.SetDays,
             loadEvents: async () =>
             {
                 var state = skills.State;
-                var loaded = await api.GetSkillPreloadEventsAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetSkillPreloadEventsAsync(state.Days) ?? [];
                 return () => skills.SetEvents(loaded);
             },
             // The outcome trend rides the breakdown refresh, as Web's does: that is the read a
@@ -251,9 +251,9 @@ public sealed class MetricFamilyTable
             {
                 var state = skills.State;
                 var breakdown = api.GetGroupedAsync<decimal>(
-                    $"skills/by/{state.GroupBy}", state.From, state.To,
+                    $"skills/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
-                var trend = api.GetSkillPreloadTrendAsync(state.From, state.To);
+                var trend = api.GetSkillPreloadTrendAsync(state.Days);
                 await Task.WhenAll(breakdown, trend);
                 skills.SetBreakdown(await breakdown ?? []);
                 skills.SetTrend(await trend ?? []);
@@ -264,11 +264,11 @@ public sealed class MetricFamilyTable
             "web",
             dimension: MetricChoice.For("groupBy", () => web.State.GroupBy, web.SetGroupBy),
             metric: MetricChoice.For("metric", () => web.State.Metric, web.SetMetric),
-            setDateRange: web.SetDateRange,
+            setDays: web.SetDays,
             loadEvents: async () =>
             {
                 var state = web.State;
-                var loaded = await api.GetModalDismissalEventsAsync(state.From, state.To) ?? [];
+                var loaded = await api.GetModalDismissalEventsAsync(state.Days) ?? [];
                 return () => web.SetEvents(loaded);
             },
             // The trend is drawn for the kind the page chose, so it rides the breakdown refresh —
@@ -278,9 +278,9 @@ public sealed class MetricFamilyTable
                 var state = web.State;
                 var kind = state.Kind == WebState.AllKinds ? null : state.Kind;
                 var breakdown = api.GetGroupedAsync<decimal>(
-                    $"modals/by/{state.GroupBy}", state.From, state.To,
+                    $"modals/by/{state.GroupBy}", state.Days,
                     [("metric", state.Metric.ToString()), ("agg", state.Agg.ToString())]);
-                var trend = api.GetModalDismissalTrendAsync(state.From, state.To, kind);
+                var trend = api.GetModalDismissalTrendAsync(state.Days, kind);
                 await Task.WhenAll(breakdown, trend);
                 web.SetBreakdown(await breakdown ?? []);
                 web.SetTrend(await trend ?? []);

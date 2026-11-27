@@ -368,7 +368,7 @@ public class SugaryClipApiTests
             : [];
 
     internal static Task<byte[]?> FetchAsync(McpChannelConnection agent, AttachmentReference reference) =>
-        new ChannelAttachmentSource([agent]).FetchAsync("sugary", reference.Id, CancellationToken.None);
+        new ChannelAttachmentSource([agent]).FetchAsync("sugary", null, reference.Id, null, CancellationToken.None);
 
     internal static async Task<ChannelMessage> NextTurnAsync(McpChannelConnection agent)
     {

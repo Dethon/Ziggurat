@@ -59,6 +59,12 @@ public static class AdminProtocol
 
     public static string Suspension(string householdId) => $"{Households}/{Uri.EscapeDataString(householdId)}/suspension";
 
+    // Whether a household's agents are offered the apps server: PUT a HouseholdAppsFeature. The
+    // operator's alone, since apps spend the deployment's shared storage and browser; owners see it.
+    public const string AppsFeatureRoute = Households + "/{householdId}/features/apps";
+
+    public static string AppsFeature(string householdId) => $"{Households}/{Uri.EscapeDataString(householdId)}/features/apps";
+
     // The household's agents (AdminAgents): each one's name and custom instructions, its last few
     // versions and a restore of one, an agent added from a shipped template, one removed.
     public const string Agents = Household + "/agents";
@@ -99,6 +105,9 @@ public static class AdminProtocol
     // read, the spaces section saved whole).
     public const string Features = Household + "/features";
     public const string Spaces = Household + "/spaces";
+
+    // The household's daily caps on its built apps' asks (AdminAppAsks read, the app asks section saved whole).
+    public const string AppAsks = Household + "/app-asks";
 
     // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
     // one revoked, which closes the tunnel it opened.
@@ -204,8 +213,8 @@ public sealed record OwnerLink(string HouseholdId, string UserId, string Display
 
 // One household as the operator's list shows it: its people by role, the servers connected to the
 // agent's relay now (null when the agent could not be asked), when any of its people's sessions was
-// last seen by the session check (null when none ever was), and since when it is suspended (null
-// while it runs).
+// last seen by the session check (null when none ever was), since when it is suspended (null
+// while it runs), and whether the operator turned its apps feature on.
 [PublicAPI]
 public sealed record HouseholdListEntry(
     string Id,
@@ -216,7 +225,8 @@ public sealed record HouseholdListEntry(
     IReadOnlyList<HouseholdPerson> Members,
     IReadOnlyList<HouseholdConnectedServer>? ConnectedServers,
     DateTimeOffset? LastSeenAt,
-    DateTimeOffset? SuspendedAt = null);
+    DateTimeOffset? SuspendedAt = null,
+    bool Apps = false);
 
 [PublicAPI]
 public sealed record HouseholdPerson(string UserId, string DisplayName, bool IsOperator);
@@ -228,3 +238,7 @@ public sealed record HouseholdConnectedServer(string Name, DateTimeOffset Connec
 // refused, and nothing of it is deleted.
 [PublicAPI]
 public sealed record HouseholdSuspension(bool Suspended, DateTimeOffset? Since = null);
+
+// The household's apps feature as the operator sets it: sent and answered with whether it is on.
+[PublicAPI]
+public sealed record HouseholdAppsFeature(bool On);

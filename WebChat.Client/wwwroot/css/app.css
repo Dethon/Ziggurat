@@ -2246,8 +2246,7 @@ h1, h2, h3 {
 }
 
 .chip-icon {
-    font-size: 1rem;
-    line-height: 1;
+    flex-shrink: 0;
 }
 
 [data-theme="dark"] .suggestion-chip {
@@ -3271,6 +3270,31 @@ select:focus:not(:focus-visible) {
 @keyframes comboDrop { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ===================================
+   Space switcher (the header's mark): the household's spaces and the person's apps
+   =================================== */
+
+.space-switcher { position: relative; display: inline-flex; }
+.space-switcher-toggle { display: flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.25rem; border: none;
+    border-radius: 10px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.space-switcher-toggle:hover, .space-switcher.open .space-switcher-toggle { background: var(--bg-tertiary); }
+.space-switcher-caret { flex: 0 0 auto; transition: transform var(--transition-fast); }
+.space-switcher.open .space-switcher-caret { transform: rotate(180deg); }
+.space-switcher-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 30;
+    min-width: 240px; max-width: min(360px, calc(100vw - 2rem)); max-height: 60dvh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px; padding: 0.5rem;
+    background: var(--bg-elevated); border: 1px solid var(--border-color); border-radius: 16px;
+    box-shadow: var(--shadow-lg); animation: comboDrop 0.14s ease-out; }
+.space-switcher-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.75rem; border-radius: 10px;
+    color: var(--text-primary); font-size: 0.9375rem; font-weight: 500; text-decoration: none; }
+.space-switcher-item:hover { background: var(--bg-tertiary); }
+.space-switcher-item.on { background: var(--accent-subtle); }
+.space-switcher-dot { flex: 0 0 auto; width: 12px; height: 12px; margin: 0 2px; border-radius: 50%; }
+.space-switcher-app { flex: 0 0 auto; display: inline-flex; }
+.space-switcher-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.space-switcher-private { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.25rem;
+    color: var(--text-muted); font-size: 0.75rem; }
+
+/* ===================================
    Dictation
    =================================== */
 
@@ -3593,6 +3617,13 @@ select:focus:not(:focus-visible) {
     color: var(--text-muted);
 }
 
+/* What a shared app asks beyond what an owner approved: not granted until approved. */
+.admin-field-hint.admin-pending {
+    color: var(--text-primary);
+    border-left: 3px solid var(--warning);
+    padding-left: 0.5rem;
+}
+
 .admin-actions {
     display: flex;
     justify-content: flex-end;
@@ -3674,6 +3705,10 @@ select:focus:not(:focus-visible) {
     width: 1.1rem;
     height: 1.1rem;
     accent-color: var(--accent);
+}
+
+.admin-toggle-fixed {
+    cursor: default;
 }
 
 .admin-toggle-text {

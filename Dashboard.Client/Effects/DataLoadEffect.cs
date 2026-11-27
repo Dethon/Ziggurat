@@ -21,12 +21,12 @@ public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures o
     // .claude/rules/observability.md promises about catch-up keeping the user's time choices.
     // Everything is still loaded, each family over its own range: whatever a load can put on screen
     // is what an outage can leave stale.
-    public async Task LoadAsync(DateOnly from, DateOnly to, IReadOnlyList<MetricFamily> displayed)
+    public async Task LoadAsync(int days, IReadOnlyList<MetricFamily> displayed)
     {
         ArgumentNullException.ThrowIfNull(displayed);
 
-        displayed.ToList().ForEach(family => family.SetDateRange(from, to));
-        overview.SetDateRange(from, to);
+        displayed.ToList().ForEach(family => family.SetDays(days));
+        overview.SetDays(days);
         await ReloadAsync();
     }
 

@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
+using Mcp.Hosting;
 using McpServerSugary.Channel;
 using McpServerSugary.Clips;
 using McpServerSugary.Settings;

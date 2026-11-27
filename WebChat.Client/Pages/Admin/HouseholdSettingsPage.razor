@@ -12,7 +12,8 @@
 <section class="admin-section" aria-labelledby="admin-settings-heading">
     <h1 id="admin-settings-heading">Settings</h1>
     <p class="admin-lede">
-        The household's name, the time zone its dates and schedules are read in, and the language its agents answer in.
+        The household's name, the time zone its dates and schedules are read in, the language its agents answer in,
+        and how long one turn of theirs may keep calling tools.
     </p>
 
     @if (_state.Settings is null)
@@ -47,6 +48,14 @@
                     A tag such as es or en-GB. Left empty, the agents answer in each conversation's own language.
                 </span>
             </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Tool rounds per turn</span>
+                <input name="maxToolRounds" type="number" inputmode="numeric" min="1" max="@HouseholdSettings.MaxToolRoundsLimit"
+                       @bind="_maxToolRounds" @bind:event="oninput" placeholder="No limit" autocomplete="off" />
+                <span class="admin-field-hint">
+                    How many times one turn may call tools before it has to stop. Left empty, a turn runs until its work is done.
+                </span>
+            </label>
             <div class="admin-actions">
                 <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
             </div>
@@ -63,6 +72,7 @@
     private string _name = "";
     private string _timeZone = "";
     private string _language = "";
+    private int? _maxToolRounds;
 
     protected override void OnInitialized()
     {
@@ -73,7 +83,8 @@
         {
             if (settings is not null)
             {
-                (_name, _timeZone, _language) = (settings.Name, settings.TimeZone, settings.Language ?? "");
+                (_name, _timeZone, _language, _maxToolRounds) =
+                    (settings.Name, settings.TimeZone, settings.Language ?? "", settings.MaxToolRounds);
             }
         });
         Dispatcher.Dispatch(new LoadHouseholdSettings());
@@ -83,6 +94,7 @@
     {
         Name = _name.Trim(),
         TimeZone = _timeZone.Trim(),
-        Language = string.IsNullOrWhiteSpace(_language) ? null : _language.Trim()
+        Language = string.IsNullOrWhiteSpace(_language) ? null : _language.Trim(),
+        MaxToolRounds = _maxToolRounds
     }, Store.State.Settings));
 }

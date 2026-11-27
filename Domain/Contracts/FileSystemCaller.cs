@@ -7,10 +7,13 @@ namespace Domain.Contracts;
 // exec bridge's token where the agent minted one for it, and the delegation the agent signed for a
 // write a later turn acts on (a schedule, a watch), which the mount stores with what it wrote, and
 // the household the call's token verified as, through which a mount reads that household's
-// configuration (the zone its dates are read in). Plain data the registrar hands down per call
-// (FileSystemBackendBase.For); null parts mean the call carried none.
+// configuration (the zone its dates are read in), and the call token the server's gate verified the call
+// by, which a mount hands back to the agent alone (the apps mount's checks read as the call's person).
+// Plain data the registrar hands down per call (FileSystemBackendBase.For); null parts mean the call
+// carried none.
 public sealed record FileSystemCaller(
-    ConversationContext? Conversation, VfsBridgeGrant? Bridge, string? Delegation = null, ICallHousehold? Household = null)
+    ConversationContext? Conversation, VfsBridgeGrant? Bridge, string? Delegation = null, ICallHousehold? Household = null,
+    string? CallToken = null)
 {
     public static readonly FileSystemCaller Nobody = new(null, null);
 }

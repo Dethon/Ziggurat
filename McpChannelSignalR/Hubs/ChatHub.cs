@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
@@ -9,6 +10,7 @@ using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Domain.Security;
+using Infrastructure.Clients.Apps;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Internal;
@@ -187,6 +189,22 @@ public sealed class ChatHub(
     public async Task<IReadOnlyList<HouseholdSpace>> GetSpaces() =>
         SpaceListing.Ordered(await HouseholdSpacesAsync(Context.ConnectionAborted));
 
+    // Every place WebChat's space switcher offers the person (SpaceSwitcher): the household's spaces in
+    // its order, an app space among them with its app's link, then their own apps no space shares, marked
+    // private. GetSpaces stays the chat spaces alone, for installed clients from before. The apps are the
+    // apps server's to say, asked for the connection's session with the app ids the spaces name; when it
+    // could not be asked the chat spaces are answered all the same.
+    public async Task<IReadOnlyList<SwitcherEntry>> GetSpacesAndApps([FromServices] IPersonsApps personsApps)
+    {
+        var ct = Context.ConnectionAborted;
+        var spaces = (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+        IReadOnlyList<string> shared = [.. spaces.Where(s => s.IsApp).Select(s => s.AppId!)];
+        var apps = SignedIn.SessionId is { } session
+            ? await personsApps.ListAsync(SignedIn.UserId, session, shared, ct)
+            : null;
+        return SpaceSwitcher.Entries(spaces, apps);
+    }
+
     public async Task JoinSpace(string spaceSlug)
     {
         if (!SpaceConfig.IsValidSlug(spaceSlug))
@@ -211,9 +229,11 @@ public sealed class ChatHub(
 
     // Asked with the accounts service's fresh word for the connection's person rather than the
     // assertion it arrived with, which lives ten minutes while a chat client stays connected for
-    // hours: the household is the one that word names, never one the browser says.
+    // hours: the household is the one that word names, never one the browser says. Its chat spaces
+    // alone: an app space holds no topics and is joined by nobody, and an installed client that knows no
+    // app spaces would show one as a space it cannot open.
     private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct) =>
-        (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+        SpaceListing.ChatSpaces((await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces);
 
     private Task<HouseholdAgentNames> HouseholdAgentsAsync(CancellationToken ct) =>
         HouseholdViewAsync(households.AgentNamesAsync, "agents", UnvouchedAgentsError, ct);
@@ -230,7 +250,7 @@ public sealed class ChatHub(
         {
             return await view(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException)
         {
             logger.LogWarning(ex, "Could not read the {What} of household {TenantId}", what, SignedIn.TenantId);
             throw new HubException(refusal);

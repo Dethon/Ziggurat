@@ -25,6 +25,20 @@ public class DeploymentFilesTests
         compose.Service("lemonade").Devices.ShouldContain("/dev/dri:/dev/dri");
     }
 
+    [Fact]
+    public void TheCompose_ReadsEachServicesCapabilitiesAndSecurityOptions()
+    {
+        var debug = DeploymentFiles.Compose("docker-compose.override.debug.yml").Service("mcp-apps");
+        var sandbox = DeploymentFiles.KitCompose().Service("mcp-sandbox");
+
+        debug.CapAdd.ShouldBe(["SYS_PTRACE"]);
+        debug.SecurityOpt.ShouldBe(["seccomp:unconfined"]);
+        sandbox.CapAdd.ShouldBe(["SYS_ADMIN"]);
+        sandbox.SecurityOpt.ShouldContain("apparmor=ziggurat-sandbox");
+        sandbox.CapDrop.ShouldBeEmpty();
+        sandbox.Privileged.ShouldBeFalse();
+    }
+
     // The build context's filter, run against the real file: what it drops and what it puts back.
     [Fact]
     public void TheDockerIgnore_DropsWhatItNames_AndKeepsWhatItPutsBack()

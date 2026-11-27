@@ -58,8 +58,8 @@ public sealed class UploadStoreTests : IDisposable
 
         _store.Sweep().ShouldBe(1);
 
-        (await _store.ReadBytesAsync(old.Id, CancellationToken.None)).ShouldBeNull();
-        (await _store.ReadBytesAsync(fresh.Id, CancellationToken.None)).ShouldBe([4, 5, 6]);
+        (await _store.ReadBytesAsync(old.Id, null, null, CancellationToken.None)).ShouldBeNull();
+        (await _store.ReadBytesAsync(fresh.Id, null, null, CancellationToken.None)).ShouldBe([4, 5, 6]);
         Directory.GetDirectories(_root).Length.ShouldBe(1);
     }
 
@@ -72,7 +72,7 @@ public sealed class UploadStoreTests : IDisposable
 
         _store.Sweep().ShouldBe(0);
 
-        (await _store.ReadBytesAsync(photo.Id, CancellationToken.None)).ShouldBe([1]);
+        (await _store.ReadBytesAsync(photo.Id, null, null, CancellationToken.None)).ShouldBe([1]);
     }
 
     // A write the server died in the middle of holds nothing a turn can name, so it does not wait

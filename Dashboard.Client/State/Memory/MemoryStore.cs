@@ -14,7 +14,7 @@ public record AppendMemoryRecallEvent(MemoryRecallEvent Event) : IAction;
 public record AppendMemoryExtractionEvent(MemoryExtractionEvent Event) : IAction;
 public record AppendMemoryDreamingEvent(MemoryDreamingEvent Event) : IAction;
 public record AppendMemoryJudgmentEvent(MemoryJudgmentEvent Event) : IAction;
-public record SetMemoryDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetMemoryDays(int Days) : IAction;
 
 public sealed class MemoryStore : Store<MemoryState>
 {
@@ -65,6 +65,6 @@ public sealed class MemoryStore : Store<MemoryState>
             JudgmentEvents = EventWindow.Append(s.JudgmentEvents, a.Event),
         });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetMemoryDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetMemoryDays(days), static (s, a) => s with { Days = a.Days });
 }

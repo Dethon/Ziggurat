@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
@@ -210,6 +211,44 @@ public sealed class SpaceEffectTests : IDisposable
         await _effect.HandleSelectSpaceAsync("kitchen");
 
         _topicService.JoinedSpaces.ShouldNotContain("kitchen");
+    }
+
+    // The switcher lists what the hub says when asked (the first load asks once its own calls are done),
+    // again whenever the page is live again after an interruption and whenever it is opened, so a space
+    // shared or an app published since is there the next time the person looks.
+    [Fact]
+    public async Task BecomingLiveAgain_AndTheSwitcherOpened_EachAskTheHubWhatTheSwitcherLists()
+    {
+        IReadOnlyList<SwitcherEntry> first = [new("Main", "#112233", "default", null)];
+        IReadOnlyList<SwitcherEntry> later = [.. first, new("Pantry", "#2a9d8f", "pantry", "https://pantry-a1b2c3.apps.example/")];
+        _topicService.SwitcherEntries = first;
+
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await TestChat.Eventually(() => _spaceStore.State.Switcher.SequenceEqual(first));
+        _topicService.SwitcherEntries = later;
+
+        _dispatcher.Dispatch(new LoadSwitcher());
+
+        await TestChat.Eventually(() => _spaceStore.State.Switcher.SequenceEqual(later));
+    }
+
+    // Not live, the switcher keeps what it last listed: nothing the person did failed, so nothing is said.
+    [Fact]
+    public async Task TheSwitcherOpenedWhileNotLive_KeepsWhatItListed_Silently()
+    {
+        IReadOnlyList<SwitcherEntry> listed = [new("Main", "#112233", "default", null)];
+        _topicService.SwitcherEntries = listed;
+        _dispatcher.Dispatch(new LoadSwitcher());
+        await TestChat.Eventually(() => _spaceStore.State.Switcher.SequenceEqual(listed));
+        _topicService.NotLive = true;
+        _topicService.SwitcherEntries = [];
+
+        await _effect.LoadSwitcherAsync();
+
+        _spaceStore.State.Switcher.ShouldBe(listed);
+        _toastStore.State.Toasts.ShouldBeEmpty();
     }
 
     private void GivenLoadedTopicsAndMessages()

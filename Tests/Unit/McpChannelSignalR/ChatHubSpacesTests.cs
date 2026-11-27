@@ -1,3 +1,4 @@
+using Domain.Apps;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -5,6 +6,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Security;
+using Infrastructure.Clients.Apps;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -38,6 +40,7 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
     private const string Phone = "5e55105e55105e55105e55105e55105e";
 
     private readonly HouseholdSpacesAccounts _households = new();
+    private readonly StandInPersonsApps _apps = new();
     private readonly Mock<IThreadStateStore> _store = new();
     private readonly Mock<IHubNotificationSender> _hub = new();
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
@@ -68,6 +71,7 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
             .AddSingleton(new ChannelNotificationEmitter(new ChannelInbox(time), DeliveryPolicy.Broadcast))
             .AddSingleton<ISessionAccounts>(new VouchingAccounts(Home))
             .AddSingleton<IHouseholdConfiguration>(_households)
+            .AddSingleton<IPersonsApps>(_apps)
             .AddSingleton(new Mock<IAgentCatalog>().Object)
             .AddSingleton(_store.Object)
             .AddSingleton(new Mock<IPushSubscriptionStore>().Object)
@@ -217,6 +221,158 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
             $"space:{Home}:default", "OnTopicChanged", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
         _hub.Verify(h => h.SendToGroupAsync(
             $"space:{Home}:attic", It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // An app space is a household space whose page is a built app: it holds no topics and is no chat
+    // space, so an installed client from before, which knows nothing of apps, is told the chat spaces
+    // alone and never shown a space it cannot open.
+    [Fact]
+    public async Task AnAppSpace_IsNotAmongTheSpacesAConnectionIsTold()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1), Space("kitchen", 2)] };
+        var connection = await ConnectAsync();
+
+        var spaces = await connection.InvokeAsync<IReadOnlyList<HouseholdSpace>>("GetSpaces");
+
+        spaces.ShouldBe([Space("default", 0), Space("kitchen", 2)]);
+    }
+
+    [Fact]
+    public async Task JoiningAnAppSpace_IsRefusedAsNoSuchSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        var connection = await ConnectAsync();
+
+        var refused = await Should.ThrowAsync<HubException>(() => connection.InvokeAsync("JoinSpace", "glucose"));
+
+        refused.Message.ShouldContain("No such space");
+    }
+
+    // A slug an app space took may still hold the topics of a chat space removed before under it: those
+    // are listed in the default space like any removed space's, never lost between a space nobody can
+    // join and a list that takes the slug for a space's own.
+    [Fact]
+    public async Task TopicsUnderAnAppSpacesSlug_AreListedInTheDefaultSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        HoldingTopics("default", "glucose");
+        _store.Setup(s => s.GetTopicPageAsync(
+                "jonas", "default", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false, Only("glucose"), It.IsAny<TopicFilter?>()))
+            .ReturnsAsync(new TopicPage([Topic("t-glucose", "glucose")], null));
+        var connection = await ConnectAsync();
+
+        await connection.InvokeAsync("JoinSpace", SpaceConfig.DefaultSlug);
+
+        (await connection.InvokeAsync<TopicPage>("GetTopicPage", "jonas", "default", null, null, false))
+            .Topics.Select(t => t.TopicId).ShouldBe(["t-glucose"]);
+    }
+
+    // WebChat's switcher is told every place the person may go: the household's spaces in its order,
+    // an app space among them with its app's link, which the apps server answers for the app ids the
+    // household's spaces name, asked for the connection's session; then their own apps no space shares,
+    // marked private.
+    [Fact]
+    public async Task TheSwitcher_IsToldTheSpacesInTheirOrder_AppSpacesWithTheirLinks_ThenThePersonsPrivateApps()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("kitchen", 2), AppSpace("glucose", 1), Space("default", 0)] };
+        _apps.Answer = [App("a1b2c3", "Glucose today", own: false), App("zz0001", "Zucchini", own: true), App("dd0001", "Diary", own: true)];
+        var connection = await ConnectAsync();
+
+        var entries = await connection.InvokeAsync<IReadOnlyList<SwitcherEntry>>("GetSpacesAndApps");
+
+        entries.ShouldBe(
+        [
+            new SwitcherEntry("The default", "#123456", "default", null),
+            new SwitcherEntry("The glucose app", "#654321", "glucose", "https://glucose-a1b2c3.apps.example/"),
+            new SwitcherEntry("The kitchen", "#123456", "kitchen", null),
+            new SwitcherEntry("Diary", "#0000ff", null, "https://diary-dd0001.apps.example/", Private: true),
+            new SwitcherEntry("Zucchini", "#0000ff", null, "https://zucchini-zz0001.apps.example/", Private: true)
+        ]);
+        var asked = _apps.Asked.ShouldHaveSingleItem();
+        (asked.UserId, asked.SessionId).ShouldBe((Fran, Phone));
+        asked.Shared.ShouldBe(["a1b2c3"]);
+    }
+
+    // An app of their own the household shares is its app space, never a private app beside it.
+    [Fact]
+    public async Task AnOwnAppTheHouseholdShares_IsListedAsItsSpaceAlone()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        _apps.Answer = [App("a1b2c3", "Glucose today", own: true)];
+        var connection = await ConnectAsync();
+
+        var entries = await connection.InvokeAsync<IReadOnlyList<SwitcherEntry>>("GetSpacesAndApps");
+
+        entries.Select(e => (e.Slug, e.Private)).ShouldBe([("default", false), ("glucose", false)]);
+    }
+
+    // The apps server is no condition of the chat: when it could not be asked, the switcher is told the
+    // chat spaces, and an app space whose link nobody could give is left out rather than offered as a
+    // place that opens nothing.
+    [Fact]
+    public async Task WhenTheAppsCouldNotBeAsked_TheSwitcherIsToldTheChatSpaces()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1), Space("kitchen", 2)] };
+        _apps.Answer = null;
+        var connection = await ConnectAsync();
+
+        var entries = await connection.InvokeAsync<IReadOnlyList<SwitcherEntry>>("GetSpacesAndApps");
+
+        entries.Select(e => e.Slug).ShouldBe(["default", "kitchen"]);
+    }
+
+    // An installed client from before asks GetSpaces and binds its answer: what the switcher is told
+    // changes nothing of it.
+    [Fact]
+    public async Task GetSpaces_AnswersTheChatSpacesAsBefore_WhateverTheSwitcherIsTold()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), AppSpace("glucose", 1)] };
+        _apps.Answer = [App("a1b2c3", "Glucose today", own: true), App("zz0001", "Zucchini", own: true)];
+        var connection = await ConnectAsync();
+
+        var spaces = await connection.InvokeAsync<System.Text.Json.JsonElement>("GetSpaces");
+
+        // Spelled out, so a field the space or the switcher gains shows here as a change of this answer.
+        spaces.GetRawText().ShouldBe(
+            """[{"slug":"default","name":"The default","accentColor":"#123456","defaultAgent":null,"order":0,"appId":null,"approved":null}]""");
+    }
+
+    private static HouseholdSpace AppSpace(string slug, int order) => new()
+    {
+        Slug = slug, Name = $"The {slug} app", AccentColor = "#654321", Order = order, AppId = "a1b2c3"
+    };
+
+    private static PersonsApp App(string id, string name, bool own) =>
+        new(id, name, "#0000ff", $"https://{name.Split(' ')[0].ToLowerInvariant()}-{id}.apps.example/", own);
+
+    // The apps server's answer, as the hub's client would have it, and who it was asked for.
+    private sealed class StandInPersonsApps : IPersonsApps
+    {
+        private readonly List<(string, string, IReadOnlyList<string>)> _asked = [];
+
+        public IReadOnlyList<PersonsApp>? Answer { get; set; } = [];
+
+        public IReadOnlyList<(string UserId, string SessionId, IReadOnlyList<string> Shared)> Asked
+        {
+            get
+            {
+                lock (_asked)
+                {
+                    return [.. _asked];
+                }
+            }
+        }
+
+        public Task<IReadOnlyList<PersonsApp>?> ListAsync(
+            string userId, string sessionId, IReadOnlyCollection<string> shared, CancellationToken ct)
+        {
+            lock (_asked)
+            {
+                _asked.Add((userId, sessionId, [.. shared]));
+            }
+
+            return Task.FromResult(Answer);
+        }
     }
 
     private void HoldingTopics(params string[] slugs) =>

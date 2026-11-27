@@ -53,6 +53,10 @@ which anything on the compose network could write.
 | Dashboard's usage route, `/api/usage` (`OperatorGate`) | `AppChannels.Usage`, signed by the accounts service itself for the owner its admin gate verified (`Assertions.Of(ForwardedAccount, channel)`), never by a proxy block | 401 | 403 without the `owner` role; answers the assertion's household alone |
 | `/api/agents*` (`AgentApi`, after the secret) | `AppChannels.SexyTime` | 401 | the secret alone opens nothing |
 | The accounts service's admin API, `/accounts/admin/*` (`AdminApi`'s gate) | `AppChannels.Admin` | 401 | verified against the service's own keys; 403 without the root's role or the admin client's header (`.claude/rules/admin.md`) |
+| The agent's app read route (`AppReader`, after the apps server's own credential) | `AppChannels.Apps`, the app session's assertion the apps server forwards — or, for a check, no assertion but the agent's own call token (`CheckCallVerifier`, `apps.md` "Checks") | 401 | a person only; then the household's standing, as a turn's (`HouseholdStanding`); `.claude/rules/apps.md`, "The app read API" |
+| The apps server's published-apps listing (`PublishedAppsListing`) | `AppChannels.PublishedApps`, signed by the accounts service itself for the owner its admin gate verified (`HouseholdAppsClient`), never by a proxy block | 401 | 403 without the `owner` role; answers the assertion's household alone |
+| The apps server's listing of a person's apps (`PersonsAppsListing`) | `AppChannels.PersonsApps`, the session refresh's answer to the chat hub alone, for the connection's session (`PersonsAppsClient`), never by a proxy block | 401 | any person; answers that person's own published apps and the links of the household's apps named as shared |
+| A built app's origin (`AppViewers`, apps server) | `AppChannels.Apps`, from the app sign-in's redemption, never a header (no proxy block) | a page is sent to the app sign-in, anything else the 404 | verified once per sign-in and renewal, kept on the app session; whether they may open the app is the apps server's (`.claude/rules/apps.md`) |
 
 The channel is what keeps an assertion signed for one route from opening another: each Caddy
 `forward_auth` names its block's (`?channel=`), the session check signs it, the app checks it.
@@ -64,7 +68,7 @@ Observability, which references Domain alone.
 
 ## Channels and the agent
 
-No turn acts for a person the accounts service did not vouch for. A channel carries the service's
+No turn acts for a person the accounts service did not vouch for, but for a check's ask (below). A channel carries the service's
 assertion on the turn's notification (`ChannelMessageNotification.Assertion`, mapped onto
 `ChannelMessage.Assertion` by `McpChannelConnection`) and the agent believes that, never the
 notification's `Principal`.
@@ -75,12 +79,25 @@ notification's `Principal`.
 | Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
+| Apps (a built app's ask) | the app session's `apps` assertion the apps server keeps; a person only, never the guest (`TurnAdmission.NotAPerson`) |
+
+**The one exception: a check's ask.** A built app's ask during `./check` carries no assertion but
+`ChannelMessageNotification.CheckCallToken`: the agent's own call token for the tool call that ran the
+check, handed back by the apps server. It is believed on an app turn from the deployment's `apps`
+channel endpoint alone (`AppTurns.Believed` drops it anywhere else) and only as `CheckCallVerifier`
+believes a check's reads — the agent's own key, in date, audience `TokenAudiences.CallTo(sharedServers.apps)`,
+naming a person; the guest, nobody or another server's token is refused, and **both together are
+refused** (`TurnAdmission.BothAnAssertionAndACheck`; `AppViewerCredential` is that rule for asks and reads
+alike). The person it names acts on the `apps` channel (`CheckCallVerifier` restamps it), then standing, the `apps` feature and the building agent apply as
+to any ask. Why: nobody is signed in to a check's preview, and the token is the agent's own word that
+this person's turn asked for it, good for the check's deadline (`ChatMonitor`'s optional
+`CheckCallVerifier`; none refuses every check's ask).
 
 **The check** is `AssertionVerifier.VerifyTurnAsync(assertion, channel)` on the agent's
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`
 the id of the connection the message came on (`WrongChannel`), and a person or the guest — an
 assertion naming nobody is refused (`NamesNobody`), though `TokenVerifier` alone would pass it. It
-answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. Its clock is the registered `TimeProvider`.
+answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. The group adds three for a built app's ask (`NotAPerson`, `NotAnAppTurn`, `BothAnAssertionAndACheck`; `.claude/rules/channels.md`). Its clock is the registered `TimeProvider`.
 
 **Where**: `ConversationGroup`'s message pump, as each message arrives and before it is queued — never
 when its turn comes up, or a turn queued behind a long one would be refused for the minutes it
@@ -110,7 +127,7 @@ agent act for that person: `IAccountStanding` (`HouseholdAccountStanding`, over
 - A standing or suspension that cannot be read refuses the turn as `StandingUnreadable`
   (`ChatMonitor.StandingUnreadableErrorType`) with `ConversationGroup.UncheckedAnswer` — never
   "suspended" or "disabled", and never let through.
-- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`) answers every check and one
+- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`, `AppsOff`, `AppAgentGone`) answers every check and one
   `RefuseByStandingAsync` reports it, for a turn and a fire alike.
 - **An approval is held to the same standing** (`ApprovalRelay`, given the group's `IAccountStanding`;
   user's decision, 2026-11-05): a question waiting on a member disabled meanwhile is refused everywhere

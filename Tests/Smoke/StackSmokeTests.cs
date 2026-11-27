@@ -571,7 +571,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         var servers = await GatedServersAsync();
         // Every server the agent dials on the deployment's network that this stack starts, so a reader
         // regression cannot shrink "every" to one. The home's servers are the kit's (below).
-        servers.ShouldBe(["mcp-idealista", "mcp-channel-signalr", "mcp-scheduling", "mcp-timers", "mcp-sugary"],
+        servers.ShouldBe(["mcp-idealista", "mcp-channel-signalr", "mcp-scheduling", "mcp-timers", "mcp-sugary", "mcp-apps"],
             ignoreOrder: true);
 
         var refusals = await Task.WhenAll(servers.Select(async server => await ForgedCallsAsync(

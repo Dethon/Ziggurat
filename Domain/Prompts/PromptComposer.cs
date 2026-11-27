@@ -37,6 +37,11 @@ public sealed record PromptContext
     // The household's zone, named beside the day only where it is not the deployment's own; null
     // for an agent in the zone every agent was written and measured in.
     public string? TimeZone { get; init; }
+
+    // A built app's instructions, for a turn the app asked: they answer it in place of the persona —
+    // identity, custom instructions, the selected sections and the features' (memory, workers) are left
+    // out. Null for every other turn.
+    public string? AppInstructions { get; init; }
 }
 
 // One place that turns a context into a prompt. Nothing here decides an order — every section
@@ -52,9 +57,16 @@ public static class PromptComposer
     private static readonly PromptTemplate _customInstructions =
         PromptDocuments.Section(PromptManifest.CustomInstructions).Template("instructions");
 
-    public static PromptAssembly Compose(PromptContext context)
-    {
-        IEnumerable<PromptSection> sections =
+    private static readonly PromptTemplate _appInstructions =
+        PromptDocuments.Section(PromptManifest.AppInstructions).Template("instructions");
+
+    public static PromptAssembly Compose(PromptContext context) =>
+        PromptAssembly.Build(
+            context.AgentId,
+            context.AppInstructions is { } app ? ForApp(context, app) : ForAgent(context),
+            context.Skills);
+
+    private static IEnumerable<PromptSection> ForAgent(PromptContext context) =>
         [
             PromptManifest.Bind(PromptManifest.CoreDirective, CoreDirectivePrompt.Instructions),
             .. Identity(context),
@@ -72,8 +84,17 @@ public static class PromptComposer
             .. Optional(PromptManifest.Language, LanguagePrompt.Build(context.Language))
         ];
 
-        return PromptAssembly.Build(context.AgentId, sections, context.Skills);
-    }
+    // What every agent carries whatever its persona, around the app's own words.
+    private static IEnumerable<PromptSection> ForApp(PromptContext context, string instructions) =>
+        [
+            PromptManifest.Bind(PromptManifest.CoreDirective, CoreDirectivePrompt.Instructions),
+            .. Optional(PromptManifest.SkillsSection, context.Skills.Count > 0 ? SkillsPrompt.Instructions : null),
+            .. context.FileSystem,
+            .. context.Client,
+            PromptManifest.Bind(PromptManifest.Date, Today(context.Now, context.TimeZone)),
+            .. Optional(PromptManifest.AppInstructions, _appInstructions.Fill(("instructions", instructions))),
+            .. Optional(PromptManifest.Language, LanguagePrompt.Build(context.Language))
+        ];
 
     private static IEnumerable<PromptSection> Identity(PromptContext context) =>
         Optional(

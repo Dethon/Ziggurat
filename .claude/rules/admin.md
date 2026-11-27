@@ -78,16 +78,18 @@ by the session check, not here.
 
 ## Two owners with the same page open
 
-A page saving a whole section — settings, features, spaces — or an agent's name and instructions sends
+A page saving a whole section — settings, features, spaces, app asks — or an agent's name and instructions sends
 what it loaded beside what it wants (`AdminEdit.Of`, the body's `loaded`; `AgentEdit.Loaded`), and the route
 lays only what changed over the section as it is now (`AdminSections.Merged` over `EditMerge`; spaces merge
-by slug). A field both changed differently — or a space one removed and the other changed — is **409**
+by slug, app caps by app id, a removed one's `null` dropped). A field both changed differently — or a space one removed and the other changed — is **409**
 `AdminRefusal` naming it, nothing saved or recorded; the chat client shows it as a refusal (`AdminService`). A body with
 nothing loaded is saved as sent. User chose merging per item over refusing every stale save (2026-11-04).
 Keys, members and servers routes change one item each and need none of it.
 
 **A household's changes run one at a time** (`OneChangeAtATime`, a filter on the owners' group for every
-method but GET/HEAD); the operator's routes and the container's commands are not queued.
+method but GET/HEAD); the operator's routes and the container's commands are not queued, but for the apps
+feature's, which saves the section an owner's features save saves whole and so takes the household's turn
+(`OneChangeAtATime.InTurnAsync`, by the path's household).
 
 **The spaces page keeps each space's loaded order** (`SpaceDrafts`), because the server merges per space:
 renumbering would make one owner's removal a change to every later space and refuse another's 409.

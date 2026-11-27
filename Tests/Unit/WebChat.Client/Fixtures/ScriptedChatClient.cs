@@ -188,6 +188,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         // A household that saved no spaces has the one default space, and a test's hearth beside it.
         connection.Answer("GetSpaces", (IReadOnlyList<HouseholdSpace>)
             [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "hearth", Name = "Hearth", Order = 1 }]);
+        connection.Answer("GetSpacesAndApps", (IReadOnlyList<SwitcherEntry>)
+            [new SwitcherEntry("Main", HouseholdSpace.Default.AccentColor, "default", null), new SwitcherEntry("Hearth", HouseholdSpace.Default.AccentColor, "hearth", null)]);
         connection.Answer("GetStreamState", (object?)null);
         connection.Answer("GetPendingApprovalForTopic", (object?)null);
         connection.Answer("StartSession", true);

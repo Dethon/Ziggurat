@@ -39,7 +39,8 @@ public class ToolErrorTaxonomyTests
         ToolError.Codes.RateLimited,
         ToolError.Codes.TransientDependency,
         ToolError.Codes.PartialSuccess,
-        ToolError.Codes.CaptchaRequired
+        ToolError.Codes.CaptchaRequired,
+        ToolError.Codes.QuotaExceeded
     ];
 
     [Theory]

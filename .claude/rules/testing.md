@@ -112,6 +112,9 @@ The suite runs at full width. Wait for the thing, never for a while: `Eventually
   one of its own (WebChat: a space name, with `CollectionSlices` raised), never the longest chain;
   compare its collection's span in the run's `.trx` after adding it. A collection made for a feature is
   a chain like any other
+- A flag Chromium takes per process (a host-resolver rule naming a port the stack picked) cannot ride the
+  shared browser: the fixture declares `OwnBrowserArgs` and gets a browser of its own once its containers
+  are up (`AppSpacesE2EFixture`, which maps the apps domain to the stack's Caddy)
 - A page's first wait pays for the app's boot, so the boot gets a wait of its own (loading screen gone,
   or composer enabled) before the wait for what the test asked
 - A sweep over an app's pages walks them in one page (its links, or `Blazor.navigateTo`), collecting

@@ -218,6 +218,39 @@ public class VfsExecRerouteTests
         ExecReach.Over(registry, reroutes: true).Of("/sandbox/home", "./install").ShouldBe(ShellReach.Contained);
     }
 
+    // A model that names no working directory writes `cd <dir> && …` instead: the call was a crash
+    // that cost a round (three in one app build), so an exec naming none runs in the sandbox's
+    // workspace, where a person's files land, and is judged as the sandbox's.
+    [Fact]
+    public async Task AnExecNamingNoPath_RunsInTheSandboxsWorkspace_AndIsJudgedAsTheSandboxs()
+    {
+        var registry = new VirtualFileSystemRegistry();
+        var sandbox = new RecordingSandbox(_bridge, _sandboxRan);
+        registry.Mount(new FileSystemMount(sandbox.FilesystemName, ScriptedSandbox.Mount, sandbox.DescribeMount)
+        {
+            ShellReach = ShellReach.Contained, Workspace = "home/sandbox_user"
+        }, sandbox);
+
+        var result = await new VfsExecTool(registry, _bridge).RunAsync(null, "ls", arguments: BridgeFixtures.Whitelisted);
+
+        _sandboxRan.ShouldBe([("home/sandbox_user", "ls")]);
+        result["cwd"]!.GetValue<string>().ShouldBe("/sandbox/home/sandbox_user");
+        ExecReach.Over(registry, reroutes: true).Of(null, "rm -rf ~").ShouldBe(ShellReach.Contained);
+    }
+
+    // With no sandbox there is no one place a command runs, so it is asked where.
+    [Fact]
+    public async Task AnExecNamingNoPath_WithNoSandbox_IsAskedForOne()
+    {
+        var registry = BridgeFixtures.Registry((new CatalogMount(), "outpost:box", ShellReach.Host));
+
+        var result = await new VfsExecTool(registry, _bridge).RunAsync(null, "ls", arguments: BridgeFixtures.Whitelisted);
+
+        result["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        result["message"]!.GetValue<string>().ShouldContain("outpost:box");
+        ExecReach.Over(registry, reroutes: true).Of(null, "ls").ShouldBeNull();
+    }
+
     private sealed class RecordingSandbox(IVfsBridge bridge, List<(string, string)> ran)
         : FileSystemBackendBase, IBridgedExecBackend
     {

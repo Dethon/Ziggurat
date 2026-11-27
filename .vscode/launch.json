@@ -266,6 +266,7 @@
         "CALLERS__mcp-channel-telegram": "local-mcp-secret",
         "CALLERS__mcp-channel-voice": "local-mcp-secret",
         "CALLERS__agent": "local-mcp-secret",
+        "CALLERS__mcp-apps": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:5004"
       }

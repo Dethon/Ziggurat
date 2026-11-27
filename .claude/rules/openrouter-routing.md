@@ -30,7 +30,9 @@ template's (`provider-routing:`), a person's registered agent.
 - **A strict schema requires providers that honour it**: a body with a strict `json_schema` format
   (`docs/adr/0044`) gets `require_parameters: true` in its `provider` node — created if routing is unset,
   still naming no `sort`/`order`. Memory's schemas are not strict and get nothing. `LemonadeChatClient`
-  removes `provider` before the body reaches the box.
+  removes `provider` before the body reaches the box. A 400 to such a request fails the turn as
+  `ResponseFormatRefusedException` (the provider's words kept), since it recurs on every ask: a built app's
+  ask answers it as no retry (`AppAsks.SchemaRefused`).
 
 ## Cache and sessions
 
@@ -84,3 +86,11 @@ on a 200) is not retried by anything.
   `HostRoutingChatClient` to `LemonadeChatClient` with `providerRouting: null`, so no `provider` node and
   no advisories. Every failure is one `LemonadeChatHostException`, thrown from the wire so the retry
   policy never re-sends the turn, and worded so WebChat's transient-error filter cannot swallow it.
+
+## DeepSeek's markup calls
+
+**A reply that is one whole DSML calls block is read back as its calls** (`DsmlToolCalls.RepairAsync`, around every OpenRouter stream): DeepSeek now and then writes a tool call as text in its own markup (`<｜DSML｜ calls>…`) instead of calling — on Baidu, Novita, Wafer and Together alike, so no provider pin avoids it. Words before the marker stream as they come; from the marker the rest is held until the end, then sent as calls (finish `ToolCalls`) or, anything but a whole block, as the text it was. `string="false"` values are JSON. `OpenRouterChatClientDsmlTests`.
+
+## Empty replies
+
+**An empty reply after a tool result is asked for once more** (`OpenRouterChatClient`): no call and no non-blank text (reasoning alone counts as empty), finish `stop` or none, the request ending in a tool result. A provider now and then drops a generated call (Pearl Research on prod: 91 native tokens, 0 passed on, finish `stop`), which ended the turn with no word. Each ask publishes its own `TokenUsageEvent`; `maxRetries: 0` (Lemonade) asks once. `OpenRouterChatClientEmptyReplyTests`.

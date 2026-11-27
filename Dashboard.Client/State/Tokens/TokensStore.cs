@@ -8,7 +8,7 @@ public record SetTokenBreakdown(Dictionary<string, decimal> Breakdown) : IAction
 public record SetTokenGroupBy(TokenDimension GroupBy) : IAction;
 public record SetTokenMetric(TokenMetric Metric) : IAction;
 public record AppendTokenEvent(TokenUsageEvent Event) : IAction;
-public record SetTokenDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetTokenDays(int Days) : IAction;
 public record SetTruncations(long Truncations) : IAction;
 public record IncrementTruncations : IAction;
 
@@ -34,8 +34,8 @@ public sealed class TokensStore : Store<TokensState>
             Events = EventWindow.Append(s.Events, a.Event),
         });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetTokenDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetTokenDays(days), static (s, a) => s with { Days = a.Days });
 
     public void SetTruncations(long truncations) =>
         Dispatch(new SetTruncations(truncations), static (s, a) => s with { Truncations = a.Truncations });

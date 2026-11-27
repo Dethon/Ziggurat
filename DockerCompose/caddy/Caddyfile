@@ -315,3 +315,16 @@ sugary.herfluffness.com {
         reverse_proxy mcp-sugary:8080
     }
 }
+
+# Built apps, each on an origin of its own under the apps domain: <slug>-<id> for the published app,
+# <slug>-<id>-preview for its working tree. A domain apart from the deployment's, so no cookie of the
+# deployment's ever reaches an app's code, with one wildcard certificate through the same DNS challenge.
+# Everything goes to the apps server's pages listener, which decides who opens what by an app session
+# of its own: no session check here, and nothing else of the deployment is served on this domain.
+*.{$APPSDOMAIN} {
+    import tls_{$CADDY_TLS:cloudflare}
+
+    handle {
+        reverse_proxy mcp-apps:8081
+    }
+}

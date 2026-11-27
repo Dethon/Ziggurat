@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using Accounts.Internal;
 using Accounts.Settings;
@@ -43,7 +44,7 @@ public sealed class ConnectedServersClient(
             return await response.Content.ReadFromJsonAsync<IReadOnlyList<ConnectedServer>>(
                 TunnelProtocol.SerializerOptions, asking.Token) ?? [];
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException
                                        || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "The agent could not be asked which of household {Household}'s servers are connected",

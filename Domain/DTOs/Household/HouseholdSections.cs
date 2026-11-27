@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Domain.Apps;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.WebChat;
 using JetBrains.Annotations;
@@ -16,6 +17,7 @@ public static partial class HouseholdSections
     public const string Keys = "keys";
     public const string Features = "features";
     public const string Spaces = "spaces";
+    public const string AppAsks = "app-asks";
 
     public static readonly SectionSchema<HouseholdSettings> SettingsSchema = new(
         Settings, [SectionSteps.Unversioned], SettingsProblems);
@@ -33,8 +35,11 @@ public static partial class HouseholdSections
     public static readonly SectionSchema<SpacesSection> SpacesSchema = new(
         Spaces, [SectionSteps.Unversioned], SpacesProblems);
 
+    public static readonly SectionSchema<AppAsksSection> AppAsksSchema = new(
+        AppAsks, [SectionSteps.Unversioned], AppAsksProblems);
+
     public static IReadOnlyList<SectionSchema> All { get; } =
-        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema];
+        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema, AppAsksSchema];
 
     public static SectionSchema? Named(string name) => All.FirstOrDefault(s => s.Name == name);
 
@@ -58,6 +63,11 @@ public static partial class HouseholdSections
         if (settings.Language is { } language && !LanguageTag().IsMatch(language))
         {
             yield return $"The language '{language}' is not a language tag, such as es or en-GB.";
+        }
+
+        if (settings.MaxToolRounds is < 1 or > HouseholdSettings.MaxToolRoundsLimit)
+        {
+            yield return $"The tool rounds per turn must be 1–{HouseholdSettings.MaxToolRoundsLimit:N0}, or empty for no limit.";
         }
     }
 
@@ -193,28 +203,77 @@ public static partial class HouseholdSections
             {
                 yield return $"space {space.Slug}'s default agent '{agent}' is no agent id";
             }
+
+            if (space.AppId is not { } app)
+            {
+                if (space.Approved is not null)
+                {
+                    yield return $"space {space.Slug} shares no app, so it has no approved reach";
+                }
+
+                continue;
+            }
+
+            foreach (var problem in space.Approved?.Problems(space.Slug) ?? [])
+            {
+                yield return problem;
+            }
+
+            if (!BuiltAppId.IsValid(app))
+            {
+                yield return $"space {space.Slug}'s app '{app}' is no built app's id";
+            }
+
+            if (space.Slug == SpaceConfig.DefaultSlug)
+            {
+                yield return "the default space holds the conversations of removed spaces, so it shares no app";
+            }
+
+            if (space.DefaultAgent is not null)
+            {
+                yield return $"space {space.Slug} shares an app, so it opens on no agent";
+            }
         }
 
         foreach (var slug in section.Spaces.GroupBy(s => s.Slug).Where(g => g.Count() > 1).Select(g => g.Key))
         {
             yield return $"space slug {slug} is used more than once";
         }
+
+        foreach (var app in section.Spaces.Where(s => s.IsApp).GroupBy(s => s.AppId).Where(g => g.Count() > 1).Select(g => g.Key))
+        {
+            yield return $"app {app} is shared by more than one space";
+        }
     }
+
+    // An owner reads these on the apps page, beside the caps they name.
+    private static IEnumerable<string> AppAsksProblems(AppAsksSection section) =>
+        (section.DailyCap is { } household && !AppAsksSection.IsCap(household)
+            ? [$"The household's daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."]
+            : Array.Empty<string>())
+        .Concat(section.Apps
+            .Select(app => !BuiltAppId.IsValid(app.Key) ? $"'{app.Key}' is no built app's id, so it has no daily cap."
+                : !AppAsksSection.IsCap(app.Value) ? $"The app {app.Key}'s daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."
+                : null)
+            .OfType<string>());
 
     [GeneratedRegex("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant)]
     private static partial Regex LanguageTag();
 }
 
-// The household's own name, the zone its dates and schedules are read in, and the language its
-// agents answer in unless a conversation says otherwise (none: they follow the conversation).
+// The household's own name, the zone its dates and schedules are read in, the language its
+// agents answer in unless a conversation says otherwise (none: they follow the conversation), and how
+// many rounds of tool calls one turn may run (none: as many as its model asks for).
 [PublicAPI]
 public sealed record HouseholdSettings
 {
     public const int NameLength = 200;
+    public const int MaxToolRoundsLimit = 10_000;
 
     public string Name { get; init; } = "";
     public string TimeZone { get; init; } = "";
     public string? Language { get; init; }
+    public int? MaxToolRounds { get; init; }
 }
 
 // The household's agents and the one a channel that names none reaches (the shared Telegram bot's
@@ -316,6 +375,10 @@ public sealed record FeaturesSection
     public bool Idealista { get; init; }
     public bool Memory { get; init; } = true;
     public bool Workers { get; init; } = true;
+
+    // The apps server: off until the operator turns it on, since it spends the deployment's shared
+    // storage and browser. Never an owner's to change (HouseholdFeaturesAdmin).
+    public bool Apps { get; init; }
 }
 
 // The household's chat-client spaces. A household that saved none has the one default space.
@@ -342,4 +405,37 @@ public sealed record HouseholdSpace
 
     // Where the space sits in the client's list, lowest first.
     public int Order { get; init; }
+
+    // A built app this space shares with the whole household (an app space): its page is the app's
+    // published origin, its name and colour the app's, and it holds no topics.
+    public string? AppId { get; init; }
+
+    // The reach an owner approved for the app space's app when sharing it, or since: while shared, its
+    // published origin is granted no more of what its manifest asks. None approves nothing.
+    public AppReach? Approved { get; init; }
+
+    [JsonIgnore]
+    public bool IsApp => AppId is not null;
+}
+
+// How many asks a day the household's built apps may send their assistant (.claude/rules/apps.md, "The daily
+// cap"): a default for every app of the household and a cap of each app's own, both its owners'. What
+// neither sets is the deployment's (the apps server's Asks:DailyCap). None of an app is a cap of no asks.
+[PublicAPI]
+public sealed record AppAsksSection
+{
+    // Each ask is a model's turn on the household's key, and a day has 1,440 minutes: a page asking several
+    // times a minute all day long is no app's need, and a cap above it bounds nothing.
+    public const int MaxDailyCap = 10_000;
+
+    public int? DailyCap { get; init; }
+
+    // By the app's id, never its slug, so a rename keeps the app's cap.
+    public IReadOnlyDictionary<string, int> Apps { get; init; } = new Dictionary<string, int>();
+
+    public static bool IsCap(int cap) => cap is >= 0 and <= MaxDailyCap;
+
+    // The limit an app's asks meet: its own cap, else the household's, else the deployment's.
+    public int LimitOf(string appId, int deployment) =>
+        Apps.TryGetValue(appId, out var own) ? own : DailyCap ?? deployment;
 }

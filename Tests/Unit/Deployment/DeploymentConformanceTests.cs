@@ -273,7 +273,7 @@ public class DeploymentConformanceTests
             .Where(s => s.Image == "mcp-sandbox:latest" || s.Dockerfile == "McpServerSandbox/Dockerfile")
             .Select(s => s.Name)
             .ShouldBeEmpty();
-        compose.Networks.Keys.ShouldBe(["jackbot"]);
+        compose.Networks.Keys.ShouldBe(["jackbot", "apps-browser"]);
         compose.Service("agent").Networks.ShouldBe(["jackbot"]);
         DeploymentFiles.Placeholders().Keys.ShouldNotContain("MCP_SECRET_SANDBOX");
     }
@@ -485,6 +485,7 @@ public class DeploymentConformanceTests
     [InlineData("mcp-sugary")]
     [InlineData("observability")]
     [InlineData("agent")]
+    [InlineData("mcp-apps")]
     public void TheAppsThatBelieveTheAssertion_FetchTheAccountsServicesKeys(string service)
     {
         var expected = $"http://accounts:8080{InternalApi.JwksPath}";
@@ -513,6 +514,7 @@ public class DeploymentConformanceTests
     [InlineData("mcp-idealista")]
     [InlineData("mcp-scheduling")]
     [InlineData("mcp-sugary")]
+    [InlineData("mcp-apps")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
@@ -548,7 +550,8 @@ public class DeploymentConformanceTests
             .ShouldBe(
                 [
                     InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent,
-                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary, InternalCallers.Timers
+                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary, InternalCallers.Timers,
+                    InternalCallers.Apps
                 ],
                 ignoreOrder: true);
     }
@@ -811,6 +814,283 @@ public class DeploymentConformanceTests
         accounts.DependsOn.ShouldContain("accounts-volume");
     }
 
+    // Every household's built apps are git repositories in a volume of the apps server's own; nothing
+    // else mounts it, the one-shot step hands it to the server's user, and the server is told the
+    // apps domain it is required to know. The images an ask sends wait in the same volume, beside the
+    // households, so they are kept, owned and backed up as the apps are.
+    [Fact]
+    public void TheAppsServer_KeepsItsRepositoriesInAVolumeOfItsOwnThatItsUserOwns()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps");
+        var storage = new global::McpServerApps.Settings.AppsSettings { AppsDomain = "" }.StoragePath;
+        var volume = $"./volumes/apps:{storage}";
+        global::McpServerApps.Asks.AskUploads.On(storage).StoragePath.ShouldBe($"{storage}/.uploads");
+
+        apps.Volumes.ShouldBe([volume]);
+        apps.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
+        apps.Environment.GetValueOrDefault("APPSDOMAIN").ShouldNotBeNullOrWhiteSpace();
+        compose.Service("mcp-apps-volume").Volumes.ShouldBe([volume]);
+        compose.Service("mcp-apps-volume").Dockerfile.ShouldBe("McpServerApps/Dockerfile");
+        apps.DependsOn.ShouldContain("mcp-apps-volume");
+        compose.Services.Values.Where(s => s.Name is not ("mcp-apps" or "mcp-apps-volume"))
+            .ShouldNotContain(s => s.Volumes.Any(v => v.StartsWith("./volumes/apps:", StringComparison.Ordinal)));
+        DeploymentFiles.Placeholders().Keys.ShouldContain("MCP_SECRET_APPS");
+    }
+
+    // Built apps are served on a domain of their own, one wildcard site for every app origin: all of it
+    // goes to the apps server's pages listener, which decides who opens what by its own app session, so
+    // no session check stands in front of it and nothing else of the deployment is served there.
+    [Fact]
+    public void TheAppsDomain_IsOneWildcardSite_SendingEverythingToTheAppsServersPagesListener()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+        var listener = new global::McpServerApps.Settings.AppListeners().Pages;
+        var pages = $"mcp-apps:{listener}";
+
+        var apps = hosts.Single(h => h.Name.Contains("{$APPSDOMAIN}", StringComparison.Ordinal));
+        apps.Name.ShouldBe("*.{$APPSDOMAIN}");
+        apps.Body.ShouldContain("import tls_{$CADDY_TLS:cloudflare}");
+        apps.ForwardAuth.ShouldBeNull();
+        apps.Body.ShouldNotContain("forward_auth");
+        apps.Routes.ShouldHaveSingleItem().Matcher.ShouldBeNull();
+        apps.Routes[0].Upstream.ShouldBe(pages);
+        hosts.Where(h => h != apps).SelectMany(h => h.Routes)
+            .ShouldNotContain(r => r.Upstream != null && r.Upstream.StartsWith("mcp-apps", StringComparison.Ordinal));
+    }
+
+    // The proxy, the apps server and the accounts service's app sign-in name one apps domain, set once
+    // per deployment; it is no secret.
+    // It is never under the deployment's own domain: the accounts session cookie is sent to every host
+    // under that, and app code must never be sent it.
+    [Fact]
+    public void TheAppsDomain_IsOneValueTheProxyTheAppsServerAndTheAccountsServiceShare_OutsideTheSessionCookiesDomain()
+    {
+        var compose = DeploymentFiles.Compose();
+        var domain = compose.Service("mcp-apps").Environment["APPSDOMAIN"];
+        var cookieDomain = compose.Service("accounts").Environment["SESSIONCOOKIE__DOMAIN"];
+
+        domain.ShouldNotBeNullOrWhiteSpace();
+        compose.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+        compose.Service("accounts").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain,
+            "the app sign-in returns a code only to an origin under it");
+        DeploymentFiles.Placeholders().Keys.ShouldNotContain("APPSDOMAIN");
+        ("." + domain).EndsWith(cookieDomain, StringComparison.OrdinalIgnoreCase).ShouldBeFalse();
+        DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(') && !h.Name.StartsWith('*'))
+            .ShouldNotContain(h => h.Name.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // A stack on somebody's own machine serves apps under .localhost, which resolves to loopback and is a
+    // secure context in Chromium even on plain http (the `__Host-` cookie and the service worker need one).
+    [Fact]
+    public void TheSmokeStack_ServesAppsUnderALocalWildcardName()
+    {
+        var smoke = DeploymentFiles.Compose("docker-compose.override.smoke.yml");
+        var domain = smoke.Service("mcp-apps").Environment["APPSDOMAIN"];
+
+        domain.ShouldEndWith(".localhost");
+        smoke.Service("caddy").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+        smoke.Service("accounts").Environment.GetValueOrDefault("APPSDOMAIN").ShouldBe(domain);
+    }
+
+    // A page opened on an app origin with no app session is sent to the app sign-in on the main host,
+    // which the browser reaches as any accounts page: the accounts route, no session check in front.
+    [Fact]
+    public void TheAppSignIn_IsReachedOnTheMainHost_PastNoSessionCheck()
+    {
+        var compose = DeploymentFiles.Compose();
+        var publicBase = compose.Service("accounts").Environment["PUBLICBASEURL"];
+        var host = DeploymentFiles.Caddyfile().Host(MainHost);
+
+        compose.Service("mcp-apps").Environment.GetValueOrDefault("PUBLICBASEURL").ShouldBe(publicBase);
+        var route = RouteFor(host, global::Domain.Apps.AppSignIn.Path).ShouldNotBeNull();
+        route.Upstream.ShouldBe("accounts:8080");
+        route.ForwardAuth.ShouldBeNull();
+        host.ForwardAuth.ShouldBeNull();
+    }
+
+    // Every way a person's sessions end is announced on the deployment's Redis, which the apps server
+    // hears to end their app sessions at once.
+    [Fact]
+    public void TheAppsServer_HearsSessionsEnd_OnTheAccountsServicesRedis()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps");
+
+        apps.Environment.GetValueOrDefault("REDISCONNECTIONSTRING")
+            .ShouldBe(compose.Service("accounts").Environment["REDIS__CONNECTIONSTRING"]);
+        apps.DependsOn.ShouldContain("redis");
+    }
+
+    // An app session hands its assertion to the agent with each read (ticket 06), and the agent refuses
+    // one that has run out, so it is renewed while most of its life is left: held at most half of it.
+    [Fact]
+    public void TheAppsServersKeptAssertion_LeavesItHalfItsLifetime()
+    {
+        var kept = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Sessions", "AssertionKept").GetString()!, CultureInfo.InvariantCulture);
+        var lifetime = TimeSpan.Parse(
+            ShippedSetting("Accounts", "AssertionLifetime").GetString()!, CultureInfo.InvariantCulture);
+
+        kept.ShouldBeLessThanOrEqualTo(lifetime / 2);
+        new global::McpServerApps.Settings.AppSessionSettings().AssertionKept.ShouldBe(kept);
+    }
+
+    // A check's page reads on the token of the call that ran it, which the agent re-mints within its
+    // refresh margin of expiry, so it arrives with at least that margin left: a check stopped within it
+    // never reads on a token that has run out.
+    [Fact]
+    public void TheAppsServersCheckDeadline_EndsBeforeTheCallsTokenDoes()
+    {
+        var deadline = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Checks", "Deadline").GetString()!, CultureInfo.InvariantCulture);
+        var margin = TimeSpan.Parse(
+            ShippedSetting("Agent", "callTokens", "refreshMargin").GetString()!, CultureInfo.InvariantCulture);
+
+        deadline.ShouldBeLessThanOrEqualTo(margin);
+        new global::McpServerApps.Settings.AppCheckSettings().Deadline.ShouldBe(deadline);
+    }
+
+    // An app's ./check piped in a sandbox command is an action the sandbox's bridge waits on: its bound
+    // must outlast the check's deadline, and covers the longest command the sandbox runs.
+    [Fact]
+    public void ABridgedAction_OutlastsTheLongestAction()
+    {
+        var http = File.ReadAllText(Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), "sandbox-runtime", "src", "vfs", "http.rs"));
+        var within = TimeSpan.FromSeconds(int.Parse(
+            Regex.Match(http, @"ACTION_WITHIN: Duration = Duration::from_secs\((\d+)\)").Groups[1].Value, CultureInfo.InvariantCulture));
+        var deadline = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Checks", "Deadline").GetString()!, CultureInfo.InvariantCulture);
+        var longest = TimeSpan.FromSeconds(ShippedSetting("McpServerSandbox", "MaxTimeoutSeconds").GetInt32());
+
+        within.ShouldBeGreaterThan(deadline);
+        within.ShouldBeGreaterThanOrEqualTo(longest);
+    }
+
+    // A check runs the agent's code in a browser, so the browser runs where nothing is to be had: a
+    // container of its own holding no secret, setting, volume, port or capability, unprivileged, on a
+    // network it shares with the apps server alone, under Chromium's own sandbox (its syscall filter lets
+    // through the user namespaces that needs, never `unconfined`).
+    [Fact]
+    public void TheChecksBrowser_HoldsNothing_AndSharesANetworkWithTheAppsServerAlone()
+    {
+        var compose = DeploymentFiles.Compose();
+        var browser = compose.Service("apps-browser");
+
+        browser.Environment.ShouldBeEmpty();
+        browser.EnvFiles.ShouldBeEmpty();
+        browser.Volumes.ShouldBeEmpty();
+        browser.Ports.ShouldBeEmpty();
+        browser.Devices.ShouldBeEmpty();
+        browser.CapAdd.ShouldBeEmpty();
+        browser.CapDrop.ShouldBe(["ALL"]);
+        browser.Privileged.ShouldBeFalse();
+        browser.SecurityOpt.ShouldBe(["no-new-privileges:true", "seccomp=${REPOSITORY_PATH}/DockerCompose/seccomp/ziggurat-apps-browser.json"]);
+        File.Exists(Path.Combine(DeploymentFiles.Directory, "seccomp", "ziggurat-apps-browser.json")).ShouldBeTrue();
+        browser.Networks.ShouldBe(["apps-browser"]);
+        compose.Services.Values.Where(s => s.Networks.Contains("apps-browser")).Select(s => s.Name)
+            .ShouldBe(["mcp-apps", "apps-browser"], ignoreOrder: true);
+    }
+
+    // The agent's code chooses where the check's page goes, and an origin it may reach can redirect it on, so
+    // the browser's network has no way out of the host at all (`internal`: not the LAN, not the host's
+    // published ports, not the internet): its one way out is the apps server's egress proxy, which reaches the
+    // public internet alone, judging every address the browser dials (Checks/CheckEgress). The apps server
+    // launches every check's browser through it, on the port it listens on.
+    [Fact]
+    public void TheChecksBrowsersOnlyWayOut_IsTheAppsServersEgressProxy()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps").Environment;
+        var egress = new global::McpServerApps.Settings.AppListeners().Egress;
+
+        compose.Service("apps-browser").Networks.ShouldAllBe(network => compose.InternalNetworks.Contains(network));
+        compose.Service("apps-browser").NetworkMode.ShouldBeNull();
+        compose.Service("apps-browser").Networks.ShouldNotContain("default");
+        apps.GetValueOrDefault("CHECKS__BROWSER__PROXY").ShouldBe($"mcp-apps:{egress}");
+        compose.Service("mcp-apps").Networks.ShouldContain(network => !compose.InternalNetworks.Contains(network),
+            "the apps server dials the internet for the browser");
+    }
+
+    // The apps server runs every check on that browser's server, at the port its image listens on (one
+    // Chromium refuses to dial, so not even a renderer reaches it), and the browser reaches the app at the
+    // apps server's pages listener by its name on their network, never through public DNS.
+    [Fact]
+    public void TheAppsServer_RunsItsChecksOnTheChecksBrowser_ReachingItsPagesListenerByName()
+    {
+        var apps = DeploymentFiles.Compose().Service("mcp-apps").Environment;
+        var port = Regex.Match(BrowserDockerfile(), @"""--port"",\s*""(\d+)""").Groups[1].Value;
+        var pages = new global::McpServerApps.Settings.AppListeners().Pages;
+
+        port.ShouldBe("10080");
+        BrowserDockerfile().ShouldContain($"EXPOSE {port}");
+        apps.GetValueOrDefault("CHECKS__BROWSER__ENDPOINT").ShouldBe($"ws://apps-browser:{port}/");
+        apps.GetValueOrDefault("CHECKS__BROWSER__PAGES")
+            .ShouldBe($"mcp-apps:{pages}");
+    }
+
+    // The apps-browser image is the one place the deployment installs Chromium; the apps server's image,
+    // which holds the credential, Redis and every household's repositories, carries no browser.
+    [Fact]
+    public void Chromium_IsInstalledInTheChecksBrowsersImageAlone()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var installing = DeploymentFiles.Compose().Services.Values
+            .Where(s => s.Dockerfile is not null)
+            .Where(s =>
+            {
+                var context = s.BuildContext == "${REPOSITORY_PATH}" ? root : Path.Combine(DeploymentFiles.Directory, s.BuildContext!);
+                return File.ReadLines(Path.Combine(context, s.Dockerfile!))
+                    .Where(line => !line.TrimStart().StartsWith('#'))
+                    .Any(line => Regex.IsMatch(line, @"\bchromium\b|mcr\.microsoft\.com/playwright", RegexOptions.IgnoreCase));
+            })
+            .Select(s => s.Name)
+            .ToList();
+
+        installing.ShouldBe(["apps-browser"]);
+    }
+
+    // A Playwright client and the server it connects to refuse each other unless their versions match, so
+    // every image running a Playwright server pins the version the .NET projects reference.
+    [Theory]
+    [InlineData("apps-browser")]
+    [InlineData("camoufox")]
+    public void APlaywrightServersImage_PinsTheClientsPlaywright(string image)
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var client = Regex.Match(File.ReadAllText(Path.Combine(root, "Infrastructure", "Infrastructure.csproj")),
+            @"Include=""Microsoft\.Playwright"" Version=""([^""]+)""").Groups[1].Value;
+        var dockerfile = File.ReadAllText(Path.Combine(DeploymentFiles.Directory, image, "Dockerfile"));
+
+        client.ShouldNotBeNullOrEmpty();
+        var pins = Regex.Matches(dockerfile, @"playwright(?:-core)?[@:]v?(\d+\.\d+\.\d+)").Select(m => m.Groups[1].Value).ToList();
+        pins.ShouldNotBeEmpty();
+        pins.ShouldAllBe(pin => pin == client);
+    }
+
+    private static string BrowserDockerfile() =>
+        File.ReadAllText(Path.Combine(DeploymentFiles.Directory, "apps-browser", "Dockerfile"));
+
+    // A built app's reads go from the apps server to the agent on the compose network, believed on the
+    // apps server's own credential: the one the agent already holds for the apps server it dials, so no
+    // secret exists for this alone and holding the agent API's opens nothing here. The route is never
+    // reached through the proxy.
+    [Fact]
+    public void TheAppsServer_ReadsThroughTheAgent_WithTheCredentialTheAgentHoldsForIt()
+    {
+        var compose = DeploymentFiles.Compose();
+        var apps = compose.Service("mcp-apps").Environment;
+        var dialled = ServerAddress.FromUrl(ShippedSetting("Agent", "sharedServers", "apps").GetString()!).ShouldNotBeNull();
+
+        dialled.Name.ShouldBe("mcp-apps");
+        apps.GetValueOrDefault("AGENTURL").ShouldBe("http://agent:8080");
+        apps["MCP__SHAREDSECRET"].ShouldBe(compose.Service("agent").Environment[$"MCP__SECRETS__{dialled.Name}"]);
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.AppReads.AgentRoute("read"))?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
+    }
+
     // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
     // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
     [Fact]
@@ -993,6 +1273,44 @@ public class DeploymentConformanceTests
         accounts.GetValueOrDefault("AGENTURL").ShouldBe(AccountsSettings.DefaultAgentUrl);
         AccountsSettings.DefaultAgentUrl.ShouldBe("http://agent:8080");
         accounts.GetValueOrDefault("CALLERS__agent").ShouldBe(compose.Service("agent").Environment["AGENTAPI__SHAREDSECRET"]);
+    }
+
+    // The spaces page lists the household's published apps, which only the apps server knows: the accounts
+    // service asks its listing on the apps server's MCP listener, on the compose network both sit on, with
+    // an assertion it signs itself, so no secret exists for this. The proxy sends nothing to that listener.
+    [Fact]
+    public void TheAccountsService_AsksTheAppsServersListingOnItsMcpListener()
+    {
+        var compose = DeploymentFiles.Compose();
+        var accounts = compose.Service("accounts");
+
+        accounts.Environment.GetValueOrDefault("APPSURL").ShouldBe(AccountsSettings.DefaultAppsUrl);
+        var mcpListener = new global::McpServerApps.Settings.AppListeners().Mcp;
+        AccountsSettings.DefaultAppsUrl.ShouldBe($"http://mcp-apps:{mcpListener}");
+        compose.Service("mcp-apps").Networks.ShouldContain(accounts.Networks.ShouldHaveSingleItem());
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.PublishedApps.Path)?.Upstream.ShouldNotBe("mcp-apps:8080", host.Name);
+        }
+    }
+
+    // WebChat's space switcher lists a person's apps, which only the apps server knows: the chat hub asks
+    // its listing on the apps server's MCP listener, on the compose network both sit on, with the accounts
+    // service's word for the connection's session on persons-apps — which only the hub may ask for — so no
+    // secret exists for this. The proxy sends nothing to that listener.
+    [Fact]
+    public void TheChatHub_AsksTheAppsServersListingOfAPersonsAppsOnItsMcpListener()
+    {
+        var compose = DeploymentFiles.Compose();
+        var hub = compose.Service("mcp-channel-signalr");
+        var mcpListener = new global::McpServerApps.Settings.AppListeners().Mcp;
+
+        hub.Environment.GetValueOrDefault("APPSURL").ShouldBe($"http://mcp-apps:{mcpListener}");
+        compose.Service("mcp-apps").Networks.ShouldContain(hub.Networks.ShouldHaveSingleItem());
+        foreach (var host in DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')))
+        {
+            RouteFor(host, global::Domain.Apps.PersonsApps.Path)?.Upstream.ShouldNotBe("mcp-apps:8080", host.Name);
+        }
     }
 
     // The household import can make the operator and mint their link, so the accounts service admits

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Dashboard.Client.Services;
@@ -31,7 +32,7 @@ public sealed class HouseholdDirectory(HouseholdsAdminService admin)
                 ? new HouseholdNames(answered.Value, Answered: true)
                 : new HouseholdNames([], Answered: false);
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException or TaskCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException or NotSupportedException or TaskCanceledException)
         {
             return new HouseholdNames([], Answered: false);
         }

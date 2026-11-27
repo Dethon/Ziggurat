@@ -84,6 +84,29 @@ Nobody, for the apps that act for a person: the chat hub, Sugary's API, the dash
 
 **An installed app's own files are served signed out** on the main host, Sugary's and SexyTime's (`@shell` in the Caddyfile, before the checked catch-all): a request that is not a page being opened (no `Sec-Fetch-Mode: navigate`, no `text/html` in `Accept`) and not under `/api/*` skips the session check, because a browser replaces a service worker by fetching its script and shell files signed in or not, and an old worker answers every navigation, sign-in's included, from cache: with those files checked such an installed app could never be replaced nor reach sign-in. Pages and APIs stay checked (`DeploymentConformanceTests.TheAppsOwnFiles_AreServedSignedOut_ButNoNavigationAndNoApi`, smoke `AnInstalledAppsFiles_AreServedSignedOut_ButNotItsPagesOrItsApi`). The dashboard's host does the same through `forward_auth @checked` (never `/api`, `/hubs` or `/accounts`), its own gate passing such a request only for a file of its web root (`OperatorGate`, `.claude/rules/observability.md`).
 
+## The app sign-in
+
+How a built app's origin, on the apps domain no cookie of this service reaches, learns who is viewing
+(`.claude/rules/apps.md`, "App sign-in"; the wire in `Domain/Apps/AppSignIn`):
+
+- **`GET /accounts/app-sign-in?returnUrl=&state=`** (`Apps/AppSignInRoute`), a page on the main host
+  under the unchecked `/accounts/*`. A `returnUrl` that is not a built app's origin under `AppsDomain`
+  (`AppSignIn.ReturnTo`: `AppOrigin.Parse` on the host, https, plain http only under `.localhost`, no
+  userinfo; empty domain matches nothing), or a `state` not of its shape, is 400 before anything is read.
+  Signed out: 302 to sign-in with this route as its return (state carried). A suspended household:
+  `SessionCheck.Suspended`. Else 302 to `<origin>/_app/sign-in?code=&path=&state=`.
+- **The apps domain is not `AllowedOrigins`**: those are Fido2's origins and sign-in's returns, held to
+  the Caddyfile's hosts; `AppsDomain` (`APPSDOMAIN`, the `x-apps-domain` anchor the proxy and the apps
+  server read) is a setting of its own.
+- **A code** (`AppSignInCodes`, in memory, `Tokens.NewSecret`) stands for (origin, user, session), lives
+  `AppSignInCodeLifetime` (1 min) and is **taken on the first redemption, whatever origin it names**.
+- **`POST /accounts/internal/app-sign-in`** `{ code, origin }` (`Internal/AppSignInRedemption`) — only a
+  caller that may ask about `AppChannels.Apps` (`InternalCallers.Apps`; anyone else 403, nothing spent) —
+  answers `ResolvedIdentity` with an assertion on `apps` naming the session's `sid`, or 404 for a code
+  unknown, spent, run out or issued for another origin, and for a session revoked or a household
+  suspended since. Renewal is the session refresh on `apps` (`channel-identity.md`).
+- What the person may open is the apps server's decision; this service vouches only for who they are.
+
 ## Who is signed in
 
 `GET /accounts/me` answers a valid session with JSON `{ userId, tenantId, displayName, avatarUrl, roles }`, `no-store`, anything else 401 — never a redirect (`SignedInPerson`). It is **not** behind the session check; the chat client reaches it same-origin, and its 401 is what sends the page to sign in. An app on another host needs `/accounts/*` routed on its host, or asks across origins with credentials.
@@ -112,9 +135,9 @@ Fido2 with discoverable credentials, relying party `WebAuthn:RelyingPartyId` (th
 
 ## Configuration
 
-- Per-deployment compose entries, not secrets: `WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`, `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`; `DeploymentConformanceTests` checks they describe hosts the Caddyfile serves, and missing ones refuse startup.
+- Per-deployment compose entries, not secrets: `WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`, `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`; `DeploymentConformanceTests` checks they describe hosts the Caddyfile serves, and missing ones refuse startup. `APPSDOMAIN` (optional: empty signs nobody in to an app) is held equal to the proxy's and the apps server's.
 - `Telegram:BotUsername` (`TELEGRAM__BOTUSERNAME`) is optional: empty shows the bare code, which is safe; a wrong or placeholder name would hand every code to whoever owns that bot.
-- Its one secret is `HOUSEHOLDCONFIG__MASTERKEY` (`.claude/rules/household-config.md`); its `CALLERS__<host>` are its callers' existing credentials (`channel-identity.md`; a host run takes `local-mcp-secret` from the launch configuration). `AGENTKEYSURL`, `AGENTURL`, `REDIS__CONNECTIONSTRING` (announcements only, nothing stored) are explained on `AccountsSettings`.
+- Its one secret is `HOUSEHOLDCONFIG__MASTERKEY` (`.claude/rules/household-config.md`); its `CALLERS__<host>` are its callers' existing credentials (`channel-identity.md`; a host run takes `local-mcp-secret` from the launch configuration). `AGENTKEYSURL`, `AGENTURL`, `OBSERVABILITYURL`, `APPSURL` (the apps server's published-apps listing, for the spaces page), `REDIS__CONNECTIONSTRING` (announcements only, nothing stored) are explained on `AccountsSettings`.
 - Its time is `AccountsClock`, never the container's `TimeProvider`, so a test moves the service's time without moving Kestrel's.
 
 ## Tests

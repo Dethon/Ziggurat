@@ -29,6 +29,10 @@ public sealed class SuspensionCoverageTests
         ["/accounts/api/enroll"] =
             "exempt: an enrollment adds a passkey and a session that every way in refuses while suspended",
         ["/accounts/sign-in"] = "exempt: the sign-in page, signed out by definition",
+        ["/accounts/app-sign-in"] =
+            "refuses: answers SessionCheck.Suspended before a code is issued (AppSignInRouteTests.ASuspendedHouseholdsPerson_IsToldSo_AndIssuedNoCode)",
+        ["/accounts/internal/app-sign-in"] =
+            "refuses: a code whose household was suspended since it was issued redeems to nobody (AppSignInRedemption)",
         ["/accounts/passkeys.js"] = "exempt: the pages' script, no household's",
         ["/accounts/theme.js"] = "exempt: the pages' theme script, no household's",
         ["/accounts/sign-out"] =

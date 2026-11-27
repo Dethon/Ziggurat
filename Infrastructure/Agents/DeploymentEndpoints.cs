@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Security;
 
 namespace Infrastructure.Agents;
@@ -15,6 +16,12 @@ internal sealed class DeploymentEndpoints(IEnumerable<string> addresses)
 {
     private readonly HashSet<ServerAddress> _servers =
         [.. addresses.Select(ServerAddress.FromUrl).OfType<ServerAddress>().Where(s => !s.CarriesCredentials)];
+
+    // Only the household's own agents' endpoints present a deployment credential: they are its
+    // configuration's, which its owner cannot point anywhere, where a person's registered agent names
+    // whatever its registration said.
+    public static DeploymentEndpoints Of(HouseholdAgents household) =>
+        new(household.Agents.SelectMany(a => a.McpServerEndpoints));
 
     public bool Names(ServerAddress server) => !server.CarriesCredentials && _servers.Contains(server);
 

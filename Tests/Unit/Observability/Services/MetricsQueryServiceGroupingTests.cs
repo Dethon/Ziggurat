@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Moq;
+using Observability;
 using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
@@ -58,7 +59,7 @@ public class MetricsQueryServiceGroupingTests
             new TokenUsageEvent { Sender = "bob", Model = "claude-3", InputTokens = 50, OutputTokens = 25, Cost = 0.05m, AgentId = null }
         ]);
 
-        var result = await _sut.GetTokenGroupedAsync(dimension, metric, date, date);
+        var result = await _sut.GetTokenGroupedAsync(dimension, metric, MetricDateRange.Spanning(date, date));
 
         result[keyA].ShouldBe((decimal)expectedA, Tolerance);
         result[keyB].ShouldBe((decimal)expectedB, Tolerance);
@@ -80,7 +81,7 @@ public class MetricsQueryServiceGroupingTests
             Usage(7, "Jack", null, morning)
         ]);
 
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.Agent, TokenMetric.Tokens, date, date);
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.Agent, TokenMetric.Tokens, MetricDateRange.Spanning(date, date));
 
         result.ShouldBe(new Dictionary<string, decimal> { ["Chef (jonas)"] = 340m, ["Chef (cook)"] = 5m, ["Jack"] = 7m },
             ignoreOrder: true);
@@ -105,7 +106,7 @@ public class MetricsQueryServiceGroupingTests
             Person(7, null, "bob", morning)
         ]);
 
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, MetricDateRange.Spanning(date, date));
 
         result.ShouldBe(new Dictionary<string, decimal>
         {
@@ -132,7 +133,7 @@ public class MetricsQueryServiceGroupingTests
             Person(7, "acc-luis", ServiceSenders.Scheduler, morning)
         ]);
 
-        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, MetricDateRange.Spanning(date, date));
 
         result.ShouldBe(new Dictionary<string, decimal> { ["Ana"] = 250m, ["acc-luis"] = 7m }, ignoreOrder: true);
     }
@@ -157,7 +158,7 @@ public class MetricsQueryServiceGroupingTests
             new MemoryRecallEvent { DurationMs = 100, MemoryCount = 1, UserId = "acc-nobody-named" }
         ]);
 
-        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, MetricDateRange.Spanning(date, date));
 
         result.ShouldBe(new Dictionary<string, decimal> { ["Ana"] = 2m, ["acc-nobody-named"] = 1m }, ignoreOrder: true);
     }
@@ -190,7 +191,7 @@ public class MetricsQueryServiceGroupingTests
             new ToolCallEvent { ToolName = "read_file", DurationMs = 50, Success = true }
         ]);
 
-        var result = await _sut.GetToolGroupedAsync(dimension, metric, date, date);
+        var result = await _sut.GetToolGroupedAsync(dimension, metric, MetricDateRange.Spanning(date, date));
 
         switch (dimension, metric)
         {
@@ -227,7 +228,7 @@ public class MetricsQueryServiceGroupingTests
             new ErrorEvent { Service = "Observability", ErrorType = "NullReference", Message = "oops2" }
         ]);
 
-        var result = await _sut.GetErrorGroupedAsync(dimension, date, date);
+        var result = await _sut.GetErrorGroupedAsync(dimension, MetricDateRange.Spanning(date, date));
 
         result[keyA].ShouldBe(expectedA);
         result[keyB].ShouldBe(expectedB);
@@ -247,7 +248,7 @@ public class MetricsQueryServiceGroupingTests
             new ScheduleExecutionEvent { ScheduleId = "weekly-summary", Prompt = "...", DurationMs = 2000, Success = true }
         ]);
 
-        var result = await _sut.GetScheduleGroupedAsync(dimension, date, date);
+        var result = await _sut.GetScheduleGroupedAsync(dimension, MetricDateRange.Spanning(date, date));
 
         result[keyA].ShouldBe(expectedA);
         result[keyB].ShouldBe(expectedB);
@@ -288,7 +289,7 @@ public class MetricsQueryServiceGroupingTests
             new MemoryDreamingEvent { MergedCount = 7, DecayedCount = 4, ProfileRegenerated = true, UserId = "alice", AgentId = null },
         ]);
 
-        var result = await _sut.GetMemoryGroupedAsync(dimension, metric, date, date);
+        var result = await _sut.GetMemoryGroupedAsync(dimension, metric, MetricDateRange.Spanning(date, date));
 
         switch (dimension, metric)
         {
@@ -365,7 +366,7 @@ public class MetricsQueryServiceGroupingTests
             new LatencyEvent { Stage = LatencyStage.SessionWarmup, DurationMs = 50 },
         ]);
 
-        var result = await _sut.GetLatencyGroupedAsync(dimension, metric, date, date);
+        var result = await _sut.GetLatencyGroupedAsync(dimension, metric, MetricDateRange.Spanning(date, date));
 
         result[keyA].ShouldBe((decimal)expectedA, Tolerance);
         result[keyB].ShouldBe((decimal)expectedB, Tolerance);
@@ -393,7 +394,7 @@ public class MetricsQueryServiceGroupingTests
             new VoiceEvent { Metric = VoiceMetric.TseLatencyMs, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household", DurationMs = 150 },
         ]);
 
-        var result = await _sut.GetVoiceGroupedAsync(dimension, metric, date, date);
+        var result = await _sut.GetVoiceGroupedAsync(dimension, metric, MetricDateRange.Spanning(date, date));
 
         switch (dimension, metric)
         {
@@ -425,7 +426,7 @@ public class MetricsQueryServiceGroupingTests
         ]);
 
         var result = await _sut.GetVoiceGroupedAsync(
-            VoiceDimension.Room, VoiceMetric.SpeechEndToFirstAudioMs, date, date);
+            VoiceDimension.Room, VoiceMetric.SpeechEndToFirstAudioMs, MetricDateRange.Spanning(date, date));
 
         // Regression guard: the old hard-coded switch listed only four duration metrics, so every
         // newly appended ...Ms member silently reported a count (here it would have been 2).
@@ -443,7 +444,7 @@ public class MetricsQueryServiceGroupingTests
         ]);
 
         var result = await _sut.GetVoiceGroupedAsync(
-            VoiceDimension.Room, VoiceMetric.EndpointTailMs, date, date, Aggregation.Max);
+            VoiceDimension.Room, VoiceMetric.EndpointTailMs, MetricDateRange.Spanning(date, date), Aggregation.Max);
 
         result["office"].ShouldBe(9000m);
     }
@@ -457,7 +458,7 @@ public class MetricsQueryServiceGroupingTests
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = null, Room = null, Identity = null },
         ]);
 
-        var result = await _sut.GetVoiceGroupedAsync(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed, date, date);
+        var result = await _sut.GetVoiceGroupedAsync(VoiceDimension.Room, VoiceMetric.UtteranceTranscribed, MetricDateRange.Spanning(date, date));
 
         result["(unknown)"].ShouldBe(1m);
     }
@@ -479,10 +480,10 @@ public class MetricsQueryServiceGroupingTests
 
         var result = query switch
         {
-            "tokens" => await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date),
-            "memory" => await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date),
-            "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, Aggregation.P95, date, date),
-            "voice" => await _sut.GetVoiceGroupedAsync(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed, date, date),
+            "tokens" => await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, MetricDateRange.Spanning(date, date)),
+            "memory" => await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, MetricDateRange.Spanning(date, date)),
+            "latency" => await _sut.GetLatencyGroupedAsync(LatencyDimension.Stage, Aggregation.P95, MetricDateRange.Spanning(date, date)),
+            "voice" => await _sut.GetVoiceGroupedAsync(VoiceDimension.SatelliteId, VoiceMetric.UtteranceTranscribed, MetricDateRange.Spanning(date, date)),
             _ => throw new ArgumentOutOfRangeException(nameof(query))
         };
 
@@ -503,7 +504,7 @@ public class MetricsQueryServiceGroupingTests
                 Timestamp = new DateTimeOffset(2026, 3, 15, 11, 1, 0, TimeSpan.Zero) },
         ]);
 
-        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, date, date);
+        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, MetricDateRange.Spanning(date, date));
 
         var series = result.Single(s => s.Stage == "LlmTotal");
         series.Points.Count.ShouldBe(2);
@@ -531,7 +532,7 @@ public class MetricsQueryServiceGroupingTests
                 Timestamp = new DateTimeOffset(2026, 3, 18, 3, 1, 0, TimeSpan.Zero) },
         ]);
 
-        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, from, to);
+        var result = await _sut.GetLatencyTrendAsync(Aggregation.Avg, MetricDateRange.Spanning(from, to));
 
         var series = result.Single(s => s.Stage == "LlmTotal");
         series.Points.Count.ShouldBe(2);

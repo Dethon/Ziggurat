@@ -18,7 +18,7 @@ namespace Tests.E2E.WebChat;
 public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
 {
     [SkippableFact]
-    public async Task AnOwner_ReadsAMonthsUsage_PerAgentAndPerson_AndLemonade_AndPicksAnotherMonth()
+    public async Task AnOwner_ReadsAMonthsUsage_PerAgentPersonAndApp_AndLemonade_AndPicksAnotherMonth()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
@@ -32,11 +32,12 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
                 .Select(p => p.Split('=')).Where(p => p[0] == "month").Select(p => p[1]).FirstOrDefault();
             asked.Add(month);
             var usage = month == "2026-09"
-                ? new AdminUsage("2026-09", [new UsageLine("Jonas", 40, 0.02m)], [new UsageLine("Ana", 40, 0.02m)],
+                ? new AdminUsage("2026-09", [new UsageLine("Jonas", 40, 0.02m)], [new UsageLine("Ana", 40, 0.02m)], [],
                     new LemonadeUsage(0, 0, 0))
                 : new AdminUsage("2026-10",
                     [new UsageLine("Jonas", 12_345, 0.4567m), new UsageLine("Sugary", 600, 0.01m)],
                     [new UsageLine("Ana", 12_000, 0.45m), new UsageLine("Luis", 945, 0.0167m)],
+                    [new UsageLine("Glucose today", 300, 0.004m, "a1b2c3")],
                     new LemonadeUsage(75.5, 1_200, 9));
             await route.FulfillAsync(new RouteFulfillOptions
             {
@@ -58,6 +59,9 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
         var people = page.GetByRole(AriaRole.Table, new PageGetByRoleOptions { Name = "Per person" });
         await Assertions.Expect(people.GetByRole(AriaRole.Row).Nth(1)).ToContainTextAsync("Ana");
         await Assertions.Expect(people.GetByRole(AriaRole.Row).Nth(2)).ToContainTextAsync("Luis");
+        var apps = page.GetByRole(AriaRole.Table, new PageGetByRoleOptions { Name = "Per app" });
+        await Assertions.Expect(apps.GetByRole(AriaRole.Row).Nth(1)).ToContainTextAsync("Glucose today");
+        await Assertions.Expect(apps.GetByRole(AriaRole.Row).Nth(1)).ToContainTextAsync("$0.004");
         var lemonade = page.GetByRole(AriaRole.Region, new PageGetByRoleOptions { Name = "Speech and memory" });
         await Assertions.Expect(lemonade).ToContainTextAsync("75.5 seconds heard");
         await Assertions.Expect(lemonade).ToContainTextAsync("1,200 characters spoken");
@@ -68,6 +72,7 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
 
         await Assertions.Expect(agents.GetByRole(AriaRole.Row).Nth(1)).ToContainTextAsync("40");
         (await agents.GetByRole(AriaRole.Row).CountAsync()).ShouldBe(2, "a header and September's one agent");
+        await Assertions.Expect(apps).ToHaveCountAsync(0);
         asked.ShouldContain("2026-09");
     }
 

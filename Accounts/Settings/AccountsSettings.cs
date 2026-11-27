@@ -18,6 +18,15 @@ public record AccountsSettings
     // returns only to one of them, so a crafted link cannot send a fresh session anywhere else.
     public string[] AllowedOrigins { get; init; } = [];
 
+    // The registrable domain built apps are served under (`<slug>-<id>.<AppsDomain>`), per deployment
+    // (APPSDOMAIN, the value the proxy and the apps server read): the app sign-in returns a person, with
+    // a code, to a built app's origin under it and nowhere else. Never one of AllowedOrigins, which are
+    // the deployment's own hosts and its passkeys' origins. Empty signs nobody in to an app.
+    public string AppsDomain { get; init; } = "";
+
+    // How long the app sign-in's code waits for the apps server to redeem it: one redirect's worth.
+    public TimeSpan AppSignInCodeLifetime { get; init; } = TimeSpan.FromMinutes(1);
+
     public WebAuthnSettings WebAuthn { get; init; } = new();
 
     public SessionCookieSettings SessionCookie { get; init; } = new();
@@ -65,6 +74,16 @@ public record AccountsSettings
     // be read: a month's read walks thirty-one days of roll-ups.
     public TimeSpan UsageTimeout { get; init; } = TimeSpan.FromSeconds(10);
 
+    // Where the apps server answers on the deployment's network: the spaces page lists the household's
+    // published apps from its listing (PublishedApps.Path on its MCP listener), asked with an assertion
+    // this service signs for the owner, so no secret exists for this. Per deployment (APPSURL in compose);
+    // the default is compose's value.
+    public string AppsUrl { get; init; } = DefaultAppsUrl;
+
+    // How long the spaces page waits on the apps server before it says the household's apps could not be
+    // read: a listing reads one manifest out of git per published app.
+    public TimeSpan AppsTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
     // What the admin API holds an owner's changes to beyond the sections' own rules.
     public AdminSettings Admin { get; init; } = new();
 
@@ -89,6 +108,8 @@ public record AccountsSettings
     public const string DefaultAgentUrl = "http://agent:8080";
 
     public const string DefaultObservabilityUrl = "http://observability:8080";
+
+    public const string DefaultAppsUrl = "http://mcp-apps:8080";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 

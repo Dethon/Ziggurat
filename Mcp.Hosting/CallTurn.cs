@@ -18,7 +18,8 @@ public static class CallTurn
     // Where the gate leaves the identity it verified, on the call's own Items.
     internal const string IdentityKey = "com.herfluffness/callIdentity";
 
-    // And the token it verified it from, which only the household accessor shows on (CallHousehold).
+    // And the token it verified it from, which the household accessor shows on (CallHousehold) and which
+    // goes back, as it came, to the agent that signed it (VerifiedToken).
     internal const string VerifiedTokenKey = "com.herfluffness/verifiedCallToken";
 
     extension(RequestContext<CallToolRequestParams> call)
@@ -43,6 +44,13 @@ public static class CallTurn
             && call.Items.TryGetValue(VerifiedTokenKey, out var token) && token is string { Length: > 0 } verified
                 ? CallHousehold.OfCall(identity.TenantId, verified, call.Services ?? call.Server.Services!)
                 : null;
+
+        // The token the gate verified this call by, as it came: proof, to the agent that signed it and to
+        // nobody else, that this call's person asked for what the server does for them now — a built app's
+        // check, whose page reads as them (AppReads.CheckCallTokenHeader). It names one server, this one,
+        // and lives two minutes. Null on a call no gate checked.
+        public string? VerifiedToken =>
+            call.Items.TryGetValue(VerifiedTokenKey, out var token) && token is string { Length: > 0 } verified ? verified : null;
 
         // The delegation the agent signed for whatever this call creates or rewrites — a schedule, a
         // watch, a login handoff — as the call carried it: the server stores it with the object and

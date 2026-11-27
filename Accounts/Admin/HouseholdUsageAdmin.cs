@@ -1,4 +1,5 @@
 using System.Globalization;
+using Accounts.Configuration;
 using Accounts.Members;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Metrics;
@@ -11,7 +12,8 @@ namespace Accounts.Admin;
 //
 // A person's line is keyed by their account and shown under the name the household knows them by
 // now, so a rename since shows the new name over the whole month; someone no longer a member keeps
-// the name their calls carried.
+// the name their calls carried. An app's line is keyed by its id and named as its published listing
+// names it now.
 //
 // A month is the deployment's days from its first to its last, in UTC, because the metrics are kept
 // by UTC day; the current one, when none is named, is this service's clock's.
@@ -23,8 +25,8 @@ public static class HouseholdUsageAdmin
         household.MapGet(AdminApi.Under(AdminProtocol.Household, AdminProtocol.Usage), ReadAsync);
 
     private static async Task<IResult> ReadAsync(
-        AdminCaller caller, string? month, HouseholdUsageClient usage, MemberStore members, AccountsClock clock,
-        CancellationToken ct)
+        AdminCaller caller, string? month, HouseholdUsageClient usage, MemberStore members, HouseholdConfigStore store,
+        HouseholdAppsClient apps, AccountsClock clock, CancellationToken ct)
     {
         var first = month is null
             ? FirstOf(DateOnly.FromDateTime(clock.Time.GetUtcNow().UtcDateTime))
@@ -45,7 +47,23 @@ public static class HouseholdUsageAdmin
         return Results.Ok(new AdminUsage(
             from.ToString(AdminUsage.MonthFormat, CultureInfo.InvariantCulture), read.Agents,
             [.. read.People.Select(line => line.Id is { } id && names.TryGetValue(id, out var name) ? line with { Name = name } : line)],
-            read.Lemonade));
+            await AppLinesAsync(read.Apps, store, apps, caller, ct), read.Lemonade));
+    }
+
+    // An app's line under the name the household's published apps list it by now. The apps server is asked
+    // only when an app was, and an app it does not list (unpublished, deleted, the server unreachable) keeps
+    // its id, as the figures are still the household's.
+    private static async Task<IReadOnlyList<UsageLine>> AppLinesAsync(
+        IReadOnlyList<UsageLine> lines, HouseholdConfigStore store, HouseholdAppsClient apps, AdminCaller caller,
+        CancellationToken ct)
+    {
+        if (lines.Count == 0)
+        {
+            return lines;
+        }
+
+        var names = (await HouseholdPublishedApps.ReadAsync(store, apps, caller, ct) ?? []).ToDictionary(a => a.Id, a => a.Name);
+        return [.. lines.Select(line => line.Id is { } id && names.TryGetValue(id, out var name) ? line with { Name = name } : line)];
     }
 
     private static DateOnly FirstOf(DateOnly day) => new(day.Year, day.Month, 1);

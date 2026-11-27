@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Outposts;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem.Bridge;
 
@@ -101,6 +103,32 @@ public sealed class VfsCall
                 _ => new BridgeAttr(BridgeKinds.File, value.Size)
             });
     }
+
+    // A file tool's own call, answered as the tool answers it, for a caller that wants the tool's result
+    // rather than a syscall's: a built app's reads. The same mounts as every operation here, and the
+    // tool resolves its paths as this call's caller, as a turn's call does.
+    public async Task<JsonNode> ToolAsync(
+        string path, string toolName, Func<IVirtualFileSystemRegistry, AIFunctionArguments, Task<JsonNode>> run)
+    {
+        if (!Served(path))
+        {
+            return NotFoundError(path).ToNode();
+        }
+
+        if (Unasked(toolName) is { } refusal)
+        {
+            return refusal.ToNode();
+        }
+
+        return await run(_registry, new AIFunctionArguments
+        {
+            Context = new Dictionary<object, object?> { [ConversationContext.ContextKey] = _caller }
+        });
+    }
+
+    // The mount point a path resolves to here, or null where none is mounted.
+    public string? MountPointOf(string path) =>
+        _registry.Resolve(path).TryGetValue(out var resolution, out _) ? resolution.MountPoint : null;
 
     // A mount with no info answers by its listing, where the entry's kind is all there is to know.
     private async Task<BridgeAnswer<BridgeAttr>> AttrFromParentAsync(string path, CancellationToken ct)
@@ -487,16 +515,9 @@ public sealed class VfsCall
             return NotFound<T>(path);
         }
 
-        // A command may do through the mounts only what the session's own tools could: a tool the
-        // agent was never given is refused to the shell too.
-        if (!(_offered?.Invoke(toolName) ?? true) || !_permission.RunsUnasked(FileSystemToolFeature.Callable(toolName)))
+        if (Unasked(toolName) is { } refusal)
         {
-            return new BridgeAnswer<T>.Refused(Errnos.Denied, new ToolErrorResult
-            {
-                ErrorCode = ToolError.Codes.PermissionDenied,
-                Message = $"{FileSystemToolFeature.Callable(toolName)} would ask the person before it ran, "
-                          + "so a command cannot do it unasked."
-            });
+            return new BridgeAnswer<T>.Refused(Errnos.Denied, refusal);
         }
 
         if (!_registry.Resolve(path).TryGetValue(out var resolved, out var error))
@@ -510,6 +531,25 @@ public sealed class VfsCall
             ? resolved with { Backend = _views.GetOrAdd(resolved.Backend, _ => bound.As(_caller)) }
             : resolved;
         return null;
+    }
+
+    // Through the mounts a caller may do only what the session's own tools could, unasked: a tool the
+    // agent was never given is refused too. Null where the tool would run.
+    private ToolErrorResult? Unasked(string toolName)
+    {
+        var callable = FileSystemToolFeature.Callable(toolName);
+        if (!(_offered?.Invoke(toolName) ?? true))
+        {
+            return ToolError.PermissionDenied(
+                $"{callable} is not one of this agent's tools, so it cannot run here either.",
+                "Do it with a tool the agent has, or not at all.");
+        }
+
+        return _permission.RunsUnasked(callable)
+            ? null
+            : ToolError.PermissionDenied(
+                $"{callable} would ask the person before it ran, so it cannot run here unasked.",
+                "Use the file tool itself, where the person can be asked, or whitelist it for the agent.");
     }
 
     private bool Served(string path) => IsRoot(path) || _served.ContainsKey(MountName(path));
@@ -538,10 +578,11 @@ public sealed class VfsCall
                       + "through a mount. The file tools are not bound by this."
         });
 
-    private static BridgeAnswer<T> NotFound<T>(string path) =>
-        new BridgeAnswer<T>.Refused(Errnos.NotFound, new ToolErrorResult
-        {
-            ErrorCode = ToolError.Codes.NotFound,
-            Message = $"Path not found: {path}"
-        });
+    private static BridgeAnswer<T> NotFound<T>(string path) => new BridgeAnswer<T>.Refused(Errnos.NotFound, NotFoundError(path));
+
+    private static ToolErrorResult NotFoundError(string path) => new()
+    {
+        ErrorCode = ToolError.Codes.NotFound,
+        Message = $"Path not found: {path}"
+    };
 }

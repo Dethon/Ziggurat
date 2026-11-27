@@ -20,7 +20,7 @@ public sealed class MetricFamilyTests
             "stress",
             MetricChoice.For("groupBy", () => TokenDimension.User, _ => { }),
             metric: null,
-            setDateRange: (_, _) => { },
+            setDays: _ => { },
             loadEvents: () => Task.FromResult<Action>(() => { }),
             refreshBreakdown: async () =>
             {
@@ -85,7 +85,7 @@ public sealed class MetricFamilyTests
             "stale",
             MetricChoice.For("groupBy", () => TokenDimension.User, _ => { }),
             metric: null,
-            setDateRange: (_, _) => { },
+            setDays: _ => { },
             loadEvents: loadEvents,
             refreshBreakdown: () => Task.CompletedTask);
 }

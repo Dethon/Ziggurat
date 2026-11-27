@@ -24,4 +24,16 @@ public class McpClientManagerDialTests
 
         dialing.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
     }
+
+    // A call to a dialled server lasts as long as its caller lets it: an approval waits for a
+    // person, and HttpClient's own 100 s default refused every one nobody answered within it
+    // (prod, 2026-11-26: a publish asked at 11:57:45, "rejected" at 11:59:25 with nobody's answer).
+    // The tunnel's client is unbounded the same way (OpenTunnel).
+    [Fact]
+    public void ADialledServer_IsNeverCutByTheHttpClientsOwnTimeout()
+    {
+        using var client = McpClientManager.DialledHttpClient();
+
+        client.Timeout.ShouldBe(Timeout.InfiniteTimeSpan);
+    }
 }

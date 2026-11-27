@@ -138,7 +138,9 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
 
         var requestMessages = context.AIContext.Messages?.ToList() ?? [];
         var request = requestMessages.LastOrDefault(m => m.Role == ChatRole.User);
-        if (request is null || string.IsNullOrWhiteSpace(request.Text))
+        // A built app's ask is offered its servers' skills to load, never handed one: the judge is not asked
+        // what an app's request needs.
+        if (request is null || string.IsNullOrWhiteSpace(request.Text) || request.IsAppTurn())
         {
             return null;
         }

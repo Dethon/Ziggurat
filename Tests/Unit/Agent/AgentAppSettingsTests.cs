@@ -139,10 +139,17 @@ public class AgentAppSettingsTests
     // out (pinned to it, 3 of 12 second calls kept it; DeepInfra 12 of 12), so the browser refuses
     // and the model retries to its ceiling. Four web scenarios went 0/4 on it (2026-10-19). Ignored
     // the same way, by both agents: nabu's throughput sort would otherwise prefer it.
+    // Open-inference answers jonas's model in another model's voice ("Thinking Process: 1. Analyze
+    // the Request") and, deep in a long app build, takes the screenshots its own file_reads returned
+    // for the person's: replaying a relatos round on it blamed the person 2 of 2, DeepInfra 0 of 2,
+    // and every other provider wrote the model's own terse reasoning (2026-11-27).
+    // Tenstorrent refuses a request carrying more than ten images ("Too many images: at most 10 per
+    // request"), and a build keeps every screenshot it read in view, so each such round fell back to a
+    // provider with a cold cache (2026-11-27).
     [Fact]
-    public void Jonas_IgnoresTheProvidersThatGarblePhotographsAndDropToolArguments()
+    public void Jonas_IgnoresTheProvidersThatGarblePhotographsDropToolArgumentsLoseTheThreadOrCapImages()
     {
-        Ignored("jonas").ShouldBe(["relace", "morph"]);
+        Ignored("jonas").ShouldBe(["relace", "morph", "open-inference", "tenstorrent"]);
     }
 
     [Fact]
@@ -268,6 +275,18 @@ public class AgentAppSettingsTests
             .ToList();
 
         shared.All.ShouldBe(dialled, ignoreOrder: true);
+        shared.Apps.ShouldBe("http://mcp-apps:8080/mcp", "the apps feature withholds it by this address");
+    }
+
+    // A built app's manifest declares a shared server by its key here (`asks`: `sugary`, `apps`, …), so each
+    // server's name is the key it is configured under, never its host and port.
+    [Fact]
+    public void ASharedServersName_IsItsKeyInTheSettings()
+    {
+        var shared = BoundConfig().GetSection("sharedServers").Get<SharedServers>()!;
+        var configured = Root()["sharedServers"]!.AsObject().ToList();
+
+        configured.Select(s => shared.NameOf(s.Value!.GetValue<string>())).ShouldBe(configured.Select(s => s.Key));
     }
 
     // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled
@@ -336,6 +355,22 @@ public class AgentAppSettingsTests
         Root()["channelEndpoints"]!.AsArray()
             .Single(e => e!["channelId"]!.GetValue<string>() == "sugary")!["endpoint"]!.GetValue<string>()
             .ShouldBe("http://mcp-sugary:8080/mcp");
+    }
+
+    // A built app's asks come on the apps server's own channel, dialled at the address it already serves as
+    // a shared server (as Sugary is both), under the id the viewer's `apps` assertion names — the agent holds
+    // an ask's assertion to the channel it came on. No default answers it: an ask names its building agent.
+    [Fact]
+    public void TheAppsChannel_IsTheAppsServer_UnderTheAppsAssertionsChannel_WithNoDefaultAgent()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+
+        var apps = settings.ChannelEndpoints.Single(e => e.ChannelId == global::Domain.Security.AppChannels.Apps);
+        apps.Endpoint.ShouldBe(Root()["sharedServers"]!["apps"]!.GetValue<string>());
+        apps.Endpoint.ShouldBe("http://mcp-apps:8080/mcp");
+        apps.AttachOnly.ShouldBeFalse();
+        apps.HostsReviewCopies.ShouldBeFalse();
+        settings.AgentDefaults.For(global::Domain.Security.AppChannels.Apps).ShouldBeNull();
     }
 
     // The Sugary server refuses a photo for a model that cannot see one, and asks the catalogue about

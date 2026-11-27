@@ -1,5 +1,6 @@
 using Accounts.Admin;
 using Accounts.Announcements;
+using Accounts.Apps;
 using Accounts.Configuration;
 using Accounts.Internal;
 using Accounts.Keys;
@@ -32,6 +33,7 @@ public static class AccountsApp
             .AddAccountsCore(settings, clock)
             .AddHostedService<AccountsDatabasePreparer>()
             .AddSingleton<CeremonyStore>()
+            .AddSingleton<AppSignInCodes>()
             .AddScoped<PasskeyCeremonies>()
             .AddSingleton<PageGuard>()
             .AddSingleton<AccountPage>()
@@ -42,6 +44,7 @@ public static class AccountsApp
             .AddKeyProbes()
             .AddSingleton<ConnectedServersClient>()
             .AddSingleton<HouseholdUsageClient>()
+            .AddSingleton<HouseholdAppsClient>()
             .AddSingleton<AgentVersions>()
             // The admin API believes the assertion the proxy's session check signed for the admin
             // channel, which is this service's own: verified against its own keys, on its own clock,
@@ -112,6 +115,7 @@ public static class AccountsApp
         AccountsPages.Map(accounts);
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);
+        AppSignInRoute.Map(accounts);
         PasskeyEndpoints.Map(accounts);
         AdminApi.Map(accounts);
         InternalApi.Map(accounts);

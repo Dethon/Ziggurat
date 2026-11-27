@@ -30,7 +30,9 @@ public sealed class MetricsCollectorService(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    private static readonly TimeSpan _dailyKeyTtl = TimeSpan.FromDays(30);
+    // A day longer than the dashboard's longest window, the last thirty days to the minute: that
+    // window starts part way through the day thirty days back, whose keys must still be there.
+    private static readonly TimeSpan _dailyKeyTtl = TimeSpan.FromDays(31);
     private static readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(15);
 
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
@@ -181,7 +183,6 @@ public sealed class MetricsCollectorService(
             db.SortedSetAddAsync(sortedSetKey, json, score),
             db.HashIncrementAsync(totalsKey, "tokens:input", evt.InputTokens),
             db.HashIncrementAsync(totalsKey, "tokens:output", evt.OutputTokens),
-            db.HashIncrementAsync(totalsKey, "tokens:cost", (long)(evt.Cost * 10000m)),
             db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.UserId ?? evt.Sender}", evt.InputTokens + evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, $"tokens:byModel:{evt.Model}", evt.InputTokens + evt.OutputTokens),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),

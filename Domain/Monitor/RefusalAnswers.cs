@@ -48,6 +48,21 @@ public static class RefusalAnswers
     public const string SugaryOff =
         "Sugary is turned off for your household, so nothing was estimated. An owner can turn it back on on the Features page.";
 
+    // A built app's ask for a household whose built apps the operator has not turned on: the apps feature
+    // is the operator's alone, so no owner can change it.
+    public const string AppsOff =
+        "Built apps are not turned on for your household, so this app could not ask its assistant. Whoever runs this deployment can turn them on.";
+
+    // A built app's ask naming the agent that built it, which its household no longer has: named, so the
+    // app's author knows which one, and never answered by another agent instead. Said to an app alone,
+    // never on a satellite, so voice has no sentence for it and it is not in All.
+    public static string AgentGone(string agentId) => $"{AgentGoneOpening}'{agentId}'{AgentGoneClosing}";
+
+    private const string AgentGoneOpening = "Your household no longer has the agent ";
+
+    private const string AgentGoneClosing =
+        " that built this app, so the app cannot ask it. An owner can add it back on the Agents page.";
+
     // A turn whose agent could not be built for a reason that is nobody's to fix here — a store the
     // agent reads was down, say: nothing was asked of any model, and the same message may simply be
     // sent again. Not the household's refusal, so it has no code: an app says its own "try again".
@@ -55,21 +70,44 @@ public static class RefusalAnswers
         "Something went wrong getting the assistant ready for this message, so it was not answered. Try sending it again in a moment.";
 
     public static IReadOnlyList<string> All { get; } =
-        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, SetupFailed];
+        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, AppsOff, SetupFailed];
 
-    // Each refusal by a short code, for a channel that says it in words of its own rather than showing
-    // these (the Sugary app, in the person's language). Null for an answer that is no refusal.
+    // Each refusal's short code, for a channel that says it in words of its own rather than showing these
+    // (the Sugary app, in the person's language; a built app's ask). The values are a wire: Sugary's app
+    // words each one.
+    public static class Codes
+    {
+        public const string Suspended = "suspended";
+        public const string NotVerified = "not-verified";
+        public const string Disabled = "disabled";
+        public const string Unchecked = "unchecked";
+        public const string WithoutKey = "without-key";
+        public const string NoVoiceAgent = "no-voice-agent";
+        public const string KeyRefused = "key-refused";
+        public const string OutOfCredit = "out-of-credit";
+        public const string SugaryOff = "sugary-off";
+        public const string AppsOff = "apps-off";
+        public const string AgentGone = "agent-gone";
+    }
+
+    // The code of an answer the agent gave (Codes), null for an answer that is no refusal. Read off the words
+    // because the reply carries nothing else: AgentGone, naming its agent, is known by the sentence around it.
     public static string? CodeOf(string answer) => answer.Trim() switch
     {
-        Suspended => "suspended",
-        NotVerified => "not-verified",
-        Disabled => "disabled",
-        Unchecked => "unchecked",
-        WithoutKey => "without-key",
-        NoVoiceAgent => "no-voice-agent",
-        KeyRefused => "key-refused",
-        OutOfCredit => "out-of-credit",
-        SugaryOff => "sugary-off",
+        Suspended => Codes.Suspended,
+        NotVerified => Codes.NotVerified,
+        Disabled => Codes.Disabled,
+        Unchecked => Codes.Unchecked,
+        WithoutKey => Codes.WithoutKey,
+        NoVoiceAgent => Codes.NoVoiceAgent,
+        KeyRefused => Codes.KeyRefused,
+        OutOfCredit => Codes.OutOfCredit,
+        SugaryOff => Codes.SugaryOff,
+        AppsOff => Codes.AppsOff,
+        var named when IsAgentGone(named) => Codes.AgentGone,
         _ => null
     };
+
+    private static bool IsAgentGone(string answer) =>
+        answer.StartsWith(AgentGoneOpening, StringComparison.Ordinal) && answer.EndsWith(AgentGoneClosing, StringComparison.Ordinal);
 }

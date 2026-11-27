@@ -39,6 +39,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     private const string Telegram = "telegram-credential";
     private const string Sugary = "sugary-credential";
     private const string Timers = "timers-credential";
+    private const string Apps = "apps-credential";
 
     private const string OpenRouterKey = "sk-or-v1-household-openrouter-key";
     private const string IdealistaKey = "idealista-api-key-of-the-household";
@@ -65,7 +66,8 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
                 ["mcp-channel-signalr"] = SignalR,
                 ["mcp-channel-telegram"] = Telegram,
                 ["mcp-sugary"] = Sugary,
-                ["mcp-timers"] = Timers
+                ["mcp-timers"] = Timers,
+                ["mcp-apps"] = Apps
             },
             Redis = new() { ConnectionString = redis.ConnectionString },
             HouseholdConfig = new() { MasterKey = masterKey ?? AccountsServer.MasterKey }
@@ -311,6 +313,76 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
+    // Only a household's own agents build apps, so the apps server reads the household's agent names on
+    // the call's token, and the token's household is the one answered.
+    [Fact]
+    public async Task TheAppsServer_ReadsTheHouseholdsAgentNames_OnTheCallToken()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+
+        var agents = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Apps, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-apps", household, person)));
+        var anotherServers = await PostAsync(server, Apps, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, person)));
+
+        agents.Section.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
+        (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
+    // Which of the household's built apps are app spaces is the spaces section's word, which the apps
+    // server reads as the hub does: on a call's token (deleting an app is refused while it is one) and on
+    // the `apps` assertion of the person viewing an app's origin (every member may open one). An assertion
+    // for another channel proves nothing to it.
+    [Fact]
+    public async Task TheAppsServer_ReadsTheHouseholdsSpaces_OnTheCallTokenAndItsOwnAssertion()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Spaces, """
+            { "spaces": [ { "slug": "default", "name": "Main" }, { "slug": "glucose", "name": "Glucose", "appId": "a1b2c3", "order": 1 } ] }
+            """);
+        var assertions = server.Service<Assertions>();
+
+        var onTheCall = await AskAsync<HouseholdConfigAnswer<SpacesSection>>(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-apps", household, person)));
+        var onTheApp = await AskAsync<HouseholdConfigAnswer<SpacesSection>>(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, AppChannels.Apps)));
+        var onTheHub = await PostAsync(server, Apps, HouseholdConfigProtocol.SpacesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        onTheCall.Section.Spaces.Select(s => s.AppId).ShouldBe([null, "a1b2c3"]);
+        onTheApp.Section.Spaces.ShouldBe(onTheCall.Section.Spaces);
+        (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
+    // An app's daily cap is its household's word: the apps server reads the app asks section on the `apps`
+    // assertion of the person asking (and on a call's token, for a check's asks), an assertion for another
+    // channel proving nothing to it; no other server reads it.
+    [Fact]
+    public async Task TheAppsServer_ReadsTheHouseholdsAppAsks_OnTheCallTokenAndItsOwnAssertion()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.AppAsks, """{ "dailyCap": 20, "apps": { "a1b2c3": 5 } }""");
+        var assertions = server.Service<Assertions>();
+
+        var onTheApp = await AskAsync<HouseholdConfigAnswer<AppAsksSection>>(server, Apps, HouseholdConfigProtocol.AppAsksView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, AppChannels.Apps)));
+        var onTheCall = await AskAsync<HouseholdConfigAnswer<AppAsksSection>>(server, Apps, HouseholdConfigProtocol.AppAsksView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-apps", household, person)));
+        var onTheHub = await PostAsync(server, Apps, HouseholdConfigProtocol.AppAsksView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+        var theHubs = await PostAsync(server, SignalR, HouseholdConfigProtocol.AppAsksView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        onTheApp.Section.DailyCap.ShouldBe(20);
+        onTheApp.Section.Apps.ShouldBe(new Dictionary<string, int> { ["a1b2c3"] = 5 });
+        onTheCall.Section.LimitOf("a1b2c3", 200).ShouldBe(5);
+        (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+        theHubs.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     // Sugary opens another person's log to a reader an owner granted it, so on the agent's call token it
     // reads the household's people — each one's id, name, whether they read everyone's log and whether
     // Sugary is on for them, nobody disabled — and decides itself. The same for everybody in the household, since the reader keeps it
@@ -511,7 +583,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Agent, HouseholdConfigProtocol.SugaryPeopleView },
         { Scheduling, HouseholdConfigProtocol.SugaryOffView },
         { Telegram, HouseholdConfigProtocol.SugaryOffView },
-        { Agent, HouseholdConfigProtocol.SugaryOffView }
+        { Agent, HouseholdConfigProtocol.SugaryOffView },
+        { Apps, HouseholdConfigProtocol.SettingsView },
+        { Apps, HouseholdConfigProtocol.IdealistaView }
     };
 
     [Theory]

@@ -19,6 +19,7 @@ using Infrastructure.Clients;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Conversations;
+using Infrastructure.Extensions;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -47,7 +48,8 @@ public static class InjectorModule
                 MaxContextTokens = settings.OpenRouter.MaxContextTokens,
                 ProviderRouting = settings.OpenRouter.ProviderRouting,
                 PatchableModelIds = settings.PatchableModels.Select(m => m.Id).ToList(),
-                HydrationDepthMessages = settings.Attachments.HydrationDepthMessages,
+                MaxPicturesPerRequest = settings.Attachments.MaxPicturesPerRequest,
+                MaxPictureBytesPerRequest = settings.Attachments.MaxPictureBytesPerRequest,
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
@@ -121,6 +123,12 @@ public static class InjectorModule
                 .AddSingleton(sp => new DelegationVerifier(
                     sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery,
                     settings.Mcp.TokenVerification))
+                // A check's reads (AppReadsApi): the call token this agent signed for the apps server,
+                // handed back by it, checked against the same keys and wall clock.
+                .AddSingleton(sp => new CheckCallVerifier(
+                    sp.GetRequiredService<SigningKeyStore>(),
+                    settings.SharedServers.Apps is { } apps ? ServerAddress.FromUrl(apps) : null,
+                    TimeProvider.System, settings.Mcp.TokenVerification))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -169,6 +177,19 @@ public static class InjectorModule
                         sp.GetRequiredService<IDomainToolRegistry>(),
                         sp.GetRequiredService<IMetricsPublisher>(),
                         sp.GetService<ILoggerFactory>()))
+                // A household agent's mounts read outside any conversation (a built app's reads), over
+                // what its turns are built from. Optional parts as the factory's: a host with no relay
+                // reaches no household server, and one with no call tokens signs nothing.
+                .AddSingleton(sp => new AgentReadRegistries(
+                    sp.GetRequiredService<IAgentDefinitionProvider>(),
+                    sp.GetRequiredService<McpCredentials>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetService<IOwnServers>(),
+                    sp.GetService<CallTokens>(),
+                    sp.GetService<ILoggerFactory>()))
+                // A built app's reads, through those registries, kept per reader while they are used and at
+                // the exec bridge's per-file ceiling (AppReadsApi).
+                .AddAppReads(settings.VfsBridge, settings.AppReads)
                 // Shares the chat clients' connection pool, which is the whole point: a
                 // keep-alive against its own pool would warm a connection no turn ever uses.
                 // Registered as a plain IHostedService singleton, not through AddHostedService:
@@ -250,7 +271,12 @@ public static class InjectorModule
                         ? household => tunnels.StreamsTo(household, HouseholdServerNames.Lemonade, TunnelProtocol.ChatTag)
                         : null))
                 .AddSingleton<ILemonadeHosts>(sp => sp.GetRequiredService<HouseholdLemonadeHosts>())
-                .AddHostedService<LemonadeModelRefresher>()
+                // Read once the agent listens, as the channel catalogues are.
+                .AddHostedService(sp => new LemonadeModelRefresher(
+                    sp.GetRequiredService<HouseholdLemonadeHosts>(),
+                    sp.GetRequiredService<ILogger<LemonadeModelRefresher>>(),
+                    sp.GetService<LemonadeModelDiscovery>(),
+                    sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
                 // Each household's own box is a dashboard tile of that household's, probed from what
                 // its Keys page saved, on the pool its turns ride (or its kit's tunnel).
                 .AddHostedService(sp => new LemonadeBoxHealthProbes(

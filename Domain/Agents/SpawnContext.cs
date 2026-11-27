@@ -34,4 +34,7 @@ public sealed record SpawnContext(
     // The household's own servers the parent names, which bound the worker's as the parent's opt-in
     // bounds its machines: a worker reaches none its parent could not. Null puts no bound (a spawn no
     // parent agent made).
-    IReadOnlyList<string>? OwnServers = null);
+    IReadOnlyList<string>? OwnServers = null,
+    // The rounds of tool calls that household lets one turn run, which bound a worker's as its
+    // parent's; null puts no bound.
+    int? MaxToolRounds = null);

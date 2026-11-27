@@ -8,8 +8,16 @@ namespace Domain.DTOs.Household;
 // default space, read side (.claude/rules/chat-hub.md, "Spaces"). So a removal is one save of the
 // spaces section, nothing waits on Redis, and a space added back under the same slug has its topics
 // again.
+//
+// An app space (HouseholdSpace.AppId) holds no topics and nobody joins it: the chat hub reads the
+// household's chat spaces alone (ChatSpaces), so a topic kept under a slug an app space took is a
+// removed space's topic like any other, listed in the default space.
 public static class SpaceListing
 {
+    // The spaces conversations are held in: every space but an app space.
+    public static IReadOnlyList<HouseholdSpace> ChatSpaces(IEnumerable<HouseholdSpace> spaces) =>
+        [.. spaces.Where(s => !s.IsApp)];
+
     // The order a person is shown them in: their configuration's, ties by slug.
     public static IReadOnlyList<HouseholdSpace> Ordered(IEnumerable<HouseholdSpace> spaces) =>
         [.. spaces.OrderBy(s => s.Order).ThenBy(s => s.Slug, StringComparer.Ordinal)];

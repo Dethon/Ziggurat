@@ -9,7 +9,7 @@
     <header class="page-header">
         <div class="page-title">
             <h2>Households</h2>
-            <p class="page-description">Every household on the deployment, its people and the servers it connected.</p>
+            <p class="page-description">Every household on the deployment, its people, the servers it connected and whether its agents build apps.</p>
         </div>
     </header>
 
@@ -65,6 +65,7 @@
                 <span role="columnheader">Members</span>
                 <span role="columnheader">Connected servers</span>
                 <span role="columnheader">Last seen</span>
+                <span role="columnheader">Apps</span>
                 <span role="columnheader">Status</span>
             </div>
             @foreach (var household in _state.Households)
@@ -97,6 +98,24 @@
                     <span role="cell" data-label="Members">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
                     <span role="cell" data-label="Connected servers">@Servers(household)</span>
                     <span role="cell" data-label="Last seen">@(household.LastSeenAt is { } seen ? DashboardTime.Moment(seen) : "never")</span>
+                    @* The apps server spends the deployment's shared storage and browser, so the operator turns
+                       it on household by household; its agents are offered /apps from their next turn. *@
+                    <span role="cell" class="apps-feature" data-label="Apps">
+                        @if (household.Apps)
+                        {
+                            <span class="running">on</span>
+                            <button type="button" disabled="@_state.Busy"
+                                    aria-label="@($"Turn apps off for {household.Name}")"
+                                    @onclick="() => Effect.SetAppsFeatureAsync(household.Id, false)">Turn off</button>
+                        }
+                        else
+                        {
+                            <span class="off">off</span>
+                            <button type="button" disabled="@_state.Busy"
+                                    aria-label="@($"Turn apps on for {household.Name}")"
+                                    @onclick="() => Effect.SetAppsFeatureAsync(household.Id, true)">Turn on</button>
+                        }
+                    </span>
                     <span role="cell" class="status" data-label="Status">
                         @if (household.SuspendedAt is { } since)
                         {

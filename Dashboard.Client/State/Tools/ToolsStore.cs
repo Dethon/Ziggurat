@@ -8,7 +8,7 @@ public record SetToolBreakdown(Dictionary<string, decimal> Breakdown) : IAction;
 public record SetToolGroupBy(ToolDimension GroupBy) : IAction;
 public record SetToolMetric(ToolMetric Metric) : IAction;
 public record AppendToolEvent(ToolCallEvent Event) : IAction;
-public record SetToolDateRange(DateOnly From, DateOnly To) : IAction;
+public record SetToolDays(int Days) : IAction;
 
 public sealed class ToolsStore : Store<ToolsState>
 {
@@ -32,6 +32,6 @@ public sealed class ToolsStore : Store<ToolsState>
             Events = EventWindow.Append(s.Events, a.Event),
         });
 
-    public void SetDateRange(DateOnly from, DateOnly to) =>
-        Dispatch(new SetToolDateRange(from, to), static (s, a) => s with { From = a.From, To = a.To });
+    public void SetDays(int days) =>
+        Dispatch(new SetToolDays(days), static (s, a) => s with { Days = a.Days });
 }

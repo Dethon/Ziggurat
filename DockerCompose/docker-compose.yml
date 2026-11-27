@@ -19,6 +19,15 @@ x-cors-origins: &cors-origins
   CORS__ALLOWEDORIGINS__0: https://assistants.herfluffness.com
   CORS__ALLOWEDORIGINS__1: https://sexy.herfluffness.com
 
+# The registrable domain built apps are served under (<slug>-<id>.<domain>), per deployment: the proxy
+# serves its wildcard site, the apps server parses its labels and the accounts service's app sign-in
+# returns a code only to an origin under it, so the three read one value. A second
+# domain, never a subdomain of this deployment's, so no cookie of its reaches app code. Set it to the
+# domain bought for the purpose (ziggurat-apps.com); Caddy's Cloudflare token must be able to answer its
+# DNS challenge.
+x-apps-domain: &apps-domain
+  APPSDOMAIN: ziggurat-apps.com
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -120,6 +129,10 @@ services:
       # Where the accounts service publishes the keys its assertions verify with: this app believes
       # the person X-Ziggurat-Assertion names, never the plain headers beside it.
       ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
+      # Where WebChat's space switcher learns a person's apps: the apps server's listing on its MCP
+      # listener, asked with the accounts service's word for the session on persons-apps. No dependency:
+      # an apps server not up costs the switcher its apps; the page asks it after its own first calls.
+      APPSURL: http://mcp-apps:8080
     networks:
       - jackbot
     depends_on:
@@ -298,6 +311,114 @@ services:
       base-sdk:
         condition: service_started
 
+  # Docker creates a missing bind-mount folder as root, and mcp-apps runs as PUID, so this one-shot
+  # step, from the same image, hands ./volumes/apps to PUID:PGID before the server starts, as
+  # mcp-sugary-volume does for Sugary's.
+  mcp-apps-volume:
+    image: mcp-apps:latest
+    container_name: mcp-apps-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerApps/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/apps:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # The apps server: every household's built apps, one git repository each under a directory per
+  # household in ./volumes/apps (backed up with the volume), written by its agents through the /apps
+  # mount. Offered to a household's agents only once the operator turns its `apps` feature on.
+  mcp-apps:
+    image: mcp-apps:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-apps
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerApps/Dockerfile
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/apps:/data
+    environment:
+      # The apps domain: whose labels name built apps (x-apps-domain above).
+      <<: [ *timezone, *apps-domain ]
+      MCP__SHAREDSECRET: ${MCP_SECRET_APPS}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-apps
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # The app sign-in: a page opened on an app origin with no app session is sent to the accounts
+      # service on the main host (the accounts service's own PUBLICBASEURL); the code it brings back is
+      # redeemed with MCP__SHAREDSECRET above (CALLERS__mcp-apps there), for an assertion checked
+      # against these keys.
+      PUBLICBASEURL: https://assistants.herfluffness.com
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
+      # Where the accounts service announces that a person's sessions ended, which ends their app sessions, and
+      # the metrics feed a broken app's errors reach the operator on.
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # Where a built app's reads go: the agent's internal route, which believes MCP__SHAREDSECRET above,
+      # the credential the agent holds for this server (MCP__SECRETS__mcp-apps there). No dependency: the
+      # agent starts after this server, and a read before it answers unavailable.
+      AGENTURL: http://agent:8080
+      # A check's browser: launched on apps-browser's server (below), reaching this server's pages
+      # listener by its name on the network the two share alone, and the internet through this server's
+      # egress proxy alone (its network has no way out), which refuses the LAN, the host and this network.
+      CHECKS__BROWSER__ENDPOINT: ws://apps-browser:10080/
+      CHECKS__BROWSER__PAGES: mcp-apps:8081
+      CHECKS__BROWSER__PROXY: mcp-apps:8082
+    networks:
+      - jackbot
+      - apps-browser
+    depends_on:
+      mcp-apps-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      apps-browser:
+        condition: service_started
+
+  # The browser a built app's check runs in (McpServerApps/Checks, DockerCompose/apps-browser): a
+  # Playwright browser server launching one Chromium per check with what mcp-apps sends. The agent's code
+  # runs in its pages, so it holds nothing: no secret, no volume, no setting, no capability, and a
+  # read-only filesystem with scratch space in memory. It is on one internal network, shared with mcp-apps
+  # alone, with no way out of the host: not the LAN, the host's published ports nor the internet. Its one
+  # way out is mcp-apps's egress proxy (Checks/CheckEgress), which reaches public addresses alone, judged
+  # after resolving, every redirect's hop included; never Redis, the agent or the accounts service. Chromium's own sandbox runs inside it, on
+  # user namespaces the syscall filter lets through (Docker's default without CAP_SYS_ADMIN lets none),
+  # with mount, setns and bpf still refused.
+  apps-browser:
+    image: apps-browser:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: apps-browser
+    build:
+      context: ./apps-browser
+    restart: unless-stopped
+    # Its server stops when its standard input closes; an init reaps what a closed browser leaves.
+    stdin_open: true
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/node:uid=1000,gid=1000
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=${REPOSITORY_PATH}/DockerCompose/seccomp/ziggurat-apps-browser.json
+    networks:
+      - apps-browser
+
   lemonade:
     image: lemonade:latest
     logging:
@@ -423,6 +544,7 @@ services:
       MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
       MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
+      MCP__SECRETS__mcp-apps: ${MCP_SECRET_APPS}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
       # Where the accounts service publishes the keys its assertions verify with: the registration
       # API acts for the person the X-Ziggurat-Assertion SexyTime's server forwards names.
@@ -439,6 +561,8 @@ services:
       mcp-scheduling:
         condition: service_started
       mcp-sugary:
+        condition: service_started
+      mcp-apps:
         condition: service_started
       redis:
         condition: service_healthy
@@ -543,7 +667,8 @@ services:
     volumes:
       - ./volumes/accounts:/data
     environment:
-      <<: *timezone
+      # The apps domain: the app sign-in sends a code back only to a built app's origin under it.
+      <<: [ *timezone, *apps-domain ]
       # Per deployment, not secrets. A passkey belongs to the parent domain, so one signs in on every
       # host under it; the session cookie is set there for the same reason. The origins are the
       # hosts the Caddyfile serves people on: a ceremony's page must be on one, and sign-in returns
@@ -573,6 +698,9 @@ services:
       CALLERS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
       CALLERS__mcp-timers: ${MCP_SECRET_TIMERS}
+      # The apps server asks the calling household's agent names on the call's token (only the
+      # household's own agents build apps), redeems the app sign-in's codes and renews app sessions.
+      CALLERS__mcp-apps: ${MCP_SECRET_APPS}
       # The household migration below, and only its household import: it can make the operator and
       # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
       CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}
@@ -599,6 +727,10 @@ services:
       # assertion this service signs for the owner, which the host verifies against this service's keys
       # as it verifies everything, so no secret exists for this.
       OBSERVABILITYURL: http://observability:8080
+      # Where the apps server answers on its MCP listener, for the spaces page's list of the household's
+      # published apps: asked with an assertion this service signs for the owner, which the apps server
+      # verifies against this service's keys, so no secret exists for this.
+      APPSURL: http://mcp-apps:8080
     networks:
       - jackbot
     depends_on:
@@ -671,7 +803,7 @@ services:
       - ./volumes/caddy_data:/data
       - ./volumes/caddy_config:/config
     environment:
-      <<: *timezone
+      <<: [ *timezone, *apps-domain ]
       CF_API_TOKEN: ${CF_API_TOKEN}
     restart: unless-stopped
     networks:
@@ -680,10 +812,15 @@ services:
       - webui
       - agent
       - mcp-sugary
+      - mcp-apps
       - accounts
 
 networks:
   jackbot:
+  # mcp-apps and the browser its checks run in, and nothing else of the deployment's. Internal: no
+  # route out of the host, so the browser's only egress is mcp-apps's proxy.
+  apps-browser:
+    internal: true
 
 volumes:
   chat-uploads:

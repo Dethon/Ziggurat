@@ -10,6 +10,6 @@ public record LatencyState
     public Aggregation Metric { get; init; } = Aggregation.P95;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
     public IReadOnlyList<LatencyTrendSeries> Trend { get; init; } = [];
-    public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
-    public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    // The last how many days the page reads: a rolling window the server resolves on every read.
+    public int Days { get; init; } = 1;
 }

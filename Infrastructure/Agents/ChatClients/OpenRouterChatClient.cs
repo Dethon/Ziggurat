@@ -8,6 +8,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.Exceptions;
 using Domain.Extensions;
 using Domain.Skills;
 using Infrastructure.Agents.Mcp;
@@ -34,7 +35,9 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IReadImageStore? _readImageStore;
     private readonly Func<string, bool> _modelAcceptsImages;
     private readonly Func<string, bool> _modelAcceptsVideo;
-    private readonly int _hydrationDepthMessages;
+    private readonly int _maxPicturesPerRequest;
+    private readonly long _maxPictureBytesPerRequest;
+    private readonly bool _asksAgainAfterEmptyReply;
 
     public OpenRouterChatClient(
         string endpoint,
@@ -47,7 +50,8 @@ public sealed class OpenRouterChatClient : IChatClient
         ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures,
+        long maxPictureBytesPerRequest = AttachmentHydration.DefaultMaxPictureBytes,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
@@ -64,7 +68,9 @@ public sealed class OpenRouterChatClient : IChatClient
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
-        _hydrationDepthMessages = hydrationDepthMessages;
+        _maxPicturesPerRequest = maxPicturesPerRequest;
+        _maxPictureBytesPerRequest = maxPictureBytesPerRequest;
+        _asksAgainAfterEmptyReply = maxRetries != 0;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
         _transport = new HttpClientPipelineTransport(_httpClient);
@@ -78,12 +84,14 @@ public sealed class OpenRouterChatClient : IChatClient
         IMetricsPublisher? metricsPublisher = null,
         TimeProvider? timeProvider = null,
         IAttachmentSource? attachmentSource = null,
-        int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures,
+        long maxPictureBytesPerRequest = AttachmentHydration.DefaultMaxPictureBytes,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
         Func<string, bool>? modelAcceptsVideo = null,
-        TimeZoneInfo? turnZone = null)
+        TimeZoneInfo? turnZone = null,
+        int? maxRetries = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -94,7 +102,9 @@ public sealed class OpenRouterChatClient : IChatClient
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
         _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
-        _hydrationDepthMessages = hydrationDepthMessages;
+        _maxPicturesPerRequest = maxPicturesPerRequest;
+        _maxPictureBytesPerRequest = maxPictureBytesPerRequest;
+        _asksAgainAfterEmptyReply = maxRetries != 0;
         _client = innerClient;
     }
 
@@ -134,14 +144,14 @@ public sealed class OpenRouterChatClient : IChatClient
         // The conversation reaches this send on the turn's own options, the way MCP tool metadata
         // already does: a chat client is built per model from DI, so there is nothing per
         // conversation for it to have been constructed with.
+        var turnContext = ConversationContextMeta.TryRead(options);
         var transformedMessages = await AttachmentHydration.ApplyAsync(
             decorated,
             _attachmentSource,
-            new ReadImageContext(
-                _readImageStore,
-                ConversationContextMeta.TryRead(options)?.ConversationId,
-                inputs.Images),
-            _hydrationDepthMessages,
+            turnContext,
+            new ReadImageContext(_readImageStore, turnContext?.ConversationId, inputs.Images),
+            _maxPicturesPerRequest,
+            _maxPictureBytesPerRequest,
             ct,
             inputs);
 
@@ -149,6 +159,7 @@ public sealed class OpenRouterChatClient : IChatClient
         var sender = asking?.GetSenderId();
         var account = asking?.GetAccountId();
         var agent = asking?.GetAgentId();
+        var turn = new TurnLabels(asking?.GetConversationContext()?.Origin.ChannelId, asking?.GetAppTurn()?.AppId);
 
         // Decided for this turn rather than at construction, and from the model the turn runs on:
         // a model a person switched to for one turn may hold less than the agent's own does.
@@ -178,40 +189,72 @@ public sealed class OpenRouterChatClient : IChatClient
         // the record, where the last user-role message is still the person's.
         var sent = VideoInputParts.AsSent(SkillPreloadNote.AsSent(truncated));
 
-        UsageContent? usage = null;
-
-        await foreach (var update in _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct))
+        // A provider now and then ends a reply with nothing in it — on prod, Pearl Research generated
+        // what was by every sign a tool call and OpenRouter passed on none of it, finish "stop". After
+        // a tool result that ends the turn with no word, so it is asked once more; nothing was shown,
+        // so the second reply simply follows. Only there: after the person's own message an empty
+        // reply is what the model chose.
+        var asksAgain = _asksAgainAfterEmptyReply && sent.LastOrDefault()?.Role == ChatRole.Tool;
+        for (var ask = 0; ; ask++)
         {
-            // The Responses adapter leaves MessageId empty where the chat wire stamped the
-            // completion id, and everything that reassembles a streamed turn keys on it. The
-            // response id is one id per model turn — the aggregation the consumers want.
-            update.MessageId ??= update.ResponseId;
-            update.SetTimestamp(_timeProvider.GetUtcNow());
+            UsageContent? usage = null;
+            ChatFinishReason? finish = null;
+            var answered = false;
 
-            var updateUsage = update.Contents.OfType<UsageContent>().FirstOrDefault();
-            if (updateUsage is not null)
+            await foreach (var update in DsmlToolCalls.RepairAsync(
+                               SchemaRefusalsAsync(_client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct), options, ct), ct))
             {
-                usage = updateUsage;
+                // The Responses adapter leaves MessageId empty where the chat wire stamped the
+                // completion id, and everything that reassembles a streamed turn keys on it. The
+                // response id is one id per model turn — the aggregation the consumers want.
+                update.MessageId ??= update.ResponseId;
+                update.SetTimestamp(_timeProvider.GetUtcNow());
+
+                usage = update.Contents.OfType<UsageContent>().FirstOrDefault() ?? usage;
+                finish = update.FinishReason ?? finish;
+                answered |= Answers(update);
+
+                yield return update;
             }
 
-            yield return update;
+            // Each ask was paid for, so each is billed.
+            PublishUsage(usage, sender, account, agent, effectiveModel, turn);
+
+            if (answered || !asksAgain || ask > 0 || (finish is not null && finish != ChatFinishReason.Stop))
+            {
+                yield break;
+            }
+        }
+    }
+
+    // Words or a call; reasoning alone, or blank text, leaves the person with nothing to read.
+    private static bool Answers(ChatResponseUpdate update) =>
+        update.Contents.Any(c => c is FunctionCallContent || c is TextContent { Text: var text } && !string.IsNullOrWhiteSpace(text));
+
+    // The channel a turn came on and the built app whose ask it was, which its usage is counted under.
+    private sealed record TurnLabels(string? Channel, string? AppId);
+
+    private void PublishUsage(
+        UsageContent? usage, string? sender, string? account, string? agent, string model, TurnLabels turn)
+    {
+        if (usage?.Details is null)
+        {
+            return;
         }
 
-        if (usage?.Details is not null)
+        _metricsPublisher.Publish(new TokenUsageEvent
         {
-            var cost = DrainCostQueue() ?? 0m;
-            _metricsPublisher.Publish(new TokenUsageEvent
-            {
-                Sender = sender ?? "unknown",
-                UserId = account,
-                AgentId = agent,
-                Model = effectiveModel,
-                InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
-                OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
-                CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
-                Cost = cost
-            });
-        }
+            Sender = sender ?? "unknown",
+            UserId = account,
+            AgentId = agent,
+            Channel = turn.Channel,
+            AppId = turn.AppId,
+            Model = model,
+            InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
+            OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),
+            CachedInputTokens = DrainCachedTokenQueue() ?? ReadCachedInputTokens(usage.Details),
+            Cost = DrainCostQueue() ?? 0m
+        });
     }
 
     // A strict schema goes out as it was written. The adapter would otherwise rewrite it into the
@@ -222,9 +265,7 @@ public sealed class OpenRouterChatClient : IChatClient
     // schema keeps the adapter's handling, which is what memory's lenient readers were built on.
     private static ChatOptions? WithVerbatimStrictSchema(ChatOptions? options)
     {
-        if (options is not { ResponseFormat: ChatResponseFormatJson { Schema: { } schema } json } ||
-            options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) != true ||
-            strict is not true)
+        if (!AsksStrictFormat(options) || options!.ResponseFormat is not ChatResponseFormatJson { Schema: { } schema } json)
         {
             return options;
         }
@@ -244,6 +285,41 @@ public sealed class OpenRouterChatClient : IChatClient
         };
         return verbatim;
     }
+
+    // A request carrying a strict schema that the provider answers 400 is refused for the schema more often than
+    // not, and the same request fails alike every time: said as that refusal, so a channel whose caller wrote the
+    // schema (a built app's ask) tells it to fix the schema rather than to ask again. The provider's words ride
+    // along. Any other status, or a 400 to a request with no schema, is the failure it was.
+    private static async IAsyncEnumerable<ChatResponseUpdate> SchemaRefusalsAsync(
+        IAsyncEnumerable<ChatResponseUpdate> updates, ChatOptions? options, [EnumeratorCancellation] CancellationToken ct)
+    {
+        var strict = AsksStrictFormat(options);
+        await using var reading = updates.GetAsyncEnumerator(ct);
+        while (true)
+        {
+            bool more;
+            try
+            {
+                more = await reading.MoveNextAsync();
+            }
+            catch (ClientResultException ex) when (strict && ex.Status == 400)
+            {
+                throw new ResponseFormatRefusedException(ex.Message, ex);
+            }
+
+            if (!more)
+            {
+                yield break;
+            }
+
+            yield return reading.Current;
+        }
+    }
+
+    private static bool AsksStrictFormat(ChatOptions? options) =>
+        options is { ResponseFormat: ChatResponseFormatJson { Schema: not null } }
+        && options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) == true
+        && strict is true;
 
     // Set by McpAgent on a turn whose message asked for a format. Deliberately not the adapter's
     // own `strict` key: that one is a single switch for the format and every tool, and a strict

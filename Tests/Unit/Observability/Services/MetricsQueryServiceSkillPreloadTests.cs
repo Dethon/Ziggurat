@@ -2,6 +2,7 @@ using System.Text.Json;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Moq;
+using Observability;
 using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
@@ -46,7 +47,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_ByOutcome_CountsEveryJudgment()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Outcome, SkillPreloadMetric.Count, _date, _date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Outcome, SkillPreloadMetric.Count, MetricDateRange.Spanning(_date, _date));
 
         result[SkillPreloadOutcomes.Preloaded].ShouldBe(2m);
         result[SkillPreloadOutcomes.Deadline].ShouldBe(1m);
@@ -57,7 +58,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_BySkill_CountsEachSkillPreloadedAndNothingElse()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.Count, _date, _date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.Count, MetricDateRange.Spanning(_date, _date));
 
         result.ShouldBe(new Dictionary<string, decimal> { ["home-assistant"] = 2m, ["home-watches"] = 1m });
     }
@@ -68,7 +69,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_InputTokensBySkill_SplitsAJudgmentAcrossTheSkillsItPreloaded()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.InputTokens, _date, _date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Skill, SkillPreloadMetric.InputTokens, MetricDateRange.Spanning(_date, _date));
 
         // 2,100 to home-assistant alone, then 2,200 halved between the two.
         result["home-assistant"].ShouldBe(3200m);
@@ -79,8 +80,8 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_LatencyByAgent_AggregatesOverTheJudgmentsThatHaveOne()
     {
-        var avg = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, _date, _date);
-        var max = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, _date, _date, Aggregation.Max);
+        var avg = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, MetricDateRange.Spanning(_date, _date));
+        var max = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Agent, SkillPreloadMetric.LatencyMs, MetricDateRange.Spanning(_date, _date), Aggregation.Max);
 
         avg["nabu"].ShouldBe(400m);
         avg["jonas"].ShouldBe(400m);
@@ -90,7 +91,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Grouped_InputTokensByChannel_SumsThem()
     {
-        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Channel, SkillPreloadMetric.InputTokens, _date, _date);
+        var result = await _sut.GetSkillPreloadGroupedAsync(SkillPreloadDimension.Channel, SkillPreloadMetric.InputTokens, MetricDateRange.Spanning(_date, _date));
 
         result["voice"].ShouldBe(4300m);
         result["signalr"].ShouldBe(2000m);
@@ -99,7 +100,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Trend_IsOneSeriesPerOutcome_CountedPerBucket()
     {
-        var trend = await _sut.GetSkillPreloadTrendAsync(_date, _date);
+        var trend = await _sut.GetSkillPreloadTrendAsync(MetricDateRange.Spanning(_date, _date));
 
         trend.Select(s => s.Stage).ShouldBe(["deadline", "none", "preloaded", "skipped-lemonade"]);
         var preloaded = trend.Single(s => s.Stage == SkillPreloadOutcomes.Preloaded);
@@ -115,7 +116,7 @@ public class MetricsQueryServiceSkillPreloadTests
     [Fact]
     public async Task Trend_ABucketAnOutcomeIsAbsentFrom_IsAZero_NotAGap()
     {
-        var trend = await _sut.GetSkillPreloadTrendAsync(_date, _date);
+        var trend = await _sut.GetSkillPreloadTrendAsync(MetricDateRange.Spanning(_date, _date));
 
         var preloaded = trend.Single(s => s.Stage == SkillPreloadOutcomes.Preloaded);
         preloaded.Points.Select(p => p.Bucket.Hour).ShouldBe([10, 11]);

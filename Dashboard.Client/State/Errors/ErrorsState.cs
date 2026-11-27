@@ -8,6 +8,6 @@ public record ErrorsState
     public IReadOnlyList<ErrorEvent> Events { get; init; } = [];
     public ErrorDimension GroupBy { get; init; } = ErrorDimension.Service;
     public Dictionary<string, int> Breakdown { get; init; } = [];
-    public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
-    public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    // The last how many days the page reads: a rolling window the server resolves on every read.
+    public int Days { get; init; } = 1;
 }

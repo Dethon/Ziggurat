@@ -125,14 +125,39 @@ public class SessionRefreshTests
         (await RefreshAsync(server, fran.UserId, phone.Id, "not-a-credential")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
+    // WebChat's space switcher lists a person's apps, which the apps server answers only to the accounts
+    // service's word for that person on a channel of its own: the hub asks it of a session as it asks
+    // its own, naming the channel; no other caller is answered on it.
+    [Fact]
+    public async Task TheChatHub_NamingThePersonsAppsChannel_IsAnsweredOnIt_AndNobodyElseIs()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var phone = await IssueAsync(server, fran.UserId);
+
+        var response = await RefreshAsync(server, fran.UserId, phone.Id, SignalRCredential, AppChannels.PersonsApps);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var assertion = await server.VerifyAssertionAsync(
+            (await response.Content.ReadFromJsonAsync<JsonObject>())!["assertion"]!.GetValue<string>());
+        assertion.Claims.ShouldNotBeNull().ChannelId.ShouldBe(AppChannels.PersonsApps);
+        assertion.Claims.Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
+        (await RefreshAsync(server, fran.UserId, phone.Id, SugaryCredential, AppChannels.PersonsApps)).StatusCode
+            .ShouldBe(HttpStatusCode.Forbidden);
+        var unnamed = await RefreshAsync(server, fran.UserId, phone.Id, SignalRCredential);
+        (await server.VerifyAssertionAsync((await unnamed.Content.ReadFromJsonAsync<JsonObject>())!["assertion"]!.GetValue<string>()))
+            .Claims.ShouldNotBeNull().ChannelId.ShouldBe(ChannelIds.SignalR);
+    }
+
     private static async Task<IssuedSession> IssueAsync(AccountsServer server, string userId) =>
         (await server.Service<SessionStore>().IssueAsync(userId, null, "phone", CancellationToken.None)).ShouldNotBeNull();
 
-    private static Task<HttpResponseMessage> RefreshAsync(AccountsServer server, string userId, string sessionId, string credential)
+    private static Task<HttpResponseMessage> RefreshAsync(
+        AccountsServer server, string userId, string sessionId, string credential, string? channel = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/accounts/internal/session")
         {
-            Content = JsonContent.Create(new { userId, sessionId })
+            Content = channel is null ? JsonContent.Create(new { userId, sessionId }) : JsonContent.Create(new { userId, sessionId, channel })
         };
         request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
         return server.Client().SendAsync(request);

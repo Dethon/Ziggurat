@@ -30,14 +30,17 @@ public static class HouseholdFeaturesAdmin
             }
 
             var before = await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct);
-            var merged = AdminSections.Merged(document, HouseholdSections.FeaturesSchema.Write(before ?? new FeaturesSection()));
+            var merged = AdminSections.Merged(
+                WithoutOperatorsFeatures(document), HouseholdSections.FeaturesSchema.Write(before ?? new FeaturesSection()));
             if (merged.Conflicts.Count > 0)
             {
                 return AdminSections.Conflict("The features were not saved.", merged, path => $"the {path[0]} feature");
             }
 
+            var kept = merged.Value!.AsObject();
+            kept[AppsFeature] = (before ?? new FeaturesSection()).Apps;
             return await AdminSections.AnswerAsync(
-                await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, merged.Value!.AsObject(), ct),
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, kept, ct),
                 "The features were not saved.",
                 async saved =>
                 {
@@ -46,6 +49,22 @@ public static class HouseholdFeaturesAdmin
                     return Results.Ok(new AdminSaved<FeaturesSection>(after, AdminSections.Warning(saved)));
                 });
         });
+    }
+
+    // The apps feature is the operator's (it spends the deployment's shared storage and browser), so
+    // an owner's save never carries it: taken out of what was sent and of what the page loaded, so it
+    // can neither change it nor collide with the operator's change, and put back as it is stored.
+    private const string AppsFeature = "apps";
+
+    private static JsonObject WithoutOperatorsFeatures(JsonObject sent)
+    {
+        sent.Remove(AppsFeature);
+        if (sent[AdminEdit.Loaded] is JsonObject loaded)
+        {
+            loaded.Remove(AppsFeature);
+        }
+
+        return sent;
     }
 
     // Which features changed, by name: a summary never carries a value.

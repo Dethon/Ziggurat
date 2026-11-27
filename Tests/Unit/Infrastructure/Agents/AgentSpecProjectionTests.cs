@@ -155,6 +155,17 @@ public sealed class AgentSpecProjectionTests
             .UsesOutposts.ShouldBe(expected);
     }
 
+    // A worker's calls are its parent household's turn as much as its parent's are, so it runs as many
+    // rounds of them as that household allows.
+    [Theory]
+    [InlineData(null)]
+    [InlineData(7)]
+    public void ForSubAgent_TheToolRoundsCap_IsTheParentHouseholds(int? rounds) =>
+        AgentSpecProjection.ForSubAgent(
+                _subAgentDefinition, Spawn() with { MaxToolRounds = rounds }, _openRouter, _patchable,
+                lemonadeHostAddress: null, _credentials, null)
+            .MaxToolRounds.ShouldBe(rounds);
+
     // One credential no longer opens every server: each endpoint presents its own host's, so a
     // leak from one container opens that container alone.
     [Fact]
@@ -175,6 +186,26 @@ public sealed class AgentSpecProjectionTests
                 McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", "vault-secret"),
                 McpServerEndpoint.Configured("http://mcp-sandbox:8080/mcp", "sandbox-secret")
             ]);
+    }
+
+    // What a built app's ask declares each server by rides on its endpoint, named from the household's
+    // shared servers: a shared server's key, a household server's own name, nothing for any other address.
+    [Fact]
+    public void ForAgent_EachEndpoint_CarriesTheNameItIsConfiguredUnder()
+    {
+        var definition = _agentDefinition with
+        {
+            McpServerEndpoints = ["http://mcp-sugary:8080/mcp", "vault", "http://mcp-vault:8080/mcp"]
+        };
+        var household = HouseholdAgents.Fixed([definition]) with
+        {
+            SharedServers = new SharedServers { Sugary = "http://mcp-sugary:8080/mcp" }
+        };
+
+        AgentSpecProjection.ForAgent(
+                definition, new AgentKey("conv-1", "jack"), "fran", _openRouter, _patchable, lemonadeHostAddress: null,
+                _credentials, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null, household: household)
+            .McpServerEndpoints.Select(e => e.ConfiguredName).ShouldBe(["sugary", "vault", null]);
     }
 
     // An agent that calls nothing is dialled for its servers' prompts alone; one that also enabled a

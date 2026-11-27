@@ -19,6 +19,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using Observability;
 using Observability.Hubs;
 using Observability.Services;
 using Shouldly;
@@ -490,8 +491,8 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         exit.ShouldBe(0, output);
         output.ShouldContain("Metric roll-ups");
         var query = new MetricsQueryService(redis.Connection);
-        (await query.GetSummaryAsync(day, day, home)).InputTokens.ShouldBe(120);
-        (await query.GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, day, day, home))
+        (await query.GetSummaryAsync(MetricDateRange.Spanning(day, day), home)).InputTokens.ShouldBe(120);
+        (await query.GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, MetricDateRange.Spanning(day, day), home))
             .Select(e => e.InputTokens).ShouldBe([100, 20], ignoreOrder: true);
         (await query.GetRecentErrorsAsync(household: home)).ShouldContain(e => e.Message == $"Vault gone {_tag}");
         (await query.GetHouseholdsAsync()).ShouldContain(home);

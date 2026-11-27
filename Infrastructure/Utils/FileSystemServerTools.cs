@@ -233,6 +233,7 @@ public static class FileSystemServerTools
         // the caller's error result like any other failure rather than something the envelope
         // never sees.
         private static FileSystemBackendBase As(FileSystemBackendBase backend, RequestContext<CallToolRequestParams> call) =>
-            backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta), call.Delegation, call.Household));
+            backend.For(new FileSystemCaller(
+                call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta), call.Delegation, call.Household, call.VerifiedToken));
     }
 }

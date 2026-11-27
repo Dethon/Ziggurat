@@ -16,5 +16,9 @@ public sealed record SpaceState
     // household's configuration names it; none when it names none.
     public string? DefaultAgent { get; init; }
 
+    // What the space switcher offers, as the hub last listed it (SwitcherEntry): kept whichever space is
+    // open, replaced only by the hub's next answer.
+    public IReadOnlyList<SwitcherEntry> Switcher { get; init; } = [];
+
     public static SpaceState Initial => new();
 }

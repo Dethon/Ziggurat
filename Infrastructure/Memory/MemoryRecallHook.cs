@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -58,6 +59,15 @@ public class MemoryRecallHook(
         AgentSession thread,
         CancellationToken ct)
     {
+        // A built app's ask may carry anything the app's code fetched, so it is neither recalled for nor
+        // extracted from. Read off the turn's own message by the stamp's presence alone, so a stamp that
+        // cannot be read keeps memory out too. Its own gate, deliberately apart from the one-way Lemonade
+        // boundary below (ADR 0042).
+        if (message.IsAppTurn())
+        {
+            return null;
+        }
+
         var agent = await AgentAsync(agentId, account, ct);
         if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {
@@ -255,7 +265,7 @@ public class MemoryRecallHook(
         {
             return await agentDefinitionProvider.GetByIdAsync(agentId, account?.TenantId, account, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read agent {AgentId}; recalling as for an unknown agent", agentId);

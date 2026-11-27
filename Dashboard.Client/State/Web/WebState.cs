@@ -15,7 +15,7 @@ public record WebState
     public ModalDismissalDimension GroupBy { get; init; } = ModalDismissalDimension.Kind;
     public ModalDismissalMetric Metric { get; init; } = ModalDismissalMetric.Count;
     public Dictionary<string, decimal> Breakdown { get; init; } = [];
-    public DateOnly From { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
-    public DateOnly To { get; init; } = DateOnly.FromDateTime(DateTime.UtcNow);
+    // The last how many days the page reads: a rolling window the server resolves on every read.
+    public int Days { get; init; } = 1;
     public Aggregation Agg { get; init; } = Aggregation.Avg;
 }

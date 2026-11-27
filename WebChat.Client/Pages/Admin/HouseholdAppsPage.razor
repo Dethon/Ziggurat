@@ -1,0 +1,111 @@
+@page "/admin/apps"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using Domain.DTOs.Household
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdAppAsksStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household apps</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-apps-heading">
+    <h1 id="admin-apps-heading">Apps</h1>
+    <p class="admin-lede">
+        An app the household's agents built may ask its assistant for an answer, and each ask is a turn of the
+        assistant paid from the household's credit. Each app may ask so many times a day, counted for the whole
+        household together over the last 24 hours. Set how many for every app here, and for one app on its own;
+        an app past its limit tells whoever is using it, and asks again as the day rolls on.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.AppAsks is { } loaded)
+    {
+        <form class="admin-form" @onsubmit="Save" aria-label="The household's app limits">
+            <label class="admin-field">
+                <span class="admin-field-label">Asks per day, each app, whole household</span>
+                <input type="number" name="householdCap" min="0" max="@AppAsksSection.MaxDailyCap" step="1" inputmode="numeric"
+                       @bind="_drafts.Household" placeholder="The deployment's limit" />
+                <span class="admin-field-hint">
+                    For every app without a limit of its own. Empty: the limit whoever runs this deployment set. 0 stops
+                    the household's apps asking at all.
+                </span>
+            </label>
+
+            @if (loaded.Apps is null)
+            {
+                <p class="admin-status">@AdminSpaces.AppsUnavailableMessage Limits already set are shown by app id; they can be removed, not changed.</p>
+            }
+            else if (loaded.Apps.Count == 0)
+            {
+                <p class="admin-status">The household has no published apps yet.</p>
+            }
+
+            @foreach (var app in _drafts.Apps)
+            {
+                <article class="admin-agent" aria-label="@app.Name">
+                    <header class="admin-agent-header">
+                        <h2>@app.Name</h2>
+                        <span class="admin-agent-meta">
+                            @if (app.Listed)
+                            {
+                                <span>Made by @(app.AuthorName is { Length: > 0 } author ? author : "a former member")</span>
+                            }
+                            else
+                            {
+                                <span class="admin-agent-default">not among the household's published apps just now</span>
+                            }
+                        </span>
+                    </header>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Asks per day, this app, whole household</span>
+                        <input type="number" name="appCap" min="0" max="@AppAsksSection.MaxDailyCap" step="1" inputmode="numeric"
+                               @bind="app.Cap" placeholder="The household's limit" disabled="@(!app.Listed)" />
+                        <span class="admin-field-hint">Empty: the limit for every app, above.</span>
+                    </label>
+                    @if (!app.Listed && app.Cap is not null)
+                    {
+                        <div class="admin-actions">
+                            <button type="button" class="admin-secondary" @onclick="() => app.Cap = null">Remove its limit</button>
+                        </div>
+                    }
+                </article>
+            }
+
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save limits")</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's apps</p>
+    }
+</section>
+
+@code {
+    private HouseholdAppAsksState _state = HouseholdAppAsksState.Initial;
+    private AppCapDrafts _drafts = AppCapDrafts.Of(new AdminAppAsks(new AppAsksSection(), []));
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The limits take what the admin API answered — on opening and after a save — and are the owner's to
+        // change in between; nothing is saved until they save.
+        Subscribe(Store.StateObservable, state => state.AppAsks, appAsks =>
+        {
+            if (appAsks is not null)
+            {
+                _drafts = AppCapDrafts.Of(appAsks);
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdAppAsks());
+    }
+
+    private void Save() => Dispatcher.Dispatch(new SaveHouseholdAppAsks(_drafts.ToSection(), _state.AppAsks?.Caps));
+}

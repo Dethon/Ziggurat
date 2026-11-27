@@ -116,6 +116,26 @@ public sealed class ConcurrentAdminEditsTests
         (await renamedAgain.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("the name");
     }
 
+    // No bound is the default an owner must be able to go back to: a field cleared is a change, not
+    // a field left out.
+    [Fact]
+    public async Task AToolRoundsBoundCleared_IsSavedAsNoBound()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var fresh = (await (await admin.GetAsync(AdminProtocol.Settings)).Content.ReadFromJsonAsync<HouseholdSettings>())!;
+        await admin.PutAsync(AdminProtocol.Settings, AdminEdit.Of(fresh with { MaxToolRounds = 25 }, fresh));
+        var loaded = (await (await admin.GetAsync(AdminProtocol.Settings)).Content.ReadFromJsonAsync<HouseholdSettings>())!;
+
+        var cleared = await admin.PutAsync(AdminProtocol.Settings, AdminEdit.Of(loaded with { MaxToolRounds = null }, loaded));
+
+        cleared.StatusCode.ShouldBe(HttpStatusCode.OK);
+        loaded.MaxToolRounds.ShouldBe(25);
+        (await (await admin.GetAsync(AdminProtocol.Settings)).Content.ReadFromJsonAsync<HouseholdSettings>())!
+            .MaxToolRounds.ShouldBeNull();
+    }
+
     [Fact]
     public async Task OneOwnerRenamingAnAgentAndAnotherChangingItsInstructions_BothStand()
     {

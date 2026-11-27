@@ -12,6 +12,7 @@ public static class AdminArea
     public const string Members = "/admin/members";
     public const string Features = "/admin/features";
     public const string Spaces = "/admin/spaces";
+    public const string Apps = "/admin/apps";
     public const string Servers = "/admin/servers";
     public const string Usage = "/admin/usage";
 
@@ -20,7 +21,8 @@ public static class AdminArea
     public static IReadOnlyList<(string Path, string Label)> Pages { get; } =
     [
         (Settings, "Settings"), (Keys, "Keys"), (Agents, "Agents"), (Members, "Members"),
-        (Features, "Features"), (Spaces, "Spaces"), (Servers, "Servers"), (Usage, "Usage")
+        (Features, "Features"), (Spaces, "Spaces"), (Apps, "Apps"), (Servers, "Servers"),
+        (Usage, "Usage")
     ];
 
     // Whether the page showing is one of the area's own.

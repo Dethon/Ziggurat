@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Accounts;
+using Infrastructure.Clients.Apps;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
@@ -50,6 +51,8 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            // A person's apps for WebChat's space switcher, from the apps server on the session's word.
+            .AddPersonsApps(settings.AppsUrl, settings.AppsTimeout)
             // The household's spaces, asked with this server's own credential and its person's assertion.
             .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)

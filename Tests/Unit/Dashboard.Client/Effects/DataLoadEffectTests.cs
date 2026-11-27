@@ -20,8 +20,7 @@ namespace Tests.Unit.Dashboard.Client.Effects;
 
 public sealed class DataLoadEffectTests : IDisposable
 {
-    private static readonly DateOnly _from = new(2026, 3, 1);
-    private static readonly DateOnly _to = new(2026, 3, 2);
+    private const int Days = 7;
 
     private static readonly MetricsSummary _summary = new(
         InputTokens: 120, OutputTokens: 30, TotalTokens: 150, Cost: 1.5m, ToolCalls: 4, ToolErrors: 1);
@@ -72,7 +71,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageSummaryAndHealth();
 
-        await _dataLoad.LoadAsync(_from, _to, _families.All);
+        await _dataLoad.LoadAsync(Days, _families.All);
 
         _metricsStore.State.InputTokens.ShouldBe(120);
         _metricsStore.State.Cost.ShouldBe(1.5m);
@@ -86,7 +85,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageSummaryAndHealth();
 
-        await _dataLoad.LoadAsync(_from, _to, _families.All);
+        await _dataLoad.LoadAsync(Days, _families.All);
 
         _dataLoad.LastLoadFailed.ShouldBeTrue();
     }
@@ -96,7 +95,7 @@ public sealed class DataLoadEffectTests : IDisposable
     {
         StageEveryRequest();
 
-        await _dataLoad.LoadAsync(_from, _to, _families.All);
+        await _dataLoad.LoadAsync(Days, _families.All);
 
         _dataLoad.LastLoadFailed.ShouldBeFalse();
     }
@@ -110,7 +109,7 @@ public sealed class DataLoadEffectTests : IDisposable
         StageSummaryAndHealth();
         var failing = _families.Tokens.RefreshAsync();
 
-        await _dataLoad.LoadAsync(_from, _to, _families.All);
+        await _dataLoad.LoadAsync(Days, _families.All);
         await Should.ThrowAsync<HttpRequestException>(() => failing);
 
         _metricsStore.State.InputTokens.ShouldBe(120);
@@ -123,14 +122,14 @@ public sealed class DataLoadEffectTests : IDisposable
     [Fact]
     public async Task LoadAsync_APageDisplaysOneFamily_LeavesTheOtherFamiliesRangesAlone()
     {
-        var chosenElsewhere = new DateOnly(2026, 2, 1);
-        _voiceStore.SetDateRange(chosenElsewhere, _to);
+        const int chosenElsewhere = 30;
+        _voiceStore.SetDays(chosenElsewhere);
         StageEveryRequest();
 
-        await _dataLoad.LoadAsync(_from, _to, [_families.Tokens]);
+        await _dataLoad.LoadAsync(Days, [_families.Tokens]);
 
-        _tokensStore.State.From.ShouldBe(_from);
-        _voiceStore.State.From.ShouldBe(chosenElsewhere);
+        _tokensStore.State.Days.ShouldBe(Days);
+        _voiceStore.State.Days.ShouldBe(chosenElsewhere);
     }
 
     private void StageSummaryAndHealth()
