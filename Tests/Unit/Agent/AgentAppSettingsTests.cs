@@ -143,10 +143,13 @@ public class AgentAppSettingsTests
     // the Request") and, deep in a long app build, takes the screenshots its own file_reads returned
     // for the person's: replaying a relatos round on it blamed the person 2 of 2, DeepInfra 0 of 2,
     // and every other provider wrote the model's own terse reasoning (2026-11-27).
+    // Tenstorrent refuses a request carrying more than ten images ("Too many images: at most 10 per
+    // request"), and a build keeps every screenshot it read in view, so each such round fell back to a
+    // provider with a cold cache (2026-11-27).
     [Fact]
-    public void Jonas_IgnoresTheProvidersThatGarblePhotographsDropToolArgumentsOrLoseTheThread()
+    public void Jonas_IgnoresTheProvidersThatGarblePhotographsDropToolArgumentsLoseTheThreadOrCapImages()
     {
-        Ignored("jonas").ShouldBe(["relace", "morph", "open-inference"]);
+        Ignored("jonas").ShouldBe(["relace", "morph", "open-inference", "tenstorrent"]);
     }
 
     [Fact]
