@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
@@ -24,21 +25,21 @@ public class OpenRouterChatClientPageImageTests
     private readonly FakeReadImageStore _store = new();
 
     [Fact]
-    public async Task APageImageWithinTheDistance_IsShownToTheModel()
+    public async Task APageImageFarBackInTheConversation_IsShownToTheModel()
     {
         _store.Put(Conversation, "call-1");
 
-        var captured = await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+        var captured = await SendAsync(ConversationOfLength(60, readAt: 0));
 
         AllDataContents(captured).ShouldHaveSingleItem();
     }
 
     [Fact]
-    public async Task APageImagePastTheDistance_BecomesANoteNamingItAndInvitingAFreshLook()
+    public async Task APageImagePastTheCap_BecomesANoteNamingItAndInvitingAFreshLook()
     {
         _store.Put(Conversation, "call-1");
 
-        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), maxPictures: 0);
 
         AllDataContents(captured).ShouldBeEmpty();
         var note = ResultText(captured, "call-1");
@@ -51,7 +52,7 @@ public class OpenRouterChatClientPageImageTests
     {
         _store.Put(Conversation, "call-1");
 
-        await SendAsync(ConversationOfLength(6, readAt: 0), depth: 3);
+        await SendAsync(ConversationOfLength(6, readAt: 0), maxPictures: 0);
 
         _store.Deleted.ShouldContain($"{Conversation}:{McpImageLift.KeyFor("call-1", 0)}");
     }
@@ -61,7 +62,7 @@ public class OpenRouterChatClientPageImageTests
     {
         _store.Put(Conversation, "call-1");
 
-        await SendAsync(ConversationOfLength(6, readAt: 4), depth: 3);
+        await SendAsync(ConversationOfLength(6, readAt: 4));
 
         _store.Deleted.ShouldBeEmpty();
     }
@@ -81,7 +82,7 @@ public class OpenRouterChatClientPageImageTests
     }
 
     [Fact]
-    public async Task AStoreMissWithinTheDistance_BecomesTheSameNote()
+    public async Task AStoreMissWithinTheCap_BecomesTheSameNote()
     {
         var captured = await SendAsync(ConversationOfLength(4, readAt: 2));
 
@@ -203,7 +204,7 @@ public class OpenRouterChatClientPageImageTests
     private async Task<IReadOnlyList<ChatMessage>> SendAsync(
         List<ChatMessage> messages,
         bool shown = true,
-        int? depth = null,
+        int? maxPictures = null,
         bool acceptsImages = true)
     {
         var toolMessage = messages.LastOrDefault(m => m.Role == ChatRole.Tool);
@@ -226,7 +227,7 @@ public class OpenRouterChatClientPageImageTests
             _innerClient.Object,
             "test-model",
             readImageStore: _store,
-            hydrationDepthMessages: depth ?? 20,
+            maxPicturesPerRequest: maxPictures ?? AttachmentHydration.DefaultMaxPictures,
             modelAcceptsImages: _ => acceptsImages);
 
         await foreach (var _ in sut.GetStreamingResponseAsync(messages, Options()))

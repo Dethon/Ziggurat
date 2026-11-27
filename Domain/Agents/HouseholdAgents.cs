@@ -45,7 +45,15 @@ public sealed record HouseholdAgents
     // the host's own is used.
     public string? TimeZone { get; init; }
 
+    // How many rounds of tool calls one turn of its agents, and of each worker they spawn, may run;
+    // null where the household set no bound.
+    public int? MaxToolRounds { get; init; }
+
     public FeaturesSection Features { get; init; } = new();
+
+    // The deployment's shared servers its agents were built against, which name each agent's servers as a
+    // built app's ask declares them (SharedServers.NameOf).
+    public SharedServers SharedServers { get; init; } = new();
 
     // The shared servers the household's features turned off: no agent of its, and no worker one
     // spawns, reaches them.
@@ -97,7 +105,9 @@ public sealed record HouseholdAgents
             DefaultAgent = defaultAgent,
             VoiceAgent = VoiceAgentOf(configuration.Agents),
             TimeZone = configuration.Settings.TimeZone,
+            MaxToolRounds = configuration.Settings.MaxToolRounds,
             Features = configuration.Features,
+            SharedServers = shared,
             WithheldServers = withheld,
             Configuration = configuration,
             Problems =
@@ -193,11 +203,12 @@ public sealed record HouseholdAgents
     // What a turn builds this agent from, which a conversation compares its agent's against before
     // each later turn (DisposableAgent.IsStaleAsync): the definition as offered — its name, its
     // instructions, what the features left it — as text, since its lists compare by reference; the
-    // zone it is told its time in; and the key it is paid with, compared as a key and never revealed.
+    // zone it is told its time in; the rounds of calls a turn may run; and the key it is paid with,
+    // compared as a key and never revealed.
     // Null for an agent the household does not define (a person's registered one).
     public AgentAsBuilt? AsBuilt(string agentId) =>
         Find(agentId) is { } definition
-            ? new AgentAsBuilt(JsonSerializer.Serialize(definition), TimeZone, Payer?.Key, Configuration?.Lemonade)
+            ? new AgentAsBuilt(JsonSerializer.Serialize(definition), TimeZone, Payer?.Key, Configuration?.Lemonade, MaxToolRounds)
             : null;
 
     public AgentDefinition? Find(string agentId) =>
@@ -246,4 +257,5 @@ public sealed record HouseholdAgents
 
 // The Lemonade box is the household's own as its configuration names it: the routing client is built
 // with it, so a box added, moved or removed rebuilds the agent as a key changed does.
-public sealed record AgentAsBuilt(string Definition, string? TimeZone, ModelKey? Key, LemonadeBox? Lemonade = null);
+public sealed record AgentAsBuilt(
+    string Definition, string? TimeZone, ModelKey? Key, LemonadeBox? Lemonade = null, int? MaxToolRounds = null);

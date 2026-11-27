@@ -1,8 +1,11 @@
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Domain.Apps;
+using Domain.Contracts;
+using Domain.Tools;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
 using McpServerApps.Store;
@@ -25,7 +28,8 @@ namespace McpServerApps.Checks;
 //   in the page, where the app's own code runs; the page reaches only its origin, the CDNs and its
 //   manifest's `connect` origins — anything else, a navigation onto the deployment's network included, is
 //   aborted and reported.
-// - **Checks past a quota are refused, not queued**; one past its deadline is stopped and says so.
+// - **A check past a limit waits for a slot**, inside its own deadline, which runs from when it was
+//   asked; one past its deadline is stopped and says so.
 public sealed class AppChecks(AppsSettings settings, AppSessions sessions, BuiltAppStore store, TimeProvider clock, ILogger<AppChecks> logger)
 {
     public const string LatestDirectory = "latest";
@@ -50,6 +54,9 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     private readonly Dictionary<string, int> _byHousehold = new(StringComparer.Ordinal);
     private int _running;
 
+    // Checks waiting for a slot, each woken to look again whenever one is let go.
+    private readonly List<TaskCompletionSource> _waiting = [];
+
     // How many checks are running now, every household's.
     internal int Running
     {
@@ -62,16 +69,20 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
     }
 
+    // The deadline runs from the ask, a wait for a slot included: the page reads on the call's token,
+    // which has the deadline's length left when it arrives and no more.
     public async Task<CheckOutcome> RunAsync(BuiltApp app, CheckRequest request, CancellationToken ct)
     {
-        if (Admit(app.HouseholdId) is { } refused)
+        var asked = clock.GetUtcNow();
+        var deadlineAt = asked + settings.Checks.Deadline;
+        if (await AdmitAsync(app.HouseholdId, deadlineAt, ct) is { } refused)
         {
             return refused;
         }
 
         try
         {
-            return new CheckOutcome.Ran(await CheckAsync(app, request, ct));
+            return new CheckOutcome.Ran(await CheckAsync(app, request, asked, deadlineAt, ct));
         }
         finally
         {
@@ -79,26 +90,63 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
     }
 
-    private CheckOutcome.Refused? Admit(string household)
+    // Waits for a slot until the deadline, then is refused naming the limit that kept it out.
+    private async Task<CheckOutcome.Refused?> AdmitAsync(string household, DateTimeOffset deadlineAt, CancellationToken ct)
+    {
+        using var deadline = new CancellationTokenSource(Remaining(deadlineAt), clock);
+        using var waiting = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        while (true)
+        {
+            TaskCompletionSource woken;
+            CheckOutcome.Refused full;
+            lock (_gate)
+            {
+                if (TryTake(household) is not { } kept)
+                {
+                    return null;
+                }
+
+                full = kept;
+                woken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiting.Add(woken);
+            }
+
+            try
+            {
+                await woken.Task.WaitAsync(waiting.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return full;
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    _waiting.Remove(woken);
+                }
+            }
+        }
+    }
+
+    // Under the gate: takes a slot, or names the limit that is full.
+    private CheckOutcome.Refused? TryTake(string household)
     {
         var limits = settings.Checks;
-        lock (_gate)
+        var mine = _byHousehold.GetValueOrDefault(household);
+        if (mine >= limits.PerHousehold)
         {
-            var mine = _byHousehold.GetValueOrDefault(household);
-            if (mine >= limits.PerHousehold)
-            {
-                return new CheckOutcome.Refused("concurrent checks per household", limits.PerHousehold);
-            }
-
-            if (_running >= limits.Total)
-            {
-                return new CheckOutcome.Refused("concurrent checks on this server", limits.Total);
-            }
-
-            _byHousehold[household] = mine + 1;
-            _running++;
-            return null;
+            return new CheckOutcome.Refused("concurrent checks per household", limits.PerHousehold);
         }
+
+        if (_running >= limits.Total)
+        {
+            return new CheckOutcome.Refused("concurrent checks on this server", limits.Total);
+        }
+
+        _byHousehold[household] = mine + 1;
+        _running++;
+        return null;
     }
 
     private void Release(string household)
@@ -110,10 +158,16 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             {
                 _byHousehold.Remove(household);
             }
+
+            _waiting.ForEach(waiter => waiter.TrySetResult());
         }
     }
 
-    private async Task<CheckReport> CheckAsync(BuiltApp app, CheckRequest request, CancellationToken ct)
+    private TimeSpan Remaining(DateTimeOffset deadlineAt) =>
+        deadlineAt - clock.GetUtcNow() is var left && left > TimeSpan.Zero ? left : TimeSpan.Zero;
+
+    private async Task<CheckReport> CheckAsync(
+        BuiltApp app, CheckRequest request, DateTimeOffset asked, DateTimeOffset deadlineAt, CancellationToken ct)
     {
         var started = clock.GetUtcNow();
         var limits = settings.Checks;
@@ -123,11 +177,13 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         Sweep(checks);
         var run = Path.Combine(checks, $"run-{Guid.NewGuid():N}");
         Directory.CreateDirectory(run);
-        var session = sessions.OpenCheck(app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, started + limits.Deadline);
+        var session = sessions.OpenCheck(
+            app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, request.Household, deadlineAt);
         var reachable = new HashSet<string>([address, .. settings.Cdns, .. request.Manifest.Connect], StringComparer.OrdinalIgnoreCase);
-        using var deadline = new CancellationTokenSource(limits.Deadline, clock);
+        using var deadline = new CancellationTokenSource(Remaining(deadlineAt), clock);
         using var stopped = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         var viewports = new List<ViewportRun>();
+        var iconShown = false;
         string? failure = null;
         try
         {
@@ -142,6 +198,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             }
 
             await ShowIconAsync(browser, AppIcon.Svg(request.Manifest, IconDrawing(app, request.Manifest)), run, stopped.Token);
+            iconShown = true;
         }
         catch (Exception ex) when (stopped.IsCancellationRequested)
         {
@@ -167,10 +224,13 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             App = app.Slug,
             Origin = $"https://{host}",
             Path = request.Path,
+            AskedAt = asked,
             StartedAt = started,
             FinishedAt = clock.GetUtcNow(),
             Deadline = limits.Deadline,
             DeadlineHit = deadline.IsCancellationRequested,
+            Unopened = [.. request.Viewports.Skip(viewports.Count).Select(v => v.Name)],
+            IconShown = iconShown,
             Error = failure,
             Viewports = [.. viewports.Select(v => v.Report())]
         };
@@ -227,10 +287,14 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
                 : failed.Failure));
         page.Response += (_, response) =>
         {
-            if (response.Status == StatusCodes.Status422UnprocessableEntity && IsRead(response.Url, preview))
+            if (response.Status == StatusCodes.Status422UnprocessableEntity && IsOn(response.Url, preview, $"{AppReads.OriginPath}/"))
             {
-                seen.RefusedUrls.Enqueue(response.Url);
+                seen.EnvelopeUrls.Enqueue(response.Url);
                 seen.Refusals.Enqueue(RefusedAsync(response));
+            }
+            else if (response.Status >= 400 && IsOn(response.Url, preview, AppAsks.OriginPath))
+            {
+                seen.FailedAsks.Enqueue(FailedAskAsync(response, seen));
             }
             else if (response.Status >= 400)
             {
@@ -291,12 +355,29 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             seen.Assertions.Add(onPreview() ? outcome : outcome with { Passed = false, Message = LeftThePreview });
         }
 
+        // Where the assertions left the page (a story read to its end), which the first screenshot,
+        // taken as it loaded, cannot show.
+        if (seen.Assertions.Count > 0 && onPreview())
+        {
+            await page.ScreenshotAsync(new PageScreenshotOptions { Path = Path.Combine(run, viewport.ScreenshotAfter), Timeout = 0 });
+            if (onPreview())
+            {
+                seen.ScreenshotAfter = viewport.ScreenshotAfter;
+            }
+            else
+            {
+                File.Delete(Path.Combine(run, viewport.ScreenshotAfter));
+            }
+        }
+
         if (!onPreview())
         {
             seen.Error = $"{LeftThePreview}; nothing it showed after that is kept";
         }
 
         await Task.WhenAll(seen.Refusals);
+        await Task.WhenAll(seen.FailedAsks);
+        seen.Finished = true;
     }
 
     // The icon the preview would install with, drawn by the check's own browser from the server's own SVG
@@ -338,10 +419,81 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             : null;
     }
 
-    // A read of the household the preview's library made (POST /_vfs/<operation>), on the preview itself.
-    private static bool IsRead(string url, string preview) =>
+    // A read of the household (POST /_vfs/<operation>) or an ask (POST /_ask) the preview's library made, on
+    // the preview itself.
+    private static bool IsOn(string url, string preview, string path) =>
         string.Equals(OriginOf(url), preview, StringComparison.OrdinalIgnoreCase)
-        && new Uri(url).AbsolutePath.StartsWith($"{AppReads.OriginPath}/", StringComparison.Ordinal);
+        && new Uri(url).AbsolutePath.StartsWith(path, StringComparison.Ordinal);
+
+    // An ask answered with the tools' envelope is the page's to handle, as a refused read is: what it asked, why
+    // it failed, and on the preview what fixes it (the reply that was no JSON, the agent's own words for a turn
+    // it failed). Anything else answered there (no session's 404) stays a failed request.
+    private static async Task<FailedAsk?> FailedAskAsync(IResponse response, ViewportRun seen)
+    {
+        if (await AnswerAsync(response) is { } answer && ReadFailedAsk(response.Status, response.Request.PostData, answer) is { } failed)
+        {
+            seen.EnvelopeUrls.Enqueue(response.Url);
+            return failed;
+        }
+
+        seen.Failed.Enqueue(new FailedRequest(response.Request.Method, response.Url, response.Status, null));
+        return null;
+    }
+
+    // Null where the answer is no envelope: a body that is no JSON (the origin's 404 page), or one whose fields
+    // are not the envelope's types (FromEnvelope reads them as strings). An envelope naming no code is still
+    // the ask failing, as the tools' taxonomy reads one: internal_error.
+    internal static FailedAsk? ReadFailedAsk(int status, string? asked, string answer)
+    {
+        try
+        {
+            var body = JsonNode.Parse(answer);
+            return ToolErrorResult.FromEnvelope(body) is { } failed
+                ? new FailedAsk(status, AskedText(asked), failed.ErrorCode, failed.Message, failed.Hint,
+                    TextAt(body, AppAsks.ReplyField), TextAt(body, AppAsks.FailureField))
+                : null;
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static string? TextAt(JsonNode? body, string name) =>
+        body?[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+
+    // Null for a page that went away before the answer was read (Playwright throws): a failed request.
+    private static async Task<string?> AnswerAsync(IResponse response)
+    {
+        try
+        {
+            return await response.TextAsync();
+        }
+        catch (PlaywrightException)
+        {
+            return null;
+        }
+    }
+
+    private const int MaxAskedText = 200;
+
+    // The ask's text as its wire names it (AppAskRequest, read with JSON's web names).
+    private static readonly string _askedTextField = JsonNamingPolicy.CamelCase.ConvertName(nameof(AppAskRequest.Text));
+
+    // What the page asked, when it asked in JSON (an ask with images is a form, its text left unsaid), clipped.
+    private static string? AskedText(string? body)
+    {
+        try
+        {
+            using var read = JsonDocument.Parse(body ?? "");
+            var text = Text(read.RootElement, _askedTextField);
+            return text is { Length: > MaxAskedText } ? $"{text[..MaxAskedText]}…" : text;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     // What a refused read asked (its operation, and the path its arguments name) and why it was refused,
     // off the tools' envelope; a page gone before the body was read leaves the why unsaid.
@@ -468,18 +620,23 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public ConcurrentQueue<FailedRequest> Failed { get; } = new();
         public ConcurrentQueue<PolicyViolation> Violations { get; } = new();
         public ConcurrentQueue<Task<RefusedRead>> Refusals { get; } = new();
-        public ConcurrentQueue<string> RefusedUrls { get; } = new();
+        public ConcurrentQueue<Task<FailedAsk?>> FailedAsks { get; } = new();
+
+        // The addresses answered with the tools' envelope: a refused read's, a failed ask's.
+        public ConcurrentQueue<string> EnvelopeUrls { get; } = new();
         public List<AssertionOutcome> Assertions { get; } = [];
         public string? Screenshot { get; set; }
+        public string? ScreenshotAfter { get; set; }
         public string? Accessibility { get; set; }
         public bool Settled { get; set; }
+        public bool Finished { get; set; }
         public string? Error { get; set; }
 
         // Chromium logs every answer of 400 or worse as an error, at the address asked ("<url>:0:0"); for a
-        // refused read the page may well have handled, that line says nothing the refused read does not.
+        // refused read or a failed ask the page may well have handled, that line says nothing the entry does not.
         private bool IsRefusalsOwn(ConsoleEntry entry) =>
             entry is { Type: "error", Location: { } at }
-            && RefusedUrls.Any(url => at.StartsWith(url + ":", StringComparison.Ordinal));
+            && EnvelopeUrls.Any(url => at.StartsWith(url + ":", StringComparison.Ordinal));
 
         public ViewportReport Report() => new()
         {
@@ -487,12 +644,18 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             Width = viewport.Width,
             Height = viewport.Height,
             Screenshot = Screenshot,
+            ScreenshotAfter = ScreenshotAfter,
             Settled = Settled,
+            Finished = Finished,
             Error = Error,
             Console = [.. Console.Where(entry => !IsRefusalsOwn(entry)).Take(MaxEntries)],
             FailedRequests = [.. Failed.Take(MaxEntries)],
             PolicyViolations = [.. Violations.Take(MaxEntries)],
             RefusedReads = [.. Refusals.Where(refusal => refusal.IsCompletedSuccessfully).Select(refusal => refusal.Result).Take(MaxEntries)],
+            FailedAsks =
+            [
+                .. FailedAsks.Where(ask => ask.IsCompletedSuccessfully).Select(ask => ask.Result).OfType<FailedAsk>().Take(MaxEntries)
+            ],
             Accessibility = Accessibility,
             Assertions = [.. Assertions]
         };
@@ -503,16 +666,18 @@ public sealed record CheckViewport(int Width, int Height)
 {
     public string Name => $"{Width}x{Height}";
     public string Screenshot => $"{Name}.png";
+    public string ScreenshotAfter => $"{Name}-after.png";
 }
 
 // One assertion file of the app's `checks/`, by its path in the app, and its text.
 public sealed record CheckAssertion(string File, string Source);
 
 // What to check: the route opened, at each viewport, the manifest it is served under, the app's assertion
-// files, and the token of the call that asked, which the page reads with.
+// files, and the token of the call that asked, which the page reads and asks with, and the household that
+// call proved, which its asks' cap is read on.
 public sealed record CheckRequest(
     IReadOnlyList<CheckViewport> Viewports, string Path, AppManifest Manifest, IReadOnlyList<CheckAssertion> Assertions,
-    string CallToken);
+    string CallToken, ICallHousehold Household);
 
 public abstract record CheckOutcome
 {
@@ -528,12 +693,19 @@ public sealed record CheckReport
     // The preview's address as a person opens it, through the proxy.
     public required string Origin { get; init; }
     public required string Path { get; init; }
+
+    // When the check was asked for; it started later when it waited for a slot.
+    public required DateTimeOffset AskedAt { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset FinishedAt { get; init; }
     public required TimeSpan Deadline { get; init; }
 
     // Stopped there: a viewport the check did not finish has only what it saw by then, or none.
     public required bool DeadlineHit { get; init; }
+
+    // The viewports asked for that the deadline left unopened, and whether the icon was drawn.
+    public IReadOnlyList<string> Unopened { get; init; } = [];
+    public bool IconShown { get; init; }
     public string? Error { get; init; }
     public required IReadOnlyList<ViewportReport> Viewports { get; init; }
 }
@@ -545,8 +717,14 @@ public sealed record ViewportReport
     public required int Height { get; init; }
     public string? Screenshot { get; init; }
 
+    // The page once its assertions ran, where they drove it; none where none ran.
+    public string? ScreenshotAfter { get; init; }
+
     // Whether the network went quiet within Checks:Settle before the page was shown.
     public required bool Settled { get; init; }
+
+    // Whether everything was asked of it before the deadline: assertions not run are missing.
+    public bool Finished { get; init; }
     public string? Error { get; init; }
     public required IReadOnlyList<ConsoleEntry> Console { get; init; }
     public required IReadOnlyList<FailedRequest> FailedRequests { get; init; }
@@ -554,6 +732,9 @@ public sealed record ViewportReport
 
     // Reads of the household refused with the tools' envelope: the page's to handle, so not a failure.
     public required IReadOnlyList<RefusedRead> RefusedReads { get; init; }
+
+    // Asks answered with the tools' envelope: the page's to handle too, so not a failure either.
+    public required IReadOnlyList<FailedAsk> FailedAsks { get; init; }
     public string? Accessibility { get; init; }
     public required IReadOnlyList<AssertionOutcome> Assertions { get; init; }
 }
@@ -564,6 +745,12 @@ public sealed record ConsoleEntry(string Type, string Text, string? Location);
 public sealed record FailedRequest(string Method, string Url, int? Status, string? Error);
 
 public sealed record RefusedRead(string Operation, string? Path, string? ErrorCode, string? Message);
+
+// An ask answered with the tools' envelope: its status, what it asked (Text, when it was JSON), the envelope's
+// code, message and hint, and on the preview the reply that was no JSON (Reply) or the agent's own words for
+// a turn it failed (Failure).
+public sealed record FailedAsk(
+    int Status, string? Text, string ErrorCode, string? Message, string? Hint, string? Reply, string? Failure);
 
 public sealed record PolicyViolation(string Directive, string? BlockedUri, string? SourceFile, int? Line, string? Sample);
 

@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security.Signing;
 using Infrastructure.Agents;
 using Shouldly;
 
@@ -19,7 +20,7 @@ public class ChannelAttachmentSourceTests
 
         foreach (var _ in Enumerable.Range(0, 8))
         {
-            (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None))
+            (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None))
                 .ShouldBe([1, 2, 3]);
         }
 
@@ -33,7 +34,7 @@ public class ChannelAttachmentSourceTests
         var source = new ChannelAttachmentSource([channel]);
 
         var fetches = Enumerable.Range(0, 5)
-            .Select(_ => source.FetchAsync("signalr", "7-42/abc", CancellationToken.None))
+            .Select(_ => source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None))
             .ToList();
         channel.Gate.SetResult();
         await Task.WhenAll(fetches);
@@ -49,9 +50,9 @@ public class ChannelAttachmentSourceTests
         var channel = new CountingChannel { Bytes = null };
         var source = new ChannelAttachmentSource([channel]);
 
-        (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None)).ShouldBeNull();
         channel.Bytes = [9];
-        (await source.FetchAsync("signalr", "7-42/abc", CancellationToken.None)).ShouldBe([9]);
+        (await source.FetchAsync("signalr", null, "7-42/abc", null, CancellationToken.None)).ShouldBe([9]);
 
         channel.Fetches.ShouldBe(2);
     }
@@ -61,7 +62,7 @@ public class ChannelAttachmentSourceTests
     {
         var source = new ChannelAttachmentSource([new CountingChannel()]);
 
-        (await source.FetchAsync("telegram", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("telegram", null, "7-42/abc", null, CancellationToken.None)).ShouldBeNull();
     }
 
     // Two households' servers of one name each keep their own files: a reference is asked of the
@@ -73,12 +74,51 @@ public class ChannelAttachmentSourceTests
         var casa = new CountingChannel { ChannelId = "voice", Household = ChannelHousehold.Own("casa", home: false), Bytes = [2] };
         var source = new ChannelAttachmentSource([home, casa]);
 
-        (await source.FetchAsync("voice", "casa", "7-42/abc", CancellationToken.None)).ShouldBe([2]);
-        (await source.FetchAsync("voice", "home", "7-42/abc", CancellationToken.None)).ShouldBe([1]);
-        (await source.FetchAsync("voice", "elsewhere", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+        (await source.FetchAsync("voice", "casa", "7-42/abc", null, CancellationToken.None)).ShouldBe([2]);
+        (await source.FetchAsync("voice", "home", "7-42/abc", null, CancellationToken.None)).ShouldBe([1]);
+        (await source.FetchAsync("voice", "elsewhere", "7-42/abc", null, CancellationToken.None)).ShouldBeNull();
 
         (home.Fetches, casa.Fetches).ShouldBe((1, 1));
     }
+
+    // The fetch is signed as the turn asking, so the channel decides whose a file is: a file handed to one
+    // household's turn is asked again for another's, never answered from what the first was given.
+    [Fact]
+    public async Task AFetch_IsMadeForTheTurnAsking_AndIsNeverAnotherHouseholdsCacheHit()
+    {
+        var channel = new CountingChannel { ChannelId = "apps" };
+        var source = new ChannelAttachmentSource([channel]);
+        var ours = TurnOf("household-a");
+        var theirs = TurnOf("household-b");
+
+        await source.FetchAsync("apps", null, "7-42/abc", ours, CancellationToken.None);
+        await source.FetchAsync("apps", null, "7-42/abc", ours, CancellationToken.None);
+        await source.FetchAsync("apps", null, "7-42/abc", theirs, CancellationToken.None);
+
+        channel.Turns.ShouldBe([ours, theirs]);
+    }
+
+    // A channel may keep a file for one conversation alone (an app's ask), so a turn of another conversation of
+    // the same household is asked of the channel too, never answered from the first one's fetch.
+    [Fact]
+    public async Task AFetch_IsNeverAnotherConversationsCacheHit()
+    {
+        var channel = new CountingChannel { ChannelId = "apps" };
+        var source = new ChannelAttachmentSource([channel]);
+        var ours = TurnOf("household-a");
+        var another = TurnOf("household-a", "7:43");
+
+        await source.FetchAsync("apps", null, "7-42/abc", ours, CancellationToken.None);
+        await source.FetchAsync("apps", null, "7-42/abc", another, CancellationToken.None);
+
+        channel.Turns.ShouldBe([ours, another]);
+    }
+
+    private static ConversationContext TurnOf(string household, string conversation = "7:42") =>
+        new("jonas", conversation, "user", new ReplyTarget("apps", conversation))
+        {
+            Identity = IdentityClaims.Person("user", household, "apps", [])
+        };
 
     private sealed class CountingChannel : IChannelConnection
     {
@@ -103,9 +143,14 @@ public class ChannelAttachmentSourceTests
 
         public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
 
-        public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+        private readonly System.Collections.Concurrent.ConcurrentQueue<ConversationContext?> _turns = new();
+
+        public IReadOnlyList<ConversationContext?> Turns => [.. _turns];
+
+        public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct)
         {
             Interlocked.Increment(ref _fetches);
+            _turns.Enqueue(turn);
             if (Gate is not null)
             {
                 await Gate.Task;

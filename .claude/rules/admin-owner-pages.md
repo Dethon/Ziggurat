@@ -6,6 +6,14 @@ paths:
   - "Accounts/Admin/HouseholdMembersAdmin.cs"
   - "Accounts/Admin/HouseholdFeaturesAdmin.cs"
   - "Accounts/Admin/HouseholdSpacesAdmin.cs"
+  - "Accounts/Admin/HouseholdAppAsksAdmin.cs"
+  - "Domain/DTOs/Admin/AdminAppAsks.cs"
+  - "WebChat.Client/Pages/Admin/HouseholdAppsPage.razor"
+  - "WebChat.Client/State/Admin/HouseholdAppAsksStore.cs"
+  - "WebChat.Client/State/Admin/AppCapDrafts.cs"
+  - "WebChat.Client/State/Effects/HouseholdAppAsksEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdAppAsksAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdAppsE2ETests.cs"
   - "Accounts/Admin/HouseholdServersAdmin.cs"
   - "Accounts/Admin/HouseholdUsageAdmin.cs"
   - "Accounts/Admin/HouseholdUsageClient.cs"
@@ -65,8 +73,8 @@ See also: `admin.md` (routes, gate, answers, merging stale saves, change log, th
 
 Route paths are spelled once in `AdminProtocol` (`Domain/DTOs/Admin/`), shared by the service and both
 clients; request and answer shapes are the DTOs beside it. Verbs: `GET` reads; `POST` adds, mints, restores,
-disables, enables and revokes; `PUT` edits an agent, a member, the voice choice, features or spaces; `DELETE`
-removes an agent. Every summary these routes record names ids,
+disables, enables and revokes; `PUT` edits an agent, a member, the voice choice, features, spaces or app caps;
+`DELETE` removes an agent. Every summary these routes record names ids,
 server names and which fields changed — never a person's or agent's name, instructions, a link, a
 credential or a value.
 
@@ -161,7 +169,7 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   - a name is at most `AdminSpaces.NameLength`; a space opens on one of the household's agents or none;
   - **a slug is set when a space is added and never edited**: a new slug is a new space.
   - **an app space** (`appId`) shares one of the household's published apps with every member. `AdminSpaces.Apps`
-    lists them (`AdminSpaceApp`: author by their name now, `reads`, `connect`, link) from the apps server's
+    lists them (`AdminSpaceApp`: author by their name now, `reads`, `connect`, `asks`, link) from the apps server's
     listing (`HouseholdAppsClient`, `AccountsSettings.AppsUrl` = `APPSURL`, within `AppsTimeout`), asked on an
     assertion this service signs for the gate-verified owner on `AppChannels.PublishedApps` (as usage's), and
     only for a household with the `apps` feature (else none, nobody asked); null when it could not be asked,
@@ -192,6 +200,28 @@ it is; `readsSugaryLogs` and `usesSugary`: `.claude/rules/sugary.md`), disable a
   "Share an app" offers the listed apps no space shares yet (`SpaceDrafts.Shareable`/`Share`: the app's slug,
   else the first free `<slug>-<n>`, approving the reach shown)). `HouseholdSpacesE2ETests` edits a tagged space in the home and never saves features (the home's
   turns read them).
+
+## Apps
+
+`HouseholdAppAsksAdmin` (`AdminProtocol.AppAsks`, `Domain/DTOs/Admin/AdminAppAsks.cs`) reads `AdminAppAsks` (the
+`app-asks` section beside the household's published apps, `AdminCappedApp`, from the same listing as the
+spaces page, `HouseholdPublishedApps.ReadAsync`: none without the `apps` feature, null when the apps server
+could not be asked) and saves the section whole, merged per app id (`admin.md`, "Two owners"). What an
+ask does with it is `.claude/rules/apps.md`, "The daily cap".
+
+- **Bounds are the section's rules** (0–`AppAsksSection.MaxDailyCap`, a built app's id), so the operator's
+  `set-household-config` is held to them too.
+- **An app's own cap is set only for one of the household's published apps**, checked for the caps a save
+  **sets or changes** against what it holds now (400 naming the app); one left as loaded is never checked
+  again, so a deleted app's cap blocks no other save, and removing one needs nothing. A cap set or changed
+  with the listing unavailable is 503 `AdminSpaces.AppsUnavailableMessage`; the household's default and a
+  removal still save.
+- **Summaries** name the household's cap and apps by id ("Set app a1b2c3's daily cap"), never a value.
+- **The page** is `/admin/apps` (`HouseholdAppsPage`): the household's "asks per day, each app, whole household"
+  (empty: the deployment's), then each published app's own (empty: the household's), then any cap kept for
+  an app not listed, by id, offered only for removal (`AppCapDrafts`). `HouseholdAppsE2ETests` saves the household's in the
+  stack's second household (a cap of the home's is read by its app turns), put back after, and the per-app rows
+  against a routed answer (`page.RouteAsync`: the stack publishes no apps).
 
 ## Own servers
 
@@ -227,7 +257,7 @@ the credential shown once (only its hash is kept); a revoke answers `AdminSaved<
 ## Usage
 
 `AdminProtocol.Usage` (`HouseholdUsageAdmin`) → `AdminUsage`: the caller's household's tokens and cost per
-agent and per person (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a month of UTC days. No
+agent, per person and per app asked (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a month of UTC days. No
 `?month=` is the current month on `AccountsClock`; a `month` not `yyyy-MM` is 400. A read: nothing recorded.
 
 - **The figures are the Observability host's**, which this service otherwise never reads:
@@ -242,6 +272,10 @@ agent and per person (`UsageLine`) and its Lemonade use (`LemonadeUsage`) over a
 - **Per person is by account** (`TokenUsageEvent.UserId`), labelled here with the member's display name now
   (`MemberStore.ListAsync`) over Observability's `UsageLine.Id`; a call with no account is a line under its
   `Sender` with no id. Per agent is by id under its latest name (`MetricsQueryService.AgentLabels`).
+- **Per app is an app ask's** (`TokenUsageEvent.AppId`, counted on channel `apps`; the same calls are in the
+  person's and the agent's lines too), labelled here with the household's published listing's name now
+  (`HouseholdPublishedApps`, asked only when an app was); an app it does not list, or a listing that could not
+  be read, keeps the id. The page shows the table only when an app was asked.
 - **History is a month deep** (daily roll-ups expire after thirty days); the page, `/admin/usage`
   (`HouseholdUsagePage`), says so.
 - The operator reads every household's figures on the dashboard (`HouseholdPicker`,

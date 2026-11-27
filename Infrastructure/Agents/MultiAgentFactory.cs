@@ -139,7 +139,8 @@ public sealed class MultiAgentFactory(
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
             spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key,
-            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)]);
+            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)],
+            spec.MaxToolRounds);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -177,7 +178,8 @@ public sealed class MultiAgentFactory(
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
             spec.AgentId,
-            spec.Payer);
+            spec.Payer,
+            spec.MaxToolRounds);
 
         return new McpAgent(
             spec,
@@ -304,7 +306,8 @@ public sealed class MultiAgentFactory(
             providerRouting: providerRouting,
             transportHandler: transportHandler,
             attachmentSource: attachmentSource,
-            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
+            maxPicturesPerRequest: openRouterConfig.MaxPicturesPerRequest,
+            maxPictureBytesPerRequest: openRouterConfig.MaxPictureBytesPerRequest,
             readImageStore: readImageStore,
             modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
             modelAcceptsVideo: m => Accepts(m, AttachmentKind.Video, lemonade),
@@ -329,7 +332,8 @@ public sealed class MultiAgentFactory(
             sessionId,
             transportHandler: lemonade.Transport ?? lemonadeTransportHandler,
             attachmentSource: attachmentSource,
-            hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
+            maxPicturesPerRequest: openRouterConfig.MaxPicturesPerRequest,
+            maxPictureBytesPerRequest: openRouterConfig.MaxPictureBytesPerRequest,
             readImageStore: readImageStore,
             modelAcceptsImages: m => Accepts(m, AttachmentKind.Image, lemonade),
             contextWindowFor: model => LemonadeWindow(model, effectiveContext, lemonade),
@@ -347,6 +351,7 @@ public record OpenRouterConfig
     public int? MaxContextTokens { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }
     public IReadOnlyList<string>? PatchableModelIds { get; init; }
-    public int HydrationDepthMessages { get; init; } = AttachmentHydration.DefaultDepthMessages;
+    public int MaxPicturesPerRequest { get; init; } = AttachmentHydration.DefaultMaxPictures;
+    public long MaxPictureBytesPerRequest { get; init; } = AttachmentHydration.DefaultMaxPictureBytes;
     public long MaxInlineImageBytes { get; init; } = ReadImageSupport.DefaultMaxBytes;
 }

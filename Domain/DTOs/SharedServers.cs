@@ -1,4 +1,5 @@
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using JetBrains.Annotations;
 
@@ -18,6 +19,15 @@ public sealed record SharedServers
     public string? Idealista { get; init; }
     public string? Apps { get; init; }
 
+    // The name an agent's endpoint is configured under, which a built app's manifest declares the servers
+    // its asks may use by: a shared server its key here, a household's own server its own name. Never a
+    // host and port, which are the deployment's topology and would break a published app when they moved.
+    // An own server named as a shared one has none, so a name picks one server; null for any other address.
+    public string? NameOf(string endpoint) =>
+        TunnelCredentialProtocol.IsServerName(endpoint)
+            ? (Listed().Any(s => s.Name == endpoint) ? null : endpoint)
+            : Listed().FirstOrDefault(s => s.Address is not null && Names([s.Address], endpoint)).Name;
+
     public IReadOnlyList<string> All => [.. Listed().Select(s => s.Address).OfType<string>()];
 
     // The servers this household's features keep from its agents, and the timers too where nothing of
@@ -35,12 +45,13 @@ public sealed record SharedServers
         ServerAddress.FromUrl(endpoint) is { } server
         && servers.Any(address => ServerAddress.FromUrl(address) is { } other && other == server);
 
-    private IEnumerable<(string? Address, Func<FeaturesSection, bool> Offered)> Listed() =>
+    // Each by its key in the settings, the name it is configured and declared under.
+    private IEnumerable<(string Name, string? Address, Func<FeaturesSection, bool> Offered)> Listed() =>
     [
-        (Scheduling, f => f.Scheduling),
-        (Timers, f => f.Timers),
-        (Sugary, f => f.Sugary),
-        (Idealista, f => f.Idealista),
-        (Apps, f => f.Apps)
+        ("scheduling", Scheduling, f => f.Scheduling),
+        ("timers", Timers, f => f.Timers),
+        ("sugary", Sugary, f => f.Sugary),
+        ("idealista", Idealista, f => f.Idealista),
+        ("apps", Apps, f => f.Apps)
     ];
 }

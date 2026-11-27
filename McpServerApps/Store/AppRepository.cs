@@ -17,6 +17,25 @@ public sealed partial class AppRepository(string gitDirectory, string workTree)
     public string GitDirectory => gitDirectory;
     public string WorkTree => workTree;
 
+    // A file of the working tree by its path from the repository's root, segments already checked: its
+    // first limit bytes, enough for the caller to tell one over its bound, or null for none there. No link
+    // is followed on the way, a directory's included, since one would read whatever it points at.
+    public async Task<byte[]?> TreeFileAsync(string path, int limit, CancellationToken ct)
+    {
+        var segments = path.Split('/');
+        var walked = segments.Select((_, i) => Path.Combine([workTree, .. segments[..(i + 1)]])).ToList();
+        if (walked.SkipLast(1).Any(directory => !Directory.Exists(directory) || new DirectoryInfo(directory).LinkTarget is not null)
+            || !File.Exists(walked[^1]) || new FileInfo(walked[^1]).LinkTarget is not null)
+        {
+            return null;
+        }
+
+        await using var file = File.OpenRead(walked[^1]);
+        var buffer = new byte[Math.Min(limit, file.Length)];
+        await file.ReadExactlyAsync(buffer, ct);
+        return buffer;
+    }
+
     public async Task InitAsync(CancellationToken ct)
     {
         Directory.CreateDirectory(workTree);

@@ -40,9 +40,18 @@ public sealed class CheckEgress(AppsSettings settings, IEgressNetwork network, I
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var address = await BindAddressAsync(stoppingToken);
-        using var listener = new TcpListener(address, settings.Listeners.Egress);
-        listener.Start();
+        using var listener = new TcpListener(await BindAddressAsync(stoppingToken), settings.Listeners.Egress);
+        try
+        {
+            listener.Start();
+        }
+        catch (Exception ex)
+        {
+            // Whoever waits on the listener hears why it never came, rather than waiting out its own deadline.
+            _listening.TrySetException(ex);
+            throw;
+        }
+
         _listening.TrySetResult((IPEndPoint)listener.LocalEndpoint);
         logger.LogInformation("The check browser's egress listens on {Endpoint}", listener.LocalEndpoint);
         try

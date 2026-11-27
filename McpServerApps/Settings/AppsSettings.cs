@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.Security;
 using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
@@ -45,6 +46,12 @@ public record AppsSettings : IMcpHostSettings
 
     public AppListeners Listeners { get; init; } = new();
 
+    public AppAskSettings Asks { get; init; } = new();
+
+    // The deployment's retention policy, read from Domain's retention.json like every host's: an ask's images
+    // wait in the upload store as long as an attachment is kept anywhere (ADR-0020).
+    public RetentionSettings Retention { get; init; } = new();
+
     // Where a built app may load code, styles and fonts from besides itself, by exact version and
     // integrity hash (AppContentPolicy, OutsideCodePinning): origins, no paths.
     public IReadOnlyList<string> Cdns { get; init; } = [];
@@ -88,6 +95,43 @@ public record AppSessionSettings
     // longest a revoked session goes on opening an app when its announcement was missed.
     public TimeSpan AssertionKept { get; init; } = TimeSpan.FromMinutes(5);
 }
+// How a built app's asks (POST /_ask) are bounded: each is a turn of the building agent's that the page
+// waits on whole. The instructions' bound is not here: it is the agent's prompt budget's
+// (AppAsks.MaxInstructionsBytes), which no deployment may raise.
+public record AppAskSettings
+{
+    // How long the page waits for the whole answer before the turn is stopped and the page told so.
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(2);
+
+    // The longest text one ask may carry, in characters.
+    public int MaxTextLength { get; init; } = 8_000;
+
+    // The largest JSON schema one ask may carry, in UTF-8 bytes as the page wrote it. It rides the turn's
+    // persisted message, uncounted in the history's budget (ADR 0044), so it stays a few kilobytes.
+    public int MaxSchemaBytes { get; init; } = 8_192;
+
+    // How long after its last turn a conversation an ask opened stays bound to that app and viewer.
+    public TimeSpan FollowUpWindow { get; init; } = TimeSpan.FromHours(24);
+
+    // How many asks of one app a household's people may send in any 24 hours, all of them together, unless
+    // an owner sets otherwise (AskCaps): what bounds a page asking in a loop, since each ask is a model's turn
+    // paid from the household's credit.
+    public int DailyCap { get; init; } = 200;
+
+    // How many images one ask may carry: more angles of one plate stop adding anything, and each is a picture
+    // the model is sent again on every turn of the conversation within the hydration distance.
+    public int MaxImages { get; init; } = 4;
+
+    // The largest image, in bytes as the page sent it: the most any model an app may ask on takes in one
+    // image (Anthropic's API refuses one over 5 MB). A page shrinks a photo before sending; nothing here does.
+    public long MaxImageBytes { get; init; } = 5L * 1024 * 1024;
+
+    // The image types an ask may carry, judged by their bytes (AppAskImages): JPEG, PNG, WebP and GIF are the
+    // ones every image model takes. None here takes no images: the shipped file names them, as it names the
+    // CDNs, since a default list would be added to, never replaced, by configuration naming fewer.
+    public IReadOnlyList<string> ImageTypes { get; init; } = [];
+}
+
 // What the apps server keeps of the runtime errors its apps' pages report (`/_errors`).
 public record AppErrorSettings
 {
@@ -99,23 +143,25 @@ public record AppErrorSettings
     public int PerSessionPerMinute { get; init; } = 30;
 }
 
-// How far a check (`./check`, Checks/AppChecks) may go. Checks past a limit are refused, never queued: the
-// agent hears the limit's name and value and tells the person rather than waiting on somebody else's.
+// How far a check (`./check`, Checks/AppChecks) may go. A check past a limit waits for a slot within its
+// deadline, and only then is refused naming the limit: two people building apps in one household refused
+// each other's checks, and the agent guessed at sleeps.
 public record AppCheckSettings
 {
-    // How long one check runs, every viewport included, before its browser is closed and its report says
-    // so. At most the agent's call token refresh margin (callTokens:refreshMargin, 30 s): the page reads as
-    // the check's person on the token of the call that ran it, which has at least that much life left when
-    // it arrives (DeploymentConformanceTests).
-    public TimeSpan Deadline { get; init; } = TimeSpan.FromSeconds(30);
+    // How long one check runs from when it is asked, a wait for a slot and every viewport included, before
+    // its browser is closed and its report says so. At most the agent's call token refresh margin
+    // (callTokens:refreshMargin, 5 min): the page reads as the check's person on the token of the call that
+    // ran it, which has at least that much life left when it arrives (DeploymentConformanceTests). A game's
+    // two viewports with its own slow assertions ran past 30 s.
+    public TimeSpan Deadline { get; init; } = TimeSpan.FromMinutes(5);
 
     // How long a loaded page may take to go quiet on the network before it is shown as it is: a page
     // that polls never does.
     public TimeSpan Settle { get; init; } = TimeSpan.FromSeconds(5);
 
     // Each runs its own Chromium, so these bound the browser's memory as much as their fairness.
-    public int PerHousehold { get; init; } = 1;
-    public int Total { get; init; } = 2;
+    public int PerHousehold { get; init; } = 3;
+    public int Total { get; init; } = 6;
 
     public CheckBrowserSettings Browser { get; init; } = new();
 }

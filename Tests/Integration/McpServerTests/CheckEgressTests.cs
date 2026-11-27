@@ -22,19 +22,53 @@ public sealed class CheckEgressTests : IAsyncLifetime
     private CheckEgress _egress = null!;
     private IPEndPoint _at = null!;
 
+    // A port found free can still be taken by the rest of the machine before the bind (WSL's mirrored
+    // networking shares it with Windows), so a lost bind starts again on another.
     public async Task InitializeAsync()
     {
-        var settings = new AppsSettings { AppsDomain = "apps.test", Listeners = new AppListeners { Egress = TestPort.GetAvailable() } };
-        _egress = new CheckEgress(settings, _network, NullLogger<CheckEgress>.Instance);
-        await _egress.StartAsync(CancellationToken.None);
-        _at = await _egress.Listening.WaitAsync(TimeSpan.FromSeconds(30));
+        for (var attempt = 1; ; attempt++)
+        {
+            var port = TestPort.GetAvailable();
+            var settings = new AppsSettings { AppsDomain = "apps.test", Listeners = new AppListeners { Egress = port } };
+            _egress = new CheckEgress(settings, _network, NullLogger<CheckEgress>.Instance);
+            await _egress.StartAsync(CancellationToken.None);
+            try
+            {
+                _at = await _egress.Listening.WaitAsync(TimeSpan.FromSeconds(30));
+                return;
+            }
+            catch (SocketException e) when (attempt < 5 && e.SocketErrorCode == SocketError.AddressAlreadyInUse)
+            {
+                await _egress.StopAsync(CancellationToken.None);
+                _egress.Dispose();
+            }
+        }
     }
 
     public async Task DisposeAsync()
     {
         await _egress.StopAsync(CancellationToken.None);
         _egress.Dispose();
+        TestPort.Release(_at.Port);
         await _network.DisposeAsync();
+    }
+
+    // A port it cannot bind is said at once to whoever waits on the listener, not after their own deadline.
+    [Fact]
+    public async Task APortItCannotBind_FailsTheListenerAtOnce()
+    {
+        var taken = TestPort.GetAvailable();
+        using var holder = new TcpListener(IPAddress.Any, taken);
+        holder.Start();
+        var settings = new AppsSettings { AppsDomain = "apps.test", Listeners = new AppListeners { Egress = taken } };
+        using var egress = new CheckEgress(settings, _network, NullLogger<CheckEgress>.Instance);
+
+        await egress.StartAsync(CancellationToken.None);
+
+        (await Should.ThrowAsync<SocketException>(egress.Listening.WaitAsync(TimeSpan.FromSeconds(10))))
+            .SocketErrorCode.ShouldBe(SocketError.AddressAlreadyInUse);
+        holder.Stop();
+        TestPort.Release(taken);
     }
 
     // A public origin is tunnelled to, at the address it was judged on, and the tunnel carries both ways.

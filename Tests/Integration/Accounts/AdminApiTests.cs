@@ -64,12 +64,13 @@ public class AdminApiTests(RedisFixture redis) : IClassFixture<RedisFixture>
         var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
         var admin = server.Admin(await server.MintSessionAsync(ana));
 
-        var refused = await admin.PutAsync(AdminProtocol.Settings, new { name = "Casa", timeZone = "Mars/Olympus", language = "español!" });
+        var refused = await admin.PutAsync(AdminProtocol.Settings, new { name = "Casa", timeZone = "Mars/Olympus", language = "español!", maxToolRounds = 0 });
 
         refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         var refusal = (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!;
-        refusal.Problems.Count.ShouldBe(2);
+        refusal.Problems.Count.ShouldBe(3);
         refusal.Problems.ShouldContain(p => p.Contains("Mars/Olympus"));
+        refusal.Problems.ShouldContain(p => p.StartsWith("The tool rounds per turn"));
         (await (await admin.GetAsync(AdminProtocol.Settings)).Content.ReadFromJsonAsync<HouseholdSettings>())!
             .TimeZone.ShouldBe(TimeZoneInfo.Local.Id);
         (await ChangesAsync(admin)).ShouldBeEmpty();
@@ -236,7 +237,7 @@ public class AdminApiTests(RedisFixture redis) : IClassFixture<RedisFixture>
 
         var changes = await ChangesAsync(anaAdmin);
 
-        changes.Select(c => c.Summary).ShouldBe(["Changed the language", "Changed the name, time zone, language"]);
+        changes.Select(c => c.Summary).ShouldBe(["Changed the language", "Changed the name, time zone, language, tool rounds per turn"]);
         changes.ShouldAllBe(c => c.HouseholdId == casa && c.ActorUserId == ana && c.ActorName == "Ana"
                                  && c.Route == $"PUT {AdminProtocol.Settings}");
         changes.Select(c => c.At).ShouldBe([first.AddMinutes(5), first]);
@@ -274,7 +275,7 @@ public class AdminApiTests(RedisFixture redis) : IClassFixture<RedisFixture>
             .ShouldAllBe(agent => agent.Language == Pérez.Language);
     }
 
-    private static readonly HouseholdSettings Pérez = new() { Name = "Casa Pérez", TimeZone = "America/New_York", Language = "fr" };
+    private static readonly HouseholdSettings Pérez = new() { Name = "Casa Pérez", TimeZone = "America/New_York", Language = "fr", MaxToolRounds = 25 };
 
     private static async Task<IReadOnlyList<AdminChangeEntry>> ChangesAsync(AccountsServer.AdminClient admin) =>
         (await (await admin.GetAsync(AdminProtocol.HouseholdChanges)).Content.ReadFromJsonAsync<List<AdminChangeEntry>>())!;

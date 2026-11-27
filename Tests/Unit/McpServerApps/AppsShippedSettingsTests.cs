@@ -20,4 +20,20 @@ public class AppsShippedSettingsTests
         settings.Cdns.ShouldBe(["https://cdn.jsdelivr.net", "https://unpkg.com", "https://esm.sh"]);
         settings.Listeners.ShouldBe(new AppListeners { Mcp = 8080, Pages = 8081 });
     }
+
+    // What the file says is what the code defaults to, so a host run and the image bound asks alike. The image
+    // types are the file's alone, as the CDNs are: none in the code takes no images.
+    [Fact]
+    public void TheShippedSettings_BoundAsksAsTheCodeDoes()
+    {
+        var settings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(TestHelpers.FindSolutionRoot(), "McpServerApps", "appsettings.json"), optional: false)
+            .Build()
+            .Get<AppsSettings>()!;
+        var code = new AppAskSettings();
+
+        (settings.Asks with { ImageTypes = code.ImageTypes }).ShouldBe(code);
+        settings.Asks.ImageTypes.ShouldBe(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+        code.ImageTypes.ShouldBeEmpty();
+    }
 }

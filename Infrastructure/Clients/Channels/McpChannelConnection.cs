@@ -32,7 +32,11 @@ public sealed class McpChannelConnection(
     // gate asks one for: an approval is signed for the turn it guards, and the rest — the poll, a
     // reply, the catalog — for nobody, since the agent makes them for no person. Null signs nothing,
     // and a gated channel server refuses every call.
-    CallTokens? callTokens = null)
+    CallTokens? callTokens = null,
+    // How long one health probe may take before the link counts as down: the interval it runs at
+    // unless said otherwise. A test ticking every few milliseconds to see a change sooner gives the
+    // probe longer, or a busy machine answering one late reads as a dead link and reconnects.
+    TimeSpan? healthCheckTimeout = null)
     : IChannelConnection, IAlertChannel, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
@@ -490,6 +494,7 @@ public sealed class McpChannelConnection(
             UserId = notification.UserId,
             Principal = notification.Principal,
             Assertion = notification.Assertion,
+            CheckCallToken = notification.CheckCallToken,
             Delegation = notification.Delegation,
             FireReport = notification.FireReport,
             HouseholdId = notification.HouseholdId,
@@ -503,6 +508,7 @@ public sealed class McpChannelConnection(
             Continuation = notification.Continuation,
             Steer = notification.Steer,
             ResponseFormat = notification.ResponseFormat,
+            AppTurn = notification.AppTurn,
             ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,
             Attachments = notification.Attachments
@@ -698,7 +704,9 @@ public sealed class McpChannelConnection(
     // Null on every way of not getting bytes — no client, no such tool, a refusal, a reconnect
     // under the call. Hydration turns all of them into the same placeholder, so a file that
     // cannot be fetched costs the turn its picture and nothing else.
-    public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
+    // Signed for the turn through its context in the _meta, as an approval is: a store keeping a
+    // household's files hands them only to a call acting for that household.
+    public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct)
     {
         var client = _client;
         if (client is null)
@@ -713,10 +721,12 @@ public sealed class McpChannelConnection(
                 return null;
             }
 
-            var result = await client.CallToolAsync(
-                ChannelProtocol.FetchAttachmentTool,
-                new Dictionary<string, object?> { ["attachmentId"] = attachmentId },
-                cancellationToken: ct);
+            var result = await client.CallToolAsync(new CallToolRequestParams
+            {
+                Name = ChannelProtocol.FetchAttachmentTool,
+                Arguments = new Dictionary<string, JsonElement> { ["attachmentId"] = JsonSerializer.SerializeToElement(attachmentId) },
+                Meta = ConversationContextMeta.Build(turn)
+            }, ct);
 
             if (result.IsError == true)
             {
@@ -925,7 +935,7 @@ public sealed class McpChannelConnection(
             // timeout (an approval waits on a person), so one that took the probe and never answered
             // would otherwise hold the run for good. Not answered by the next tick is not healthy.
             using var probe = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            probe.CancelAfter(healthCheckInterval ?? _defaultHealthCheckInterval);
+            probe.CancelAfter(healthCheckTimeout ?? healthCheckInterval ?? _defaultHealthCheckInterval);
             var tools = await client.ListToolsAsync(cancellationToken: probe.Token);
             if (ReferenceEquals(_client, client))
             {

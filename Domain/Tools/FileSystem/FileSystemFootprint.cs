@@ -25,7 +25,7 @@ public sealed class FileSystemFootprint(IVirtualFileSystemRegistry registry)
     // in one message have nothing to wait for in each other.
     public CallFootprint Executing(ExecReach reach, IReadOnlyDictionary<string, object?> arguments)
     {
-        var path = CallArguments.Text(arguments, "path");
+        var path = reach.WorkingDirectory(CallArguments.Text(arguments, "path"));
         return path is null
             ? CallFootprint.Changing(Whole)
             : reach.Of(path, CallArguments.Text(arguments, "command") ?? "") switch

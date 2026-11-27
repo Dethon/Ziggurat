@@ -16,7 +16,10 @@ public class AppManifestTests
                                    "root": "dist",
                                    "reads": ["/sugary", "/ha"],
                                    "connect": ["https://api.example.com", "https://tiles.example.org:8443"],
-                                   "icon": "/icons/glucose.svg"
+                                   "icon": "/icons/glucose.svg",
+                                   "instructions": "asks/instructions.md",
+                                   "asks": ["vault", "sugary", "homeassistant"],
+                                   "model": "z-ai/glm-5.3-flash"
                                  }
                                  """;
 
@@ -32,6 +35,9 @@ public class AppManifestTests
         manifest.Reads.ShouldBe(["/sugary", "/ha"]);
         manifest.Connect.ShouldBe(["https://api.example.com", "https://tiles.example.org:8443"]);
         manifest.Icon.ShouldBe("/icons/glucose.svg");
+        manifest.Instructions.ShouldBe("asks/instructions.md");
+        manifest.Asks.ShouldBe(["vault", "sugary", "homeassistant"]);
+        manifest.Model.ShouldBe("z-ai/glm-5.3-flash");
     }
 
     [Fact]
@@ -45,7 +51,22 @@ public class AppManifestTests
         manifest.Reads.ShouldBeEmpty();
         manifest.Connect.ShouldBeEmpty();
         manifest.Icon.ShouldBeNull();
+        manifest.Instructions.ShouldBeNull();
+        manifest.Asks.ShouldBeEmpty();
+        manifest.Model.ShouldBeNull();
     }
+
+    // A model is named as the agent's patchable models name it: a provider's id or a local box's, kept as
+    // written, since whether it is one of the building agent's is the agent's to say at each ask.
+    [Theory]
+    [InlineData("openai/gpt-6-luna")]
+    [InlineData("deepseek/deepseek-v4.1-flash-1017")]
+    [InlineData("meta-llama/llama-4-scout:free")]
+    [InlineData("lemonade/Qwen3-8B-GGUF")]
+    [InlineData("lemonade/user.Gemma-3-4b-it")]
+    public void AModel_IsKeptAsWritten(string model) =>
+        AppManifest.Parse($$"""{"name":"A","accentColor":"#abc","description":"B","model":"{{model}}"}""")
+            .ShouldBeOfType<AppManifestParse.Valid>().Manifest.Model.ShouldBe(model);
 
     [Theory]
     [InlineData("""{"accentColor":"#abc","description":"B"}""", "name is required")]
@@ -69,6 +90,34 @@ public class AppManifestTests
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/../icon.svg"}""", "icon '/../icon.svg'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"/_app/icon.svg"}""", "icon '/_app/icon.svg'")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","icon":"https://example.org/i.svg"}""", "icon 'https://example.org/i.svg'")]
+    // The instructions are a markdown file of the repository, named from its root, wherever the app serves.
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"/instructions.md"}""", "instructions '/instructions.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"instructions.txt"}""", "instructions 'instructions.txt'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"../instructions.md"}""", "instructions '../instructions.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks/./a.md"}""", "instructions 'asks/./a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks//a.md"}""", "instructions 'asks//a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"asks\\a.md"}""", "instructions 'asks\\a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":".git/a.md"}""", "instructions '.git/a.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":"node_modules/x/README.md"}""", "instructions 'node_modules/x/README.md'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":""}""", "instructions ''")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","instructions":7}""", "instructions must be a string")]
+    // The servers an ask may use, by the name each is configured under (a shared server's `sharedServers`
+    // key, a household server's own name), each named once: never a tool's qualifier, a host or an address.
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["mcp__vault"]}""", "asks: 'mcp__vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["Vault"]}""", "asks: 'Vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["http://mcp-vault:8080/mcp"]}""", "asks: 'http://mcp-vault:8080/mcp' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["-vault"]}""", "asks: '-vault' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["a..b"]}""", "asks: 'a..b' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["tools.example.org"]}""", "asks: 'tools.example.org' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":[""]}""", "asks: '' is no server's name")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":["vault","vault"]}""", "asks: 'vault' is named twice")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","asks":"vault"}""", "asks must be a list of strings")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"glm-5.3"}""", "model 'glm-5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"/glm-5.3"}""", "model '/glm-5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/"}""", "model 'z-ai/'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/glm 5.3"}""", "model 'z-ai/glm 5.3'")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":""}""", "model ''")]
+    [InlineData("""{"name":"A","accentColor":"#abc","description":"B","model":7}""", "model must be a string")]
     [InlineData("""{"name":"A","accentColor":"#abc","description":"B","colour":"#abc"}""", "colour")]
     [InlineData("""[1, 2]""", "a JSON object")]
     [InlineData("""{"name":""", "not JSON")]
@@ -78,6 +127,11 @@ public class AppManifestTests
 
         refused.Problems.ShouldContain(problem => problem.Contains(words, StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void AModelOverItsLength_IsRefused() =>
+        AppManifest.Parse($$"""{"name":"A","accentColor":"#abc","description":"B","model":"z-ai/{{new string('g', AppManifest.ModelLength)}}"}""")
+            .ShouldBeOfType<AppManifestParse.Refused>().Problems.ShouldHaveSingleItem().ShouldContain("model");
 
     [Fact]
     public void EveryBrokenRule_IsNamed_NotOnlyTheFirst()

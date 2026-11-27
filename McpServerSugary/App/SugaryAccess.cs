@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
@@ -51,7 +52,7 @@ internal static class SugaryAccess
             people = (await CallHousehold.OfPerson(person.Account.TenantId, person.Assertion,
                 http.RequestServices.GetRequiredService<IHouseholdConfiguration>()).SugaryPeopleAsync(ct)).People;
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException)
         {
             return Refuse(StatusCodes.Status503ServiceUnavailable, Unreadable,
                 "Who uses Sugary could not be read just now. Try again in a moment.");

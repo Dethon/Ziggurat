@@ -32,7 +32,7 @@ public class DeliveryTargetResolverTests
         var channels = new[] { origin, Channel("telegram") };
         var msg = new ChannelMessage { ConversationId = "c1", Content = "x", Sender = "u", ChannelId = "signalr" };
 
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         var t = targets.ShouldHaveSingleItem();
         t.Channel.ChannelId.ShouldBe("signalr");
@@ -54,7 +54,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-9")]
         };
 
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets[0].ConversationId.ShouldBe("minted-signalr");
@@ -72,7 +72,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("does-not-exist", "z")]
         };
 
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.ShouldBeEmpty();
     }
@@ -90,7 +90,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("signalr", "conv-7")]
         };
 
-        var targets = await Resolver(origin, signalr).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(origin, signalr).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         var target = targets.ShouldHaveSingleItem();
         target.ConversationId.ShouldBe("conv-7");
@@ -124,7 +124,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("signalr", null)]
         };
 
-        await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         capturedPrompt.ShouldBe("Check qBittorrent for stalled torrents");
     }
@@ -156,7 +156,7 @@ public class DeliveryTargetResolverTests
             Origin = new MessageOrigin(MessageOriginKind.Watch, null, WatchId: "laura-sugar-high", Title: title)
         };
 
-        await Resolver(origin, captor.Object).ResolveAsync(msg, origin, CancellationToken.None);
+        await Resolver(origin, captor.Object).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         topic.ShouldBe(expected);
     }
@@ -177,7 +177,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("signalr", null)]
         };
 
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.ShouldBeEmpty();
     }
@@ -204,7 +204,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("voice", null, "fran-office-01")]
         };
 
-        await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         capturedAddress.ShouldBe("fran-office-01");
     }
@@ -229,7 +229,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("notify", null), new ReplyTarget("signalr", null)]
         };
 
-        var targets = await Resolver(origin, signalr, notify.Object).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(origin, signalr, notify.Object).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets[0].Channel.ChannelId.ShouldBe("signalr");
@@ -264,7 +264,7 @@ public class DeliveryTargetResolverTests
         };
 
         var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
-            .ResolveAsync(msg, origin, CancellationToken.None);
+            .ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().ConversationId.ShouldBe("7:9");
         topics.Verify(t => t.CreateAsync(
@@ -295,7 +295,7 @@ public class DeliveryTargetResolverTests
         };
 
         var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
-            .ResolveAsync(msg, origin, CancellationToken.None);
+            .ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.ShouldBeEmpty();
         topics.Verify(t => t.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -316,7 +316,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("signalr", null), new ReplyTarget("telegram", "t-9")]
         };
 
-        var targets = await Resolver(channels).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(channels).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.Count.ShouldBe(2);
         targets.Single(t => t.Channel.ChannelId == "signalr").Minted.ShouldBeTrue();
@@ -336,7 +336,7 @@ public class DeliveryTargetResolverTests
             ReplyTo = [new ReplyTarget("voice", "conv-9", "fran-office-01")]
         };
 
-        var targets = await Resolver(origin, voice).ResolveAsync(msg, origin, CancellationToken.None);
+        var targets = await Resolver(origin, voice).ResolveAsync(msg, origin, null, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().Address.ShouldBe("fran-office-01");
     }
@@ -352,7 +352,7 @@ public class DeliveryTargetResolverTests
             ReviewCopy = new ReviewCopy { Title = "t" }
         };
 
-        var targets = await Resolver(webchat).ResolveAsync(msg, webchat, CancellationToken.None);
+        var targets = await Resolver(webchat).ResolveAsync(msg, webchat, null, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().ConversationId.ShouldBe("11:22");
         webchat.CreatedConversations.ShouldBeEmpty();
@@ -372,7 +372,7 @@ public class DeliveryTargetResolverTests
             ReviewCopy = new ReviewCopy { Title = "t" }
         };
 
-        await Resolver(sugary, webchat).ResolveAsync(msg, sugary, CancellationToken.None);
+        await Resolver(sugary, webchat).ResolveAsync(msg, sugary, null, CancellationToken.None);
 
         webchat.CreatedFor.ShouldBe([fran]);
     }
@@ -391,7 +391,7 @@ public class DeliveryTargetResolverTests
             ReviewCopy = new ReviewCopy { Title = "Telegram: Family", Group = true }
         };
 
-        await Resolver(telegram, webchat).ResolveAsync(msg, telegram, CancellationToken.None);
+        await Resolver(telegram, webchat).ResolveAsync(msg, telegram, null, CancellationToken.None);
 
         webchat.CreatedFor.ShouldBe([bob]);
         webchat.CreatedAsGroup.ShouldBe([true]);
@@ -407,7 +407,7 @@ public class DeliveryTargetResolverTests
             ReviewCopy = new ReviewCopy { Title = "t" }
         };
 
-        var targets = await Resolver(sugary, Channel("signalr")).ResolveAsync(msg, sugary, CancellationToken.None);
+        var targets = await Resolver(sugary, Channel("signalr")).ResolveAsync(msg, sugary, null, CancellationToken.None);
 
         targets.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);
     }
@@ -431,8 +431,8 @@ public class DeliveryTargetResolverTests
             ReviewCopy = new ReviewCopy { Title = "t" }
         };
 
-        var whenFailing = await Resolver(sugary, failing.Object).ResolveAsync(msg, sugary, CancellationToken.None);
-        var whenNotConnected = await Resolver(sugary, notConnected).ResolveAsync(msg, sugary, CancellationToken.None);
+        var whenFailing = await Resolver(sugary, failing.Object).ResolveAsync(msg, sugary, null, CancellationToken.None);
+        var whenNotConnected = await Resolver(sugary, notConnected).ResolveAsync(msg, sugary, null, CancellationToken.None);
 
         whenFailing.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);
         whenNotConnected.ShouldHaveSingleItem().Channel.ShouldBeSameAs(sugary);

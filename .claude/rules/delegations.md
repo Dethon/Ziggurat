@@ -95,6 +95,10 @@ token, for exactly what the call writes:
   command's caller. The backend as discovered acts for nobody and stamps no `_meta`.
 - The transport removes both keys from every call and writes the delegation only for a person, so
   neither a model nor a caller can put one there.
+- **A built app's ask delegates nothing** (an identity on the `apps` channel, `DelegatedWrites.MayBeLeftBy`):
+  the transport signs it none, the mount proxy refuses its write a later turn would act on before anything
+  is sent (`McpFileSystemBackend`), and the approval client refuses such a call as asked (`StartsLaterTurns`;
+  `channels.md`, the app-turn bullet).
 - A runAt with no offset is read in the agent's zone (its `TimeProvider`'s `LocalTimeZone`, handed to
   each mount's backend as `ThreadSession`'s `localZone`), which compose's shared `TZ` makes the
   scheduling server's; zones that disagree make such a one-shot fire for nobody.

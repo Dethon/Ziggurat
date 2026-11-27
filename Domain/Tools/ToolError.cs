@@ -65,6 +65,18 @@ public static class ToolError
         // The page is asking a human to prove they are one.
         public const string CaptchaRequired = "captcha_required";
 
+        // The far side answered, and not in the shape the caller asked for (an app's ask with a schema whose
+        // reply is no JSON). Asking the same way again tends to get the same answer.
+        public const string InvalidReply = "invalid_reply";
+
+        // A conversation the caller named cannot be continued: never opened, not the caller's, or forgotten
+        // (its window ran out, or the server restarted). Nothing but starting afresh changes that.
+        public const string ConversationExpired = "conversation_expired";
+
+        // A limit on how much the caller may use over a period is spent (an app's daily asks). It frees as
+        // the period rolls on, not soon enough for asking again to be worth anything.
+        public const string QuotaExceeded = "quota_exceeded";
+
         // Nothing above fitted. A bug or an unmapped failure, worth retrying once.
         public const string InternalError = "internal_error";
     }
@@ -111,6 +123,11 @@ public static class ToolError
         [Codes.CaptchaRequired] = new(
             Retryable: false,
             Recovery: "A person has to solve the challenge; nothing here can."),
+        [Codes.InvalidReply] = new(Retryable: false),
+        [Codes.ConversationExpired] = new(Retryable: false),
+        [Codes.QuotaExceeded] = new(
+            Retryable: false,
+            Recovery: "The limit frees as its period rolls on; asking again sooner changes nothing."),
         [Codes.InternalError] = new(Retryable: true)
     };
 

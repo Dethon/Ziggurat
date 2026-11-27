@@ -20,19 +20,14 @@ public sealed class AppReader(
     AssertionVerifier assertions, CheckCallVerifier checks, HouseholdStanding standing, ReadRegistryCache registries, VfsBridgeSettings bridge,
     ILogger<AppReader> logger)
 {
-    // Null where who reads is not believed: an assertion that is none, a forgery, out of date, another
-    // channel's, the guest's or nobody's; a check's call token that is not this agent's for the apps
-    // server, naming a person; or both at once, which would leave two answers. Who reads is that person,
-    // of their household, and nothing else the request says.
+    // Null where who reads is not believed (AppViewerCredential): an assertion that is none, a forgery, out
+    // of date, another channel's, the guest's or nobody's; a check's call token that is not this agent's for
+    // the apps server, naming a person; or both at once. Who reads is that person, of their household, and
+    // nothing else the request says.
     public async Task<AppReadAnswer?> ReadAsync(
         string? assertion, string? checkCallToken, string operation, AppReadRequest request, CancellationToken ct)
     {
-        var admission = (assertion, checkCallToken) switch
-        {
-            ({ }, { }) => new TurnAdmission.Refused("BothAnAssertionAndACheck"),
-            (null, { } token) => await checks.VerifyAsync(token, ct),
-            _ => await assertions.VerifyTurnAsync(assertion, AppChannels.Apps, ct)
-        };
+        var admission = await AppViewerCredential.VerifyAsync(assertion, checkCallToken, AppChannels.Apps, assertions, checks, ct);
         if (admission is not TurnAdmission.Admitted { Identity: { Account: not null } viewer })
         {
             logger.LogWarning("Refused a read of app {AppId}: its {Proof} is {Reason}", request.App.Id,

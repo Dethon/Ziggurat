@@ -423,7 +423,7 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
 
     public Task<ReplyReceipt> SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.FromResult(ReplyReceipt.None);
 
-    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct) =>
+    public Task<byte[]?> FetchAttachmentAsync(string attachmentId, ConversationContext? turn, CancellationToken ct) =>
         Task.FromResult<byte[]?>(null);
 
     public Task<bool> StoreAttachmentAsync(

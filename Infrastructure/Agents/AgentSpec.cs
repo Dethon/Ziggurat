@@ -46,6 +46,10 @@ public sealed record AgentSpec
     // null for agents no household's configuration gave, which read the host's.
     public string? TimeZone { get; init; }
 
+    // How many rounds of tool calls one turn may run, the household's bound; null for none. A
+    // worker's is its parent's.
+    public int? MaxToolRounds { get; init; }
+
     // The shared servers that household's features turned off: its definitions come without them
     // already, and a worker this agent spawns drops them from its own profile's list.
     public IReadOnlyList<string> WithheldServers { get; init; } = [];

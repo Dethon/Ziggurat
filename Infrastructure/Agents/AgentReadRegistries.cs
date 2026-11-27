@@ -44,7 +44,7 @@ public sealed class AgentReadRegistries(
 
         Task<HouseholdAgents> HouseholdNow(CancellationToken ct) => definitions.ForHouseholdAsync(account.TenantId, ct);
         var reach = new SessionReach(
-            AgentSpecProjection.Endpoints(definition, credentials, DeploymentEndpoints.Of(household)),
+            AgentSpecProjection.Endpoints(definition, credentials, DeploymentEndpoints.Of(household), household.SharedServers),
             account.TenantId,
             household.WithheldServers,
             HouseholdNow,

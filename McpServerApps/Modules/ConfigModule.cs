@@ -3,6 +3,7 @@ using Infrastructure.Clients.Accounts;
 using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using McpServerApps.Asks;
 using McpServerApps.Checks;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
@@ -31,6 +32,11 @@ public static class ConfigModule
             .AddPersonsAppsListing(settings.Listeners)
             // A built app's reads, handed to the agent with this server's own credential (AgentReads).
             .AddHttpClient<AgentReads>(client => client.Timeout = TimeSpan.FromSeconds(30)).Services
+            // A built app's asks, sent to its building agent on this server's own channel and waited on whole.
+            .AddSingleton<AskConversations>()
+            .AddSingleton<AskCaps>()
+            .AddSingleton<AskCounts>()
+            .AddSingleton<AgentAsks>()
             // A check runs the preview in a browser of its own, as the person whose turn asked.
             .AddSingleton<AppChecks>()
             .AddSingleton(sp => new AppsFileSystem(
@@ -67,6 +73,14 @@ public static class ConfigModule
 
         services
             .AddToolServer(settings, ToolResponse.Create)
+            // A page waits on each ask's whole reply, and nobody there can approve a call.
+            .AddAgentTurns()
+            // An ask's images, kept for the app's household until the agent has fetched them for every turn
+            // that may, then swept.
+            .AddUploadStore(AskUploads.On(settings.StoragePath), settings.Retention)
+            // Gate-on-live: an ask nobody is polling for is answered unavailable at once rather than
+            // buffered for an agent that may never come.
+            .AddChannelServer(DeliveryPolicy.GateOnLive)
             .AddFileSystemTools<AppsFileSystem>()
             .AddFileSystemResource<AppsFileSystem>()
             // How an app is built, checked and published, loaded on demand; offered only where /apps is.

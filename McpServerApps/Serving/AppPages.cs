@@ -7,6 +7,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Tools;
 using Mcp.Hosting;
+using McpServerApps.Asks;
 using McpServerApps.Publishing;
 using McpServerApps.Settings;
 using McpServerApps.Store;
@@ -24,8 +25,8 @@ namespace McpServerApps.Serving;
 // and anything that is no app, gets one answer, byte for byte, so a stranger cannot tell an app that
 // exists from one that does not.
 public sealed class AppPages(
-    BuiltAppStore store, AppViewers viewers, AgentReads reads, AppErrorReports reports, IHouseholdConfiguration households,
-    AppsSettings settings, ILogger<AppPages> logger)
+    BuiltAppStore store, AppViewers viewers, AgentReads reads, AgentAsks asks, AppErrorReports reports,
+    IHouseholdConfiguration households, AppsSettings settings, ILogger<AppPages> logger)
 {
     private static readonly FileExtensionContentTypeProvider _types = new()
     {
@@ -56,6 +57,13 @@ public sealed class AppPages(
             && !store.IsRemoved(origin.Id))
         {
             await ReportAsync(context, origin);
+            return;
+        }
+
+        if (origin is not null && HttpMethods.IsPost(request.Method) && request.Path.Value == AppAsks.OriginPath
+            && !store.IsRemoved(origin.Id))
+        {
+            await AskAsync(context, origin);
             return;
         }
 
@@ -172,7 +180,7 @@ public sealed class AppPages(
         var settled = await SettleAsync(context.Request, origin, ct);
         if (settled is Settled.ViewerUnchecked or Settled.AccessUnchecked)
         {
-            await ReadAnswerAsync(context, AppContentPolicy.Closed, AgentReadAnswer.Envelope(
+            await ReadAnswerAsync(context, AppContentPolicy.Closed, OriginAnswer.Envelope(
                 StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
                     settled is Settled.ViewerUnchecked
                         ? "Who is reading could not be checked just now, so nothing was read."
@@ -191,7 +199,7 @@ public sealed class AppPages(
         var policy = AppContentPolicy.For(served.Manifest, settings.Cdns);
         if (await ArgumentsAsync(context.Request, ct) is not { } arguments)
         {
-            await ReadAnswerAsync(context, policy, AgentReadAnswer.Envelope(StatusCodes.Status400BadRequest,
+            await ReadAnswerAsync(context, policy, OriginAnswer.Envelope(StatusCodes.Status400BadRequest,
                 ToolError.Result(ToolError.Codes.InvalidArgument,
                     $"A read's body is one JSON object of the tool's arguments, at most {MaxArgumentBytes} bytes.")));
             return;
@@ -199,6 +207,36 @@ public sealed class AppPages(
 
         var scope = new AppReadScope { Id = app.Id, Agent = app.BuildingAgent, Reads = served.Manifest.Reads };
         await ReadAnswerAsync(context, policy, await reads.ReadAsync(operation, scope, arguments, session.Proof, ct));
+    }
+
+    // A page's ask of its assistant (the client library's POST to /_ask): the viewer and the app settled as
+    // for a read — the one 404 for anyone who may not open it, before anything of the ask is looked at —
+    // then sent to the building agent and waited on (AgentAsks). Never kept by anyone between.
+    private async Task AskAsync(HttpContext context, AppOrigin origin)
+    {
+        var ct = context.RequestAborted;
+        if (!FromThisOrigin(context.Request))
+        {
+            await NotFoundAsync(context);
+            return;
+        }
+
+        switch (await SettleAsync(context.Request, origin, ct))
+        {
+            case Settled.ViewerUnchecked or Settled.AccessUnchecked:
+                await ReadAnswerAsync(context, AppContentPolicy.Closed, OriginAnswer.Envelope(
+                    StatusCodes.Status503ServiceUnavailable, ToolError.TransientDependency(
+                        "Who is asking, or whether this app is shared with them, could not be checked just now, so nothing was asked.",
+                        "Ask again in a moment.")));
+                return;
+            case Settled.Open { Session: var session, App: var app, Served: var served }:
+                await ReadAnswerAsync(context, AppContentPolicy.For(served.Manifest, settings.Cdns),
+                    await asks.AskAsync(context.Request, app, session, served, ct));
+                return;
+            default:
+                await NotFoundAsync(context);
+                return;
+        }
     }
 
     // A runtime error a page of the app reports (the client library's POST to /_errors): the viewer and the
@@ -414,7 +452,7 @@ public sealed class AppPages(
     }
 
     // The agent's answer as it came, under the origin's policy, kept by nothing: a read is one viewer's.
-    private static async Task ReadAnswerAsync(HttpContext context, string policy, AgentReadAnswer answer)
+    private static async Task ReadAnswerAsync(HttpContext context, string policy, OriginAnswer answer)
     {
         var response = context.Response;
         response.StatusCode = answer.Status;
@@ -481,7 +519,7 @@ public sealed class AppPages(
     // What an origin serves: the served commit's root for the published app (nothing until the first
     // publish), the working tree's for the preview, each with the manifest it was written with — the
     // published one's reach, while the app is shared, no more than an owner approved (sharedAs), so every
-    // policy and read on that origin is granted only that.
+    // policy, read and ask on that origin is granted only that.
     private async Task<ServedFiles?> ServedAsync(BuiltApp app, AppOrigin origin, HouseholdSpace? sharedAs, CancellationToken ct)
     {
         var repository = store.Repository(app);
@@ -490,7 +528,7 @@ public sealed class AppPages(
             var manifestFile = Path.Combine(repository.WorkTree, AppManifest.FileName);
             return File.Exists(manifestFile) && AppManifest.Parse(await File.ReadAllTextAsync(manifestFile, ct)) is
                 AppManifestParse.Valid { Manifest: var manifest }
-                ? new WorkingTreeFiles(manifest, Path.Combine(repository.WorkTree, manifest.Root))
+                ? new WorkingTreeFiles(manifest, repository)
                 : null;
         }
 
@@ -502,7 +540,7 @@ public sealed class AppPages(
     private static AppManifest Granted(AppManifest manifest, AppReach? approved)
     {
         var granted = AppReach.Of(manifest).Within(approved);
-        return manifest with { Reads = granted.Reads, Connect = granted.Connect };
+        return manifest with { Reads = granted.Reads, Connect = granted.Connect, Asks = granted.Asks };
     }
 
     // The path's segments, or null for one that tries to leave the root or reach git.
@@ -566,6 +604,10 @@ public sealed class AppPages(
                 ? bytes
                 : null;
 
+        // A file of the app's repository by its path from the repository's root, wherever the origin serves
+        // (the instructions): its first limit bytes, or null for none there.
+        public abstract Task<byte[]?> RepositoryFileAsync(string path, int limit, CancellationToken ct);
+
         // The outside code its pages may load (AppContentPolicy): a commit's as its publish recorded it, the
         // working tree's as a publish would find it now, so the check sees what publishing would serve.
         public abstract Task<PinnedCode> PinnedAsync(CancellationToken ct);
@@ -596,8 +638,13 @@ public sealed class AppPages(
         }
     }
 
-    internal sealed record WorkingTreeFiles(AppManifest Manifest, string Root) : ServedFiles(Manifest)
+    internal sealed record WorkingTreeFiles(AppManifest Manifest, AppRepository Repository) : ServedFiles(Manifest)
     {
+        private string Root => Path.Combine(Repository.WorkTree, Manifest.Root);
+
+        public override Task<byte[]?> RepositoryFileAsync(string path, int limit, CancellationToken ct) =>
+            Repository.TreeFileAsync(path, limit, ct);
+
         public override async Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct)
         {
             var full = Path.GetFullPath(Path.Combine(Root, relative));
@@ -623,6 +670,11 @@ public sealed class AppPages(
         : ServedFiles(Manifest)
     {
         public override Task<PinnedCode> PinnedAsync(CancellationToken ct) => Task.FromResult(Pinned);
+
+        public override async Task<byte[]?> RepositoryFileAsync(string path, int limit, CancellationToken ct) =>
+            await Repository.EntryAsync(Commit, path, ct) is CommittedEntry.File { Bytes: var bytes }
+                ? bytes.Length > limit ? bytes[..limit] : bytes
+                : null;
 
         public override Task<CommittedEntry?> EntryAsync(string relative, CancellationToken ct) =>
             Repository.EntryAsync(Commit, string.Join('/', new[] { Manifest.Root, relative }.Where(p => p.Length > 0)), ct);

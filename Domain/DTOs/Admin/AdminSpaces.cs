@@ -28,8 +28,8 @@ public sealed record AdminSpaces(
 }
 
 // A published app as an owner sees it before sharing it with the household: who made it (by their name
-// in the household now), what of the household it reads and which outside origins it talks to, as its
-// served commit says.
+// in the household now), what of the household it reads, which outside origins it talks to and which
+// servers its asks may use, as its served commit says.
 [PublicAPI]
 public sealed record AdminSpaceApp(
     string Id,
@@ -43,9 +43,12 @@ public sealed record AdminSpaceApp(
     IReadOnlyList<string> Connect,
     string Url)
 {
+    // Not in the constructor, so an answer from an accounts service that names none reads as asking none.
+    public IReadOnlyList<string> Asks { get; init; } = [];
+
     // All it asks, which an owner approves by saving its space with it.
     [JsonIgnore]
-    public AppReach Reach => new() { Reads = Reads, Connect = Connect };
+    public AppReach Reach => new() { Reads = Reads, Connect = Connect, Asks = Asks };
 }
 
 [PublicAPI]

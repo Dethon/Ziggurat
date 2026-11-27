@@ -48,6 +48,9 @@ internal sealed class PublishedAppsListing(AppListeners listeners) : IStartupFil
                     await store.PublishedManifestAsync(built, ct) is { } manifest
                         ? new PublishedApp(built.Id, built.Slug, manifest.Name, manifest.AccentColor, manifest.Description,
                             built.Author.UserId, manifest.Reads, manifest.Connect, BuiltAppId.Link(built.Slug, built.Id, domain))
+                        {
+                            Asks = manifest.Asks
+                        }
                         : null));
                 await response.WriteAsJsonAsync(new PublishedAppList([.. listed.OfType<PublishedApp>()]), ct);
                 return;

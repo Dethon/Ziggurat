@@ -381,11 +381,34 @@ public sealed class AppReadsApiTests
 
         using var response = await agent.ReadAsync(
             AppReads.Operations.Query, _glucoseApp, new JsonObject { ["path"] = "/sugary", ["sql"] = "select notes from meals" },
-            assertion: null, callToken: CallTokenOf(SugaryServer.Him));
+            assertion: null, callToken: TestCheckCalls.Of(SugaryServer.Him));
 
         var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body.ToJsonString());
         body["rows"]!.AsArray().Select(row => row![0]!.GetValue<string>()).ShouldBe(["his paella"]);
+    }
+
+    // A check's reads act on the apps channel, as a viewer's would: the server a read reaches is told the
+    // person is on `apps`, never on the channel of the turn whose tool call ran the check.
+    [Fact]
+    public async Task ACheck_ReadsOnTheAppsChannel_NotTheChannelItsTurnCameOn()
+    {
+        await using var channels = await InMemoryMcpServer.StartAsync(services =>
+        {
+            services.AddSingleton(new ChannelMount());
+            services.AddToolServer(new ProbeSettings()).AddFileSystemTools<ChannelMount>().AddFileSystemResource<ChannelMount>();
+        });
+        var households = new AgentHouseholds();
+        households.Add(SugaryServer.Her.TenantId, Jonas(channels.Endpoint));
+        await using var agent = await AppReadsAgent.StartAsync(households);
+        var app = _glucoseApp with { Reads = ["/channel"] };
+
+        var seen = await JsonAsync(agent.ReadAsync(AppReads.Operations.Glob, app,
+            new JsonObject { ["basePath"] = "/channel", ["pattern"] = "*" },
+            assertion: null, callToken: TestCheckCalls.Of(IdentityClaims.Person(
+                SugaryServer.Her.UserId, SugaryServer.Her.TenantId, "telegram", ["member"]))));
+
+        seen["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe([$"/channel/{AppChannels.Apps}"]);
     }
 
     // The call token is believed as the agent signed it and for nothing else: its own key, in date, for the
@@ -393,12 +416,12 @@ public sealed class AppReadsApiTests
     // to who reads.
     public static TheoryData<string, string?, string?> UnbelievedChecks => new()
     {
-        { "another issuer's key", null, CallTokenOf(SugaryServer.Her, key: TestSigningKeys.Accounts) },
-        { "out of date", null, CallTokenOf(SugaryServer.Her, now: DateTimeOffset.UtcNow.AddMinutes(-10)) },
-        { "another server's", null, CallTokenOf(SugaryServer.Her, audience: "mcp-vault") },
-        { "the guest's", null, CallTokenOf(IdentityClaims.Guest(SugaryServer.Her.TenantId, "signalr")) },
-        { "nobody's", null, CallTokenOf(IdentityClaims.Nobody("signalr")) },
-        { "beside an assertion", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps), CallTokenOf(SugaryServer.Her) }
+        { "another issuer's key", null, TestCheckCalls.Of(SugaryServer.Her, key: TestSigningKeys.Accounts) },
+        { "out of date", null, TestCheckCalls.Of(SugaryServer.Her, now: DateTimeOffset.UtcNow.AddMinutes(-10)) },
+        { "another server's", null, TestCheckCalls.Of(SugaryServer.Her, audience: "mcp-vault") },
+        { "the guest's", null, TestCheckCalls.Of(IdentityClaims.Guest(SugaryServer.Her.TenantId, "signalr")) },
+        { "nobody's", null, TestCheckCalls.Of(IdentityClaims.Nobody("signalr")) },
+        { "beside an assertion", TestAssertions.Of(SugaryServer.Her, AppChannels.Apps), TestCheckCalls.Of(SugaryServer.Her) }
     };
 
     [Theory]
@@ -414,16 +437,6 @@ public sealed class AppReadsApiTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized, what);
     }
-
-    // A call token as the agent signs one for a tool call to the apps server (AppReadsAgent.AppsServer).
-    private static string CallTokenOf(
-        Account person, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
-        CallTokenOf(IdentityClaims.Person(person.UserId, person.TenantId, "signalr", ["member"]), audience, key, now);
-
-    private static string CallTokenOf(
-        IdentityClaims identity, string audience = McpTestSecret.Audience, string? key = null, DateTimeOffset? now = null) =>
-        new TokenSigner(TestSigningKeys.Store(key ?? TestSigningKeys.Agent)).Sign(
-            identity.Stamped(TokenIssuers.Agent, audience, now ?? DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2)));
 
     private static async Task<IReadOnlyList<string?>> NotesAsync(
         AppReadsAgent agent, Account viewer, IReadOnlyDictionary<string, string>? headers = null)
@@ -497,5 +510,18 @@ public sealed class AppReadsApiTests
 
         public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
             Task.FromResult(Glob([.. caller?.Conversation?.Identity?.Roles ?? []]));
+    }
+
+    // Names the channel the call token says the caller is on.
+    private sealed class ChannelMount(FileSystemCaller? caller = null) : FileSystemBackendBase
+    {
+        public override string FilesystemName => "channel";
+
+        public override string DescribeMount => "Which channel the caller is on.";
+
+        public override FileSystemBackendBase For(FileSystemCaller caller) => new ChannelMount(caller);
+
+        public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
+            Task.FromResult(Glob([caller?.Conversation?.Identity?.ChannelId ?? "none"]));
     }
 }

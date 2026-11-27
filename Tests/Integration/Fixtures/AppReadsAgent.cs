@@ -30,7 +30,7 @@ public sealed class AppReadsAgent : IAsyncDisposable
 {
     // Where the deployment runs the apps server, whose credential (the suite's) is the one a read must
     // present.
-    public const string AppsServer = "http://localhost:6018/mcp";
+    public const string AppsServer = TestCheckCalls.AppsServer;
 
     private readonly WebApplication _app;
     private readonly HttpClient _client = new();
@@ -62,8 +62,7 @@ public sealed class AppReadsAgent : IAsyncDisposable
             builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
             builder.Services
                 .AddSingleton(TestAssertions.Verifier())
-                .AddSingleton(new CheckCallVerifier(
-                    TestSigningKeys.Store(TestSigningKeys.Agent), ServerAddress.FromUrl(AppsServer), TimeProvider.System))
+                .AddSingleton(TestCheckCalls.Verifier())
                 .AddSingleton(McpTestSecret.Credentials)
                 .AddSingleton(shared)
                 .AddSingleton<IAgentDefinitionProvider>(definitions)
@@ -205,6 +204,9 @@ public sealed class AgentHouseholds : IHouseholdConfiguration
         throw new NotSupportedException();
 
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        throw new NotSupportedException();
+
+    public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         throw new NotSupportedException();
 
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>

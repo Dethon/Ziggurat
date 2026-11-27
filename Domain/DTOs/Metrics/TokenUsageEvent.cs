@@ -9,6 +9,12 @@ public record TokenUsageEvent : MetricEvent
     // split them; null for a call acting for no account (the guest, nobody, a fixture).
     public string? UserId { get; init; }
 
+    // The channel the turn came on (a turn's origin), and the built app whose ask it was: what an app's
+    // asks cost reads as the apps channel under the person who asked, with the app named. Null for a call
+    // no turn is behind (memory, a judge) and, the app, for every turn that is no app's.
+    public string? Channel { get; init; }
+    public string? AppId { get; init; }
+
     public required string Model { get; init; }
     public required int InputTokens { get; init; }
     public required int OutputTokens { get; init; }

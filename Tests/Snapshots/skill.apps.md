@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 1740 / 1750 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 2596 / 2600 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -7,7 +7,7 @@ name: apps
 description: Built apps under `/apps` — a page or home-screen app showing the household's data ("an app with my glucose today and what I ate"): making one, changing, checking, publishing, rolling back, renaming or deleting it, or finding why it broke. The app.json manifest, the client library, static and npm builds, pinned CDN code, ./check, ./publish, ./history, ./rollback and the errors file.
 ---
 
-A built app is static files in a git repository at `/apps/<slug>/`, served on an origin of its own. It reads the household as **whoever is viewing it**, never as you, and it writes nothing.
+A built app is static files in a git repository at `/apps/<slug>/`, served on an origin of its own. It reads the household as **whoever is viewing it**, never as you, and writes nothing but through its asks' tools.
 
 ### Making one
 
@@ -52,18 +52,36 @@ Every page has `apps` as a global (an unbundled module may `import apps from '/_
 
 A refused read throws `apps.ReadError`, carrying `errorCode`, `message`, `hint` and `path`. Show it in the page as a sentence: `permission_denied` is a read this viewer or this app is not granted, `transient_dependency` a household server offline, `authentication` a lost sign-in (reloading signs in again). Only reads you would make unasked are served; one needing approval is always refused.
 
+### Asking the assistant
+
+Each ask is a turn of the agent that built the app, for the viewer, paid from the household's credit; it is in no chat and remembers only its own conversation. app.json declares:
+
+- `"instructions": "asks.md"`: the markdown file (a path from the repository root, at most 16,000 bytes) the turn follows in place of your persona: a system prompt for a model knowing nothing else (what the app sends, what to answer, language, shape). None, no asks.
+- `"asks": ["sugary"]`: the servers whose tools an ask may use, by configured name: a shared one's (`sugary`, `scheduling`, `timers`, `idealista`), the household's own by its own; none, no tools. Only calls never needing a person's approval run, and writing a schedule or a watch always needs it; the model is told any other was refused.
+- `"model": "vendor/name"`: the model asks run on, if the agent may switch to it; else the agent's own.
+
+`apps.ask(text, {schema, files, conversation, signal})` → `{conversation, text}`, or `{conversation, value}` asked with a schema:
+
+- `schema` is `{name, schema}`, a JSON schema the reply is held to strictly, its JSON the `value`. Meet strict mode or the provider refuses it (nothing here checks): every object sets `additionalProperties: false` and lists all its properties in `required`.
+- `files`: images (JPEG, PNG, WebP, GIF), up to 4 images of 5 MB each; shrink photos, and use a model that sees images.
+- `conversation`: an earlier answer's, to follow up within a day of its last turn (same app and viewer), its turns and images kept.
+- `signal`: an `AbortSignal`; aborting stops the turn. An answer takes up to 2 minutes: show the wait.
+
+A refused ask throws `apps.AskError`, carrying `errorCode`, `message`, `retryable`, `hint`, `reply` and `envelope` (the whole answer). Show it in the page as a sentence; ask again only if `retryable` (`transient_dependency`, `timeout`), once or on the person's tap, never in a loop: a sent ask counts even when it fails. `invalid_argument`: a malformed ask, or a schema the model's provider refused (fix it: the preview's `failure` says why); `permission_denied`: no instructions, or refused for this viewer or app; `invalid_reply`: the reply was no JSON; `conversation_expired`: ask afresh without it; `quota_exceeded`: the household's limit on this app (200 a day unless an owner sets another), free again at `envelope.freesAt`; `authentication`: reload to sign in.
+
 ### An npm build (a household with a sandbox)
 
 Keep the project in the sandbox home (`~/apps/<slug>`) and install and build there: `node_modules` is refused under `/apps`. Copy the source and the build in by name, replacing the last copy, whose old bundles would publish too (`rm -rf /apps/<slug>/src /apps/<slug>/dist && cp -r package.json package-lock.json src dist /apps/<slug>/`), read `vfsChanges`, and set `"root": "dist"`. Publishing commits everything written, whatever a `.gitignore` says. Without a sandbox, write static files.
 
 ### Checking
 
-`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
+`domain__filesystem__exec` `./check` in `/apps/<slug>` (`--viewport 390x844`, up to four; `--path /route`; `--only <file>.js`, repeatable, to run some of `checks/`) opens the preview, the working tree, in a browser as the person whose turn this is. Its output lists what went wrong; `/apps/<slug>/.checks/latest/` holds the rest:
 
-- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like; `icon-512.png`, `icon-64.png` the installed icon.
-- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `accessibility` (the page's text and structure) and `assertions`.
+- `<W>x<H>.png` with `domain__filesystem__file_read`: what the page looks like, `<W>x<H>-after.png` where the assertions left it; `icon-512.png`, `icon-64.png` the installed icon.
+- `report.json`, per viewport: `console`, `failedRequests`, `policyViolations` (a fetch to an origin missing from connect shows here), `refusedReads` (reads refused this person, which the page shows as sentences), `failedAsks` (asks refused or failed), `accessibility` (the page's text and structure) and `assertions`.
+- A failed ask's entry: `status`, `text`, `errorCode`, `message`, `hint`, and on the preview `reply` (a reply that was no JSON) or `failure` (the assistant's own words, such as a provider refusing the schema or model).
 
-Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails.
+Assertions are `checks/*.js` in the app, each the body of an async function run in the page: returning passes (the value is the message), throwing fails. Each viewport is a fresh browser, storage empty; its assertions run in order in one page, so one's state is the next's, and a reload ends the one running.
 
 ```js
 const meals = document.querySelectorAll('#meals li');
@@ -71,16 +89,18 @@ if (meals.length === 0) throw new Error('no meals listed');
 return `${meals.length} meals`;
 ```
 
-Exit 1 means an assertion failed or the check did not finish. A check past the household's limit is refused, never queued.
+Exit 1 means an assertion failed or the check did not finish; past the household's limit it waits. Run it bare: piped, the sandbox's timeout applies.
+
+A check's asks are real and counted, answering within the check's 5 minutes. Each viewport reloads the page, so an ask on load runs once per viewport and may outlast settling: test asks from an assertion that awaits them, with one `--viewport`.
 
 ### Publishing and after
 
-- `./publish` commits the working tree and serves it, answering the link. It refuses an invalid manifest, a missing root and unpinned outside code, naming each.
-- An app the household shares as an **app space** is granted only the reads and origins an owner approved; the preview is not held to that. When the publish answer names what waits on an owner, tell the person: an owner approves it on the spaces page.
+- `./publish` commits the working tree and serves it, answering the link. It refuses an invalid manifest, a missing root, an instructions file missing, empty or over its bound, and unpinned outside code, naming each.
+- An app the household shares as an **app space** is granted only the reads, origins and ask servers an owner approved; the preview is not held to that. When the publish answer names what waits on an owner, tell the person: an owner approves it on the spaces page.
 - `./history [--limit N]` lists commits newest first, the served one marked; `./rollback <rev>` (a hash or `HEAD~1`) serves an earlier one, history kept.
 - Rename by moving `/apps/<slug>` to `/apps/<new-slug>`; old links keep working. Delete with `domain__filesystem__remove` on `/apps/<slug>`, refused while it is an app space: an owner removes the space first.
 - A limit (apps, bytes, checks) is refused naming it and its value: tell the person rather than retrying.
 
 ### When it breaks
 
-`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met (the library reports uncaught errors, unhandled rejections and refused reads itself; an error the app catches and swallows never arrives), newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `viewer` and `origin` (`published` or `preview`). Another member's entry is `reduced` to `name` (the error type), `frames` (places in the app's files) and a read's mount and code: ask them, or check. Read it, fix the cause, check, publish.
+`/apps/<slug>/errors`, once a page has reported one, holds what viewers' browsers met (the library reports uncaught errors, unhandled rejections, refused reads and failed asks itself; an error the app catches and swallows never arrives), newest first, a JSON object a line: `time`, `kind` (`error`, `rejection`, `read`, `ask`), `message`, `stack`, `route`, `read` (a failed read's path and envelope), `ask` (a failed ask's code, message and hint, never what was asked), `viewer` and `origin` (`published` or `preview`). Another member's entry is `reduced` to `name` (the error type), `frames` (places in the app's files), a read's mount and code, and an ask's code: ask them, or check. Read it, fix the cause, check, publish.

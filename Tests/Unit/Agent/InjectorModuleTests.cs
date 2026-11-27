@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;
+using StackExchange.Redis;
 
 namespace Tests.Unit.Agent;
 
@@ -216,6 +217,27 @@ public class InjectorModuleTests
 
         provider.GetRequiredService<AppReader>().ShouldBeSameAs(provider.GetRequiredService<AppReader>());
         provider.GetRequiredService<AppReadSettings>().RegistryIdle.ShouldBe(TimeSpan.FromMinutes(7));
+    }
+
+    // A built app's check asks on the agent's own call token for the apps server: the deployment's monitor is
+    // composed with the verifier that believes it, so a check's ask is not refused for want of one.
+    [Fact]
+    public async Task ConfigureAgents_BelievesAChecksAsks()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        services.RemoveAll<IAgentDefinitionProvider>();
+        services.AddSingleton(Mock.Of<IAgentDefinitionProvider>());
+        services.RemoveAll<IConnectionMultiplexer>();
+        services.AddSingleton(Mock.Of<IConnectionMultiplexer>());
+        services.RemoveAll<IMemoryStore>();
+        services.AddSingleton(Mock.Of<IMemoryStore>());
+        await using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<ChatMonitor>().BelievesChecks.ShouldBeTrue();
     }
 
     // One set of credentials for the host: the one startup checked is the one every agent, worker

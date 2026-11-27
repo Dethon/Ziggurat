@@ -188,9 +188,9 @@ public class SugaryClipEncodingTests
         var clip = attachments.Single(a => a.MediaType == "video/mp4");
 
         var watched = ClipSelection.For(
-            attachments, new ModelInputs("google/gemini-3.8-flash", Images: true, Video: true), withinDepth: true);
+            attachments, new ModelInputs("google/gemini-3.8-flash", Images: true, Video: true), withinCap: true);
         var seen = ClipSelection.For(
-            attachments, new ModelInputs("anthropic/claude-haiku-5.5", Images: true, Video: false), withinDepth: true);
+            attachments, new ModelInputs("anthropic/claude-haiku-5.5", Images: true, Video: false), withinCap: true);
 
         watched.Where(a => a.MediaType.StartsWith("image/")).ShouldHaveSingleItem().Id
             .ShouldNotBeOneOf([.. clip.Stills!]);

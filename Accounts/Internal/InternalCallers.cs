@@ -92,8 +92,8 @@ public static class InternalCallers
         [Timers] = [HouseholdConfigProtocol.SettingsView],
         // Only the household's own agents build apps: the apps server checks a turn's agent against them.
         // The spaces say which of its apps the household shares (app spaces), so every member may open one
-        // and none is deleted while shared.
-        [Apps] = [HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SpacesView],
+        // and none is deleted while shared. The app asks say how many asks a day each app may send.
+        [Apps] = [HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AppAsksView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView, HouseholdConfigProtocol.MemberNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };

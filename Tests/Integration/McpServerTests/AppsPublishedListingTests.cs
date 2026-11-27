@@ -31,10 +31,32 @@ public class AppsPublishedListingTests
         listing.StatusCode.ShouldBe(HttpStatusCode.OK);
         listing.Headers.CacheControl.ShouldNotBeNull().NoStore.ShouldBeTrue();
         var app = (await listing.Content.ReadFromJsonAsync<PublishedAppList>())!.Apps.ShouldHaveSingleItem();
-        (app with { Reads = [], Connect = [] }).ShouldBe(new PublishedApp(glucose, "glucose", "Glucose today", "#e9601f",
+        (app with { Reads = [], Connect = [], Asks = [] }).ShouldBe(new PublishedApp(glucose, "glucose", "Glucose today", "#e9601f",
             "My glucose today.", AppsServer.Him.UserId, [], [], $"https://glucose-{glucose}.{AppsServer.AppsDomain}/"));
         app.Reads.ShouldBe(["/sugary"]);
         app.Connect.ShouldBeEmpty();
+        app.Asks.ShouldBeEmpty();
+    }
+
+    // The servers its asks may use are listed beside what it reads, as its served commit names them, so an
+    // owner sees them before approving them.
+    [Fact]
+    public async Task AnAppsListing_NamesTheServersItsAsksMayUse_AsItsServedCommitDoes()
+    {
+        await using var server = await AppsServer.StartAsync();
+        var glucose = await PublishedAsync(server, AppsServer.Her, "glucose", "Glucose today");
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","asks":["sugary","vault"]}""", overwrite: true);
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./publish");
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose today","accentColor":"#e9601f","description":"My glucose today.","asks":["homeassistant"]}""", overwrite: true);
+
+        var listing = await ListAsync(server, TestAssertions.Of(AppsServer.Her, AppChannels.PublishedApps, ["owner"]));
+
+        var app = (await listing.Content.ReadFromJsonAsync<PublishedAppList>())!.Apps.ShouldHaveSingleItem();
+        app.Id.ShouldBe(glucose);
+        app.Asks.ShouldBe(["sugary", "vault"]);
+        app.Reach.ShouldBe(new AppReach { Asks = ["sugary", "vault"] });
     }
 
     // Only the accounts service's own word for an owner opens it: a member, an assertion for another

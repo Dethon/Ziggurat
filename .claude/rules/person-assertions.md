@@ -68,7 +68,7 @@ Observability, which references Domain alone.
 
 ## Channels and the agent
 
-No turn acts for a person the accounts service did not vouch for. A channel carries the service's
+No turn acts for a person the accounts service did not vouch for, but for a check's ask (below). A channel carries the service's
 assertion on the turn's notification (`ChannelMessageNotification.Assertion`, mapped onto
 `ChannelMessage.Assertion` by `McpChannelConnection`) and the agent believes that, never the
 notification's `Principal`.
@@ -79,12 +79,25 @@ notification's `Principal`.
 | Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
+| Apps (a built app's ask) | the app session's `apps` assertion the apps server keeps; a person only, never the guest (`TurnAdmission.NotAPerson`) |
+
+**The one exception: a check's ask.** A built app's ask during `./check` carries no assertion but
+`ChannelMessageNotification.CheckCallToken`: the agent's own call token for the tool call that ran the
+check, handed back by the apps server. It is believed on an app turn from the deployment's `apps`
+channel endpoint alone (`AppTurns.Believed` drops it anywhere else) and only as `CheckCallVerifier`
+believes a check's reads — the agent's own key, in date, audience `TokenAudiences.CallTo(sharedServers.apps)`,
+naming a person; the guest, nobody or another server's token is refused, and **both together are
+refused** (`TurnAdmission.BothAnAssertionAndACheck`; `AppViewerCredential` is that rule for asks and reads
+alike). The person it names acts on the `apps` channel (`CheckCallVerifier` restamps it), then standing, the `apps` feature and the building agent apply as
+to any ask. Why: nobody is signed in to a check's preview, and the token is the agent's own word that
+this person's turn asked for it, good for the check's deadline (`ChatMonitor`'s optional
+`CheckCallVerifier`; none refuses every check's ask).
 
 **The check** is `AssertionVerifier.VerifyTurnAsync(assertion, channel)` on the agent's
 `AddAssertionVerifier` singleton: the accounts signature, `TokenAudiences.Assertion`, in date with 30 s of skew, `chn`
 the id of the connection the message came on (`WrongChannel`), and a person or the guest — an
 assertion naming nobody is refused (`NamesNobody`), though `TokenVerifier` alone would pass it. It
-answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. Its clock is the registered `TimeProvider`.
+answers a `TurnAdmission`: `Admitted(identity)`, or `Refused(reason)` — a `TokenRefusal`'s name or one of those two. The group adds three for a built app's ask (`NotAPerson`, `NotAnAppTurn`, `BothAnAssertionAndACheck`; `.claude/rules/channels.md`). Its clock is the registered `TimeProvider`.
 
 **Where**: `ConversationGroup`'s message pump, as each message arrives and before it is queued — never
 when its turn comes up, or a turn queued behind a long one would be refused for the minutes it
@@ -114,7 +127,7 @@ agent act for that person: `IAccountStanding` (`HouseholdAccountStanding`, over
 - A standing or suspension that cannot be read refuses the turn as `StandingUnreadable`
   (`ChatMonitor.StandingUnreadableErrorType`) with `ConversationGroup.UncheckedAnswer` — never
   "suspended" or "disabled", and never let through.
-- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`) answers every check and one
+- One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`, `SugaryOff`, `AppsOff`, `AppAgentGone`) answers every check and one
   `RefuseByStandingAsync` reports it, for a turn and a fire alike.
 - **An approval is held to the same standing** (`ApprovalRelay`, given the group's `IAccountStanding`;
   user's decision, 2026-11-05): a question waiting on a member disabled meanwhile is refused everywhere

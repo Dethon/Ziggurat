@@ -46,8 +46,8 @@ Prose is not an icon. A `→` inside a label ("speech end → audio") is punctua
 an em dash standing in for an absent value.
 
 `Tests/Unit/DrawnIconConformanceTests.cs` holds both halves of this. One test walks the markup of
-both clients and fails on any code point above U+2190 except `→`, plus `×`; its one exemption is
-`SuggestionChips.razor`, whose emoji are content a person reads rather than controls. The other
+both clients and fails on any code point above U+2190 except `→`, plus `×`, exempting no file (the
+suggestion chips' emoji, once exempted, are drawn too). The other
 fails on any component that spells an `<svg>` itself, exempting only the two `Icon.razor` renderers.
 Adding an exemption to either is a decision to argue for, not a way to get the build green.
 

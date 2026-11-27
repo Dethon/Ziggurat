@@ -65,6 +65,45 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         viewports.ShouldAllBe(v => v!["accessibility"]!.GetValue<string>().Contains("heading \"Glucose today\" [level=1]"));
     }
 
+    // A check of one assertion file runs that file alone, so the agent never moves the others out of
+    // checks/ and back (an app build lost track of one it had moved); a name no file has is refused,
+    // naming the files there are.
+    [Fact]
+    public async Task ACheckOfOnlySomeAssertionFiles_RunsThoseAlone()
+    {
+        await using var server = await StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/one.js", "return 'one';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/two.js", "return 'two';");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/three.js", "throw new Error('three');");
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600 --only two.js --only checks/one.js");
+        var unknown = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --only four.js");
+
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        (await ReportAsync(server, "glucose"))["viewports"]![0]!["assertions"]!.AsArray()
+            .Select(a => a!["file"]!.GetValue<string>()).ShouldBe(["checks/one.js", "checks/two.js"]);
+        unknown["exitCode"]!.GetValue<int>().ShouldBe(2, unknown.ToJsonString());
+        unknown["stderr"]!.GetValue<string>().ShouldContain("four.js is not in checks/: one.js, three.js, two.js");
+    }
+
+    // The screenshot before the assertions shows the page as it loads; an assertion that drives it
+    // somewhere (a story read to its end) is seen too, in a second one taken after them.
+    [Fact]
+    public async Task AViewportWhoseAssertionsRan_IsShownAfterThemToo()
+    {
+        await using var server = await StartAsync();
+        await server.AppAsync(AppsServer.Her, "glucose");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html", "<!doctype html><title>Glucose</title><h1>Glucose</h1>");
+        await server.CreateAsync(AppsServer.Her, "/glucose/checks/drive.js", "document.body.style.background = 'red'; return 'driven';");
+
+        await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+
+        (await ReportAsync(server, "glucose"))["viewports"]![0]!["screenshotAfter"]!.GetValue<string>().ShouldBe("800x600-after.png");
+        (await BytesAsync(server, "/glucose/.checks/latest/800x600-after.png"))[..4].ShouldBe(new byte[] { 0x89, 0x50, 0x4E, 0x47 });
+    }
+
     // What a page gets wrong reaches the agent before the person: an error it logs or throws, a request
     // answered 404, and what its content policy refused, each with what it was about.
     [Fact]
@@ -280,6 +319,85 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         stdout.ShouldContain("refused read: query /sugary: permission_denied");
     }
 
+    // A check's page asks for real, as the person whose turn ran it, on that call's own token. An ask answered
+    // with the tools' envelope is the page's to handle, as a refused read is: reported as a failed ask with its
+    // code and message — and on the preview, what the author needs to fix it: the reply that was no JSON, the
+    // agent's own words for a turn it failed — never as a console error or a failed request.
+    [Fact]
+    public async Task AFailedAsk_IsReportedAsAFailedAsk_WithWhatFixesIt_NotAsAConsoleErrorOrAFailedRequest()
+    {
+        const string providerSaid = "An error occurred: Provider returned 400: invalid schema: 'minimum' is not supported";
+        await using var server = await StartAsync();
+        var agent = await server.AgentAsync();
+        var turns = new List<ChannelMessage>();
+        var answering = Task.Run(async () =>
+        {
+            using var cts = new CancellationTokenSource(_generous);
+            await foreach (var turn in agent.Messages.WithCancellation(cts.Token))
+            {
+                turns.Add(turn);
+                var (type, words) = turn.Content == "carbs" ? (ReplyContentType.Error, providerSaid) : (ReplyContentType.Text, "Twelve grams.");
+                await agent.SendReplyAsync(new SendReplyParams
+                {
+                    ConversationId = turn.ConversationId, Content = words, ContentType = type, IsComplete = false, TurnKey = turn.TurnKey,
+                    MessageId = "resp_1"
+                }, cts.Token);
+                await agent.SendReplyAsync(new SendReplyParams
+                {
+                    ConversationId = turn.ConversationId, Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true,
+                    TurnKey = turn.TurnKey, MessageId = "resp_1"
+                }, cts.Token);
+                if (turns.Count == 2)
+                {
+                    return;
+                }
+            }
+        });
+        await server.CreateAsync(AppsServer.Her, "/glucose/app.json",
+            """{"name":"Glucose","accentColor":"#e9601f","description":"Mine.","instructions":"asks/glucose.md"}""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/asks/glucose.md", "Answer with grams of carbohydrate.");
+        await server.CreateAsync(AppsServer.Her, "/glucose/index.html",
+            """<!doctype html><html lang="en"><head><title>Glucose</title><script type="module" src="/main.js"></script></head><body><p id="state">loading</p></body></html>""");
+        await server.CreateAsync(AppsServer.Her, "/glucose/main.js",
+            """
+            const schema = { name: 'carbs', schema: { type: 'object', properties: { grams: { type: 'number', minimum: 0 } } } };
+            const codes = [];
+            for (const text of ['carbs', 'carbs again']) {
+              try {
+                await apps.ask(text, { schema });
+              } catch (e) {
+                codes.push(e.errorCode);
+              }
+            }
+            document.getElementById('state').textContent = codes.join(' ');
+            """);
+
+        var ran = await server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
+        await answering;
+
+        // Asked as the person on the check's call token, never an assertion: one the agent believes for her.
+        turns.ShouldAllBe(turn => turn.CheckCallToken != null && turn.Assertion == null);
+        (await TestCheckCalls.Verifier().VerifyAsync(turns[0].CheckCallToken, CancellationToken.None))
+            .ShouldBeOfType<global::Domain.Security.TurnAdmission.Admitted>().Identity.Subject.ShouldBe(AppsServer.Her.UserId);
+        var viewport = (await ReportAsync(server, "glucose"))["viewports"]!.AsArray().Single()!;
+        viewport["failedRequests"]!.AsArray().ShouldBeEmpty(viewport.ToJsonString());
+        viewport["console"]!.AsArray().ShouldNotContain(c => c!["type"]!.GetValue<string>() == "error", viewport.ToJsonString());
+        viewport["accessibility"]!.GetValue<string>().ShouldContain("transient_dependency invalid_reply");
+        var failed = viewport["failedAsks"]!.AsArray();
+        failed.Count.ShouldBe(2, viewport.ToJsonString());
+        var refused = failed.Single(a => a!["errorCode"]!.GetValue<string>() == "transient_dependency")!;
+        refused["status"]!.GetValue<int>().ShouldBe(422);
+        refused["text"]!.GetValue<string>().ShouldBe("carbs");
+        refused["failure"]!.GetValue<string>().ShouldBe(providerSaid);
+        var unread = failed.Single(a => a!["errorCode"]!.GetValue<string>() == "invalid_reply")!;
+        unread["reply"]!.GetValue<string>().ShouldBe("Twelve grams.");
+        var stdout = ran["stdout"]!.GetValue<string>();
+        stdout.ShouldContain("2 failed asks");
+        stdout.ShouldContain($"failed ask: transient_dependency: The assistant could not answer this ask. (the agent said: {providerSaid})");
+        stdout.ShouldContain("failed ask: invalid_reply: ");
+        ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+    }
+
     // The check's browser sits on the deployment's network, and what it shows comes back to the agent as a
     // screenshot: a page reaches only its own origin, the CDNs and its manifest's connect origins. A
     // navigation anywhere else — an internal service here — is aborted and reported, never shown.
@@ -397,11 +515,12 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         dialled.ShouldBe(0);
     }
 
-    // Each check runs a browser of its own, so a household runs one at a time and the server a few: one
-    // past either limit is refused at once, naming the limit and its value, never queued behind the others.
+    // Each check runs a browser of its own, so a household runs a few at a time and the server a few
+    // more: one past either limit waits for a slot, within its own deadline, rather than being refused
+    // (two people building apps in one household refused each other, and the agent guessed at sleeps).
     // The running checks are held open by a read the agent has not answered yet.
     [Fact]
-    public async Task AChecksPastTheHouseholdsOrTheServersLimit_AreRefused_NotQueued()
+    public async Task AChecksPastTheHouseholdsOrTheServersLimit_WaitForASlot_AndSaySo()
     {
         var third = new Account("household-third", "user-third");
         await using var agent = await HeldAgent.StartAsync();
@@ -417,20 +536,22 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
 
         var hers = server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
         await Eventually.Until(() => agent.Held == 1, "her check's page is reading");
-
-        var his = await server.ExecAsync(AppsServer.Him, "/glucose", "./check");
-        his["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", his.ToJsonString());
-        his["message"]!.GetValue<string>().ShouldContain("concurrent checks per household is 1");
-
+        var his = server.ExecAsync(AppsServer.Him, "/glucose", "./check --viewport 800x600");
         var neighbours = server.ExecAsync(AppsServer.Neighbour, "/glucose", "./check --viewport 800x600");
         await Eventually.Until(() => agent.Held == 2, "the neighbour's check's page is reading");
-        var thirds = await server.ExecAsync(third, "/glucose", "./check");
-        thirds["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", thirds.ToJsonString());
-        thirds["message"]!.GetValue<string>().ShouldContain("concurrent checks on this server is 2");
+        var thirds = server.ExecAsync(third, "/glucose", "./check --viewport 800x600");
+        await Eventually.Settle();
+        (his.IsCompleted, thirds.IsCompleted, agent.Held).ShouldBe((false, false, 2));
 
         agent.Release();
-        (await hers)["exitCode"]!.GetValue<int>().ShouldBe(0);
-        (await neighbours)["exitCode"]!.GetValue<int>().ShouldBe(0);
+
+        foreach (var ran in await Task.WhenAll(hers, his, neighbours, thirds))
+        {
+            ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        }
+
+        (await his)["stdout"]!.GetValue<string>().ShouldContain("waited ");
+        (await hers)["stdout"]!.GetValue<string>().ShouldNotContain("waited ");
     }
 
     // A page that never finishes is stopped at the check's deadline, its browser closed, and the report
@@ -450,6 +571,11 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
 
         ran["exitCode"]!.GetValue<int>().ShouldBe(1, ran.ToJsonString());
         ran["stdout"]!.GetValue<string>().ShouldContain("stopped at its deadline of 3 s");
+        // What the deadline left undone, so the agent knows what to cut rather than guessing.
+        ran["stdout"]!.GetValue<string>().ShouldContain("390x844: 0 console errors");
+        ran["stdout"]!.GetValue<string>().ShouldContain("(cut short at the deadline: 0 of 1 assertions ran)");
+        ran["stdout"]!.GetValue<string>().ShouldContain("- never opened: 1280x800");
+        ran["stdout"]!.GetValue<string>().ShouldContain("- the home-screen icon was not drawn");
         var report = await ReportAsync(server, "glucose");
         report["deadlineHit"]!.GetValue<bool>().ShouldBeTrue();
         report["viewports"]!.AsArray().ShouldAllBe(v => v!["assertions"]!.AsArray().Count == 0);

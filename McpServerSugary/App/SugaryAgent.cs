@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -20,7 +21,7 @@ public static class SugaryAgent
             return await agents.AgentAsync(
                 person.Account.TenantId, HouseholdProof.OfAssertion(person.Assertion), settings.Agent, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException or TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException or TaskCanceledException
                                    && !ct.IsCancellationRequested)
         {
             log.LogWarning(ex, "Could not read household {Household}'s agents; the photo is not checked",

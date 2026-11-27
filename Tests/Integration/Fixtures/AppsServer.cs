@@ -9,6 +9,7 @@ using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Security;
+using Infrastructure.Clients.Channels;
 using McpServerApps.Modules;
 using McpServerApps.Serving;
 using McpServerApps.Settings;
@@ -43,18 +44,24 @@ public sealed class AppsServer : IAsyncDisposable
     private readonly WebApplication _app;
     private readonly McpClient _client;
     private readonly HttpClient _browser = new(new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false });
+    private readonly List<McpChannelConnection> _agents = [];
 
-    private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces)
+    private AppsServer(WebApplication app, McpClient client, AppsSettings settings, StandInSpaces spaces, StandInAppAsks appAsks)
     {
         _app = app;
         _client = client;
         Settings = settings;
         Spaces = spaces;
+        AskCaps = appAsks;
     }
 
     // The households' spaces as the accounts service's spaces view would answer them: which apps each
     // shares as an app space. A test sets them, or makes them unreadable.
     public StandInSpaces Spaces { get; }
+
+    // The households' daily caps on their apps' asks as the accounts service's app asks view would answer
+    // them: none set until a test sets them, or makes them unreadable.
+    public StandInAppAsks AskCaps { get; }
 
     public AppsSettings Settings { get; }
 
@@ -70,6 +77,8 @@ public sealed class AppsServer : IAsyncDisposable
     public AppSessions Sessions => _app.Services.GetRequiredService<AppSessions>();
 
     public BuiltAppStore Store => _app.Services.GetRequiredService<BuiltAppStore>();
+
+    public IServiceProvider Services => _app.Services;
 
     // Where the fixture's sessionless navigations are sent to sign in, unless a test names its own
     // accounts service.
@@ -87,6 +96,7 @@ public sealed class AppsServer : IAsyncDisposable
     {
         var directory = Path.Combine(Path.GetTempPath(), "apps-tests", Guid.NewGuid().ToString("N"));
         var spaces = new StandInSpaces();
+        var appAsks = new StandInAppAsks();
         Directory.CreateDirectory(directory);
         AppsSettings? settings = null;
         // Both listeners are taken together, and a bind lost to either is retried on two fresh ports.
@@ -114,6 +124,8 @@ public sealed class AppsServer : IAsyncDisposable
             {
                 StoragePath = directory, AppsDomain = AppsDomain, Mcp = McpTestSecret.Gate, PublicBaseUrl = MainHost,
                 Cdns = ["https://cdn.jsdelivr.net", "https://unpkg.com", "https://esm.sh"],
+                // As shipped: the code takes no images until the file names their types.
+                Asks = new AppAskSettings { ImageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"] },
                 Listeners = new AppListeners { Mcp = mcp, Pages = TestPort.GetAvailable() }
             };
             settings = configure?.Invoke(configured) ?? configured;
@@ -125,7 +137,7 @@ public sealed class AppsServer : IAsyncDisposable
             });
             builder.Services.ConfigureApps(settings);
             builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents, spaces: spaces.Read)));
+                new EveryHouseholdIn(TimeZoneInfo.Utc, HouseholdAgents, spaces: spaces.Read, appAsks: appAsks.Read)));
             // The accounts service's test key, which a test's own accounts service signs with too.
             builder.Services.Replace(ServiceDescriptor.Singleton(sp => TestAssertions.Verifier(sp.GetRequiredService<TimeProvider>())));
             services?.Invoke(builder.Services);
@@ -135,7 +147,7 @@ public sealed class AppsServer : IAsyncDisposable
         }, Next);
 
         var client = await McpClient.CreateAsync(McpTestSecret.Transport($"http://localhost:{settings!.Listeners.Mcp}/mcp"));
-        return new AppsServer(app, client, settings, spaces);
+        return new AppsServer(app, client, settings, spaces, appAsks);
     }
 
     // The id a created app's note names, and the label its published origin and preview answer to.
@@ -224,6 +236,68 @@ public sealed class AppsServer : IAsyncDisposable
         return response;
     }
 
+    // A built app's page asking its assistant through the client library: its JSON POSTed to the origin's
+    // /_ask with the app session's cookie and the page's own Origin, as the browser sends them. The page
+    // gives up when ct is cancelled. origin: another page's, as a sibling app's would send it.
+    public Task<HttpResponseMessage> AskAsync(
+        string host, string body, string? session, string? origin = null, CancellationToken ct = default) =>
+        AskAsync(host, new StringContent(body, System.Text.Encoding.UTF8, "application/json"), session, origin, ct);
+
+    // An ask with images, as the client library sends one: a form of the ask's JSON and a part per image,
+    // each with the name and type the page gave it.
+    public Task<HttpResponseMessage> AskWithImagesAsync(
+        string host, string ask, IEnumerable<(string Name, string Type, byte[] Bytes)> images, string? session,
+        CancellationToken ct = default)
+    {
+        var form = new MultipartFormDataContent { { new StringContent(ask), AppAsks.AskField } };
+        foreach (var (name, type, bytes) in images)
+        {
+            var part = new ByteArrayContent(bytes);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(type);
+            form.Add(part, AppAsks.FilesField, name);
+        }
+
+        return AskAsync(host, form, session, ct: ct);
+    }
+
+    public async Task<HttpResponseMessage> AskAsync(
+        string host, HttpContent content, string? session, string? origin = null, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, PagesAddress + AppAsks.OriginPath) { Content = content };
+        request.Headers.Host = host;
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("Origin", origin ?? $"https://{host}");
+        if (session is not null)
+        {
+            request.Headers.Add("Cookie", $"{AppSessions.CookieName}={session}");
+        }
+
+        var response = await _browser.SendAsync(request, ct);
+        await response.Content.LoadIntoBufferAsync(ct);
+        return response;
+    }
+
+    // A conversation no ask ever has, for the probe AgentAsync sends.
+    private const string ProbeConversation = "probe";
+
+    // The agent as it dials this server's channel (`apps`), polling: what an ask sends arrives on its
+    // Messages, and what it replies goes back on the wire.
+    public async Task<McpChannelConnection> AgentAsync()
+    {
+        var agent = new McpChannelConnection(AppChannels.Apps, mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
+        _agents.Add(agent);
+        await agent.ConnectAsync(Endpoint, CancellationToken.None);
+
+        var emitter = _app.Services.GetRequiredService<Mcp.Hosting.ChannelNotificationEmitter>();
+        await Eventually.Until(
+            async ValueTask<bool> () => await emitter.EmitCancelAsync(
+                new ChannelCancelNotification { ConversationId = ProbeConversation }),
+            "the agent to be polling");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        (await agent.Messages.FirstAsync(cts.Token)).ConversationId.ShouldBe(ProbeConversation);
+        return agent;
+    }
+
     // The browser's round trip through a real accounts service up to its arrival back on the app's origin:
     // the app's redirect, the accounts service's answer to this person's session cookie. The callback's path
     // and query, and the state cookie the origin set on the way out.
@@ -268,6 +342,13 @@ public sealed class AppsServer : IAsyncDisposable
         Sessions.Open(person, "accounts-session-1", AppOrigin.Parse(host, Settings.AppsDomain)!,
             TestAssertions.Of(person, AppChannels.Apps, now: Clock.GetUtcNow(), sessionId: "accounts-session-1"),
             Clock.GetUtcNow().AddHours(1));
+
+    // A check's session for this person on that origin, as `./check` opens one, on its call token, reading the
+    // household's configuration on that token (the stand-in reader believes any proof), until it ends.
+    public string CheckSessionFor(Account person, string host, string callToken, DateTimeOffset expiresAt) =>
+        Sessions.OpenCheck(person, AppOrigin.Parse(host, Settings.AppsDomain)!, callToken,
+            Mcp.Hosting.CallHousehold.OfPerson(person.TenantId, callToken, _app.Services.GetRequiredService<IHouseholdConfiguration>()),
+            expiresAt);
 
     // A chat-client turn of this person's on one of the household's agents, its principal as the hub
     // stamps it; the test transport signs the call for that person.
@@ -335,6 +416,11 @@ public sealed class AppsServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var agent in _agents)
+        {
+            await agent.DisposeAsync();
+        }
+
         _browser.Dispose();
         await _client.DisposeAsync();
         await _app.StopAsync();
@@ -378,4 +464,30 @@ public sealed class StandInSpaces
         : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
         : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
         : _saved.GetValueOrDefault(householdId) ?? new SpacesSection();
+}
+
+// Each household's app asks section, none set until a test sets one; Down makes every read fail as an
+// accounts service that cannot be asked does, Refuses as one that will not answer this server does, TimesOut
+// as the reader giving up on one too slow, Malformed as a view whose answer does not parse.
+public sealed class StandInAppAsks
+{
+    private readonly ConcurrentDictionary<string, AppAsksSection> _saved = new(StringComparer.Ordinal);
+
+    public volatile bool Down;
+
+    public volatile bool Refuses;
+
+    // Every read runs out of time, as the reader's HttpClient times out: a cancellation nobody asked for.
+    public volatile bool TimesOut;
+
+    public volatile bool Malformed;
+
+    public void Set(string householdId, AppAsksSection section) => _saved[householdId] = section;
+
+    public AppAsksSection Read(string householdId) =>
+        Down ? throw new HttpRequestException("the accounts service is down")
+        : Refuses ? throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, "a stand-in refusal"))
+        : TimesOut ? throw new TaskCanceledException("the accounts service took too long", new TimeoutException())
+        : Malformed ? throw new System.Text.Json.JsonException("the app-asks view answered something that is no section")
+        : _saved.GetValueOrDefault(householdId) ?? new AppAsksSection();
 }

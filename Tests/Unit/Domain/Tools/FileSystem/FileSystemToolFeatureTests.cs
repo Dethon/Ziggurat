@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
@@ -48,6 +49,33 @@ public class FileSystemToolFeatureTests
         tools.Count.ShouldBe(2);
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__file_read");
         tools.Select(t => t.Name).ShouldContain("domain__filesystem__move");
+    }
+
+    // The model's exec call that named only its command failed in argument binding ("missing a value for
+    // the required parameter 'path'"), so the tool as offered asks for no path and binds a call without one.
+    [Fact]
+    public async Task GetTools_Exec_TakesACallNamingOnlyItsCommand()
+    {
+        var registry = new VirtualFileSystemRegistry();
+        var sandbox = new Mock<IFileSystemBackend>();
+        sandbox.Setup(b => b.ExecAsync("home/sandbox_user", "ls", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FsResult<FsExecResult>.Ok(new FsExecResult
+            {
+                Stdout = "", Stderr = "", ExitCode = 0, Truncated = false, TimedOut = false, DurationMs = 1, Cwd = "home/sandbox_user"
+            }));
+        registry.Mount(new FileSystemMount("sandbox", "/sandbox", "s")
+        {
+            ShellReach = ShellReach.Contained, Workspace = "home/sandbox_user"
+        }, sandbox.Object);
+        var exec = new FileSystemToolFeature(registry)
+            .GetTools(new FeatureConfig(EnabledTools: new HashSet<string>([VfsExecTool.Key], StringComparer.OrdinalIgnoreCase)))
+            .Single();
+
+        var required = exec.JsonSchema.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ToList();
+        var result = await exec.InvokeAsync(new AIFunctionArguments { ["command"] = "ls" });
+
+        required.ShouldBe(["command"]);
+        JsonSerializer.Serialize(result).ShouldContain("/sandbox/home/sandbox_user");
     }
 
     // The exec the session offers carries where each call would run, off this session's own mounts,

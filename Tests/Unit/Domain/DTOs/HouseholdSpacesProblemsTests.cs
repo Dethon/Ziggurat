@@ -47,6 +47,27 @@ public class HouseholdSpacesProblemsTests
         HouseholdSections.SpacesSchema.Read(HouseholdSections.SpacesSchema.Write(section)).Spaces.ShouldBe(section.Spaces);
     }
 
+    // The servers an app's asks may use are approved beside its reads, read back as saved; a section saved
+    // before approvals named servers reads as approving none.
+    [Fact]
+    public void AnAppSpacesApprovedServers_AreKeptAsSaved_AndNoneWhereTheSectionNamesNone()
+    {
+        var approved = new AppReach { Reads = ["/sugary"], Asks = ["sugary", "vault"] };
+        var section = new SpacesSection { Spaces = [HouseholdSpace.Default, _shared with { Approved = approved }] };
+        var older = HouseholdSections.SpacesSchema.Write(section);
+        older["spaces"]![1]!["approved"]!.AsObject().Remove("asks");
+
+        HouseholdSections.SpacesSchema.Problems(HouseholdSections.SpacesSchema.Write(section)).ShouldBeEmpty();
+        HouseholdSections.SpacesSchema.Read(HouseholdSections.SpacesSchema.Write(section)).Spaces[1].Approved.ShouldBe(approved);
+        HouseholdSections.SpacesSchema.Problems(older).ShouldBeEmpty();
+        HouseholdSections.SpacesSchema.Read(older).Spaces[1].Approved.ShouldBe(new AppReach { Reads = ["/sugary"] });
+    }
+
+    [Fact]
+    public void AnApprovedServerOfNoServersName_IsRefused() =>
+        ProblemsOf(HouseholdSpace.Default, _shared with { Approved = new AppReach { Asks = ["mcp-vault:8080"] } })
+            .ShouldHaveSingleItem().ShouldContain("approved asks");
+
     [Fact]
     public void AnApprovedReachOnAChatSpace_IsRefused() =>
         ProblemsOf(HouseholdSpace.Default, new HouseholdSpace { Slug = "kitchen", Name = "Kitchen", Order = 1, Approved = new AppReach { Reads = ["/sugary"] } })

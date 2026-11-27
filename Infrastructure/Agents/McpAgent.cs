@@ -78,7 +78,7 @@ public sealed class McpAgent : DisposableAgent
     // lives on the shared chat client and the model stamped on metrics is by construction the
     // model the request ran on.
     private sealed record TurnConfig(
-        string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null);
+        string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null, AppTurn? App = null);
 
     // The spec carries every configured value, so nothing about what this agent is can be
     // expressed by omitting an argument. What is left are the live collaborators, and the
@@ -199,7 +199,7 @@ public sealed class McpAgent : DisposableAgent
         // cost overlaps with first-message handling. The _syncLock in
         // GetOrCreateSessionAsync makes the subsequent RunStreaming reuse it.
         using var latency = _metricsPublisher.MeasureLatency(LatencyStage.SessionWarmup, _conversationId);
-        await GetOrCreateSessionAsync(thread, ct);
+        await GetOrCreateSessionAsync(thread, _reach, _domainTools, ct);
     }
 
     // Only what the session already built. Nothing is created here: a caller asking before the
@@ -319,14 +319,15 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= await CreateSessionAsync(cancellationToken);
-        var reconciled = await GetOrCreateSessionAsync(thread, cancellationToken);
-        var session = reconciled.Session;
+        var reconciled = turnConfig.App is { } app
+            ? await AppSessionAsync(thread, app, cancellationToken)
+            : await GetOrCreateSessionAsync(thread, _reach, _domainTools, cancellationToken);
 
         // Said on the turn's own message, never in the instructions: the system prompt is the cached
         // prefix every turn shares, and which of a household's machines are on is this turn's news.
         // Stamped as data and rendered by the decoration, so the persisted message stays as typed.
         messageList.LastOrDefault(m => m.Role == ChatRole.User)
-            ?.SetOfflineServers(reconciled.Reach.OwnServers.Offline);
+            ?.SetOfflineServers(reconciled?.Reach.OwnServers.Offline ?? []);
 
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
@@ -334,7 +335,7 @@ public sealed class McpAgent : DisposableAgent
 
         var steering = (options as TurnRunOptions)?.Steering;
         options = AreTheAgentsToBuild(options)
-            ? CreateRunOptions(session, conversationContext, turnConfig, steering)
+            ? CreateRunOptions(Surface(reconciled, turnConfig), conversationContext, turnConfig, steering)
             : options;
 
         // What the reply streams goes to the history as it passes, so a reply the person stops is kept
@@ -379,7 +380,8 @@ public sealed class McpAgent : DisposableAgent
         return new TurnConfig(
             ResolveModelOverride(patch?.Model),
             ResolveEffort(patch?.ReasoningEffort),
-            userMessage?.GetResponseFormat());
+            userMessage?.GetResponseFormat(),
+            userMessage?.GetAppTurn());
     }
 
     private string? ResolveModelOverride(string? patchedModel)
@@ -445,14 +447,27 @@ public sealed class McpAgent : DisposableAgent
             "Rejected config patch {Field}={Value}; using {Fallback}", field, value, fallback ?? "unset");
     }
 
+    // What the turn is told and may call. An app's ask calls what its declared servers offer, the file
+    // tools over their mounts alone, and nothing that is no server's (workers, memory); declaring none of
+    // the agent's servers, it calls nothing.
+    private (IList<AITool> Tools, string Instructions) Surface(ReconciledSession? reconciled, TurnConfig turnConfig) =>
+        (turnConfig.App, reconciled) switch
+        {
+            ({ } app, null) => (new List<AITool>(), BuildAppInstructions(app, null)),
+            ({ } app, { Session: var session }) => ([.. session.Tools], BuildAppInstructions(app, session)),
+            (null, { Session: var session }) => ([.. session.Tools], BuildInstructions(session)),
+            _ => throw new InvalidOperationException("A turn that is no app's ask runs in a session.")
+        };
+
     private ChatClientAgentRunOptions CreateRunOptions(
-        ThreadSession session, ConversationContext? conversationContext, TurnConfig turnConfig, TurnSteering? steering)
+        (IList<AITool> Tools, string Instructions) surface, ConversationContext? conversationContext, TurnConfig turnConfig,
+        TurnSteering? steering)
     {
         return new ChatClientAgentRunOptions(new ChatOptions
         {
             ModelId = turnConfig.ModelOverride,
-            Tools = [.. session.Tools],
-            Instructions = BuildInstructions(session),
+            Tools = surface.Tools,
+            Instructions = surface.Instructions,
             // The summary is asked for because an OpenAI model on the Responses wire returns its
             // reasoning encrypted and empty without one; providers OpenRouter translates stream
             // theirs regardless, so this is what makes reasoning visible at all on that wire.
@@ -468,12 +483,12 @@ public sealed class McpAgent : DisposableAgent
             ResponseFormat = turnConfig.ResponseFormat is { } format
                 ? ChatResponseFormat.ForJsonSchema(format.Schema, format.Name)
                 : null,
-            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig.ResponseFormat, steering)
+            AdditionalProperties = BuildTurnProperties(conversationContext, turnConfig, steering)
         });
     }
 
     private AdditionalPropertiesDictionary BuildTurnProperties(
-        ConversationContext? conversationContext, ResponseFormat? format, TurnSteering? steering)
+        ConversationContext? conversationContext, TurnConfig turnConfig, TurnSteering? steering)
     {
         var properties = BuildConversationContextProperties(conversationContext);
         // Where the tool loop reads it after each call, on this turn's options alone.
@@ -484,9 +499,15 @@ public sealed class McpAgent : DisposableAgent
 
         // The format a channel asks for is always strict: it parses the answer, so a hint is not
         // enough. The chat client reads this to send the schema strict and as written.
-        if (format is not null)
+        if (turnConfig.ResponseFormat is not null)
         {
             properties[OpenRouterChatClient.StrictResponseFormatKey] = true;
+        }
+
+        // Nobody may be asked about an app's calls: the approval client refuses each that would be.
+        if (turnConfig.App is not null)
+        {
+            properties[ToolApprovalChatClient.AsksNobodyKey] = true;
         }
 
         return properties;
@@ -524,26 +545,45 @@ public sealed class McpAgent : DisposableAgent
     // Every section this agent has, handed to the composer as data. Nothing about the order lives
     // here any more: a section carries its own band, and what used to be a chain of Prepend and
     // Append calls with a comment each is now the manifest those comments moved into.
-    private string BuildInstructions(ThreadSession session)
-    {
-        var zone = Zone;
-        var assembly = PromptComposer.Compose(new PromptContext
+    private string BuildInstructions(ThreadSession session) =>
+        Compose(common => common with
         {
-            AgentId = _agentId,
-            Name = _promptName,
             Description = _description,
             Selected = _selectedSections,
             Domain = _domainPrompts,
             FileSystem = session.FileSystemPrompts,
             Client = session.ClientManager.Prompts,
             Skills = session.Skills,
-            CustomInstructions = _customInstructions,
+            CustomInstructions = _customInstructions
+        });
+
+    // A built app's ask is answered by the app's instructions in place of the persona, around what every
+    // agent carries: the mounts, prompts and skills of the servers it declared, and the agent's day, zone
+    // and language, as for any turn.
+    private string BuildAppInstructions(AppTurn app, ThreadSession? session) =>
+        Compose(common => common with
+        {
+            FileSystem = session?.FileSystemPrompts ?? [],
+            Client = session?.ClientManager.Prompts ?? [],
+            Skills = session?.Skills ?? [],
+            AppInstructions = app.Instructions
+        });
+
+    // What every prompt of this agent carries whatever it is built from — who it is, its language, and its
+    // household's day and zone — shaped into a persona's prompt or an app's.
+    private string Compose(Func<PromptContext, PromptContext> shape)
+    {
+        var zone = Zone;
+        var assembly = PromptComposer.Compose(shape(new PromptContext
+        {
+            AgentId = _agentId,
+            Name = _promptName,
             Language = _language,
             Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
             // Named only where it is not the host's own: the home's agents read the prompt they always
             // read, and a household elsewhere is told whose eight o'clock it is.
             TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
-        });
+        }));
 
         ReportPromptWarnings(assembly);
 
@@ -627,6 +667,21 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
+    // A built app's ask runs in a session of the agent's servers it declared alone, reconciled as any turn's,
+    // so a later ask of the same conversation declaring other servers builds its own. One declaring none of
+    // them runs in none, and lets go of the one an earlier ask left, whose skills and mounts are read off
+    // the thread.
+    private async Task<ReconciledSession?> AppSessionAsync(AgentSession thread, AppTurn app, CancellationToken ct)
+    {
+        if (_reach.NarrowedTo(app.Servers) is { } declared)
+        {
+            return await GetOrCreateSessionAsync(thread, declared, [], ct);
+        }
+
+        await DisposeThreadSessionAsync(thread);
+        return null;
+    }
+
     // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
     // machines are asked again — a lookup, not a dial — and a session built with the very servers
     // found now is the one this turn runs in. One that came online since, went offline, or
@@ -634,11 +689,12 @@ public sealed class McpAgent : DisposableAgent
     // this turn build a new session in its place, so a server joins or leaves between turns and a
     // session's tools never change under it (ADR 0012). Turns of one conversation group run one at a
     // time, so the session replaced has no call in flight.
-    private async Task<ReconciledSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
+    private async Task<ReconciledSession> GetOrCreateSessionAsync(
+        AgentSession thread, SessionReach sessionReach, IReadOnlyList<AIFunction> domainTools, CancellationToken ct)
     {
         return await _syncLock.WithLockAsync(async () =>
         {
-            var reach = await _reach.ResolveAsync(ct);
+            var reach = await sessionReach.ResolveAsync(ct);
             if (_threadSessions.TryGetValue(thread, out var existing))
             {
                 if (existing.Reach.ReachesTheSameAs(reach))
@@ -657,7 +713,7 @@ public sealed class McpAgent : DisposableAgent
             }
 
             var newSession = await SessionReach.BuildAsync(reach, new SessionShape(
-                _name, _userId, _description, _domainTools, _filesystemEnabledTools, _loggerFactory,
+                _name, _userId, _description, domainTools, _filesystemEnabledTools, _loggerFactory,
                 _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
                 // A write's bare time is read in the household's zone, as the server that keeps the
                 // schedule reads it, so the delegation describes the same instant the server will

@@ -816,7 +816,8 @@ public class DeploymentConformanceTests
 
     // Every household's built apps are git repositories in a volume of the apps server's own; nothing
     // else mounts it, the one-shot step hands it to the server's user, and the server is told the
-    // apps domain it is required to know.
+    // apps domain it is required to know. The images an ask sends wait in the same volume, beside the
+    // households, so they are kept, owned and backed up as the apps are.
     [Fact]
     public void TheAppsServer_KeepsItsRepositoriesInAVolumeOfItsOwnThatItsUserOwns()
     {
@@ -824,6 +825,7 @@ public class DeploymentConformanceTests
         var apps = compose.Service("mcp-apps");
         var storage = new global::McpServerApps.Settings.AppsSettings { AppsDomain = "" }.StoragePath;
         var volume = $"./volumes/apps:{storage}";
+        global::McpServerApps.Asks.AskUploads.On(storage).StoragePath.ShouldBe($"{storage}/.uploads");
 
         apps.Volumes.ShouldBe([volume]);
         apps.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
@@ -947,6 +949,22 @@ public class DeploymentConformanceTests
 
         deadline.ShouldBeLessThanOrEqualTo(margin);
         new global::McpServerApps.Settings.AppCheckSettings().Deadline.ShouldBe(deadline);
+    }
+
+    // An app's ./check piped in a sandbox command is an action the sandbox's bridge waits on: its bound
+    // must outlast the check's deadline, and covers the longest command the sandbox runs.
+    [Fact]
+    public void ABridgedAction_OutlastsTheLongestAction()
+    {
+        var http = File.ReadAllText(Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), "sandbox-runtime", "src", "vfs", "http.rs"));
+        var within = TimeSpan.FromSeconds(int.Parse(
+            Regex.Match(http, @"ACTION_WITHIN: Duration = Duration::from_secs\((\d+)\)").Groups[1].Value, CultureInfo.InvariantCulture));
+        var deadline = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Checks", "Deadline").GetString()!, CultureInfo.InvariantCulture);
+        var longest = TimeSpan.FromSeconds(ShippedSetting("McpServerSandbox", "MaxTimeoutSeconds").GetInt32());
+
+        within.ShouldBeGreaterThan(deadline);
+        within.ShouldBeGreaterThanOrEqualTo(longest);
     }
 
     // A check runs the agent's code in a browser, so the browser runs where nothing is to be had: a

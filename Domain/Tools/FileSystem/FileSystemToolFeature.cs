@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security;
 using Domain.Tools.FileSystem.Bridge;
 using Microsoft.Extensions.AI;
 
@@ -88,11 +89,17 @@ public class FileSystemToolFeature(
         // or makes the later wait for the earlier (CallFootprint).
         var touched = new FileSystemFootprint(registry);
         var reach = ExecReach.Over(registry, reroutes: bridge is not null);
+        // Each write beside whether it lands where a later turn acts on it (a schedule, a watch), read off the
+        // path argument it writes, for a turn that may leave none (a built app's ask).
+        StartsLaterTurns Writing(string pathArgument) => new(call =>
+            CallArguments.Text(call, pathArgument) is { } path
+            && registry.Resolve(path).TryGetValue(out var at, out _)
+            && DelegatedWrites.Delegates(at));
         var tools = new (string Key, Func<AIFunction> Factory, Func<IReadOnlyDictionary<string, object?>, CallFootprint> Footprint)[]
         {
             (VfsFileReadTool.Key, () => AIFunctionFactory.Create(new VfsFileReadTool(registry, readImages).RunAsync, name: $"domain__{Feature}__{VfsFileReadTool.Name}"),
                 call => touched.Reading(call, "filePath")),
-            (VfsTextCreateTool.Key, () => AIFunctionFactory.Create(
+            (VfsTextCreateTool.Key, () => StartsLaterTurns.Carried(AIFunctionFactory.Create(
                 new VfsTextCreateTool(registry).RunAsync,
                 new AIFunctionFactoryOptions
                 {
@@ -104,9 +111,9 @@ public class FileSystemToolFeature(
                                 TextArg.Coerce(args.TryGetValue("content", out var raw) ? raw : null)
                         }
                         : default
-                }),
+                }), Writing("filePath")),
                 call => touched.Changing(call, "filePath")),
-            (VfsTextEditTool.Key, () => AIFunctionFactory.Create(
+            (VfsTextEditTool.Key, () => StartsLaterTurns.Carried(AIFunctionFactory.Create(
                 new VfsTextEditTool(registry).RunAsync,
                 new AIFunctionFactoryOptions
                 {
@@ -118,7 +125,7 @@ public class FileSystemToolFeature(
                                 TextArg.CoerceEdits(args.TryGetValue("edits", out var raw) ? raw : null)
                         }
                         : default
-                }),
+                }), Writing("filePath")),
                 call => touched.Changing(call, "filePath")),
             // These two descriptions interpolate the walk budgets, so they cannot live in a
             // [Description] attribute and are handed to the factory here instead.
@@ -139,16 +146,20 @@ public class FileSystemToolFeature(
                 }),
                 // One file where the call names one, as the tool itself prefers it.
                 call => touched.Reading(call, CallArguments.Text(call, "filePath") is null ? "directoryPath" : "filePath")),
-            (VfsMoveTool.Key, () => AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}"),
+            (VfsMoveTool.Key, () => StartsLaterTurns.Carried(
+                    AIFunctionFactory.Create(new VfsMoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsMoveTool.Name}"),
+                    Writing("destinationPath")),
                 call => touched.Changing(call, "sourcePath", "destinationPath")),
-            (VfsCopyTool.Key, () => AIFunctionFactory.Create(new VfsCopyTool(registry).RunAsync, name: $"domain__{Feature}__{VfsCopyTool.Name}"),
+            (VfsCopyTool.Key, () => StartsLaterTurns.Carried(
+                    AIFunctionFactory.Create(new VfsCopyTool(registry).RunAsync, name: $"domain__{Feature}__{VfsCopyTool.Name}"),
+                    Writing("destinationPath")),
                 call => touched.Reading(call, "sourcePath").And(touched.Changing(call, "destinationPath"))),
             (VfsRemoveTool.Key, () => AIFunctionFactory.Create(new VfsRemoveTool(registry).RunAsync, name: $"domain__{Feature}__{VfsRemoveTool.Name}"),
                 call => touched.Changing(call, "path")),
             // Carries where each call would run, read off this session's mounts, for the exec screen.
             (VfsExecTool.Key, () => ExecReach.Carried(
                 AIFunctionFactory.Create(
-                    new VfsExecTool(registry, bridge, Offers(config.EnabledTools)).RunAsync,
+                    new VfsExecTool(registry, bridge, Offers(config.EnabledTools)).CallAsync,
                     new AIFunctionFactoryOptions
                     {
                         Name = $"domain__{Feature}__{VfsExecTool.Name}",

@@ -26,7 +26,7 @@ public class VfsExecTool(
     public const string ToolDescription = """
         Runs a bash command (`bash -lc`, so the login PATH is set) on a filesystem that supports
         execution, with `path` as the working directory: the mount point is the filesystem's root,
-        a deeper path that directory. A non-zero exit code comes back as data in `exitCode`; output
+        a deeper path that directory; left out, the sandbox's home. A non-zero exit code comes back as data in `exitCode`; output
         is capped per stream (`truncated`); a timeout kills the process tree. Paths in the output are
         in the filesystem's native spelling, while the reported `cwd` is already virtual.
         """;
@@ -40,17 +40,42 @@ public class VfsExecTool(
         refused write; `vfsTruncated` names a directory a recursive command saw only part of.
         """;
 
+    // What the model calls. `path` may be left out: a model that names none writes `cd <dir> && …`
+    // instead, and the call failed to bind and cost a round (three in one app build).
     [Description(ToolDescription)]
-    public async Task<JsonNode> RunAsync(
-        [Description("Virtual path used as CWD: the mount point itself for the filesystem's root, or any directory under it")]
-        string path,
+    public Task<JsonNode> CallAsync(
         [Description("Bash command line; passed to `bash -lc`")]
         string command,
+        [Description("Virtual path used as CWD: the mount point itself for the filesystem's root, or any directory under it. Left out, the sandbox's home")]
+        string? path = null,
         [Description("Optional timeout in seconds. Backend clamps to its max.")]
+        int? timeoutSeconds = null,
+        AIFunctionArguments? arguments = null,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(path, command, timeoutSeconds, arguments, cancellationToken);
+
+    public async Task<JsonNode> RunAsync(
+        string? path,
+        string command,
         int? timeoutSeconds = null,
         AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
+        if (path is null)
+        {
+            var mounts = registry.GetMounts() ?? [];
+            if (ExecReach.Workspace(mounts) is not { } workspace)
+            {
+                var running = mounts.Where(m => m.Capabilities.Contains(Key) || m.ShellReach is not null)
+                    .Select(m => m.MountPoint).ToList();
+                return FsError.Invalid<FsExecResult>(running.Count == 0
+                    ? "Name the directory to run in: there is no sandbox here to run in by default."
+                    : $"Name the directory to run in: there is no sandbox here to run in by default. Commands run on {string.Join(", ", running)}.").ToNode();
+            }
+
+            path = workspace;
+        }
+
         if (!registry.Resolve(path, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using Domain.DTOs.Admin;
 
@@ -78,7 +79,7 @@ public sealed class HouseholdsAdminService(HttpClient http)
                 _ => new HouseholdsAnswer<T>.Unreachable()
             };
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException)
         {
             return new HouseholdsAnswer<T>.Unreachable();
         }

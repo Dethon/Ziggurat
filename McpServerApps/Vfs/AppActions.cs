@@ -32,10 +32,10 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         $"Run an app's action in its directory: ./{Publish} commits the working tree and serves it, answering "
         + "the app's link (refused while a served page loads outside code without an exact version and integrity hash); "
         + $"./{History} [--limit N] lists its commits, the served one marked; ./{Rollback} <rev> "
-        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] opens "
+        + $"serves an earlier commit without rewriting history; ./{Check} [--viewport WxH]... [--path /route] [--only <file>.js]... opens "
         + "the preview in a headless browser as the person (a phone and a desktop unless named), runs each "
         + $"{AssertionsDirectory}/*.js in the page (an async function body: returning passes, throwing fails) and "
-        + $"writes one PNG per viewport and report.json (console, failed requests, policy violations, an "
+        + $"writes one PNG per viewport (another, -after, once its assertions ran) and report.json (console, failed requests, policy violations, an "
         + $"accessibility snapshot, assertions) to {AppsFileSystem.ChecksOutput}/latest/. Not a shell — anything else returns exit 127.";
 
     // Who runs an action, as the mount's call carries it: the turn's agent (named in a publish's commit),
@@ -89,6 +89,11 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 return (Exec(cwd, "", $"nothing published: {icon}", 1), null);
             }
 
+            if (await InstructionsProblemAsync(repository, manifest, ct) is { } instructions)
+            {
+                return (Exec(cwd, "", $"nothing published: {instructions}", 1), null);
+            }
+
             var pinning = await OutsideCodePinning.CheckRootAsync(Path.Combine(repository.WorkTree, manifest.Root), ct);
             if (pinning.Problems.Count > 0)
             {
@@ -136,6 +141,15 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
             : $"the icon {icon} is not an SVG drawing: a whole <svg> document of the SVG namespace, at most {AppIcon.MaxBytes / 1024} KiB.";
     }
 
+    // The instructions the manifest names are what its asks are answered with: a file the commit will hold
+    // (never a link, which commits as one and reads as its target's name), read as an ask would read it.
+    private static async Task<string?> InstructionsProblemAsync(AppRepository repository, AppManifest manifest, CancellationToken ct) =>
+        manifest.Instructions is { } path
+        && AppAsks.ReadInstructions(path, await repository.TreeFileAsync(path, AppAsks.MaxInstructionsBytes + 1, ct))
+            is AppInstructionsRead.Refused { Problem: var problem }
+            ? problem
+            : null;
+
     // While the household shares the app as a space, its published origin is granted no more than an owner
     // approved: what the served manifest asks beyond that is named, for the agent to tell its person, since
     // nothing else tells the author it is not granted. Nothing is said of an app nobody shares, or one asking
@@ -150,7 +164,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         var sharing = await AppSharing.OfAsync(household, app, ct);
         if (sharing is not AppSharing.Read { SharedAs: var space })
         {
-            return "whether the household's owners approved what it reads and talks to could not be checked just now: while the "
+            return "whether the household's owners approved what it reads, talks to and asks with could not be checked just now: while the "
                    + "household shares the app as a space, it is granted no more than they approved\n";
         }
 
@@ -160,7 +174,8 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         }
 
         var asked = beyond.Reads.Select(read => $"reading {read}")
-            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"));
+            .Concat(beyond.Connect.Select(origin => $"talking to {origin}"))
+            .Concat(beyond.Asks.Select(server => $"its asks using {server}"));
         return $"the household shares it as the space '{space.Name}', and an owner has not approved all it now asks: until one "
                + $"approves it on the spaces page, it is not granted {string.Join(", ", asked)} — for anyone, you included. "
                + "Tell the person, so they can ask an owner\n";
@@ -170,17 +185,17 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
     // token, which the agent believes for that person's reads while the check runs.
     private async Task<FsResult<FsExecResult>> CheckAsync(BuiltApp app, string cwd, IReadOnlyList<string> args, Caller caller, CancellationToken ct)
     {
-        if (CheckArguments(args) is not var (viewports, route))
+        if (CheckArguments(args) is not var (viewports, route, only))
         {
             return Exec(cwd, "",
-                $"usage: ./{Check} [--viewport WxH]... [--path /route] — at most {MaxViewports} viewports, each side "
-                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /.", 2);
+                $"usage: ./{Check} [--viewport WxH]... [--path /route] [--only <file>.js]... — at most {MaxViewports} viewports, each side "
+                + $"{MinViewportSide} to {MaxViewportSide}; the route starts with /; --only names files in {AssertionsDirectory}/.", 2);
         }
 
-        if (caller.CallToken is not { } callToken)
+        if (caller.CallToken is not { } callToken || caller.Household is not { } household)
         {
             return FsError.Fail<FsExecResult>(ToolError.Codes.PermissionDenied,
-                "This call carries no token the agent signed, so nobody's reads could be shown in a check.");
+                "This call carries no token the agent signed for a person, so nobody's reads or asks could be shown in a check.");
         }
 
         var tree = store.Repository(app).WorkTree;
@@ -197,21 +212,33 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 .Order(StringComparer.Ordinal)
                 .Select(async file => new CheckAssertion($"{AssertionsDirectory}/{Path.GetFileName(file)}", await File.ReadAllTextAsync(file, ct))))
             : [];
-        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken), ct);
+        if (only.Count > 0)
+        {
+            var named = assertions.Select(a => a.File[(AssertionsDirectory.Length + 1)..]).ToList();
+            if (only.FirstOrDefault(name => !named.Contains(name, StringComparer.Ordinal)) is { } missing)
+            {
+                return Exec(cwd, "", $"{missing} is not in {AssertionsDirectory}/: {(named.Count == 0 ? "it has none" : string.Join(", ", named))}.", 2);
+            }
+
+            assertions = [.. assertions.Where(a => only.Contains(a.File[(AssertionsDirectory.Length + 1)..]))];
+        }
+        var outcome = await checks.RunAsync(app, new CheckRequest(viewports, route, manifest, assertions, callToken, household), ct);
         return outcome switch
         {
             CheckOutcome.Refused { Limit: var limit, Value: var value } => AppsFileSystem.Quota<FsExecResult>(limit, value,
-                "Another check is running; tell the person, and check again once it has finished."),
-            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report),
+                "Other checks ran for the whole of this one's deadline, waiting for a slot; check again once they have finished."),
+            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report, assertions.Length),
                 report.Error ?? "", report.DeadlineHit || report.Error is not null || report.Viewports.Any(v => v.Assertions.Any(a => !a.Passed)) ? 1 : 0),
             _ => throw new InvalidOperationException("A check runs or is refused.")
         };
     }
 
-    // `--viewport WxH` (repeatable) and `--path /route`, or null for anything else.
-    private static (IReadOnlyList<CheckViewport> Viewports, string Path)? CheckArguments(IReadOnlyList<string> args)
+    // `--viewport WxH` (repeatable), `--path /route` and `--only <file>` (repeatable: a file of checks/,
+    // with or without the directory), or null for anything else.
+    private static (IReadOnlyList<CheckViewport> Viewports, string Path, IReadOnlyList<string> Only)? CheckArguments(IReadOnlyList<string> args)
     {
         var viewports = new List<CheckViewport>();
+        var only = new List<string>();
         var route = "/";
         for (var i = 0; i < args.Count; i += 2)
         {
@@ -231,35 +258,77 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                 case ("--path", var asked) when asked.StartsWith('/') && asked.Length <= 512 && !asked.Any(char.IsWhiteSpace):
                     route = asked;
                     break;
+                case ("--only", var file) when AssertionName(file) is { } name:
+                    only.Add(name);
+                    break;
                 default:
                     return null;
             }
         }
 
-        return viewports.Count > MaxViewports ? null : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route);
+        return viewports.Count > MaxViewports
+            ? null
+            : (viewports.Count == 0 ? AppChecks.DefaultViewports : viewports.Distinct().ToList(), route, only.Distinct().ToList());
+    }
+
+    // An assertion file's name in checks/, however the agent spelled it: `relato.js`, `checks/relato.js`,
+    // `./checks/relato.js` or `relato`. Null for a path anywhere else.
+    private static string? AssertionName(string file)
+    {
+        var name = file.StartsWith("./", StringComparison.Ordinal) ? file[2..] : file;
+        name = name.StartsWith($"{AssertionsDirectory}/", StringComparison.Ordinal) ? name[(AssertionsDirectory.Length + 1)..] : name;
+        name = name.EndsWith(".js", StringComparison.Ordinal) ? name : $"{name}.js";
+        return name.Length > 3 && !name.Contains('/') && !name.Contains('\\') && name != ".js" ? name : null;
     }
 
     // Counts per viewport, then what went wrong, so a fix needs no read of the report: a viewport that saw
     // exactly what one before it saw names that one instead of saying it all again.
-    private static string CheckSummary(BuiltApp app, CheckReport report)
+    private static string CheckSummary(BuiltApp app, CheckReport report, int assertions)
     {
         var detailed = new List<(string Viewport, IReadOnlyList<string> Lines)>();
         var lines = report.Viewports.SelectMany(v =>
         {
             var counts = $"- {v.Name}: {v.Console.Count(c => c.Type is "error" or "uncaught")} console errors, {v.FailedRequests.Count} failed requests, "
-                         + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, assertions "
+                         + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, "
+                         + $"{v.FailedAsks.Count} failed asks, assertions "
                          + $"{v.Assertions.Count(a => a.Passed)} passed and {v.Assertions.Count(a => !a.Passed)} failed"
-                         + (v.Settled ? "" : " (the page never went quiet)");
+                         + (v.Settled ? "" : " (the page never went quiet)")
+                         + (v.Finished || !report.DeadlineHit ? "" : $" (cut short at the deadline: {Unrun(v, assertions)})");
             var details = CheckDetails(v, new Uri(report.Origin).Host);
             var same = details.Count == 0 ? null : detailed.FirstOrDefault(d => d.Lines.SequenceEqual(details)).Viewport;
             detailed.Add((v.Name, details));
             return same is not null ? [counts, $"  the same as {same}"] : (IEnumerable<string>)[counts, .. details];
         }).ToList();
-        var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
-        return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
-               + $"screenshots, the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
+        var waited = report.StartedAt - report.AskedAt;
+        var waitedFor = waited >= TimeSpan.FromSeconds(1) ? $"waited {waited.TotalSeconds:0} s for another check to finish; " : "";
+        var stopped = report.DeadlineHit ? $"stopped at its deadline of {Spoken(report.Deadline)}; " : "";
+        var cut = report.DeadlineHit ? lines.Concat(Cut(report)).ToList() : lines;
+        return $"checked the preview of {app.Slug} at {report.Path}: {waitedFor}{stopped}\n{string.Join("\n", cut)}\n"
+               + $"screenshots (each viewport's -after.png once its assertions ran), the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
                + $"{AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ (file_read shows a picture)\n";
     }
+
+    // What the deadline left undone, and how to fit a check inside it.
+    private static IEnumerable<string> Cut(CheckReport report)
+    {
+        if (report.Unopened.Count > 0)
+        {
+            yield return $"- never opened: {string.Join(", ", report.Unopened)}";
+        }
+
+        if (!report.IconShown)
+        {
+            yield return "- the home-screen icon was not drawn";
+        }
+
+        yield return "  to fit: check one --viewport at a time, or make the slow assertions quicker";
+    }
+
+    private static string Unrun(ViewportReport viewport, int assertions) =>
+        viewport.Screenshot is null ? "before its screenshot" : $"{viewport.Assertions.Count} of {assertions} assertions ran";
+
+    private static string Spoken(TimeSpan span) =>
+        span < TimeSpan.FromMinutes(1) || span.Seconds != 0 ? $"{span.TotalSeconds:0} s" : $"{span.TotalMinutes:0} min";
 
     private const int MaxDetailLines = 12;
     private const int MaxDetailLength = 240;
@@ -273,6 +342,9 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
             .Concat(v.PolicyViolations.Select(p => $"policy violation: {p.Directive} {p.BlockedUri ?? p.SourceFile ?? "inline"}"))
             .Concat(v.RefusedReads.Select(r => $"refused read: {r.Operation} {r.Path}: {r.ErrorCode ?? "unknown"}"
                                                + (r.Message is { } why ? $": {why}" : "")))
+            .Concat(v.FailedAsks.Select(a => $"failed ask: {a.ErrorCode}" + (a.Message is { } why ? $": {why}" : "")
+                                             + (a.Failure is { } said ? $" (the agent said: {said})" : "")
+                                             + (a.Reply is { } reply ? $" (its reply: {reply})" : "")))
             .Select(line => $"  {Clip(line)}")
             .ToList();
         return all.Count <= MaxDetailLines

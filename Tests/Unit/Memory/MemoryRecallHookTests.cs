@@ -365,6 +365,42 @@ public class MemoryRecallHookTests
         await NothingWasEnqueued();
     }
 
+    // An app's ask may carry text the app's code fetched from anywhere, so memory neither reads nor writes
+    // for it: no recall block, no embedding asked, nothing enqueued. A gate of its own, beside the Lemonade
+    // one rather than folded into it: that boundary is one-way on purpose (ADR 0042), this one is not.
+    [Fact]
+    public async Task EnrichAsync_AnAppTurn_RecallsNothingAndEnqueuesNothing()
+    {
+        var message = new ChatMessage(ChatRole.User, "How many carbs?");
+        message.SetAppTurn(new AppTurn { AppId = "a1b2c3d4", Instructions = "You estimate carbs." });
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheTurnAMemoryToRecall();
+
+        var extraction = await _hook.EnrichAsync(message, User1, "conv_1", null, session, CancellationToken.None);
+
+        extraction.ShouldBeNull();
+        message.GetMemoryContext().ShouldBeNull();
+        _embeddingService.Verify(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        await NothingWasEnqueued();
+    }
+
+    // The stamp is believed by its presence: one that cannot be read as an app turn still keeps memory out.
+    [Fact]
+    public async Task EnrichAsync_AnAppTurnStampItCannotRead_StillRecallsNothing()
+    {
+        var message = new ChatMessage(ChatRole.User, "How many carbs?")
+        {
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["AppTurn"] = "not an app turn" }
+        };
+        var session = CreateSessionWithStateKey("state-test");
+        GiveTheTurnAMemoryToRecall();
+
+        (await _hook.EnrichAsync(message, User1, "conv_1", null, session, CancellationToken.None)).ShouldBeNull();
+
+        message.GetMemoryContext().ShouldBeNull();
+        await NothingWasEnqueued();
+    }
+
     private async Task NothingWasEnqueued()
     {
         _queue.Complete();

@@ -142,9 +142,10 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             .GroupBy(t => t.Scope)
             .ToDictionary(g => g.Key, g => Lemonade(g.SelectMany(t => t.Entries)));
 
-    // One household's tokens and cost per agent (labelled as the dashboard labels them) and per
-    // person (by account, under the latest name their turns carried), costliest first, beside its
-    // Lemonade use: what its owner reads in the admin area.
+    // One household's tokens and cost per agent (labelled as the dashboard labels them), per person
+    // (by account, under the latest name their turns carried) and per built app its people asked (by
+    // the app's id, which only the apps server can name), costliest first, beside its Lemonade use: what
+    // its owner reads in the admin area.
     public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, MetricDateRange range)
     {
         var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, range, household);
@@ -153,6 +154,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         return new HouseholdUsage(
             Lines(events, e => (agent(e), null)),
             Lines(events, e => (person(e), e.UserId)),
+            Lines(events.Where(e => e.AppId is not null), e => (e.AppId!, e.AppId)),
             await GetLemonadeUsageAsync(range, household));
     }
 

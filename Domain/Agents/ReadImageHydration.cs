@@ -37,7 +37,7 @@ internal static class ReadImageHydration
     {
         if (FsImageReadResult.TryRead(result) is { Shown: true } file)
         {
-            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount)];
+            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount, SizeBytes: file.SizeBytes ?? 0)];
         }
 
         // A page result can carry several envelopes: view_image takes a list, and the bridge joins
@@ -53,7 +53,7 @@ internal static class ReadImageHydration
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
-                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page)]
+                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page, SizeBytes: single.SizeBytes ?? 0)]
                 : [];
         }
 
@@ -65,7 +65,7 @@ internal static class ReadImageHydration
             .Select((envelope, index) => (Envelope: envelope, Index: index))
             .Where(e => e.Envelope is { Shown: true })
             .Select(e => new ReadImageReference(
-                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index))
+                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index, e.Envelope.SizeBytes ?? 0))
             .ToList();
     }
 
@@ -127,7 +127,7 @@ internal static class ReadImageHydration
         ChatMessage message,
         IReadOnlyList<ReadImageReference> reads,
         ReadImageContext context,
-        bool withinDepth,
+        bool withinCap,
         CancellationToken ct)
     {
         // Grouped rather than keyed one-to-one: a single view_image call can promise several
@@ -145,7 +145,7 @@ internal static class ReadImageHydration
             }
 
             contents.Add(new FunctionResultContent(
-                result.CallId, await RewriteAsync(result.Result, group, context, withinDepth, ct)));
+                result.CallId, await RewriteAsync(result.Result, group, context, withinCap, ct)));
         }
 
         var copy = message.Clone();
@@ -157,14 +157,14 @@ internal static class ReadImageHydration
         object? envelope,
         IReadOnlyList<ReadImageReference> reads,
         ReadImageContext context,
-        bool withinDepth,
+        bool withinCap,
         CancellationToken ct)
     {
         // The common case by far -- a mount read, or a call that asked for one picture -- keeps the
         // single-envelope shape the wire and the truncator already estimate correctly.
         if (reads.Count == 1)
         {
-            return await RewriteOneAsync(envelope, reads[0], context, withinDepth, ct);
+            return await RewriteOneAsync(envelope, reads[0], context, withinCap, ct);
         }
 
         // A loop because every iteration awaits the store, and the order the parts are appended in
@@ -172,7 +172,7 @@ internal static class ReadImageHydration
         var parts = new List<AIContent> { new TextContent(EnvelopeText(envelope)) };
         foreach (var read in reads)
         {
-            if (!withinDepth)
+            if (!withinCap)
             {
                 await context.ForgetAsync(StoreKey(read), ct);
                 parts.Add(new TextContent(Placeholder(read)));
@@ -198,14 +198,14 @@ internal static class ReadImageHydration
         object? envelope,
         ReadImageReference read,
         ReadImageContext context,
-        bool withinDepth,
+        bool withinCap,
         CancellationToken ct)
     {
-        if (!withinDepth)
+        if (!withinCap)
         {
-            // The send an image drops out of view is the send its bytes go. That makes the
-            // message window the real bound and the store's own horizon only a backstop for a
-            // conversation that went quiet.
+            // The send an image falls past the picture cap is the send its bytes go: only newer
+            // pictures are ever added, so it never comes back into view. The store's own horizon
+            // bounds the rest.
             await context.ForgetAsync(StoreKey(read), ct);
             return $"{EnvelopeText(envelope)}\n{Placeholder(read)}";
         }
@@ -237,7 +237,7 @@ internal static class ReadImageHydration
 
     // Honest in a way a lost attachment's placeholder cannot be: what the image was read from
     // outlives the image, so asking again really does bring it back. One answer for every way the
-    // bytes can be missing — out of depth, expired, evicted, or a host with no store at all.
+    // bytes can be missing — past the picture cap, expired, evicted, or a host with no store at all.
     //
     // Where to ask again differs by origin, and that is the whole difference: a mount still holds
     // the file, while a page's refs died with the session that issued them.
@@ -267,6 +267,7 @@ internal enum ReadImageOrigin
 }
 
 // One image a tool result promised the model, and what to name if the bytes cannot be found — a
-// mount path, or the label the page's entry gave the picture.
+// mount path, or the label the page's entry gave the picture. Its size is the envelope's, what the
+// picture cap weighs it by; an envelope naming none weighs nothing.
 internal sealed record ReadImageReference(
-    string CallId, string Name, ReadImageOrigin Origin, int Index = 0);
+    string CallId, string Name, ReadImageOrigin Origin, int Index = 0, long SizeBytes = 0);

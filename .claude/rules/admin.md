@@ -78,10 +78,10 @@ by the session check, not here.
 
 ## Two owners with the same page open
 
-A page saving a whole section — settings, features, spaces — or an agent's name and instructions sends
+A page saving a whole section — settings, features, spaces, app asks — or an agent's name and instructions sends
 what it loaded beside what it wants (`AdminEdit.Of`, the body's `loaded`; `AgentEdit.Loaded`), and the route
 lays only what changed over the section as it is now (`AdminSections.Merged` over `EditMerge`; spaces merge
-by slug). A field both changed differently — or a space one removed and the other changed — is **409**
+by slug, app caps by app id, a removed one's `null` dropped). A field both changed differently — or a space one removed and the other changed — is **409**
 `AdminRefusal` naming it, nothing saved or recorded; the chat client shows it as a refusal (`AdminService`). A body with
 nothing loaded is saved as sent. User chose merging per item over refusing every stale save (2026-11-04).
 Keys, members and servers routes change one item each and need none of it.

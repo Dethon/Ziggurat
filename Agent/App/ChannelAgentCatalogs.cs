@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Sockets;
 using Domain.Contracts;
 using Domain.DTOs;
 
@@ -78,7 +79,7 @@ public sealed class ChannelAgentCatalogs(
         {
             _current[key] = (await households.ForAsync(key == Home ? null : key, ct)).Agents;
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException or TaskCanceledException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or HouseholdConfigRefusedException or TaskCanceledException
                                    && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,

@@ -57,6 +57,11 @@ internal class McpFileSystemBackend(
 
     public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        if (LeavesALaterTurnRefused(path) is { } refused)
+        {
+            return new FsResult<FsCreateResult>.Err(refused);
+        }
+
         var delegated = await DelegatedAsync(path, ct => Task.FromResult<string?>(content),
             DelegatedWrites.CreateReadsFirst(filesystemName, overwrite) ? path : null, ct);
         return Typed<FsCreateResult>("fs_create", await CallWritingAsync("fs_create", WithFilesystem(new Dictionary<string, object?>
@@ -70,6 +75,11 @@ internal class McpFileSystemBackend(
 
     public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
     {
+        if (LeavesALaterTurnRefused(path) is { } refused)
+        {
+            return new FsResult<FsEditResult>.Err(refused);
+        }
+
         // An edit is relative to what is there, so what it leaves is read first and edited here the
         // way the mount edits it; a text the edits do not fit is refused by the mount, delegation or no.
         var delegated = await DelegatedAsync(path, async ct => await TextAtAsync(path, ct) is { } current
@@ -110,6 +120,11 @@ internal class McpFileSystemBackend(
 
     public async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
     {
+        if (LeavesALaterTurnRefused(destinationPath) is { } refused)
+        {
+            return new FsResult<FsMoveResult>.Err(refused);
+        }
+
         var moved = DelegatedWrites.MovedFile(filesystemName, sourcePath);
         var delegated = moved is null
             ? null
@@ -296,6 +311,16 @@ internal class McpFileSystemBackend(
     // VfsCopyTool intact — flattening it left a permanent denial looking retryable.
     private static FileSystemOperationException Refused(string toolName, ToolErrorResult error) =>
         new(error with { Message = $"{toolName} failed: {error.Message}" });
+
+    // A built app's ask writes nothing a later turn acts on (DelegatedWrites.MayBeLeftBy), however the write
+    // got here: the model's file tool is refused before it runs, and this holds for a sandbox command's write
+    // through the bridge too, so nothing is stored to fire later, as the viewer or as nobody.
+    private ToolErrorResult? LeavesALaterTurnRefused(string path) =>
+        DelegatedWrites.Delegates(filesystemName, path) && !DelegatedWrites.MayBeLeftBy(CallIdentity.Of(_caller))
+            ? ToolError.PermissionDenied(
+                $"{path} would start a later turn as the person, which an app's request cannot leave behind, so it was not written.",
+                "Carry on without it: answer with what you have, or say it could not be done.")
+            : null;
 
     // What a write by a person's turn delegates, said to the signing transport under the agent's own
     // request key; the transport signs it as whoever the call acts for (SigningClientTransport). Asked

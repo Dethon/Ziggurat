@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
 namespace Domain.Apps;
@@ -14,7 +15,8 @@ public static class PublishedApps
 }
 
 // What an owner sees of an app before sharing it with the household: who made it, what it reads of the
-// household and which outside origins it talks to — the served commit's manifest, never the working tree.
+// household, which outside origins it talks to and which servers its asks may use — the served commit's
+// manifest, never the working tree.
 [PublicAPI]
 public sealed record PublishedApp(
     string Id,
@@ -25,7 +27,15 @@ public sealed record PublishedApp(
     string AuthorId,
     IReadOnlyList<string> Reads,
     IReadOnlyList<string> Connect,
-    string Url);
+    string Url)
+{
+    // Not in the constructor, so a listing from an apps server that names none reads as asking none.
+    public IReadOnlyList<string> Asks { get; init; } = [];
+
+    // All it asks, which an owner approves by saving its space with it.
+    [JsonIgnore]
+    public AppReach Reach => new() { Reads = Reads, Connect = Connect, Asks = Asks };
+}
 
 [PublicAPI]
 public sealed record PublishedAppList(IReadOnlyList<PublishedApp> Apps);

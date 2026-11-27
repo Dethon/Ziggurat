@@ -5,8 +5,8 @@ using Domain.Tools;
 namespace Domain.Apps;
 
 // A built app's runtime errors, spelled once for the client library that reports them and the apps
-// server that keeps them: an uncaught error, an unhandled rejection, or a read the household refused or
-// never answered, POSTed to OriginPath on the app's own origin.
+// server that keeps them: an uncaught error, an unhandled rejection, a read the household refused or
+// never answered, or an ask that failed, POSTed to OriginPath on the app's own origin.
 public static class AppErrors
 {
     public const string OriginPath = "/_errors";
@@ -22,7 +22,10 @@ public static class AppErrors
         // A read the household refused or never answered: it carries the read's path and envelope.
         public const string Read = "read";
 
-        public static readonly IReadOnlyList<string> All = [Error, Rejection, Read];
+        // An ask that failed: it carries the envelope it was answered with, never what it asked or got back.
+        public const string Ask = "ask";
+
+        public static readonly IReadOnlyList<string> All = [Error, Rejection, Read, Ask];
     }
 }
 
@@ -38,6 +41,8 @@ public sealed record AppErrorReport
     public required string Route { get; init; }
 
     public AppErrorRead? Read { get; init; }
+
+    public AppErrorAsk? Ask { get; init; }
 
     public const int MaxMessage = 1000;
     public const int MaxStack = 8000;
@@ -68,13 +73,17 @@ public sealed record AppErrorReport
             return new AppErrorReportParse.Refused("A report is one JSON object.");
         }
 
-        var problems = report.Problems().ToList();
+        var problems = report.OwnProblems()
+            .Concat(report.Read?.Problems() ?? [])
+            .Concat(report.Ask?.Envelope.Problems("ask.envelope") ?? [])
+            .ToList();
         return problems.Count == 0
             ? new AppErrorReportParse.Valid(report)
             : new AppErrorReportParse.Refused(string.Join(" ", problems));
     }
 
-    private IEnumerable<string> Problems()
+    // What is wrong with the report itself; a read's or an ask's own are theirs.
+    private IEnumerable<string> OwnProblems()
     {
         if (!AppErrors.Kinds.All.Contains(Kind))
         {
@@ -102,14 +111,18 @@ public sealed record AppErrorReport
             yield return "read is given for a read's error and for no other.";
         }
 
-        if (Read is not null)
+        if ((Kind == AppErrors.Kinds.Ask) != (Ask is not null))
         {
-            foreach (var problem in Read.Problems())
-            {
-                yield return problem;
-            }
+            yield return "ask is given for an ask's error and for no other.";
         }
     }
+}
+
+// A failed ask: the tools' envelope it was answered with, and nothing else of it — its text, schema, images
+// and any reply are what the app asked and got, and stay in the page.
+public sealed record AppErrorAsk
+{
+    public required AppErrorEnvelope Envelope { get; init; }
 }
 
 // A failed or refused read: which operation, on what virtual path, and the tools' envelope it was
@@ -122,7 +135,9 @@ public sealed record AppErrorRead
     public string? Path { get; init; }
     public required AppErrorEnvelope Envelope { get; init; }
 
-    internal IEnumerable<string> Problems()
+    internal IEnumerable<string> Problems() => OwnProblems().Concat(Envelope.Problems("read.envelope"));
+
+    private IEnumerable<string> OwnProblems()
     {
         if (!AppReads.Operations.All.Contains(Operation))
         {
@@ -133,26 +148,11 @@ public sealed record AppErrorRead
         {
             yield return $"read.path is a virtual path, '/' and at most {AppErrorReport.MaxRoute} characters.";
         }
-
-        if (!ToolError.IsKnown(Envelope.ErrorCode))
-        {
-            yield return "read.envelope.errorCode is one of the tools' codes.";
-        }
-
-        if (Envelope.Message is null)
-        {
-            yield return "read.envelope.message is given.";
-        }
-
-        if (Envelope.Message?.Length > AppErrorReport.MaxMessage || Envelope.Hint?.Length > AppErrorReport.MaxMessage)
-        {
-            yield return $"read.envelope's message and hint are at most {AppErrorReport.MaxMessage} characters.";
-        }
     }
 }
 
-// The tools' envelope the read was refused with. Its retryability is this side's taxonomy's, never the
-// page's word (a page may send it; it is not read).
+// The tools' envelope a read or an ask was refused with. Its retryability is this side's taxonomy's, never
+// the page's word (a page may send it; it is not read).
 public sealed record AppErrorEnvelope
 {
     public required string ErrorCode { get; init; }
@@ -165,6 +165,24 @@ public sealed record AppErrorEnvelope
     public string? Hint { get; init; }
 
     public bool Retryable => ToolError.IsRetryable(ErrorCode);
+
+    internal IEnumerable<string> Problems(string field)
+    {
+        if (!ToolError.IsKnown(ErrorCode))
+        {
+            yield return $"{field}.errorCode is one of the tools' codes.";
+        }
+
+        if (Message is null)
+        {
+            yield return $"{field}.message is given.";
+        }
+
+        if (Message?.Length > AppErrorReport.MaxMessage || Hint?.Length > AppErrorReport.MaxMessage)
+        {
+            yield return $"{field}'s message and hint are at most {AppErrorReport.MaxMessage} characters.";
+        }
+    }
 }
 
 public abstract record AppErrorReportParse
@@ -212,6 +230,9 @@ public sealed record AppErrorEntry
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AppErrorRead? Read { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AppErrorAsk? Ask { get; init; }
 
     // Set on another member's report, saying what of it was kept and what to do instead.
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

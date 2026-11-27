@@ -357,6 +357,61 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         _households.Add(Household, isHome: false, Settings(), Agents("Sign every reply."));
         (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 20 }, Agents("Rhyme."));
+        (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+    }
+
+    // A long job's turn runs every round of calls its model asks for: a fixed cap of 50 stopped a
+    // playtesting turn three times mid-work, with no word, and its person had to say "continue".
+    [Fact]
+    public async Task AHouseholdThatCapsNoToolRounds_RunsEveryRoundItsModelAsksFor()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        _model.Script([.. Enumerable.Repeat(FakeOpenRouter.CallingToolNamed("recall", """{"note":"n"}"""), 60)]);
+
+        await TurnAsync("jonas", Household, Approving());
+
+        _model.Requests[^1].ToolOutputs.Count.ShouldBe(60);
+    }
+
+    // An owner who wants a bound sets it, and the turn runs that many rounds of calls and no more: the
+    // model's last ask is offered no tools to call.
+    [Fact]
+    public async Task AHouseholdsCapOnToolRounds_RunsThatManyRounds()
+    {
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 3 }, new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        _model.Script([.. Enumerable.Repeat(FakeOpenRouter.CallingToolNamed("recall", """{"note":"n"}"""), 3)]);
+
+        await TurnAsync("jonas", Household, Approving());
+
+        _model.Requests[^1].ToolOutputs.Count.ShouldBe(3);
+        _model.Requests[^1].ToolNames.ShouldBeEmpty();
+    }
+
+    // At the cap the model's last ask is offered no tools, and a call it writes anyway is never run: it is
+    // answered so, rather than kept with no result, which told the next turn a file was written that never
+    // was.
+    [Fact]
+    public async Task ACallWrittenPastTheCap_IsAnsweredAsNotRun()
+    {
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 2 }, new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        string? recall = null;
+        const string note = """{"note":"n"}""";
+        _model.Script(
+            request => FakeOpenRouter.CallingTool(recall = FakeModelReplies.ToolNamed(request, "recall")!, note),
+            FakeOpenRouter.CallingToolNamed("recall", note),
+            _ => FakeOpenRouter.CallingTool(recall!, note));
+        await using var agent = await Factory().CreateAsync(
+            new AgentKey("conv-1", "jonas"), "fran", "jonas", Approving(), tenantId: Household);
+
+        var updates = await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")]).ToListAsync();
+
+        var results = updates.SelectMany(u => u.Contents).OfType<FunctionResultContent>().ToList();
+        results.Count.ShouldBe(3);
+        results[^1].Result!.ToString()!.ShouldContain("Not run: this turn reached its household's limit of 2 rounds of tool calls");
     }
 
     // A worker's profile is the deployment's, and names the vault for every household; one spawned for
@@ -620,6 +675,14 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         return _model.Requests[^1].SystemPrompt.ShouldNotBeNull();
     }
 
+    private static IToolApprovalHandler Approving()
+    {
+        var approves = new Mock<IToolApprovalHandler>();
+        approves.Setup(a => a.RequestApprovalAsync(It.IsAny<ApprovalAsk>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolApprovalResult.Approved);
+        return approves.Object;
+    }
+
     private string _deploymentKey = "deployment-key";
 
     private MultiAgentFactory Factory()
@@ -703,6 +766,9 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
             throw new NotSupportedException();
 
         public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<AppAsksSection> AppAsksAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
             throw new NotSupportedException();
 
         public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>

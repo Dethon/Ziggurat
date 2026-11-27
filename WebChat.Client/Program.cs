@@ -90,6 +90,7 @@ _ = app.Services.GetRequiredService<HouseholdAgentsEffect>();
 _ = app.Services.GetRequiredService<HouseholdMembersEffect>();
 _ = app.Services.GetRequiredService<HouseholdFeaturesEffect>();
 _ = app.Services.GetRequiredService<HouseholdSpacesEffect>();
+_ = app.Services.GetRequiredService<HouseholdAppAsksEffect>();
 _ = app.Services.GetRequiredService<HouseholdServersEffect>();
 _ = app.Services.GetRequiredService<HouseholdUsageEffect>();
 

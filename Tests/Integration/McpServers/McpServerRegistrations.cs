@@ -224,10 +224,13 @@ public static class McpServerRegistrations
             DeliveryPolicy.GateOnLive),
 
         // The volume is never touched at registration: a repository is made by the first app.json a
-        // person writes.
-        Row("apps", "McpServerApps", McpServerRole.Tool,
+        // person writes. Dual-role: the mount for the agent that builds apps, and the channel a built
+        // app's asks reach it through. Gate-on-live, as Sugary's, because the page waits on its own
+        // request: an ask nobody is polling for is answered unavailable at once.
+        Row("apps", "McpServerApps", McpServerRole.DualRole,
             new AppsSettings.AppsSettings { StoragePath = "/data", AppsDomain = "apps.test", Mcp = DeploymentGate },
-            (services, settings) => services.ConfigureApps(settings)),
+            (services, settings) => services.ConfigureApps(settings),
+            DeliveryPolicy.GateOnLive),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,
             new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"], Mcp = DeploymentGate },

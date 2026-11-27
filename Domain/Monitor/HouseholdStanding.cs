@@ -77,7 +77,8 @@ public sealed class HouseholdStanding(IAgentDefinitionProvider? households, IAcc
 }
 
 // Why a household would not have the agent act for somebody who was believed: the operator suspended it,
-// an owner disabled the person, it turned off the feature the act needs, or none of it could be read.
+// an owner disabled the person, it turned off the feature the act needs, it no longer has the agent a built
+// app asks, or none of it could be read.
 public abstract record StandingRefusal(string HouseholdId)
 {
     public sealed record Suspended(string HouseholdId) : StandingRefusal(HouseholdId);
@@ -87,4 +88,8 @@ public abstract record StandingRefusal(string HouseholdId)
     public sealed record Unchecked(string HouseholdId) : StandingRefusal(HouseholdId);
 
     public sealed record SugaryOff(string HouseholdId) : StandingRefusal(HouseholdId);
+
+    public sealed record AppsOff(string HouseholdId) : StandingRefusal(HouseholdId);
+
+    public sealed record AppAgentGone(string HouseholdId, string AgentId) : StandingRefusal(HouseholdId);
 }

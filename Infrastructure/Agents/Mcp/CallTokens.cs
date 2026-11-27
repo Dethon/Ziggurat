@@ -10,12 +10,14 @@ public sealed record CallTokenSettings
 {
     // Long enough to cover the hop to the server, short enough that one taken off the wire is worth
     // little: a server checks a token when the call arrives and never again during it.
-    public TimeSpan Lifetime { get; init; } = TimeSpan.FromMinutes(2);
+    // Ten minutes, since a check's page reads on its call's token for up to its deadline (Checks:Deadline,
+    // at most the refresh margin): a longer check is a longer-lived token for every server.
+    public TimeSpan Lifetime { get; init; } = TimeSpan.FromMinutes(10);
 
     // A token this close to its expiry is not presented again; a fresh one is minted instead. It
     // covers the call's transit and the clock drift between containers, so a token presented is never
     // one the server reads as expired.
-    public TimeSpan RefreshMargin { get; init; } = TimeSpan.FromSeconds(30);
+    public TimeSpan RefreshMargin { get; init; } = TimeSpan.FromMinutes(5);
 }
 
 // How long a login handoff's delegation lives. A schedule's or a watch's lives as long as the object

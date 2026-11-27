@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json;
 using Accounts.Settings;
 using Accounts.Signing;
@@ -36,7 +37,7 @@ public sealed class HouseholdAppsClient(
 
             return (await response.Content.ReadFromJsonAsync<PublishedAppList>(asking.Token))?.Apps;
         }
-        catch (Exception ex) when (ex is HttpRequestException or JsonException
+        catch (Exception ex) when (ex is HttpRequestException or SocketException or JsonException
                                        || (ex is OperationCanceledException && !ct.IsCancellationRequested))
         {
             logger.LogWarning(ex, "The apps server could not be asked for household {Household}'s published apps", owner.TenantId);

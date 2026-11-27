@@ -18,6 +18,10 @@ public record ChannelMessage
     // it as the message arrives and nothing else reads it (ChannelMessageNotification.Assertion).
     public string? Assertion { get; init; }
 
+    // A check's ask's call token as the apps channel carried it, unverified: the conversation group checks it
+    // on an app turn alone (ChannelMessageNotification.CheckCallToken).
+    public string? CheckCallToken { get; init; }
+
     // A fire's delegation as its server carried it, unverified: the conversation group checks it as
     // the fire arrives and nothing else reads it (ChannelMessageNotification.Delegation).
     public FireDelegation? Delegation { get; init; }
@@ -48,6 +52,10 @@ public record ChannelMessage
     // boundary (ChannelMessageNotification.Steer).
     public bool Steer { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
+
+    // A built app's ask (ChannelMessageNotification.AppTurn), unverified: the conversation group keeps
+    // it only on a message from the deployment's `apps` channel endpoint and drops it everywhere else.
+    public AppTurn? AppTurn { get; init; }
 
     // The channel asks for this conversation to be shown on the review host too (ADR 0046).
     public ReviewCopy? ReviewCopy { get; init; }

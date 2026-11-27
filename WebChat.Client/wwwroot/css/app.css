@@ -2246,8 +2246,7 @@ h1, h2, h3 {
 }
 
 .chip-icon {
-    font-size: 1rem;
-    line-height: 1;
+    flex-shrink: 0;
 }
 
 [data-theme="dark"] .suggestion-chip {

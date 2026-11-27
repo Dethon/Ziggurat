@@ -2,7 +2,8 @@
 @using Domain.DTOs.Admin
 
 @* What an owner sees of an app shared, or about to be shared, with the household: who made it, what of
-   the household it reads and which outside origins it talks to. About to be shared, that is what its
+   the household it reads, which outside origins it talks to and which servers its asks may use (the
+   agent's tools an ask from its page is offered). About to be shared, that is what its
    published version asks, all of which sharing it approves. Shared, it is what an owner approved, and
    apart from it what its published version asks beyond that, which it is not granted until an owner
    approves it and saves. *@
@@ -20,6 +21,9 @@
         <span class="admin-field-hint">
             @(Shared ? "Approved to talk to" : "Talks to") @(shown.Connect.Count == 0 ? "no outside origin" : string.Join(", ", shown.Connect))
         </span>
+        <span class="admin-field-hint">
+            @(Shared ? "Its asks are approved to use" : "Its asks may use") @(shown.Asks.Count == 0 ? "no server" : string.Join(", ", shown.Asks))
+        </span>
         @if (Shared && Pending is { IsEmpty: false } pending)
         {
             <span class="admin-field-hint admin-pending" role="status">
@@ -27,7 +31,8 @@
                 @string.Join(" and ", new[]
                 {
                     pending.Reads.Count == 0 ? null : $"read {string.Join(", ", pending.Reads)}",
-                    pending.Connect.Count == 0 ? null : $"talk to {string.Join(", ", pending.Connect)}"
+                    pending.Connect.Count == 0 ? null : $"talk to {string.Join(", ", pending.Connect)}",
+                    pending.Asks.Count == 0 ? null : $"use {string.Join(", ", pending.Asks)} for its asks"
                 }.OfType<string>()),
                 which nobody in the household is granted until an owner approves it.
             </span>

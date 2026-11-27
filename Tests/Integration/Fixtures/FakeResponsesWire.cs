@@ -6,7 +6,7 @@ using static Tests.Integration.Fixtures.FakeModelReplies;
 namespace Tests.Integration.Fixtures;
 
 // A fake reply spelled on OpenRouter's Responses wire, the one the agent's client speaks: streamed as
-// the provider streams it (reasoning summary, then text deltas or one function call), or whole for a
+// the provider streams it (reasoning summary, then text deltas or function calls), or whole for a
 // request that did not ask for a stream.
 public static class FakeResponsesWire
 {
@@ -83,20 +83,36 @@ public static class FakeResponsesWire
                 }), TimeSpan.Zero);
                 break;
             case ToolCall call:
-                yield return (Event("response.output_item.added", new JsonObject
+                foreach (var e in CallEvents(call, index))
                 {
-                    ["output_index"] = index, ["item"] = CallItem(call, "in_progress", "")
-                }), TimeSpan.Zero);
-                yield return (Event("response.output_item.done", new JsonObject
+                    yield return e;
+                }
+
+                break;
+            case ToolCalls calls:
+                foreach (var e in calls.Calls.SelectMany((call, i) => CallEvents(call, index + i)))
                 {
-                    ["output_index"] = index, ["item"] = CallItem(call, "completed", call.Arguments)
-                }), TimeSpan.Zero);
+                    yield return e;
+                }
+
                 break;
         }
 
         yield return (Event("response.completed", new JsonObject { ["response"] = Response(reply, "completed", Output(reply)) }), TimeSpan.Zero);
         yield return ("data: [DONE]\n\n", TimeSpan.Zero);
     }
+
+    private static IEnumerable<(string Sse, TimeSpan Delay)> CallEvents(ToolCall call, int index) =>
+    [
+        (Event("response.output_item.added", new JsonObject
+        {
+            ["output_index"] = index, ["item"] = CallItem(call, "in_progress", "")
+        }), TimeSpan.Zero),
+        (Event("response.output_item.done", new JsonObject
+        {
+            ["output_index"] = index, ["item"] = CallItem(call, "completed", call.Arguments)
+        }), TimeSpan.Zero)
+    ];
 
     private static JsonArray Output(Reply reply)
     {
@@ -106,12 +122,14 @@ public static class FakeResponsesWire
             items.Add(ReasoningItem(reply, reasoning));
         }
 
-        items.Add(reply.Output switch
+        JsonObject[] output = reply.Output switch
         {
-            Text text => MessageItem(reply, text.Whole),
-            ToolCall call => CallItem(call, "completed", call.Arguments),
+            Text text => [MessageItem(reply, text.Whole)],
+            ToolCall call => [CallItem(call, "completed", call.Arguments)],
+            ToolCalls calls => [.. calls.Calls.Select(call => CallItem(call, "completed", call.Arguments))],
             _ => throw new InvalidOperationException($"No wire form for {reply.Output}")
-        });
+        };
+        output.ToList().ForEach(item => items.Add(item));
         return items;
     }
 

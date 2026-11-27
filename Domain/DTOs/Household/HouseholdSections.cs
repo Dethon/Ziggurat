@@ -17,6 +17,7 @@ public static partial class HouseholdSections
     public const string Keys = "keys";
     public const string Features = "features";
     public const string Spaces = "spaces";
+    public const string AppAsks = "app-asks";
 
     public static readonly SectionSchema<HouseholdSettings> SettingsSchema = new(
         Settings, [SectionSteps.Unversioned], SettingsProblems);
@@ -34,8 +35,11 @@ public static partial class HouseholdSections
     public static readonly SectionSchema<SpacesSection> SpacesSchema = new(
         Spaces, [SectionSteps.Unversioned], SpacesProblems);
 
+    public static readonly SectionSchema<AppAsksSection> AppAsksSchema = new(
+        AppAsks, [SectionSteps.Unversioned], AppAsksProblems);
+
     public static IReadOnlyList<SectionSchema> All { get; } =
-        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema];
+        [SettingsSchema, AgentsSchema, KeysSchema, FeaturesSchema, SpacesSchema, AppAsksSchema];
 
     public static SectionSchema? Named(string name) => All.FirstOrDefault(s => s.Name == name);
 
@@ -59,6 +63,11 @@ public static partial class HouseholdSections
         if (settings.Language is { } language && !LanguageTag().IsMatch(language))
         {
             yield return $"The language '{language}' is not a language tag, such as es or en-GB.";
+        }
+
+        if (settings.MaxToolRounds is < 1 or > HouseholdSettings.MaxToolRoundsLimit)
+        {
+            yield return $"The tool rounds per turn must be 1–{HouseholdSettings.MaxToolRoundsLimit:N0}, or empty for no limit.";
         }
     }
 
@@ -237,20 +246,34 @@ public static partial class HouseholdSections
         }
     }
 
+    // An owner reads these on the apps page, beside the caps they name.
+    private static IEnumerable<string> AppAsksProblems(AppAsksSection section) =>
+        (section.DailyCap is { } household && !AppAsksSection.IsCap(household)
+            ? [$"The household's daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."]
+            : Array.Empty<string>())
+        .Concat(section.Apps
+            .Select(app => !BuiltAppId.IsValid(app.Key) ? $"'{app.Key}' is no built app's id, so it has no daily cap."
+                : !AppAsksSection.IsCap(app.Value) ? $"The app {app.Key}'s daily cap must be 0–{AppAsksSection.MaxDailyCap} asks."
+                : null)
+            .OfType<string>());
+
     [GeneratedRegex("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant)]
     private static partial Regex LanguageTag();
 }
 
-// The household's own name, the zone its dates and schedules are read in, and the language its
-// agents answer in unless a conversation says otherwise (none: they follow the conversation).
+// The household's own name, the zone its dates and schedules are read in, the language its
+// agents answer in unless a conversation says otherwise (none: they follow the conversation), and how
+// many rounds of tool calls one turn may run (none: as many as its model asks for).
 [PublicAPI]
 public sealed record HouseholdSettings
 {
     public const int NameLength = 200;
+    public const int MaxToolRoundsLimit = 10_000;
 
     public string Name { get; init; } = "";
     public string TimeZone { get; init; } = "";
     public string? Language { get; init; }
+    public int? MaxToolRounds { get; init; }
 }
 
 // The household's agents and the one a channel that names none reaches (the shared Telegram bot's
@@ -393,4 +416,26 @@ public sealed record HouseholdSpace
 
     [JsonIgnore]
     public bool IsApp => AppId is not null;
+}
+
+// How many asks a day the household's built apps may send their assistant (.claude/rules/apps.md, "The daily
+// cap"): a default for every app of the household and a cap of each app's own, both its owners'. What
+// neither sets is the deployment's (the apps server's Asks:DailyCap). None of an app is a cap of no asks.
+[PublicAPI]
+public sealed record AppAsksSection
+{
+    // Each ask is a model's turn on the household's key, and a day has 1,440 minutes: a page asking several
+    // times a minute all day long is no app's need, and a cap above it bounds nothing.
+    public const int MaxDailyCap = 10_000;
+
+    public int? DailyCap { get; init; }
+
+    // By the app's id, never its slug, so a rename keeps the app's cap.
+    public IReadOnlyDictionary<string, int> Apps { get; init; } = new Dictionary<string, int>();
+
+    public static bool IsCap(int cap) => cap is >= 0 and <= MaxDailyCap;
+
+    // The limit an app's asks meet: its own cap, else the household's, else the deployment's.
+    public int LimitOf(string appId, int deployment) =>
+        Apps.TryGetValue(appId, out var own) ? own : DailyCap ?? deployment;
 }

@@ -202,7 +202,7 @@ public class PageImageRoundTripTests
             message,
             ReadImageHydration.Reads(message),
             new ReadImageContext(store, Conversation),
-            withinDepth: true,
+            withinCap: true,
             CancellationToken.None);
 
     // The store keys hydration derives from the message, which is the whole contract under test.

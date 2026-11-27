@@ -1,8 +1,14 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
+using Accounts.Configuration;
 using Accounts.Internal;
+using Accounts.Settings;
 using Accounts.Signing;
+using Domain.Contracts;
 using Domain.DTOs.Admin;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Security;
@@ -11,8 +17,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Observability;
 using Observability.Hubs;
@@ -31,6 +39,8 @@ namespace Tests.Integration.Accounts;
 // collector as events from two households arrive.
 public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
+    private const string AppsCredential = "apps-credential";
+
     private static readonly DateTimeOffset _october = new(2026, 10, 12, 18, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -71,6 +81,61 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
         var usage = await stack.UsageAsync(ana, "2026-10");
 
         usage.People.ShouldBe([new UsageLine("Ana", 126, 0.31m, ana), new UsageLine("Luis", 60, 0.10m)]);
+    }
+
+    // What the household's apps asked costs a line per app, on top of the person who asked and the agent that
+    // answered. An app no published listing names (the apps feature off here) shows under its id.
+    [Fact]
+    public async Task AnAppsAsks_AreALineOfTheirOwn_AndThePersonWhoAskedPays()
+    {
+        await using var stack = await UsageStack.StartAsync(redis);
+        var (casa, ana) = await stack.Accounts.SeedHouseholdAsync("Casa", "Ana");
+        await stack.SeedAsync(
+            Tokens(casa, "jonas", "Jonas", "Ana", 100, 20, 0.30m),
+            Tokens(casa, "jonas", "Jonas", "Ana", 40, 2, 0.05m) with { Channel = AppChannels.Apps, AppId = "a1b2c3" },
+            Tokens(casa, "jonas", "Jonas", "Luis", 10, 1, 0.02m) with { Channel = AppChannels.Apps, AppId = "a1b2c3" },
+            Tokens(casa, "jonas", "Jonas", "Luis", 7, 0, 0.01m) with { Channel = AppChannels.Apps, AppId = "d4e5f6" });
+
+        var usage = await stack.UsageAsync(ana, "2026-10");
+
+        usage.Apps.ShouldBe([new UsageLine("a1b2c3", 53, 0.07m, "a1b2c3"), new UsageLine("d4e5f6", 7, 0.01m, "d4e5f6")]);
+        usage.People.ShouldBe([new UsageLine("Ana", 162, 0.35m), new UsageLine("Luis", 18, 0.03m)]);
+        usage.Agents.ShouldBe([new UsageLine("Jonas", 180, 0.38m)]);
+    }
+
+    // A published app's line shows under the name the household's apps list it by now.
+    [Fact]
+    public async Task APublishedAppsLine_IsShownByItsName()
+    {
+        await using var apps = await AppsServer.StartAsync(services: s =>
+            s.Replace(ServiceDescriptor.Singleton<TimeProvider>(new FakeTimeProvider(AccountsServer.StartedAt))));
+        await using var stack = await UsageStack.StartAsync(redis, $"http://localhost:{apps.Settings.Listeners.Mcp}");
+        var (casa, ana) = await AppsHouseholdAsync(stack);
+        var author = new Account(casa, ana);
+        var glucose = AppsServer.IdIn(await apps.AppAsync(author, "glucose", "Glucose today"));
+        await apps.CreateAsync(author, "/glucose/index.html", "<h1>Hi</h1>");
+        await apps.ExecAsync(author, "/glucose", "./publish");
+        await stack.SeedAsync(
+            Tokens(casa, "jonas", "Jonas", "Ana", 40, 2, 0.05m) with { Channel = AppChannels.Apps, AppId = glucose },
+            Tokens(casa, "jonas", "Jonas", "Ana", 7, 0, 0.01m) with { Channel = AppChannels.Apps, AppId = "gone00" });
+
+        var usage = await stack.UsageAsync(ana, "2026-10");
+
+        usage.Apps.ShouldBe([new UsageLine("Glucose today", 42, 0.05m, glucose), new UsageLine("gone00", 7, 0.01m, "gone00")]);
+    }
+
+    // The apps server not answering costs only the apps' names: the figures are still the household's.
+    [Fact]
+    public async Task WithTheAppsServerDown_AnAppsLineKeepsItsId()
+    {
+        await using var stack = await UsageStack.StartAsync(redis, DeadEnd.Url());
+        var (casa, ana) = await AppsHouseholdAsync(stack);
+        await stack.SeedAsync(
+            Tokens(casa, "jonas", "Jonas", "Ana", 40, 2, 0.05m) with { Channel = AppChannels.Apps, AppId = "a1b2c3" });
+
+        var usage = await stack.UsageAsync(ana, "2026-10");
+
+        usage.Apps.ShouldBe([new UsageLine("a1b2c3", 42, 0.05m, "a1b2c3")]);
     }
 
     // Each owner reads their own household, whoever asks for what: the admin route takes no household,
@@ -190,6 +255,15 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
         }
     }
 
+    // A household the operator gave the apps feature, and its owner.
+    private static async Task<(string Household, string Owner)> AppsHouseholdAsync(UsageStack stack)
+    {
+        var (household, owner) = await stack.Accounts.SeedHouseholdAsync("Casa", "Ana");
+        await stack.Accounts.Service<HouseholdConfigStore>().SaveAsync(
+            household, HouseholdSections.FeaturesSchema, new JsonObject { ["apps"] = true }, CancellationToken.None);
+        return (household, owner);
+    }
+
     private static TokenUsageEvent Tokens(
         string household, string agentId, string agentName, string sender, int input, int output, decimal cost,
         DateTimeOffset? at = null) => new()
@@ -209,10 +283,21 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
     {
         public AccountsServer Accounts => accounts;
 
-        public static async Task<UsageStack> StartAsync(RedisFixture redis)
+        // appsUrl: where the apps server whose listing names the household's published apps listens, which then
+        // verifies the service's assertions and reads its households' configuration as compose wires it.
+        public static async Task<UsageStack> StartAsync(RedisFixture redis, string? appsUrl = null)
         {
             var port = TestPort.GetAvailable();
-            var accounts = await AccountsServer.StartAsync(s => s with { ObservabilityUrl = $"http://localhost:{port}" });
+            var accounts = await AccountsServer.StartAsync(s => appsUrl is null
+                ? s with { ObservabilityUrl = $"http://localhost:{port}" }
+                : s with
+                {
+                    ObservabilityUrl = $"http://localhost:{port}",
+                    Callers = new Dictionary<string, string> { ["mcp-apps"] = AppsCredential },
+                    Redis = new() { ConnectionString = redis.ConnectionString },
+                    Signing = new SigningKeySettings { PrivateKey = TestSigningKeys.Accounts },
+                    AppsUrl = appsUrl
+                });
 
             var builder = WebApplication.CreateBuilder();
             builder.WebHost.UseKestrel(kestrel => kestrel.ListenLocalhost(port));

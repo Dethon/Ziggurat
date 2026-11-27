@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Exceptions;
@@ -137,7 +138,7 @@ public sealed class OpenRouterChatClientVideoTests
     [Theory]
     [InlineData(Watches)]
     [InlineData(SeesPictures)]
-    public async Task AClipWithinTheDistance_IsSentAgainOnAFollowUpTurn(string model)
+    public async Task AClipWithinTheCap_IsSentAgainOnAFollowUpTurn(string model)
     {
         var wire = new RecordingResponsesHandler();
         var store = new JsonThreadStore();
@@ -152,17 +153,17 @@ public sealed class OpenRouterChatClientVideoTests
         ImageUrls(followUp).Count.ShouldBe(model == Watches ? 1 : 3);
     }
 
-    // Past the distance only placeholders go, and one naming the clip says what one per frame
+    // Past the picture cap only placeholders go, and one naming the clip says what one per frame
     // would — nor is a turn refused over a clip its model is no longer being shown.
     [Theory]
     [InlineData(Watches)]
     [InlineData(SeesPictures)]
     [InlineData(TextOnly)]
-    public async Task AClipPastTheDistance_BecomesOnePlaceholderNamingIt(string model)
+    public async Task AClipPastTheCap_BecomesOnePlaceholderNamingIt(string model)
     {
         var wire = new RecordingResponsesHandler();
         var store = new JsonThreadStore();
-        await using var agent = CreateAgent(wire, Watches, store.Object, hydrationDepthMessages: 1);
+        await using var agent = CreateAgent(wire, Watches, store.Object, maxPicturesPerRequest: 0);
         var session = await agent.CreateSessionAsync();
         await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
         var followUp = new ChatMessage(ChatRole.User, "and the bread?");
@@ -177,6 +178,29 @@ public sealed class OpenRouterChatClientVideoTests
         text.ShouldContain("plate.mp4");
         text.ShouldContain("plate.jpg");
         text.ShouldNotContain("still-1.jpg");
+    }
+
+    // A clip sent earlier is in every later request now, so a follow-up moved to a model that takes
+    // neither video nor pictures names it rather than refusing the turn over a file it was not sent with.
+    [Fact]
+    public async Task AnEarlierClip_OnAFollowUpToAModelThatTakesNoPictures_IsNamedAndTheTurnRuns()
+    {
+        var wire = new RecordingResponsesHandler();
+        var store = new JsonThreadStore();
+        await using var agent = CreateAgent(wire, Watches, store.Object);
+        var session = await agent.CreateSessionAsync();
+        await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
+        var followUp = new ChatMessage(ChatRole.User, "and the bread?");
+        followUp.SetConfigPatch(new AgentConfigPatch { Model = TextOnly });
+
+        await agent.RunStreamingAsync([followUp], session).ToListAsync();
+
+        var parts = UserParts(wire.Bodies[1]);
+        parts.Any(IsVideo).ShouldBeFalse();
+        ImageUrls(parts).ShouldBeEmpty();
+        var text = string.Join("\n", parts.Select(p => p["text"]?.GetValue<string>()));
+        text.ShouldContain("plate.mp4");
+        text.ShouldContain("plate.jpg");
     }
 
     private static ChatMessage MealMessage(params AttachmentReference[] attachments)
@@ -215,7 +239,7 @@ public sealed class OpenRouterChatClientVideoTests
         RecordingResponsesHandler wire,
         string model,
         IThreadStateStore? store = null,
-        int hydrationDepthMessages = 20)
+        int maxPicturesPerRequest = AttachmentHydration.DefaultMaxPictures)
     {
         var client = new OpenRouterChatClient(
             "http://localhost/api/v1",
@@ -223,7 +247,7 @@ public sealed class OpenRouterChatClientVideoTests
             model,
             transportHandler: wire,
             attachmentSource: new IdBytesAttachmentSource(),
-            hydrationDepthMessages: hydrationDepthMessages,
+            maxPicturesPerRequest: maxPicturesPerRequest,
             modelAcceptsImages: m => _kinds[m].Contains(AttachmentKind.Image),
             modelAcceptsVideo: m => _kinds[m].Contains(AttachmentKind.Video));
         return new McpAgent(
@@ -271,7 +295,8 @@ public sealed class OpenRouterChatClientVideoTests
 
     private sealed class IdBytesAttachmentSource : IAttachmentSource
     {
-        public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+        public Task<byte[]?> FetchAsync(
+            string channelId, string? householdId, string attachmentId, ConversationContext? turn, CancellationToken ct) =>
             Task.FromResult<byte[]?>(Encoding.UTF8.GetBytes(attachmentId));
     }
 }

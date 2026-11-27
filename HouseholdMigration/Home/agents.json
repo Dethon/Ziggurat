@@ -39,7 +39,9 @@
         "providerRouting": {
           "ignore": [
             "relace",
-            "morph"
+            "morph",
+            "open-inference",
+            "tenstorrent"
           ]
         },
         "reasoningEffort": "high",

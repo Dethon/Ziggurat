@@ -33,7 +33,8 @@ public sealed record BuiltApp
 }
 
 // The volume: `<storage>/<household>/<id>/` holds an app's metadata (`app.meta.json`), its git
-// directory (`git/`), its working tree (`tree/`) and what its checks saw (`checks/`). Repositories are named by id, never by slug, so
+// directory (`git/`), its working tree (`tree/`), what its checks saw (`checks/`), what its pages reported
+// (`errors`) and how many asks it was sent (`asks`). Repositories are named by id, never by slug, so
 // a renamed app keeps its links. Creating, renaming, deleting and publishing run one at a time per
 // household, so a quota or a slug is never decided on a listing another call is changing.
 public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
@@ -181,15 +182,19 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
     // newest first. The mount shows it read-only as `/<slug>/errors`.
     public string ErrorsFile(BuiltApp app) => Path.Combine(AppDirectory(app), "errors");
 
-    // The repository as a whole: its working tree and its history. A check's output and the reported errors
-    // are the server's, bounded by the server, and spend nothing of the app's.
+    // How many asks the app was sent over the last day (Asks/AskCounts), beside the repository for the same
+    // reason. Shown nowhere: the cap's refusal says what an app needs of it.
+    public string AskCountsFile(BuiltApp app) => Path.Combine(AppDirectory(app), "asks");
+
+    // The repository as a whole: its working tree and its history. A check's output, the reported errors and
+    // the ask counts are the server's, bounded by the server, and spend nothing of the app's.
     public long SizeOf(BuiltApp app)
     {
         var checks = ChecksDirectory(app) + Path.DirectorySeparatorChar;
-        var errors = ErrorsFile(app);
+        string[] servers = [ErrorsFile(app), AskCountsFile(app)];
         return new DirectoryInfo(AppDirectory(app)).EnumerateFiles("*", SearchOption.AllDirectories)
             .Where(file => !file.FullName.StartsWith(checks, StringComparison.Ordinal)
-                           && !file.FullName.StartsWith(errors, StringComparison.Ordinal))
+                           && !servers.Any(kept => file.FullName.StartsWith(kept, StringComparison.Ordinal)))
             .Sum(file => file.Length);
     }
 
@@ -197,6 +202,10 @@ public sealed class BuiltAppStore(AppsSettings settings, TimeProvider clock)
 
     // Beside the households, under a name no household id can take (ids carry no dot).
     private string Removed => Path.Combine(Root, ".removed");
+
+    // Where an ask's images wait for the agent (the upload store, AskUploads): beside the households too, and
+    // for the same reason under a dotted name; nothing here lists, counts or serves it.
+    public static string UploadsIn(string storagePath) => Path.Combine(Path.GetFullPath(storagePath), ".uploads");
 
     private string AppDirectory(BuiltApp app) => Path.Combine(HouseholdDirectory(app.HouseholdId), app.Id);
 

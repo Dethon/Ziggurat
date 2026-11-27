@@ -19,6 +19,7 @@ public static class ChatMessageExtensions
     private const string ConversationContextKey = "ConversationContext";
     private const string ConfigPatchKey = "ConfigPatch";
     private const string ResponseFormatKey = "ResponseFormat";
+    private const string AppTurnKey = "AppTurn";
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
     private const string AttachmentHouseholdIdKey = "AttachmentHouseholdId";
@@ -363,6 +364,34 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[ResponseFormatKey] = format;
+        }
+
+        // Read off the turn's own user message only, as its response format is: the agent answers with the
+        // app's instructions and no tools, and memory reads and writes nothing of it.
+        public AppTurn? GetAppTurn()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(AppTurnKey);
+            return value switch
+            {
+                AppTurn app => app,
+                JsonElement je => je.Deserialize<AppTurn>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        // Whether the message carries an app turn at all, whatever it says: what keeps an app's words out
+        // of memory asks this, so a stamp it cannot read still keeps them out.
+        public bool IsAppTurn() => message.AdditionalProperties?.ContainsKey(AppTurnKey) == true;
+
+        public void SetAppTurn(AppTurn? app)
+        {
+            if (app is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AppTurnKey] = app;
         }
 
         // References, never bytes: this is what the persisted message carries, so a history read
