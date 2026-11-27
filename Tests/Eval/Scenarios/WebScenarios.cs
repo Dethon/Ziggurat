@@ -18,7 +18,7 @@ public static class WebScenarios
     [
         TheRestingTime, WhenTheMuseumOpens, BookingAPlace, TheWholeChronicle,
         TheSiteNamedByName, SigningUpForAstronomy, TwoEditionsOfTheRaffle, TheMaterialsForm,
-        TheOrdersBehindALogin, TheMorningOrderCheck
+        TheOrdersBehindALogin, TheMorningOrderCheck, TheVolunteersChart
     ];
 
     // What a worker answers wherever these scenarios tolerate one. The default canned answer is
@@ -549,6 +549,62 @@ public static class WebScenarios
                 "Demonstrated on 2026-09-08 with the whole skill body deleted and the description intact: "
                 + "three of four, the same rate the scenario holds with the body in place. The deletion "
                 + "changed nothing measurable, so the scenario guards rather than cites.")
+        ],
+        Policy = new RunPolicy(2, 4)
+    };
+
+    // The answer is drawn on a canvas: the browse returns the chart's heading and caption and
+    // none of its figures, and a canvas lists no picture view_image could fetch. Only a look at
+    // the page itself shows which month peaked, so a reply carrying it took the screenshot.
+    public static Scenario TheVolunteersChart => new()
+    {
+        Name = "a chart drawn on the page is looked at, not guessed from its caption",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            // An instruction to act, the booking scenario's lesson: phrased as research the task
+            // goes to a worker, and a canned worker looks at nothing.
+            Text = "Abre la página de voluntarios del huerto en la web del Cuaderno de barrio y "
+                   + "dime qué mes vino más gente a ayudar y cuántos fueron.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            LoadsTheSkill,
+            new CallExpectation
+            {
+                Label = "open",
+                Tool = EvalTools.WebBrowse,
+                Arguments = [Arg.Matches("url", "/huerto/voluntarios")]
+            },
+            new CallExpectation { Label = "look", Tool = EvalTools.WebScreenshot }
+        ],
+        Ordering = [new OrderingConstraint("open", "look")],
+        Permitted =
+        [
+            new CallPermission(EvalTools.WebSearch),
+            new CallPermission(EvalTools.WebBrowse),
+            new CallPermission(EvalTools.WebSnapshot)
+        ],
+        MayDelegateTo = ["jonas-worker"],
+        WorkerAnswer = WorkerCannotBrowse,
+        // Search, open, a snapshot that finds nothing, the screenshot, the possible worker and
+        // one spare.
+        CallCeiling = 7,
+        Reply = new ReplyExpectation
+        {
+            MaxSentences = 4,
+            Mentions =
+            [
+                new SpokenValue("the peak month", EvalWeb.VolunteersPeakMonth),
+                new SpokenValue("the peak count", EvalWeb.VolunteersPeak, "treinta y siete")
+            ]
+        },
+        Claims =
+        [
+            WebBrowsingSkill.LoadsForAWebTask.Id,
+            WebBrowsingSkill.AScreenshotIsForWhatTextCannotShow.Id
         ],
         Policy = new RunPolicy(2, 4)
     };

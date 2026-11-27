@@ -1,4 +1,4 @@
-# web-browsing — description 121 / 130 tokens, body 1941 / 1950 tokens, served by mcp-websearch
+# web-browsing — description 121 / 130 tokens, body 2066 / 2100 tokens, served by mcp-websearch
 
 ================================================================================================
 
@@ -14,6 +14,7 @@ description: Any task on the web: searching for something, reading a page or its
 - **web_snapshot** — see the current page's interactive elements with refs.
 - **web_action** — interact with an element (or navigate back) by ref.
 - **view_image** — look at pictures on the page you browsed, by their image refs.
+- **web_screenshot** — see the current page as a person would, a screen at a time.
 - **web_login** — hand a login to the person: a one-time link to a live view of the site
   in their own browser, where they sign in themselves.
 - **web_logins** — a one-time link to the page where the person sees and forgets the
@@ -45,6 +46,12 @@ themselves — several in one call. Ask when the answer is in the picture rather
 prose: a chart's numbers, a scan with no text layer, what a product actually looks like.
 Image refs (i-1) and element refs (e-1) are separate: view_image takes the first, web_action
 the second, and each refuses the other by name.
+
+**Seeing the page itself.** web_screenshot shows the current page as a picture — where it
+stands, or the `screen` you name (1 is the top). Take it when the answer is in how the page
+looks rather than in its text: a chart or map drawn on a canvas, a layout, whether an action
+left the page as you meant. Never to read words web_browse already gave you. It leaves refs
+as they were, so it can sit between two actions.
 
 **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
 in a single call, then chain web_action calls. Each web_action returns a diff with new refs —

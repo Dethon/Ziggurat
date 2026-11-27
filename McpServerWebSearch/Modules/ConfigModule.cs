@@ -73,6 +73,7 @@ public static class ConfigModule
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
+                .WithTools<McpWebScreenshotTool>()
                 .WithTools<McpWebLoginTool>()
                 .WithTools<McpWebLoginsTool>()
                 // A channel too, for the login wake: Done raises a turn in the conversation that

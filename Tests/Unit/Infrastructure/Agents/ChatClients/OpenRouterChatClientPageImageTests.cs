@@ -90,6 +90,32 @@ public class OpenRouterChatClientPageImageTests
         ResultText(captured, "call-1").ShouldContain(Label);
     }
 
+    // A screenshot was never listed on the page, so there is no ref to browse back to: seeing it
+    // again is taking another, and that shows the page as it is now.
+    [Fact]
+    public async Task AScreenshotPastTheCap_BecomesANoteInvitingAnotherScreenshot()
+    {
+        _store.Put(Conversation, "call-1");
+
+        var captured = await SendAsync(ConversationOfLength(6, readAt: 0), maxPictures: 0, screenshot: true);
+
+        AllDataContents(captured).ShouldBeEmpty();
+        var note = ResultText(captured, "call-1");
+        note.ShouldContain(Label);
+        note.ShouldContain("web_screenshot");
+        note.ShouldNotContain("new ref");
+    }
+
+    [Fact]
+    public async Task AScreenshotWithinTheCap_IsShownLikeAnyPageImage()
+    {
+        _store.Put(Conversation, "call-1");
+
+        var captured = await SendAsync(ConversationOfLength(4, readAt: 2), screenshot: true);
+
+        AllDataContents(captured).ShouldHaveSingleItem();
+    }
+
     [Fact]
     public async Task AnEnvelopeThatAlreadySaidTheImageWasNotShown_IsLeftUntouched()
     {
@@ -191,26 +217,28 @@ public class OpenRouterChatClientPageImageTests
         return messages;
     }
 
-    private static JsonNode Envelope(bool shown, string imageRef = "i-1", string? label = null) =>
+    private static JsonNode Envelope(bool shown, string imageRef = "i-1", string? label = null, bool screenshot = false) =>
         FsResultContract.ToNode(new PageImageResult
         {
             ImageRef = imageRef,
             Label = label ?? Label,
             MediaType = "image/jpeg",
             SizeBytes = 4,
-            Shown = shown
+            Shown = shown,
+            Screenshot = screenshot ? true : null
         });
 
     private async Task<IReadOnlyList<ChatMessage>> SendAsync(
         List<ChatMessage> messages,
         bool shown = true,
         int? maxPictures = null,
-        bool acceptsImages = true)
+        bool acceptsImages = true,
+        bool screenshot = false)
     {
         var toolMessage = messages.LastOrDefault(m => m.Role == ChatRole.Tool);
         if (toolMessage is not null && toolMessage.Contents.Count == 0)
         {
-            toolMessage.Contents = [new FunctionResultContent("call-1", Envelope(shown))];
+            toolMessage.Contents = [new FunctionResultContent("call-1", Envelope(shown, screenshot: screenshot))];
         }
 
         IReadOnlyList<ChatMessage> captured = [];

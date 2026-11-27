@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Domain.DTOs.FileSystem;
 
-// What view_image answers for one picture on a page: the same envelope-without-bytes bargain
+// What view_image answers for one picture on a page, and web_screenshot for the page itself: the same envelope-without-bytes bargain
 // FsImageReadResult makes, against a different kind of handle. A page image has no path — it has a
 // ref that only means anything inside the session that issued it, and a label that is the only
 // thing a person reading the note would recognise it by.
@@ -26,6 +26,11 @@ public sealed record PageImageResult
     public required bool Shown { get; init; }
 
     public string? Note { get; init; }
+
+    // A picture of the page itself rather than one of its pictures. Nothing on the page lists it,
+    // so seeing it again means taking another -- which shows the page as it is then, not as it was.
+    // Null rather than false so a page picture's envelope stays the shape it always was.
+    public bool? Screenshot { get; init; }
 
     public static PageImageResult? TryRead(object? result)
     {

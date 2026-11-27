@@ -426,6 +426,26 @@ public class EvalWebTests : IAsyncLifetime
             .ShouldContain(EvalWeb.Raffle2025Total);
     }
 
+    // The browse reads the chart's heading and caption and none of its figures, and the screenshot
+    // the scenario requires answers on the eval's own browser.
+    [Fact]
+    public async Task TheVolunteersChart_KeepsItsFiguresOutOfTheText_AndCanBeScreenshot()
+    {
+        const string session = "proof-volunteers";
+        var page = await _browsing.NavigateAsync(
+            new BrowseRequest(session, _web.VolunteersUrl) { Caller = JudgmentCaller.None });
+
+        var content = page.Content.ShouldNotBeNull();
+        content.ShouldContain("Voluntarios del huerto");
+        content.ShouldNotContain(EvalWeb.VolunteersPeakMonth);
+        content.ShouldNotContain(EvalWeb.VolunteersPeak);
+        page.ImageCount.ShouldBe(0);
+
+        var shot = await _browsing.ScreenshotAsync(new ScreenshotRequest(session));
+        shot.Status.ShouldBe(ScreenshotStatus.Success, shot.ErrorMessage);
+        shot.Bytes.ShouldNotBeNull().ShouldNotBeEmpty();
+    }
+
     [Fact]
     public async Task TheMaterialsForm_TakesFourFieldsAndAnswersWithTheCode()
     {

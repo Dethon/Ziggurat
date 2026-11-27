@@ -12,6 +12,39 @@ public interface IWebBrowser
     Task CloseSessionAsync(string sessionId, CancellationToken ct = default);
 
     Task<ImageFetchResult> FetchImagesAsync(ImageFetchRequest request, CancellationToken ct = default);
+
+    Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default);
+}
+
+// A picture of the current tab as a person would see it. Screen is which viewport-high slice of
+// the page to show, counted from 1 at the top; null shows the page where it is scrolled now, which
+// is where the last action left it.
+public record ScreenshotRequest(string SessionId, int? Screen = null);
+
+public enum ScreenshotStatus
+{
+    Success,
+    SessionNotFound,
+
+    // The current tab is gone under a live session. Url names the page to browse again.
+    TabClosed,
+    Error
+}
+
+public record ScreenshotResult(
+    string SessionId,
+    ScreenshotStatus Status,
+    string? Url = null,
+    string? Title = null,
+    string? MediaType = null,
+    byte[]? Bytes = null,
+    string? ErrorMessage = null)
+{
+    // Which screen the picture shows and how many the page is tall, so the model can ask for the
+    // next one or know there is none -- a past-the-end ask shows the last.
+    public int Screen { get; init; }
+
+    public int Screens { get; init; }
 }
 
 public record ImageFetchRequest(string SessionId, IReadOnlyList<string> Refs);
