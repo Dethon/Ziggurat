@@ -180,6 +180,29 @@ public sealed class OpenRouterChatClientVideoTests
         text.ShouldNotContain("still-1.jpg");
     }
 
+    // A clip sent earlier is in every later request now, so a follow-up moved to a model that takes
+    // neither video nor pictures names it rather than refusing the turn over a file it was not sent with.
+    [Fact]
+    public async Task AnEarlierClip_OnAFollowUpToAModelThatTakesNoPictures_IsNamedAndTheTurnRuns()
+    {
+        var wire = new RecordingResponsesHandler();
+        var store = new JsonThreadStore();
+        await using var agent = CreateAgent(wire, Watches, store.Object);
+        var session = await agent.CreateSessionAsync();
+        await agent.RunStreamingAsync([MealMessage()], session).ToListAsync();
+        var followUp = new ChatMessage(ChatRole.User, "and the bread?");
+        followUp.SetConfigPatch(new AgentConfigPatch { Model = TextOnly });
+
+        await agent.RunStreamingAsync([followUp], session).ToListAsync();
+
+        var parts = UserParts(wire.Bodies[1]);
+        parts.Any(IsVideo).ShouldBeFalse();
+        ImageUrls(parts).ShouldBeEmpty();
+        var text = string.Join("\n", parts.Select(p => p["text"]?.GetValue<string>()));
+        text.ShouldContain("plate.mp4");
+        text.ShouldContain("plate.jpg");
+    }
+
     private static ChatMessage MealMessage(params AttachmentReference[] attachments)
     {
         var message = new ChatMessage(ChatRole.User, "my lunch");

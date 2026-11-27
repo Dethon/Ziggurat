@@ -13,8 +13,10 @@ namespace Domain.Agents;
 // would, so there the clip stands for its stills whatever the model.
 internal static class ClipSelection
 {
+    // refuses: false for an earlier message than the turn's own — a clip sent before a turn moved to a
+    // model that cannot see it is named to that turn, never a reason to refuse it.
     public static IReadOnlyList<AttachmentReference> For(
-        IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs, bool withinCap)
+        IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs, bool withinCap, bool refuses = true)
     {
         var clips = attachments.Where(a => AttachmentKinds.IsVideo(a.MediaType)).ToList();
         if (clips.Count == 0)
@@ -23,6 +25,11 @@ internal static class ClipSelection
         }
 
         if (inputs.Video || !withinCap)
+        {
+            return ClipStills.Without(attachments);
+        }
+
+        if (!refuses && (!inputs.Images || clips.Any(c => c.Stills is not { Count: > 0 })))
         {
             return ClipStills.Without(attachments);
         }
@@ -50,8 +57,10 @@ internal static class ClipSelection
     // the model watches the clip instead. Never refuses: the cap is counted before a message is known
     // to be shown, and one past it is never refused over a clip it will not be sent.
     public static int PicturesIn(IReadOnlyList<AttachmentReference> attachments, ModelInputs inputs) =>
-        (inputs.Video ? ClipStills.Without(attachments) : attachments)
-        .Count(a => AttachmentKinds.IsImage(a.MediaType));
+        !inputs.Images
+            ? 0
+            : (inputs.Video ? ClipStills.Without(attachments) : attachments)
+            .Count(a => AttachmentKinds.IsImage(a.MediaType));
 
     private static string Names(IEnumerable<AttachmentReference> clips) =>
         string.Join(", ", clips.Select(c => c.FileName));

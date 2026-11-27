@@ -51,7 +51,12 @@ public static class AttachmentHydration
             return messages;
         }
 
-        var withinCap = WithinCap(messages, imageReads, inputs ?? ModelInputs.Everything("The model"), maxPictures);
+        var takes = inputs ?? ModelInputs.Everything("The model");
+        var withinCap = WithinCap(messages, imageReads, takes, maxPictures);
+
+        // The turn's own message is the one a model that cannot see its files is refused over; an
+        // earlier one, kept in every request for good, only names what this model is not shown.
+        var own = messages.ToList().FindLastIndex(m => m.Role == ChatRole.User);
 
         var hydrated = new List<ChatMessage>(messages.Count);
         for (var index = 0; index < messages.Count; index++)
@@ -63,7 +68,7 @@ public static class AttachmentHydration
             hydrated.Add(message switch
             {
                 _ when source is not null && NeedsHydrating(message) =>
-                    await HydrateAsync(message, source, turn, inputs, withinCap[index], ct),
+                    await HydrateAsync(message, source, turn, takes, withinCap[index], index == own, ct),
                 _ when imageReads[index].Count > 0 =>
                     await ReadImageHydration.ExpandAsync(
                         message, imageReads[index], readImages, withinCap[index], ct),
@@ -85,7 +90,8 @@ public static class AttachmentHydration
     {
         var counts = messages
             .Select((message, index) =>
-                ClipSelection.PicturesIn(message.GetAttachments() ?? [], inputs) + imageReads[index].Count)
+                ClipSelection.PicturesIn(message.GetAttachments() ?? [], inputs)
+                + (inputs.Images ? imageReads[index].Count : 0))
             .ToList();
 
         // A running total from the end, in one pass: every send runs this over the whole history.
@@ -106,16 +112,18 @@ public static class AttachmentHydration
         || message.GetLandingFailures() is { Count: > 0 };
 
     private static async Task<ChatMessage> HydrateAsync(
-        ChatMessage message, IAttachmentSource source, ConversationContext? turn, ModelInputs? inputs, bool withinCap,
-        CancellationToken ct)
+        ChatMessage message, IAttachmentSource source, ConversationContext? turn, ModelInputs inputs, bool withinCap,
+        bool own, CancellationToken ct)
     {
         // Decided before any byte is fetched, so a still the model will not be sent is never asked
         // for and a refused turn costs the channel nothing.
         var attachments = ClipSelection.For(
-            message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinCap);
+            message.GetAttachments() ?? [], inputs, withinCap, refuses: own);
         var channelId = message.GetAttachmentChannelId();
         var shown = attachments.Count > 0 && !string.IsNullOrWhiteSpace(channelId)
-            ? await ShowAsync(attachments, source, channelId!, message.GetAttachmentHouseholdId(), turn, withinCap, ct)
+            ? await ShowAsync(
+                attachments, source, channelId!, message.GetAttachmentHouseholdId(), turn, withinCap,
+                own ? null : inputs, ct)
             : [];
 
         // The files first, then where they landed: a path named ahead of a picture the model could
@@ -150,11 +158,18 @@ public static class AttachmentHydration
         string? householdId,
         ConversationContext? turn,
         bool withinCap,
+        ModelInputs? shownOnly,
         CancellationToken ct)
     {
         var contents = new List<AIContent>(attachments.Count);
         foreach (var attachment in attachments)
         {
+            if (shownOnly is not null && !Takes(shownOnly, attachment))
+            {
+                contents.Add(new TextContent(NotTakenPlaceholder(attachment)));
+                continue;
+            }
+
             var bytes = withinCap
                 ? await source.FetchAsync(channelId, householdId, attachment.Id, turn, ct)
                 : null;
@@ -165,6 +180,14 @@ public static class AttachmentHydration
 
         return contents;
     }
+
+    private static bool Takes(ModelInputs inputs, AttachmentReference attachment) =>
+        AttachmentKinds.ForMediaType(attachment.MediaType) switch
+        {
+            AttachmentKind.Image => inputs.Images,
+            AttachmentKind.Video => inputs.Video,
+            _ => true
+        };
 
     private static ChatMessage Append(ChatMessage message, IReadOnlyList<AIContent> contents)
     {
@@ -177,6 +200,10 @@ public static class AttachmentHydration
         copy.Contents = [.. copy.Contents, .. contents];
         return copy;
     }
+
+    private static string NotTakenPlaceholder(AttachmentReference attachment) =>
+        $"[The attachment {attachment.FileName} ({attachment.MediaType}) was not shown: the model running " +
+        "this turn does not accept images or video. Don't describe what it contained from memory.]";
 
     private static string Placeholder(AttachmentReference attachment) =>
         $"[The attachment {attachment.FileName} ({attachment.MediaType}) is no longer available to you. " +

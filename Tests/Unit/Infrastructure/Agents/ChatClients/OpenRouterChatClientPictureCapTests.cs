@@ -75,6 +75,20 @@ public class OpenRouterChatClientPictureCapTests
         captured[0].Contents.OfType<DataContent>().ShouldHaveSingleItem().MediaType.ShouldBe("application/pdf");
     }
 
+    // With pictures kept for the whole conversation, one sent long ago is still in every request, and
+    // the wire rejects a whole request carrying an image its model cannot take. A turn moved to a model
+    // that takes none is told which earlier pictures it is not shown, and runs.
+    [Fact]
+    public async Task AnEarlierPhoto_OnAModelThatTakesNoImages_IsNamedNotSent()
+    {
+        var captured = await SendAsync(Conversation(attachmentAt: 0, length: 5), acceptsImages: false);
+
+        captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
+        var text = string.Join("", captured[0].Contents.OfType<TextContent>().Select(c => c.Text));
+        text.ShouldContain("photo.png");
+        text.ShouldContain("does not accept images");
+    }
+
     [Fact]
     public async Task TheCapDefaultsToAHundredPictures()
     {
@@ -180,7 +194,8 @@ public class OpenRouterChatClientPictureCapTests
     }
 
     private async Task<IReadOnlyList<ChatMessage>> SendAsync(
-        IReadOnlyList<ChatMessage> messages, int? maxPictures = null, IAttachmentSource? source = null)
+        IReadOnlyList<ChatMessage> messages, int? maxPictures = null, IAttachmentSource? source = null,
+        bool acceptsImages = true)
     {
         IReadOnlyList<ChatMessage> captured = [];
         _innerClient
@@ -195,11 +210,13 @@ public class OpenRouterChatClientPictureCapTests
         var sut = maxPictures is null
             ? new OpenRouterChatClient(
                 _innerClient.Object, "test-model",
-                attachmentSource: source ?? new StubAttachmentSource())
+                attachmentSource: source ?? new StubAttachmentSource(),
+                modelAcceptsImages: _ => acceptsImages)
             : new OpenRouterChatClient(
                 _innerClient.Object, "test-model",
                 attachmentSource: source ?? new StubAttachmentSource(),
-                maxPicturesPerRequest: maxPictures.Value);
+                maxPicturesPerRequest: maxPictures.Value,
+                modelAcceptsImages: _ => acceptsImages);
 
         await foreach (var _ in sut.GetStreamingResponseAsync(messages))
         {
