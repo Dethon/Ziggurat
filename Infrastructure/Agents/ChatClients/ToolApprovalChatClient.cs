@@ -333,7 +333,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     {
         if (_execScreen is null
             || context.Function.GetService<ExecReach>() is not { } reach
-            || CallArguments.Text(context.Arguments, "path") is not { } path
+            || reach.WorkingDirectory(CallArguments.Text(context.Arguments, "path")) is not { } path
             || reach.Of(path, CallArguments.Text(context.Arguments, "command") ?? "") is not { } shellReach)
         {
             return null;

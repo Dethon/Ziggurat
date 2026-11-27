@@ -159,7 +159,7 @@ public class FileSystemToolFeature(
             // Carries where each call would run, read off this session's mounts, for the exec screen.
             (VfsExecTool.Key, () => ExecReach.Carried(
                 AIFunctionFactory.Create(
-                    new VfsExecTool(registry, bridge, Offers(config.EnabledTools)).RunAsync,
+                    new VfsExecTool(registry, bridge, Offers(config.EnabledTools)).CallAsync,
                     new AIFunctionFactoryOptions
                     {
                         Name = $"domain__{Feature}__{VfsExecTool.Name}",
