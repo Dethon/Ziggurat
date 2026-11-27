@@ -102,6 +102,24 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
         _browser.ActionSessionIds.ShouldHaveSingleItem().ShouldBe("nabu:conv-c");
     }
 
+    // The picture leaves as the protocol's image block behind its own envelope, on the
+    // conversation's session: the bridge lifts it from there like any view_image picture.
+    [Fact]
+    public async Task WebScreenshot_AnswersWithAnImageBlockOnTheConversationsSession()
+    {
+        await using var client = await CreateClientAsync();
+        var tools = await client.ListToolsAsync();
+
+        var result = await tools.Single(t => t.Name == "web_screenshot")
+            .WithMeta(MetaFor("nabu", "conv-d"))
+            .CallAsync(new Dictionary<string, object?> { ["screen"] = 2 });
+
+        _browser.ScreenshotRequests.ShouldHaveSingleItem().ShouldBe(new ScreenshotRequest("nabu:conv-d", 2));
+        result.IsError.ShouldNotBe(true);
+        result.Content.OfType<ImageContentBlock>().ShouldHaveSingleItem().MimeType.ShouldBe("image/jpeg");
+        Text(result).ShouldContain("\"screen\":2");
+    }
+
     [Theory]
     [InlineData("web_browse")]
     [InlineData("web_snapshot")]
@@ -192,6 +210,7 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
         public ConcurrentBag<string> BrowseSessionIds { get; } = [];
         public ConcurrentBag<string> SnapshotSessionIds { get; } = [];
         public ConcurrentBag<string> ActionSessionIds { get; } = [];
+        public ConcurrentBag<ScreenshotRequest> ScreenshotRequests { get; } = [];
 
         public Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
         {
@@ -223,8 +242,16 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             ImageFetchRequest request, CancellationToken ct = default) =>
             Task.FromResult(new ImageFetchResult(request.SessionId, []));
 
-        public Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default) =>
-            Task.FromResult(new ScreenshotResult(request.SessionId, ScreenshotStatus.SessionNotFound));
+        public Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default)
+        {
+            ScreenshotRequests.Add(request);
+            return Task.FromResult(new ScreenshotResult(request.SessionId, ScreenshotStatus.Success,
+                "https://example.com", "Example", "image/jpeg", [0xFF, 0xD8, 0xFF, 0xD9])
+            {
+                Screen = request.Screen ?? 1,
+                Screens = 3
+            });
+        }
 
         public Task CloseSessionAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
     }
