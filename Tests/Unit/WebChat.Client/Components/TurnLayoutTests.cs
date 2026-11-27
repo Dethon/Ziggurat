@@ -215,4 +215,35 @@ public sealed class TurnLayoutTests
 
         Describe(rows[1]).ShouldBe(["c1:Done"]);
     }
+
+    // A turn's answers all come under one id, kept where the first of them was drawn: an answer is drawn
+    // where its call was made, never ahead of it, so words a call followed stay words a call followed and
+    // the reply stays one.
+    [Fact]
+    public void AnswersDrawnBeforeTheirCalls_AreDrawnWhereTheCallsWereMade()
+    {
+        var rows = TurnLayout.Rows(
+        [
+            User("improve the bosses"),
+            Calls(Call("c1")) with { MessageId = "gen-1" },
+            new ChatMessageModel { Role = "assistant", MessageId = "tools", Tools = [Answer("c1"), Answer("c2"), Answer("c3")] },
+            Says("The renders are readable", "msg-1") with { Tools = [Call("c2")] },
+            Calls(Call("c3")) with { MessageId = "gen-2" },
+            Says("Now the boss bar", "msg-2") with { Tools = [Call("c4")] }
+        ]);
+
+        rows.Count.ShouldBe(2);
+        Describe(rows[1]).ShouldBe(["c1:Done", "said:The renders are readable", "c2:Done", "c3:Done", "said:Now the boss bar", "c4:running"]);
+        rows[1].Activity!.Where(s => s.Tool is not null).ShouldAllBe(s => s.Tool!.Name != null);
+    }
+
+    // An answer whose call this page never drew still shows, before the reply's answer.
+    [Fact]
+    public void AnAnswerWhoseCallNeverCame_IsDrawnBeforeTheAnswer()
+    {
+        var rows = TurnLayout.Rows([User("go"), Calls(Answer("c9")), Says("done")]);
+
+        Describe(rows[1]).ShouldBe(["c9:Done"]);
+        rows[1].Content.ShouldBe("done");
+    }
 }

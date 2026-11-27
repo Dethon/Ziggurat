@@ -63,6 +63,10 @@ public static class TurnLayout
         private readonly List<ChatMessageModel> _messages = [];
         private readonly List<Step> _steps = [];
 
+        // Answers whose calls are not drawn yet: a turn's answers all come under one id, kept where the
+        // first of them was drawn, ahead of the later calls they answer.
+        private readonly Dictionary<string, ToolCallStep> _early = [];
+
         private sealed record Step(ActivityStep Activity, ChatMessageModel? Source, bool Interrupted);
 
         public bool StartsAnotherReply(ChatMessageModel message) =>
@@ -129,13 +133,22 @@ public static class TurnLayout
             }
         }
 
-        // A call's answer folds into the call wherever it was drawn; one never seen is a step of its own.
+        // A call's answer folds into the call wherever it was drawn. An answer met before its call waits for
+        // it, so each call is drawn where it was made; one whose call never comes is a step of its own at the
+        // end (FlushInto).
         private void AddTool(ToolCallStep tool)
         {
             var at = _steps.FindIndex(s => s.Activity.Tool?.CallId == tool.CallId);
+            if (at < 0 && tool.Name is null)
+            {
+                _early[tool.CallId] = _early.TryGetValue(tool.CallId, out var held) ? held.Merge(tool) : tool;
+                return;
+            }
+
             if (at < 0)
             {
-                _steps.Add(new Step(new ActivityStep(ActivityKind.Tool, Tool: tool), null, false));
+                var call = _early.Remove(tool.CallId, out var answer) ? tool.Merge(answer) : tool;
+                _steps.Add(new Step(new ActivityStep(ActivityKind.Tool, Tool: call), null, false));
                 return;
             }
 
@@ -149,6 +162,12 @@ public static class TurnLayout
             {
                 return;
             }
+
+            // Answers whose calls never came go before the reply's closing words, never after them.
+            var closing = _steps is [.., { Activity.Kind: ActivityKind.Words }] ? 1 : 0;
+            _steps.InsertRange(_steps.Count - closing,
+                _early.Values.Select(answer => new Step(new ActivityStep(ActivityKind.Tool, Tool: answer), null, false)));
+            _early.Clear();
 
             var answer = _steps is [.., { Activity.Kind: ActivityKind.Words } last] ? last : null;
             var activity = (answer is null ? _steps : _steps.Take(_steps.Count - 1))
