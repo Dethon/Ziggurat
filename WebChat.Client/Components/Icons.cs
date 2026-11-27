@@ -226,6 +226,13 @@ public static class Icons
     public static readonly IconGlyph Ban = Stroked(
         """<circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />""");
 
+    // A picture opened in place, and kept.
+    public static readonly IconGlyph Expand = Stroked(
+        """<polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />""");
+
+    public static readonly IconGlyph Download = Stroked(
+        """<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />""");
+
     private static IconGlyph Filled(string body, string viewBox = "0 0 24 24") =>
         new($"""<path d="{body}" />""", viewBox);
 

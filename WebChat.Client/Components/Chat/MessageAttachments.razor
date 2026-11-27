@@ -2,6 +2,7 @@
 @inject IAttachmentService AttachmentService
 @inject IJSRuntime Js
 @inject TimeProvider Clock
+@inject ImageViewer Viewer
 
 @code {
     [Parameter] public IReadOnlyList<AttachmentReference>? Attachments { get; set; }
@@ -55,6 +56,27 @@
         }
     }
 
+    // A tap opens the picture in place, among its message's other pictures; keeping it is the menu's.
+    private void View(AttachmentReference attachment)
+    {
+        _menuFor = null;
+        var pictures = _shown.Where(s => s.Shape == AttachmentShape.Thumbnail).Select(s => s.Reference).ToList();
+        Viewer.Open(
+            [.. pictures.Select(p => new ViewedPicture(p.Id, p.FileName, _previews.TryGetUrl(p.Id, out var url) ? url : null))],
+            pictures.FindIndex(p => p.Id == attachment.Id));
+    }
+
+    // The thumbnail's own menu: a right click, or a long press where the browser makes one of it.
+    private string? _menuFor;
+
+    private void OpenMenu(AttachmentReference attachment) => _menuFor = attachment.Id;
+
+    private async Task DownloadFromMenu(AttachmentReference attachment)
+    {
+        _menuFor = null;
+        await Download(attachment);
+    }
+
     private static string DescribeSize(long bytes) =>
         bytes >= 1024 * 1024
             ? $"{bytes / (1024.0 * 1024.0):0.#} MB"
@@ -68,14 +90,35 @@
         {
             @if (shape == AttachmentShape.Thumbnail && _previews.TryGetUrl(attachment.Id, out var preview))
             {
-                <button class="attachment-thumbnail"
-                        title="@attachment.FileName"
-                        @onclick="() => Download(attachment)">
-                    <img src="@preview"
-                         alt="@attachment.FileName"
-                         @onload="() => _previews.Loaded(attachment.Id)"
-                         @onerror="() => PreviewFailed(attachment.Id)" />
-                </button>
+                <span class="attachment-item">
+                    <button class="attachment-thumbnail"
+                            title="@attachment.FileName"
+                            aria-label="@($"View {attachment.FileName}")"
+                            aria-haspopup="dialog"
+                            @onclick="() => View(attachment)"
+                            @oncontextmenu="() => OpenMenu(attachment)"
+                            @oncontextmenu:preventDefault="true">
+                        <img src="@preview"
+                             alt="@attachment.FileName"
+                             @onload="() => _previews.Loaded(attachment.Id)"
+                             @onerror="() => PreviewFailed(attachment.Id)" />
+                    </button>
+                    @if (_menuFor == attachment.Id)
+                    {
+                        <span class="attachment-menu-backdrop" @onclick="() => _menuFor = null"
+                              @oncontextmenu="() => _menuFor = null" @oncontextmenu:preventDefault="true"></span>
+                        <span class="attachment-menu" role="menu">
+                            <button role="menuitem" class="message-action" @onclick="() => View(attachment)">
+                                <Icon Glyph="Icons.Expand" Size="14" />
+                                View
+                            </button>
+                            <button role="menuitem" class="message-action" @onclick="() => DownloadFromMenu(attachment)">
+                                <Icon Glyph="Icons.Download" Size="14" />
+                                Download
+                            </button>
+                        </span>
+                    }
+                </span>
             }
             else if (shape == AttachmentShape.Clip && _previews.TryGetUrl(attachment.Id, out var clip))
             {

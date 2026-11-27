@@ -88,6 +88,50 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         (await afterReload.CountAsync()).ShouldBeGreaterThan(0);
     }
 
+    // A picture in the transcript opens in place, never as a download; keeping it is its menu's (a right
+    // click, a long press) or the viewer's.
+    [SkippableFact]
+    public async Task APicture_OpensInPlace_AndIsDownloadedFromItsMenu()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+        await WebChatE2ETests.SelectAgentAsync(page);
+        await page.Locator(".agent-seg", new PageLocatorOptions { HasText = "Vision Agent" })
+            .ClickAsync(new LocatorClickOptions { Timeout = 10_000 });
+        await page.Locator("input[type=file]").SetInputFilesAsync(new FilePayload
+        {
+            Name = "e2e-photo.png", MimeType = "image/png", Buffer = _onePixelPng
+        });
+        await Assertions.Expect(page.Locator(".composer-attachment.ready"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync($"Look {tag}");
+        await chatInput.PressAsync("Enter");
+
+        var downloads = 0;
+        page.Download += (_, _) => downloads++;
+        var thumbnail = page.Locator(".chat-message.user .attachment-thumbnail").First;
+        await thumbnail.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+
+        var viewer = page.Locator(".image-viewer");
+        await Assertions.Expect(viewer.Locator("img")).ToBeVisibleAsync();
+        await Assertions.Expect(viewer).ToHaveAttributeAsync("aria-label", "e2e-photo.png");
+        await page.Keyboard.PressAsync("Escape");
+        await Assertions.Expect(viewer).ToHaveCountAsync(0);
+        downloads.ShouldBe(0);
+
+        await thumbnail.ClickAsync(new LocatorClickOptions { Button = MouseButton.Right });
+        var menu = page.Locator(".attachment-menu");
+        await Assertions.Expect(menu.Locator("[role=menuitem]")).ToHaveTextAsync(["View", "Download"]);
+        var download = await page.RunAndWaitForDownloadAsync(
+            () => menu.Locator("[role=menuitem]", new LocatorLocatorOptions { HasText = "Download" }).ClickAsync());
+        download.SuggestedFilename.ShouldBe("e2e-photo.png");
+        await Assertions.Expect(menu).ToHaveCountAsync(0);
+    }
+
     // The attach control is a label wearing the button class, so it only looks like the rest of
     // the composer for as long as it takes the same size as them. The phone breakpoint shrinks
     // every button, and a control that opts out of that shrink stands taller than the field and
