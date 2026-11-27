@@ -33,6 +33,17 @@
                 <span class="activity-chip">@name</span>
             }
         }
+        @if (_pictures.Count > 0)
+        {
+            <span class="activity-pictures" title="@PicturesLabel">
+                <Icon Glyph="Icons.Image" Size="13" />
+                @if (_pictures.Count > 1)
+                {
+                    @_pictures.Count
+                }
+                <span class="visually-hidden">@PicturesLabel</span>
+            </span>
+        }
         <span class="activity-spacer"></span>
         @if (_summary.Failed > 0)
         {
@@ -44,14 +55,6 @@
         }
         <Icon Glyph="Icons.ChevronRight" Size="14" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
     </button>
-
-    @if (!Open && _pictures.Count > 0)
-    {
-        @* Folded, the group still shows what the model looked at. *@
-        <div class="activity-images">
-            <MessageAttachments Attachments="@_pictures" />
-        </div>
-    }
 
     @if (Open)
     {
@@ -140,6 +143,8 @@
     private bool Open => Expansion.IsOpen(GroupKey);
 
     private void Toggle() => Expansion.Toggle(GroupKey);
+
+    private string PicturesLabel => _pictures.Count == 1 ? "1 picture" : $"{_pictures.Count} pictures";
 
     private string SectionClass =>
         "turn-activity" + (Live ? " live" : "") + (Open ? " open" : "") + (_summary.Failed > 0 ? " has-failures" : "");

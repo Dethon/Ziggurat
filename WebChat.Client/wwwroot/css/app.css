@@ -3021,13 +3021,9 @@ h1, h2, h3 {
     color: var(--success);
 }
 
-/* The pictures a call showed the model: under its card, and on its group while folded. */
-.tool-call-images {
-    padding: 0 0.65rem 0.6rem;
-}
-
-.tool-call-images .message-attachments,
-.activity-images .message-attachments {
+/* The pictures a call showed the model: icon-sized in folded titles, full thumbnails inside the opened
+   call. */
+.tool-call-images .message-attachments {
     margin: 0;
 }
 
@@ -3037,15 +3033,32 @@ h1, h2, h3 {
     border: 1px solid var(--border-light);
 }
 
-.activity-images {
-    padding: 0 0.8rem 0.55rem;
+.picture-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 600;
 }
 
-.activity-images .attachment-thumbnail img {
-    max-width: 72px;
-    max-height: 56px;
-    border-radius: 6px;
-    border: 1px solid var(--border-light);
+.picture-badge img {
+    width: 20px;
+    height: 20px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.activity-pictures {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    font-weight: 600;
 }
 
 /* JSON as a tree (JsonTree): folds, and each kind of value told apart in either theme. */

@@ -13,6 +13,10 @@
             <span class="tool-call-server">@server</span>
         }
         <span class="tool-call-summary">@_summary</span>
+        @if (Step.Images is { Count: > 0 } pictures)
+        {
+            <PictureBadge Pictures="@pictures" />
+        }
         <span class="tool-call-status" title="@StatusText">
             @switch (Step.Outcome)
             {
@@ -35,14 +39,6 @@
         </span>
         <Icon Glyph="Icons.ChevronRight" Size="13" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
     </button>
-
-    @if (Step.Images is { Count: > 0 } images)
-    {
-        @* What the model saw, in view whether or not the call is opened. *@
-        <div class="tool-call-images">
-            <MessageAttachments Attachments="@images" />
-        </div>
-    }
 
     @if (Open)
     {
@@ -71,6 +67,16 @@
                             </dd>
                         }
                     </dl>
+                </div>
+            }
+
+            @if (Step.Images is { Count: > 0 } images)
+            {
+                <div class="tool-section">
+                    <div class="tool-section-label"><span>@(images.Count == 1 ? "Picture" : "Pictures")</span></div>
+                    <div class="tool-call-images">
+                        <MessageAttachments Attachments="@images" />
+                    </div>
                 </div>
             }
 

@@ -1,0 +1,50 @@
+@using Domain.DTOs.Channel
+@inject IAttachmentService AttachmentService
+
+@* A folded tool call's pictures, icon-sized in its title: the first one in miniature, how many more beside
+   it, an image icon until the miniature loads or where it cannot. Not a control of its own — it sits in
+   the call's header, which opens the call and the pictures at full size. *@
+
+<span class="picture-badge" title="@Label">
+    @if (_url is { } url && !_failed)
+    {
+        <img src="@url" alt="" @onerror="() => _failed = true" />
+    }
+    else
+    {
+        <Icon Glyph="Icons.Image" Size="14" />
+    }
+    @if (Pictures.Count > 1)
+    {
+        <span class="picture-badge-more">+@(Pictures.Count - 1)</span>
+    }
+    <span class="visually-hidden">@Label</span>
+</span>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AttachmentReference> Pictures { get; set; } = [];
+
+    private string? _forId;
+    private string? _url;
+    private bool _failed;
+
+    private string Label => Pictures.Count == 1 ? "1 picture" : $"{Pictures.Count} pictures";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var first = Pictures.FirstOrDefault()?.Id;
+        if (first is null || first == _forId)
+        {
+            return;
+        }
+
+        _forId = first;
+        _failed = false;
+        _url = null;
+        var download = await AttachmentService.CreateDownloadAsync(first);
+        if (_forId == first && download is { IsLive: true, Value: not null })
+        {
+            _url = download.Value.Url;
+        }
+    }
+}
