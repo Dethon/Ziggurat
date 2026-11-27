@@ -407,7 +407,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
 
         var seen = contents.ToList();
         var answered = seen.OfType<FunctionResultContent>().Select(r => r.CallId).ToHashSet(StringComparer.Ordinal);
-        var unrun = seen.OfType<FunctionCallContent>().Where(c => !answered.Contains(c.CallId)).ToList();
+        var unrun = seen.OfType<FunctionCallContent>().Where(c => !c.InformationalOnly && !answered.Contains(c.CallId)).ToList();
         return unrun.Count == 0
             ? null
             : new ChatResponseUpdate(ChatRole.Tool,
