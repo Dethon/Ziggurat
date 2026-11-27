@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Domain.Agents;
 using Domain.Conversations;
 using Domain.DTOs;
@@ -187,6 +188,41 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
 
         history.Select(h => h.ToolsCalled).ShouldBe([null, ["timer_set"], null, null]);
+    }
+
+    // A reload draws what a turn did as it streamed it: its reasoning, and each call with its arguments
+    // and its answer, read back off the kept line, hung on the reply they led to.
+    [Fact]
+    public async Task GetHistoryAsync_AReplyCarriesWhatItsTurnDid_ReasoningAndCallsWithTheirAnswers()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t", _chatId, 0, _agentId, "Orchard", DateTimeOffset.UtcNow, null, TenantId: "home"));
+        await store.AppendMessagesAsync(Key,
+        [
+            Message("u1", "user", "list my files"),
+            new ChatMessage(ChatRole.Assistant,
+            [
+                new TextReasoningContent("I should "), new TextReasoningContent("look."),
+                new FunctionCallContent("c1", "domain__filesystem__exec",
+                    new Dictionary<string, object?> { ["command"] = "ls ~" })
+            ]),
+            new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent("c1", JsonSerializer.SerializeToElement(new { stdout = "a.txt\n", exitCode = 0 }))]),
+            Message("a1", "assistant", "You have a.txt.")
+        ]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        var steps = history[1].Steps!;
+        steps[0].Reasoning.ShouldBe("I should look.");
+        var call = steps[1].Tool!;
+        call.Name.ShouldBe("domain__filesystem__exec");
+        JsonDocument.Parse(call.Arguments!).RootElement.GetProperty("command").GetString().ShouldBe("ls ~");
+        JsonDocument.Parse(call.Result!).RootElement.GetProperty("stdout").GetString().ShouldBe("a.txt\n");
+        call.Outcome.ShouldBe(ToolCallOutcome.Done);
+        history[1].StepsAfter.ShouldBeNull();
+        history[0].Steps.ShouldBeNull();
     }
 
     // A reply cut at a tool boundary by its person's steer, or stopped between its calls, said nothing,
