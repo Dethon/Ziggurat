@@ -5,6 +5,8 @@ paths:
   - "Domain/Tools/Web/WebBrowseTool.cs"
   - "Domain/Contracts/IWebBrowser.cs"
   - "McpServerWebSearch/McpTools/McpViewImageTool.cs"
+  - "Domain/Tools/Web/WebScreenshotTool.cs"
+  - "McpServerWebSearch/McpTools/McpWebScreenshotTool.cs"
   - "McpServerWebSearch/McpTools/McpWebBrowseTool.cs"
   - "Infrastructure/Clients/Browser/*Image*"
   - "Infrastructure/Clients/Browser/PlaywrightWebBrowser.cs"
@@ -53,3 +55,9 @@ See also: `web-browsing.md` (tools, overlays, tabs), `browsing-as-person.md` (lo
 **Every refusal names its wall**: no vision on the model, dead session ref, not-an-image ref, site refused the fetch, a dead-link image (no retry invited — distinct from a CDN guarding pixels the page displays), past the per-call cap, bytes already forgotten, and the two stale-ref walls (`web-browsing.md`, Tabs). One generic "unavailable" leaves the model unable to tell retryable from permanent. `ImageFetchStatus` carries `Success` plus exactly the five a fetch can reach — not-an-image, site-refused, dead-link and the two stale-ref ones; the other four are answered off the fetch path (dead session and the cap before one is attempted, no-vision and forgotten bytes agent-side afterwards). Don't add a status for those: a status nothing can produce is a refusal nobody can receive.
 
 **The no-vision wall is answered agent-side, not here.** The capability catalogue and the turn's resolved model live hub-side, so `McpViewImageTool` passes `modelAcceptsImages: true` unconditionally and hydration leaves the note instead. `ViewImageTool`'s own refusal is unreachable through MCP and fires only for a direct domain-tool caller — kept because the tool is what is tested, not dead code. The cost: a vision-less turn still fetches and stores the bytes.
+
+## Screenshots
+
+**`web_screenshot` is a picture of the current tab, a viewport at a time** (1920x1080 JPEG). Unasked it shows the page where it stands; `screen` scrolls to that viewport-high slice first (past the end, the last), and the answer says `screen` of `screens`, the bottom always counting as the last. Never a whole-page capture: a long page is an oversized request or an unreadable downscale. It restamps nothing (`StampPolicy.None`), so a form's refs survive a screenshot between two fills (`PageScreenshotTests`). The count is the document's own scroll; a page that scrolls an inner pane is one screen.
+
+**It rides `view_image`'s wire unchanged** — the call's envelope, a `PageImageResult` with `screenshot: true`, the bytes — so the bridge lifts and hydration keys it like any page image (`PageImageRoundTripTests`). The flag is what makes a forgotten screenshot's note say to take another rather than to browse for a ref it never had (`ReadImageOrigin.Screenshot`).

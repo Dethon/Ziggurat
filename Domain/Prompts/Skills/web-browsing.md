@@ -6,8 +6,9 @@ description-budget: 130
 # the other action verbs and the force essay: ~700 tokens that every request of every conversation
 # paid, now ~250 paid once by a conversation that browses. Raised again to 1,950 for browsing as the
 # person: asMe, the login handoff, the logins page and the two turns that must report a login wall
-# instead (~330 tokens, paid only on a load).
-body-budget: 1950
+# instead (~330 tokens, paid only on a load). Raised to 2,100 for web_screenshot: its tool line and
+# when a picture of the page beats its text (~115 tokens, paid only on a load).
+body-budget: 2100
 served-by: mcp-websearch
 claims:
 # The trigger claim: a request of this kind loads the skill. Cited by every web scenario, so a skill
@@ -25,6 +26,7 @@ claims:
 - web-browsing.urls-are-cited-only-in-writing: A source url appears in a written reply and never in one that is read aloud.
 - web-browsing.steps-are-not-reported: The reply carries the answer rather than an account of the pages and clicks it took.
 - web-browsing.partial-content-is-fetched-once: Truncated content is fetched once more and then answered from, never offered to be fetched again.
+- web-browsing.a-screenshot-is-for-what-text-cannot-show: web_screenshot is taken when the answer is in how the page looks, never to read text web_browse returns.
 - web-browsing.back-is-an-action: Going back to the previous page is the browser's own back rather than a second browse of its url.
 - web-browsing.as-me-only-for-the-persons-account: A browse carries asMe when the task needs the person's own account on the site, and a public page is browsed without it.
 - web-browsing.a-login-page-is-handed-off: A page browsed as the person that asks them to sign in, or an asMe browse refused because they have no login on the site, is handed off with web_login, its link given and the turn stopped, never typed into.
@@ -39,6 +41,7 @@ claims:
 - **web_snapshot** — see the current page's interactive elements with refs.
 - **web_action** — interact with an element (or navigate back) by ref.
 - **view_image** — look at pictures on the page you browsed, by their image refs.
+- **web_screenshot** — see the current page as a person would, a screen at a time.
 - **web_login** — hand a login to the person: a one-time link to a live view of the site
   in their own browser, where they sign in themselves.
 - **web_logins** — a one-time link to the page where the person sees and forgets the
@@ -70,6 +73,12 @@ themselves — several in one call. Ask when the answer is in the picture rather
 prose: a chart's numbers, a scan with no text layer, what a product actually looks like.
 Image refs (i-1) and element refs (e-1) are separate: view_image takes the first, web_action
 the second, and each refuses the other by name.
+
+**Seeing the page itself.** web_screenshot shows the current page as a picture — where it
+stands, or the `screen` you name (1 is the top). Take it when the answer is in how the page
+looks rather than in its text: a chart or map drawn on a canvas, a layout, whether an action
+left the page as you meant. Never to read words web_browse already gave you. It leaves refs
+as they were, so it can sit between two actions.
 
 **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
 in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
