@@ -1,4 +1,5 @@
 using Infrastructure.Clients.Browser;
+using Microsoft.Extensions.Time.Testing;
 using Microsoft.Playwright;
 using Moq;
 using Shouldly;
@@ -976,5 +977,184 @@ public class TabProtocolTests
             return Task.FromResult(true);
         });
         anonymousRan.ShouldNotBeSameAs(popupPage.Mock.Object);
+    }
+
+    // ---- The work deadline ---------------------------------------------------------------------
+    // A page whose script holds its thread answers no call made on it, and page.content() has no
+    // timeout of its own: on 2026-11-27 one browse of a torrent index waited on it for good,
+    // holding its tab's lock and the turn that asked.
+
+    private static readonly TimeSpan WorkDeadline = TimeSpan.FromMinutes(3);
+
+    private static (BrowserSessionManager Manager, FakeTimeProvider Time) DeadlineManager()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        return (new BrowserSessionManager(time, workDeadline: WorkDeadline), time);
+    }
+
+    // A work that never finishes, and the moment it started.
+    private static (Func<TabWorkContext, Task<T>> Work, Task Entered) Wedged<T>(
+        Func<TabWorkContext, Task>? before = null)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        return (async cx =>
+        {
+            entered.TrySetResult();
+            if (before is not null)
+            {
+                await before(cx);
+            }
+
+            await new TaskCompletionSource<T>().Task;
+            return default!;
+        }, entered.Task);
+    }
+
+    [Fact]
+    public async Task AWorkThatNeverFinishes_ClosesItsTabAtTheDeadline_AndAnswersTheUnresponsiveWall()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var (manager, time) = DeadlineManager();
+        await using var owned = manager;
+        var (work, entered) = Wedged<bool>();
+
+        var browse = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, work);
+        await entered;
+
+        time.Advance(WorkDeadline - TimeSpan.FromSeconds(1));
+        browse.IsCompleted.ShouldBeFalse();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        (await browse.WaitAsync(TimeSpan.FromSeconds(10)))
+            .ShouldBeOfType<TabOutcome<bool>.Unresponsive>().Url.ShouldBe("https://a.test/");
+        pages[0].Closed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AfterAWedgedBrowse_TheSameUrlBrowsesAgain()
+    {
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        var (manager, time) = DeadlineManager();
+        await using var owned = manager;
+        var (work, entered) = Wedged<string>();
+
+        var wedged = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, work);
+        await entered;
+        time.Advance(WorkDeadline);
+        await wedged.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var again = await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult("second"))
+            .WaitAsync(TimeSpan.FromSeconds(10));
+
+        again.ShouldBeOfType<TabOutcome<string>.Ran>().Result.ShouldBe("second");
+    }
+
+    [Fact]
+    public async Task AWorkWedgedInsideItsStamp_LeavesTheSessionsNumbersToOthers()
+    {
+        // The stamp lease is session-wide: a work stuck in its stamping script would otherwise
+        // stall every later stamp of every tab in the session.
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        var (manager, time) = DeadlineManager();
+        await using var owned = manager;
+        var (work, entered) = Wedged<bool>(cx => cx.StampAsync(_ => new TaskCompletionSource<int>().Task));
+
+        var wedged = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, work);
+        await entered;
+        time.Advance(WorkDeadline);
+        await wedged.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var other = await manager.BrowseAsync("s1", "https://b.test/", ctx.Object, async cx =>
+        {
+            await cx.StampAsync(_ => Task.FromResult(2));
+            return true;
+        }).WaitAsync(TimeSpan.FromSeconds(10));
+
+        other.ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    [Fact]
+    public async Task AnAbandonedWorkThatStampsLate_IsRefusedTheSessionsNumbers()
+    {
+        // A work the deadline gave up on can still wake — its page's close ends Playwright's
+        // calls — and a stamp asked then would take the session's numbers with nobody left to
+        // release them.
+        var (ctx, _) = TabPoolFakes.CreateContext();
+        var (manager, time) = DeadlineManager();
+        await using var owned = manager;
+        var resume = new TaskCompletionSource();
+        var lateStamp = new TaskCompletionSource<Exception?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var wedged = manager.BrowseAsync("s1", "https://a.test/", ctx.Object, async cx =>
+        {
+            entered.SetResult();
+            await resume.Task;
+            try
+            {
+                await cx.StampAsync(_ => Task.FromResult(1));
+                lateStamp.SetResult(null);
+            }
+            catch (Exception ex)
+            {
+                lateStamp.SetResult(ex);
+            }
+
+            return true;
+        });
+        await entered.Task;
+        time.Advance(WorkDeadline);
+        await wedged.WaitAsync(TimeSpan.FromSeconds(10));
+        resume.SetResult();
+
+        (await lateStamp.Task.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBeOfType<InvalidOperationException>();
+        var other = await manager.BrowseAsync("s1", "https://b.test/", ctx.Object, async cx =>
+        {
+            await cx.StampAsync(_ => Task.FromResult(2));
+            return true;
+        }).WaitAsync(TimeSpan.FromSeconds(10));
+        other.ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    [Fact]
+    public async Task AnActionThatNeverFinishes_AnswersTheUnresponsiveWall()
+    {
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var (manager, time) = DeadlineManager();
+        await using var owned = manager;
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 3);
+        var (act, entered) = Wedged<string?>();
+
+        var action = manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            act,
+            answer: _ => Task.FromResult("acted"),
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("popup")));
+        await entered;
+        time.Advance(WorkDeadline);
+
+        (await action.WaitAsync(TimeSpan.FromSeconds(10)))
+            .ShouldBeOfType<TabOutcome<string>.Unresponsive>().Url.ShouldBe("https://a.test/");
+        pages[0].Closed.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task AWorkThatFindsItsPageUnresponsive_ClosesTheTab_AndTheSameUrlBrowsesAgain()
+    {
+        // A page read that outran its own short bound says the page has stopped answering; the
+        // tab is closed then, not at the deadline, so the wedge costs seconds rather than minutes.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        var (manager, _) = DeadlineManager();
+        await using var owned = manager;
+
+        var outcome = await manager.BrowseAsync<bool>("s1", "https://a.test/", ctx.Object,
+            _ => throw new PageUnresponsiveException("https://a.test/"));
+
+        outcome.ShouldBeOfType<TabOutcome<bool>.Unresponsive>().Url.ShouldBe("https://a.test/");
+        pages[0].Closed.ShouldBeTrue();
+        (await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult("again")))
+            .ShouldBeOfType<TabOutcome<string>.Ran>().Result.ShouldBe("again");
     }
 }

@@ -70,6 +70,9 @@ public record BrowsingConfiguration
 
     // The session's one idle clock, refreshed by every routed call.
     public int SessionIdleTimeoutMinutes { get; init; } = 30;
+
+    // How long one call may hold a tab before its page is taken for hung and closed.
+    public int WorkDeadlineMinutes { get; init; } = 10;
 }
 
 public record HandoffConfiguration

@@ -11,6 +11,16 @@ public class BrowserSessionManager : IAsyncDisposable
 {
     public const int DefaultTabCap = 3;
 
+    // The net under every work, with room above the slowest browse that ends on its own: a goto
+    // and a ready-state wait of 30 s each and two captcha solves of up to 2 minutes with their
+    // reloads already make 6 minutes, before overlays, stability waits and the one re-ask. A page
+    // that hangs on a read is found far sooner, by the read's own bound (PageReads).
+    public static readonly TimeSpan DefaultWorkDeadline = TimeSpan.FromMinutes(10);
+
+    // Closing is a browser-level call that answers even for a page whose script holds its thread;
+    // the bound is for a connection that has died under it.
+    private static readonly TimeSpan _closeGrace = TimeSpan.FromSeconds(10);
+
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new();
     private readonly SemaphoreSlim _createLock = new(1, 1);
     private readonly TimeProvider _timeProvider;
@@ -18,17 +28,20 @@ public class BrowserSessionManager : IAsyncDisposable
     internal TimeProvider Time => _timeProvider;
     private readonly TimeSpan _idleTimeout;
     private readonly int _tabCap;
+    private readonly TimeSpan _workDeadline;
     private readonly ITimer? _pruneTimer;
 
     public BrowserSessionManager(
         TimeProvider? timeProvider = null,
         TimeSpan? idleTimeout = null,
         TimeSpan? pruneInterval = null,
-        int tabCap = DefaultTabCap)
+        int tabCap = DefaultTabCap,
+        TimeSpan? workDeadline = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(30);
         _tabCap = Math.Max(1, tabCap);
+        _workDeadline = workDeadline ?? DefaultWorkDeadline;
 
         if (pruneInterval is { } interval)
         {
@@ -294,7 +307,15 @@ public class BrowserSessionManager : IAsyncDisposable
                 // this action's answer.
                 TakePendingPopup(session!.SessionId, tab);
 
-                result = await act(ctx);
+                // Each phase is bounded on its own, so a wedge closes the page that wedged: the
+                // acting tab for the act and its answer, the popup for the popup's.
+                var acted = await WithinDeadlineAsync(tab, ctx, () => act(ctx));
+                if (!acted.Finished)
+                {
+                    return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
+                }
+
+                result = acted.Result;
                 if (result is null)
                 {
                     if (TakePendingPopup(session.SessionId, tab) is { } popupTab)
@@ -304,13 +325,19 @@ public class BrowserSessionManager : IAsyncDisposable
                         // on the document it left. Committed before the popup answers, so the
                         // popup's own tail touches last and stays current.
                         CommitTail(session, tab, ctx, supersedeAlways: false);
-                        if (await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupResult)
+                        if (await AnswerFromPopupAsync(session, popupTab, popup, ct) is { } popupOutcome)
                         {
-                            return new TabOutcome<T>.Ran(popupResult, PopupAnswered: true);
+                            return popupOutcome;
                         }
                     }
 
-                    result = await answer(ctx);
+                    var answered = await WithinDeadlineAsync(tab, ctx, () => answer(ctx));
+                    if (!answered.Finished)
+                    {
+                        return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
+                    }
+
+                    result = answered.Result;
                 }
             }
             catch (Exception ex) when (IsConnectionClosed(ex) && tab.Page.IsClosed)
@@ -334,8 +361,9 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // The popup's own pipeline, nested inside the acting tab's lock — a popup is always a fresh
     // page, never an existing tab, so the nesting cannot cycle. Null hands the answer back to the
-    // acting tab: a popup evicted (or self-closed) before it could answer is not a failure.
-    private async Task<T?> AnswerFromPopupAsync<T>(
+    // acting tab: a popup evicted (or self-closed) before it could answer is not a failure. A
+    // popup that stopped answering is the action's answer, since it has already taken current.
+    private async Task<TabOutcome<T>?> AnswerFromPopupAsync<T>(
         BrowserSession session, BrowserTab popupTab, PopupAnswer<T> popup, CancellationToken ct)
         where T : class
     {
@@ -352,7 +380,13 @@ public class BrowserSessionManager : IAsyncDisposable
             T result;
             try
             {
-                result = await popup.Answer(ctx);
+                var answered = await WithinDeadlineAsync(popupTab, ctx, () => popup.Answer(ctx));
+                if (!answered.Finished)
+                {
+                    return new TabOutcome<T>.Unresponsive(popupTab.RequestedUrl);
+                }
+
+                result = answered.Result;
             }
             catch (Exception ex) when (IsConnectionClosed(ex) && popupTab.Page.IsClosed)
             {
@@ -366,7 +400,7 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             CommitTail(session, popupTab, ctx, supersedeAlways: false);
-            return result;
+            return new TabOutcome<T>.Ran(result, PopupAnswered: true);
         }
         finally
         {
@@ -427,7 +461,13 @@ public class BrowserSessionManager : IAsyncDisposable
             T result;
             try
             {
-                result = await work(ctx);
+                var done = await WithinDeadlineAsync(tab, ctx, () => work(ctx));
+                if (!done.Finished)
+                {
+                    return new TabOutcome<T>.Unresponsive(tab.RequestedUrl);
+                }
+
+                result = done.Result;
             }
             catch (Exception ex) when (IsConnectionClosed(ex) && tab.Page.IsClosed)
             {
@@ -449,6 +489,65 @@ public class BrowserSessionManager : IAsyncDisposable
         finally
         {
             ctx.ReleaseLease();
+        }
+    }
+
+    // A page whose script holds its thread answers no call made on it, and Playwright gives
+    // page.content() and evaluate no timeout of their own: one browse waited on such a page for
+    // good, holding its tab's lock and the turn that asked. The work finds a hung page itself when
+    // a bounded read says so (PageReads); past the deadline it is abandoned instead — its context
+    // gives the stamp lease back and refuses it another. Either way the page is closed, which ends
+    // every call still pending on it, so an abandoned work unwinds alone.
+    private async Task<(bool Finished, T Result)> WithinDeadlineAsync<T>(
+        BrowserTab tab, TabWorkContext ctx, Func<Task<T>> run)
+    {
+        using var stopClock = new CancellationTokenSource();
+        var deadline = Task.Delay(_workDeadline, _timeProvider, stopClock.Token);
+        var work = Started(run);
+        if (await Task.WhenAny(work, deadline) == work)
+        {
+            await stopClock.CancelAsync();
+            try
+            {
+                return (true, await work);
+            }
+            catch (PageUnresponsiveException)
+            {
+                await CloseUnresponsiveAsync(tab);
+                return (false, default!);
+            }
+        }
+
+        ctx.Abandon();
+        _ = work.ContinueWith(t => _ = t.Exception,
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+        await CloseUnresponsiveAsync(tab);
+        return (false, default!);
+    }
+
+    // A work that throws before its first await throws here rather than out of the deadline's
+    // handling.
+    private static Task<T> Started<T>(Func<Task<T>> run)
+    {
+        try
+        {
+            return run();
+        }
+        catch (Exception ex)
+        {
+            return Task.FromException<T>(ex);
+        }
+    }
+
+    private async Task CloseUnresponsiveAsync(BrowserTab tab)
+    {
+        try
+        {
+            await CloseTabPageAsync(tab).WaitAsync(_closeGrace, _timeProvider);
+        }
+        catch (TimeoutException)
+        {
+            // The connection under it is gone; its reconnect closes every page anyway.
         }
     }
 
@@ -895,6 +994,10 @@ public abstract record TabOutcome<T>
 
     // The tab addressed by URL (the composed-snapshot exception) is no longer in the session.
     public sealed record AddressedTabGone(string Url) : TabOutcome<T>;
+
+    // The page stopped answering: the work outran the deadline, so its tab was closed. Url is the
+    // page that hung.
+    public sealed record Unresponsive(string Url) : TabOutcome<T>;
 }
 
 // How an action answers when its click opened a popup: the popup's own stamping policy and the
@@ -937,7 +1040,9 @@ public sealed class TabWorkContext
     private readonly BrowserTab _tab;
     private readonly StampPolicy _stamping;
     private readonly CancellationToken _ct;
+    private readonly Lock _leaseGate = new();
     private BrowserSessionManager.RefStampLease? _lease;
+    private bool _abandoned;
     private int _stampedCount;
     private bool? _augment;
 
@@ -993,8 +1098,19 @@ public sealed class TabWorkContext
             throw new InvalidOperationException("This work already stamped; one stamp per run.");
         }
 
-        _lease = await _manager.BeginStampAsync(_session.SessionId, ns, _tab, _ct);
-        _stampedCount = await stamp(_lease.Start);
+        var lease = await _manager.BeginStampAsync(_session.SessionId, ns, _tab, _ct);
+        lock (_leaseGate)
+        {
+            if (_abandoned)
+            {
+                lease.Dispose();
+                throw new InvalidOperationException("This work outran its deadline; its tab was closed.");
+            }
+
+            _lease = lease;
+        }
+
+        _stampedCount = await stamp(lease.Start);
     }
 
     // A popup is reported only once the new page says it is ready, which can land after the
@@ -1027,8 +1143,23 @@ public sealed class TabWorkContext
 
     internal void ReleaseLease()
     {
-        _lease?.Dispose();
-        _lease = null;
+        lock (_leaseGate)
+        {
+            _lease?.Dispose();
+            _lease = null;
+        }
+    }
+
+    // The deadline gave up on this work: the lease goes back now, and a stamp the work asks for
+    // later is refused, since nothing would be left to commit or release it.
+    internal void Abandon()
+    {
+        lock (_leaseGate)
+        {
+            _abandoned = true;
+            _lease?.Dispose();
+            _lease = null;
+        }
     }
 }
 

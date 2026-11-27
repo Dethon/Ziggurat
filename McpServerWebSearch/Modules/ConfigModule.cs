@@ -123,6 +123,7 @@ public static class ConfigModule
                     settings.Camoufox?.WsEndpoint,
                     tabCap: settings.Browsing.TabCap,
                     idleTimeout: TimeSpan.FromMinutes(settings.Browsing.SessionIdleTimeoutMinutes),
+                    workDeadline: TimeSpan.FromMinutes(settings.Browsing.WorkDeadlineMinutes),
                     // No key is the feature off, all the way off: a dismisser with no judge skips
                     // the control listing too, which is a chained-locator EvaluateAll over every
                     // overlay the cheap paths left standing on every navigation.
