@@ -52,4 +52,19 @@ public class StreamSeenTests
 
         rest.ShouldHaveSingleItem().IsComplete.ShouldBeTrue();
     }
+
+    // An answer changes a call the page drew, which no length can say: the calls go again whole once they
+    // moved on, and a page folds them in by id.
+    [Fact]
+    public void ACallAnsweredSinceThePageDrewIt_HandsBackTheCalls()
+    {
+        var call = new ToolCallStep { CallId = "c1", Name = "glob" };
+        var seen = StreamSeen.Of([new ChatStreamMessage { Tools = [call], MessageId = "m1" }]);
+        var answered = call.Merge(new ToolCallStep { CallId = "c1", Result = "a.txt", Outcome = ToolCallOutcome.Done });
+
+        var rest = seen.Since([new ChatStreamMessage { Tools = [answered], MessageId = "m1" }]);
+
+        rest.ShouldHaveSingleItem().Tools.ShouldBe([answered]);
+        seen.Since([new ChatStreamMessage { Tools = [call], MessageId = "m1" }]).ShouldBeEmpty();
+    }
 }

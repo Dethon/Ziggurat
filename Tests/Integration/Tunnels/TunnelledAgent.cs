@@ -81,6 +81,7 @@ internal sealed class TunnelledAgent : IAsyncDisposable
                 {
                     HostsReviewCopies = endpoint.HostsReviewCopies,
                     ShowsReasoning = endpoint.ShowsReasoning,
+                    ShowsToolCalls = endpoint.ShowsToolCalls,
                     Household = household
                 };
                 connections.Add(connection);

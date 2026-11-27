@@ -63,4 +63,21 @@ public class StreamBufferTests
         messages.Count.ShouldBe(1);
         messages[0].Reasoning.ShouldBe("Think more");
     }
+
+    // A call's answer comes under the call's own message id and folds into the call, so a page joining
+    // later is handed each call once, answered.
+    [Fact]
+    public void Add_ToolSteps_FoldEachAnswerIntoItsCall()
+    {
+        var sut = new StreamBuffer();
+        sut.Add(new ChatStreamMessage { Tools = [new ToolCallStep { CallId = "c1", Name = "glob" }], MessageId = "m1" });
+        sut.Add(new ChatStreamMessage { Tools = [new ToolCallStep { CallId = "c2", Name = "read" }], MessageId = "m1" });
+        sut.Add(new ChatStreamMessage
+        {
+            Tools = [new ToolCallStep { CallId = "c1", Result = "a.txt", Outcome = ToolCallOutcome.Done }], MessageId = "m1"
+        });
+
+        var tools = sut.GetAll().ShouldHaveSingleItem().Tools!;
+        tools.Select(t => (t.CallId, t.Name, t.Result)).ShouldBe([("c1", "glob", "a.txt"), ("c2", "read", null)]);
+    }
 }

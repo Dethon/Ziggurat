@@ -25,7 +25,8 @@ public static class BufferRebuildUtility
             .Where(m => m.Role == "assistant" && !string.IsNullOrEmpty(m.Content))
             .Select(m => m.Content)
             .ToHashSet();
-        var streamingMessage = StripKnownContent(rawStreamingMessage, historyContent);
+        var known = KnownSteps.Of(existingHistory);
+        var streamingMessage = known.Without(StripKnownContent(rawStreamingMessage, historyContent));
 
         // Classify completed turns: anchors (MessageId in history) track position,
         // new messages are grouped by which anchor they follow
@@ -45,22 +46,25 @@ public static class BufferRebuildUtility
                 followingNew[turn.MessageId] = [];
                 lastAnchorId = turn.MessageId;
             }
+            // What the history already holds a step of (a kept turn's calls, under the reply they led
+            // to) is not new: drawn again, its calls would show twice.
+            else if (known.Without(turn) is not { HasContent: true } fresh)
+            {
+                continue;
+            }
             else if (lastAnchorId is not null)
             {
-                followingNew[lastAnchorId].Add(turn);
+                followingNew[lastAnchorId].Add(fresh);
             }
             else
             {
-                leadingNew.Add(turn);
+                leadingNew.Add(fresh);
             }
         }
 
         // Build merged list: walk history, enrich anchors, insert new messages at anchor positions
         var merged = new List<ChatMessageModel>(existingHistory.Count + completedTurns.Count);
         var leadingInserted = false;
-        var completedById = completedTurns
-            .Where(t => !string.IsNullOrEmpty(t.MessageId))
-            .ToDictionary(t => t.MessageId!, t => t);
 
         foreach (var msg in existingHistory)
         {
@@ -71,23 +75,8 @@ public static class BufferRebuildUtility
                 leadingInserted = true;
             }
 
-            // Enrich anchor with buffer reasoning/toolcalls, or pass through unchanged
-            if (msg.MessageId is not null && completedById.TryGetValue(msg.MessageId, out var anchorTurn))
-            {
-                var needsReasoning = string.IsNullOrEmpty(msg.Reasoning) && !string.IsNullOrEmpty(anchorTurn.Reasoning);
-                var needsToolCalls = string.IsNullOrEmpty(msg.ToolCalls) && !string.IsNullOrEmpty(anchorTurn.ToolCalls);
-                merged.Add((needsReasoning || needsToolCalls)
-                    ? msg with
-                    {
-                        Reasoning = needsReasoning ? anchorTurn.Reasoning : msg.Reasoning,
-                        ToolCalls = needsToolCalls ? anchorTurn.ToolCalls : msg.ToolCalls
-                    }
-                    : msg);
-            }
-            else
-            {
-                merged.Add(msg);
-            }
+            // An anchor is drawn as the history has it, which holds everything its turn did.
+            merged.Add(msg);
 
             // Insert new messages that follow this anchor
             if (msg.MessageId is not null && followingNew.TryGetValue(msg.MessageId, out var following))
@@ -189,7 +178,7 @@ public static class BufferRebuildUtility
 
             if (!string.IsNullOrEmpty(msg.Content) ||
                 !string.IsNullOrEmpty(msg.Reasoning) ||
-                !string.IsNullOrEmpty(msg.ToolCalls))
+                msg.Tools is { Count: > 0 })
             {
                 currentAssistantMessage = AccumulateChunk(currentAssistantMessage, msg);
             }
@@ -287,14 +276,10 @@ public static class BufferRebuildUtility
             };
         }
 
-        if (!string.IsNullOrEmpty(chunk.ToolCalls))
+        // A call's answer comes under the call's own id and folds into it.
+        if (chunk.Tools is { Count: > 0 } tools)
         {
-            streamingMessage = streamingMessage with
-            {
-                ToolCalls = string.IsNullOrEmpty(streamingMessage.ToolCalls)
-                    ? chunk.ToolCalls
-                    : streamingMessage.ToolCalls + "\n" + chunk.ToolCalls
-            };
+            streamingMessage = streamingMessage with { Tools = ToolCallStep.Upsert(streamingMessage.Tools, tools) };
         }
 
         if (chunk.Timestamp is not null)
@@ -303,5 +288,28 @@ public static class BufferRebuildUtility
         }
 
         return streamingMessage;
+    }
+
+    // The calls and reasoning the page's messages already show, from the history (a reply's steps) or a
+    // stream (a message's own): a resumed buffer's copy of one is no new step.
+    private sealed record KnownSteps(IReadOnlySet<string> CallIds, IReadOnlySet<string> Reasoning)
+    {
+        public static KnownSteps Of(IReadOnlyList<ChatMessageModel> messages)
+        {
+            var steps = messages
+                .SelectMany(m => (m.Steps ?? []).Concat(m.StepsAfter ?? [])
+                    .Concat((m.Tools ?? []).Select(t => new TurnStep(Tool: t)))
+                    .Append(new TurnStep(Reasoning: m.Reasoning)))
+                .ToList();
+            return new KnownSteps(
+                steps.Select(s => s.Tool?.CallId).OfType<string>().ToHashSet(),
+                steps.Select(s => s.Reasoning).OfType<string>().ToHashSet());
+        }
+
+        public ChatMessageModel Without(ChatMessageModel message) => message with
+        {
+            Tools = message.Tools?.Where(t => !CallIds.Contains(t.CallId)).ToList() is { Count: > 0 } tools ? tools : null,
+            Reasoning = message.Reasoning is { } reasoning && Reasoning.Contains(reasoning) ? null : message.Reasoning
+        };
     }
 }

@@ -324,7 +324,7 @@ public sealed class StreamingService(
                 }
                 else if (chunk is { UserMessage: null, ApprovalRequest: null, MessageId: not null }
                          && (!string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning)
-                             || !string.IsNullOrEmpty(chunk.ToolCalls)))
+                             || chunk.Tools is { Count: > 0 }))
                 {
                     said.Add(chunk);
                 }

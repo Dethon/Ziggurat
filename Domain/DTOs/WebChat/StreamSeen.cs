@@ -12,7 +12,7 @@ public sealed record StreamSeen(int Count, IReadOnlyList<SeenMessage> Messages)
         [
             .. buffered.Where(m => m.MessageId is not null)
                 .Select(m => new SeenMessage(m.MessageId!, m.Content?.Length ?? 0, m.Reasoning?.Length ?? 0,
-                    m.ToolCalls?.Length ?? 0))
+                    Tools: ToolProgress(m.Tools)))
         ]);
 
     // The stream as it is now, less what the page has: the rest of each message it had begun, and every
@@ -34,18 +34,26 @@ public sealed record StreamSeen(int Count, IReadOnlyList<SeenMessage> Messages)
     {
         var content = After(entry.Content, seen.Content);
         var reasoning = After(entry.Reasoning, seen.Reasoning);
-        var toolCalls = After(entry.ToolCalls, seen.ToolCalls);
-        return content is null && reasoning is null && toolCalls is null
+        // A call's answer changes a step the page drew, so the calls go again whole once they moved on: a
+        // page folds them in by id, and drawing one twice changes nothing.
+        var tools = ToolProgress(entry.Tools) > seen.Tools ? entry.Tools : null;
+        return content is null && reasoning is null && tools is null
             ? null
-            : entry with { Content = content, Reasoning = reasoning, ToolCalls = toolCalls, IsComplete = false };
+            : entry with { Content = content, Reasoning = reasoning, Tools = tools, IsComplete = false };
     }
 
     // A message's end marker is an entry of its own under the message's id, with no text.
     private static bool HasText(ChatStreamMessage entry) =>
-        entry.Content is not null || entry.Reasoning is not null || entry.ToolCalls is not null;
+        entry.Content is not null || entry.Reasoning is not null || entry.Tools is not null;
+
+    // How far a message's calls had got: one for each call, one more for each that answered.
+    public static int ToolProgress(IReadOnlyList<ToolCallStep>? tools) =>
+        tools?.Sum(t => t.HasAnswered ? 2 : 1) ?? 0;
 
     private static string? After(string? text, int had) =>
         text is not null && text.Length > had ? text[had..] : null;
 }
 
-public sealed record SeenMessage(string MessageId, int Content, int Reasoning, int ToolCalls);
+// ToolCalls is what a page from before sends (the length of a text nothing writes now); Tools is how far
+// the message's calls had got (StreamSeen.ToolProgress).
+public sealed record SeenMessage(string MessageId, int Content, int Reasoning, int ToolCalls = 0, int Tools = 0);

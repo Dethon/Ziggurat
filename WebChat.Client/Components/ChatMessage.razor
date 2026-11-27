@@ -28,8 +28,6 @@
     [Parameter] public string? TopicOwnerId { get; set; }
     [Parameter] public string? TopicOwnerName { get; set; }
 
-    private bool _showReasoning;
-    private bool _showToolCalls;
     private bool _copied;
 
     private async Task CopyMessage()
@@ -58,12 +56,6 @@
         if (IsStreaming && !string.IsNullOrEmpty(Message.Content))
         {
             classes.Add("streaming-cursor");
-        }
-        // Compact styling when only showing thinking indicator
-        if (IsStreaming && string.IsNullOrEmpty(Message.Content) &&
-            string.IsNullOrEmpty(Message.Reasoning) && string.IsNullOrEmpty(Message.ToolCalls))
-        {
-            classes.Add("thinking-only");
         }
         // Add own message class for user's messages
         if (IsOwnMessage)
@@ -136,40 +128,6 @@
     }
 
     <div class="@GetMessageClass()" title="@GetTooltipText()">
-        @if (!string.IsNullOrEmpty(Message.Reasoning))
-        {
-            <div class="collapsible-block">
-                <button class="collapsible-toggle" @onclick="() => _showReasoning = !_showReasoning">
-                    @* One triangle turned rather than two glyphs swapped, which is what the
-                       transition on .toggle-icon was always written for. *@
-                    <Icon Glyph="Icons.Triangle" Size="10" Class="@(_showReasoning ? "toggle-icon open" : "toggle-icon")" />
-                    Reasoning
-                </button>
-                @if (_showReasoning)
-                {
-                    <div class="collapsible-content">
-                        @Message.Reasoning
-                    </div>
-                }
-            </div>
-        }
-
-        @if (!string.IsNullOrEmpty(Message.ToolCalls))
-        {
-            <div class="collapsible-block">
-                <button class="collapsible-toggle" @onclick="() => _showToolCalls = !_showToolCalls">
-                    <Icon Glyph="Icons.Triangle" Size="10" Class="@(_showToolCalls ? "toggle-icon open" : "toggle-icon")" />
-                    Tool calls
-                </button>
-                @if (_showToolCalls)
-                {
-                    <div class="collapsible-content tool-calls-content">
-                        @Message.ToolCalls
-                    </div>
-                }
-            </div>
-        }
-
         <MessageAttachments Attachments="@Message.Attachments" />
 
         <div class="message-content">
@@ -238,18 +196,6 @@
                 <Icon Glyph="Icons.Retry" Size="14" />
                 Retry
             </button>
-        }
-
-        @if (IsStreaming && string.IsNullOrEmpty(Message.Content))
-        {
-            <div class="typing-indicator">
-                <div class="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                </div>
-                <span>Thinking...</span>
-            </div>
         }
     </div>
 </div>

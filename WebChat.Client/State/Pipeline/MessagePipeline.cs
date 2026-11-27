@@ -100,28 +100,12 @@ public sealed class MessagePipeline(
             return;
         }
 
-        var existingMessages = MessagesFor(topicId) ?? [];
-        var historyMsg = !string.IsNullOrEmpty(currentMessageId)
-            ? existingMessages.FirstOrDefault(m => m.MessageId == currentMessageId)
-            : null;
-
-        if (historyMsg is not null)
+        // A message the history already holds was kept whole, with everything its turn did: the history's
+        // bubble is it, and the stream's copy would draw its reasoning and calls a second time.
+        if (!string.IsNullOrEmpty(currentMessageId)
+            && (MessagesFor(topicId) ?? []).Any(m => m.MessageId == currentMessageId))
         {
-            var needsReasoning = string.IsNullOrEmpty(historyMsg.Reasoning) &&
-                                 !string.IsNullOrEmpty(result.StreamingMessage.Reasoning);
-            var needsToolCalls = string.IsNullOrEmpty(historyMsg.ToolCalls) &&
-                                 !string.IsNullOrEmpty(result.StreamingMessage.ToolCalls);
-
-            if (needsReasoning || needsToolCalls)
-            {
-                var enriched = historyMsg with
-                {
-                    Reasoning = needsReasoning ? result.StreamingMessage.Reasoning : historyMsg.Reasoning,
-                    ToolCalls = needsToolCalls ? result.StreamingMessage.ToolCalls : historyMsg.ToolCalls
-                };
-                dispatcher.Dispatch(new UpdateMessage(topicId, currentMessageId!, enriched));
-                return;
-            }
+            return;
         }
 
         // The resumed stream was opened with this same message as its accumulator, so showing

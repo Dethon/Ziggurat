@@ -122,6 +122,8 @@ public sealed class McpChannelConnection(
 
     public bool ShowsReasoning { get; init; } = true;
 
+    public bool ShowsToolCalls { get; init; }
+
     public bool IsConnected => _client is not null;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();

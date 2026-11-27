@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
-using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -61,20 +59,9 @@ public sealed class ApprovalService(
                 _ = PushAskedAsync(asker, session, topicId, requests, approvalId);
             }
 
+            // What was let through, or turned down, the topic already shows: the call streamed as the model
+            // wrote it, and its answer (or the refusal the turn ends on) follows as its result.
             var (result, _) = await WaitAsync(approvalId, context, ct);
-
-            // Answered here or on another of the asker's channels, what was approved is let through
-            // here the same way, and the topic shows the call. A rejected one shows too, marked: the
-            // turn ends with it and the model says nothing more, so without it the card went away
-            // and the reply stopped with no word of what had been asked.
-            if (result is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember)
-            {
-                await WriteToolCallsAsync(topicId, requests);
-            }
-            else if (result is ToolApprovalResult.Rejected)
-            {
-                await WriteToolCallsAsync(topicId, requests, rejected: true);
-            }
 
             return result.ToString().ToLowerInvariant();
         }
@@ -207,41 +194,8 @@ public sealed class ApprovalService(
         context.TrySetResult(result, elsewhere: true);
     }
 
-    public Task NotifyAutoApprovedAsync(RequestApprovalParams p)
-    {
-        // A notification nobody can see costs nothing and blocks nothing (ADR-0035): the tool
-        // calls it would render are in the persisted reply already.
-        var topicId = sessionService.GetTopicIdByConversationId(p.ConversationId);
-        if (topicId is null)
-        {
-            logger.LogDebug(
-                "NotifyAutoApproved: no live session for conversation {ConversationId}; nothing to render to",
-                p.ConversationId);
-            return Task.CompletedTask;
-        }
-
-        return WriteToolCallsAsync(topicId, p.Requests);
-    }
-
-    // The one route a tool call reaches the browser by. It is buffered with the rest of the reply,
-    // so a reload replays it and it arrives in order; a hub push beside it would be the same text a
-    // second time, reaching no browser this does not. Grouped by message id because that is what
-    // says which bubble the call belongs to — unlabelled, it lands on whatever is being written.
-    private async Task WriteToolCallsAsync(string topicId, IReadOnlyList<ToolApprovalRequest> requests, bool rejected = false)
-    {
-        var messages = requests
-            .GroupBy(request => request.MessageId)
-            .Select(g => new ChatStreamMessage
-            {
-                MessageId = g.Key,
-                ToolCalls = FormatToolCalls(g.ToArray(), rejected)
-            });
-
-        foreach (var message in messages)
-        {
-            await streamService.WriteMessageAsync(topicId, message);
-        }
-    }
+    // Nothing to draw: a call let through without asking streams with the reply, as every call does.
+    public Task NotifyAutoApprovedAsync(RequestApprovalParams p) => Task.CompletedTask;
 
     public async Task RespondToApprovalAsync(string approvalId, string result)
     {
@@ -352,46 +306,5 @@ public sealed class ApprovalService(
 
             context.TrySetResult(ToolApprovalResult.Rejected);
         }
-    }
-
-    private static string FormatToolCalls(IReadOnlyList<ToolApprovalRequest> requests, bool rejected = false)
-    {
-        var sb = new StringBuilder();
-
-        foreach (var request in requests)
-        {
-            var toolName = request.ToolName.Split("__").Last();
-            sb.AppendLine(rejected ? $"🔧 {toolName} (rejected)" : $"🔧 {toolName}");
-
-            if (request.Arguments.Count <= 0)
-            {
-                continue;
-            }
-
-            foreach (var (key, value) in request.Arguments)
-            {
-                var formattedValue = FormatArgumentValue(value);
-                if (formattedValue.Length > 100)
-                {
-                    formattedValue = formattedValue[..100] + "...";
-                }
-
-                sb.AppendLine($"  {key}: {formattedValue}");
-            }
-        }
-
-        return sb.ToString().TrimEnd();
-    }
-
-    private static string FormatArgumentValue(object? value)
-    {
-        return value switch
-        {
-            null => "null",
-            string s => s.Replace("\n", " ").Replace("\r", ""),
-            JsonElement { ValueKind: JsonValueKind.String } je => je.GetString()?.Replace("\n", " ") ?? "",
-            JsonElement je => je.GetRawText(),
-            _ => value.ToString() ?? ""
-        };
     }
 }

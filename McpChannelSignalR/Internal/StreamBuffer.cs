@@ -9,7 +9,7 @@ internal sealed class StreamBuffer
     private readonly Dictionary<string, int> _messageIndexByMessageId = new();
     private readonly Dictionary<string, StringBuilder> _contentByMessageId = new();
     private readonly Dictionary<string, StringBuilder> _reasoningByMessageId = new();
-    private readonly Dictionary<string, StringBuilder> _toolCallsByMessageId = new();
+    private readonly Dictionary<string, IReadOnlyList<ToolCallStep>> _toolsByMessageId = new();
     private readonly Lock _lock = new();
     private const int MaxBufferSize = 100;
 
@@ -51,9 +51,9 @@ internal sealed class StreamBuffer
                     _reasoningByMessageId[message.MessageId] = new StringBuilder(message.Reasoning);
                 }
 
-                if (message.ToolCalls is not null)
+                if (message.Tools is not null)
                 {
-                    _toolCallsByMessageId[message.MessageId] = new StringBuilder(message.ToolCalls);
+                    _toolsByMessageId[message.MessageId] = message.Tools;
                 }
             }
         }
@@ -79,7 +79,7 @@ internal sealed class StreamBuffer
             _messageIndexByMessageId.Remove(oldest.MessageId);
             _contentByMessageId.Remove(oldest.MessageId);
             _reasoningByMessageId.Remove(oldest.MessageId);
-            _toolCallsByMessageId.Remove(oldest.MessageId);
+            _toolsByMessageId.Remove(oldest.MessageId);
         }
 
         foreach (var key in _messageIndexByMessageId.Keys.ToList())
@@ -114,22 +114,17 @@ internal sealed class StreamBuffer
             sb.Append(chunk.Reasoning);
         }
 
-        if (chunk.ToolCalls is not null)
+        // A call's answer comes after the call, under the call's id, and folds into it.
+        if (chunk.Tools is not null)
         {
-            if (!_toolCallsByMessageId.TryGetValue(messageId, out var sb))
-            {
-                sb = new StringBuilder();
-                _toolCallsByMessageId[messageId] = sb;
-            }
-
-            sb.Append(chunk.ToolCalls);
+            _toolsByMessageId[messageId] = ToolCallStep.Upsert(_toolsByMessageId.GetValueOrDefault(messageId), chunk.Tools);
         }
 
         _messages[index] = _messages[index] with
         {
             Content = _contentByMessageId.GetValueOrDefault(messageId)?.ToString(),
             Reasoning = _reasoningByMessageId.GetValueOrDefault(messageId)?.ToString(),
-            ToolCalls = _toolCallsByMessageId.GetValueOrDefault(messageId)?.ToString(),
+            Tools = _toolsByMessageId.GetValueOrDefault(messageId),
             SequenceNumber = chunk.SequenceNumber
         };
     }

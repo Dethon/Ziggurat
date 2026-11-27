@@ -112,11 +112,10 @@ public class ApprovalServiceTests : IDisposable
         _push.VerifyNoOtherCalls();
     }
 
-    // Answered on another channel, the question still lets through what it asked about here — the
-    // approved call is written into the topic as if it had been answered on the card — and every
+    // Answered on another channel, the question still lets through what it asked about here, and every
     // browser showing the card is told it was answered elsewhere.
     [Fact]
-    public async Task SettleApprovalAsync_ApprovedElsewhere_WritesTheCallsAndSaysAnsweredElsewhere()
+    public async Task SettleApprovalAsync_ApprovedElsewhere_LetsTheCallThroughAndSaysAnsweredElsewhere()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
@@ -133,7 +132,6 @@ public class ApprovalServiceTests : IDisposable
 
         (await asked).ShouldBe("approved");
         (await reader.ReadAsync()).ApprovalRequest.ShouldNotBeNull();
-        (await reader.ReadAsync()).ToolCalls.ShouldNotBeNullOrEmpty();
         _hubSender.Verify(sender => sender.SendAsync(
                 "OnApprovalResolved",
                 new ApprovalResolvedNotification("topic1", approvalId, null, true),
@@ -286,11 +284,13 @@ public class ApprovalServiceTests : IDisposable
         result.ShouldBe("rejected");
     }
 
-    // A rejected call ends the turn with nothing more from the model, so the call is written into
-    // the topic marked as declined: without it the card went away and the reply stopped with no word
-    // of what had been asked or what the person had said to it.
-    [Fact]
-    public async Task RequestApprovalAsync_Rejected_WritesTheDeclinedCallsMarkedRejected()
+    // The call the card asked about streamed with the reply as the model wrote it, and its answer (or the
+    // refusal a turned-down call ends the turn on) follows as its result: the card's answer writes nothing
+    // more into the topic, approved or not.
+    [Theory]
+    [InlineData("approved")]
+    [InlineData("rejected")]
+    public async Task RequestApprovalAsync_Answered_WritesNothingBesideTheCard(string answer)
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
@@ -303,15 +303,12 @@ public class ApprovalServiceTests : IDisposable
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
 
         var pending = _sut.GetPendingApprovalForTopic("topic1");
-        await _sut.RespondToApprovalAsync(pending!.ApprovalId, "rejected");
-        await approvalTask;
+        await _sut.RespondToApprovalAsync(pending!.ApprovalId, answer);
+        (await approvalTask).ShouldBe(answer);
 
-        // Bounded: before the fix nothing followed the card, and an unbounded read waited for ever.
-        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        (await reader.ReadAsync(bound.Token)).ApprovalRequest.ShouldNotBeNull();
-        var toolCalls = await reader.ReadAsync(bound.Token);
-        toolCalls.MessageId.ShouldBe("msg-1");
-        toolCalls.ToolCalls.ShouldNotBeNull().ShouldStartWith("🔧 file_search (rejected)");
+        (await reader.ReadAsync()).ApprovalRequest.ShouldNotBeNull();
+        await Eventually.Settle();
+        reader.TryRead(out _).ShouldBeFalse();
     }
 
     // ADR-0035: a question nobody can see must not hold the turn. A request-mode approval with
@@ -416,8 +413,10 @@ public class ApprovalServiceTests : IDisposable
             Times.Once);
     }
 
+    // A call let through without asking streams with the reply as every call does: the notice draws
+    // nothing of its own.
     [Fact]
-    public async Task NotifyAutoApprovedAsync_WritesToStream()
+    public async Task NotifyAutoApprovedAsync_WritesNothing()
     {
         _sessionService.StartSession("topic1", "agent1", 100, 200);
         var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
@@ -429,15 +428,13 @@ public class ApprovalServiceTests : IDisposable
         await _sut.NotifyAutoApprovedAsync(
             new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Notify, Requests = requests });
 
-        var msg = await reader.ReadAsync();
-        msg.ToolCalls.ShouldNotBeNullOrEmpty();
-        msg.MessageId.ShouldBe("msg-1");
+        await Eventually.Settle();
+        reader.TryRead(out _).ShouldBeFalse();
     }
 
-    // The topic's stream is the one route a tool call reaches the browser by. It is buffered, so a
-    // reload replays it, and it arrives in order with the rest of the reply. A hub push beside it
-    // is a second delivery of the same text that no client can use: a browser applies a pushed
-    // tool call only to a reply it is already reading, which is a browser reading the stream.
+    // The topic's stream is the one route a tool call reaches the browser by: it streams with the reply
+    // the agent sends (ReplyContentType.ToolCall), buffered, so a reload replays it in order. A hub push
+    // beside it would be the same call a second time.
     [Fact]
     public async Task NotifyAutoApprovedAsync_PushesNothingBesideTheStream()
     {
@@ -453,32 +450,6 @@ public class ApprovalServiceTests : IDisposable
         _hubSender.VerifyNoOtherCalls();
     }
 
-    // The approved call goes into the stream under the message it belongs to, exactly as an
-    // auto-approved one does. Unlabelled, it lands on whatever the reply happens to be writing.
-    [Fact]
-    public async Task RequestApprovalAsync_Approved_WritesTheToolCallsUnderTheirOwnMessage()
-    {
-        _sessionService.StartSession("topic1", "agent1", 100, 200);
-        var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
-        var reader = channel.Subscribe();
-
-        IReadOnlyList<ToolApprovalRequest> requests =
-            [new ToolApprovalRequest("msg-1", "mcp__server__search", new Dictionary<string, object?>())];
-
-        var approvalTask = _sut.RequestApprovalAsync(
-            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
-
-        var pending = _sut.GetPendingApprovalForTopic("topic1");
-        await _sut.RespondToApprovalAsync(pending!.ApprovalId, "approved");
-        await approvalTask;
-
-        var request = await reader.ReadAsync();
-        request.ApprovalRequest.ShouldNotBeNull();
-
-        var toolCalls = await reader.ReadAsync();
-        toolCalls.ToolCalls.ShouldNotBeNullOrEmpty();
-        toolCalls.MessageId.ShouldBe("msg-1");
-    }
 
     // The push exists to take the prompt off every browser showing it. The tool calls it used to
     // carry were the stream's copy a second time.

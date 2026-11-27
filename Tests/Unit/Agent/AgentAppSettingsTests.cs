@@ -226,6 +226,20 @@ public class AgentAppSettingsTests
             .ShouldBe([("voice", false), ("signalr", true)]);
     }
 
+    // Tool calls go only where a channel says it draws them, since a channel server that does not know
+    // those kinds of reply refuses them: the chat client alone, as shipped.
+    [Fact]
+    public void Bind_ShowsToolCalls_IsOffUnlessAnEndpointSaysOtherwise_AndTheChatClientDoes()
+    {
+        var settings = BindSettings(
+            ("channelEndpoints:0:channelId", "telegram"),
+            ("channelEndpoints:0:endpoint", "http://mcp-channel-telegram:8080/mcp"));
+
+        settings.ChannelEndpoints.ShouldHaveSingleItem().ShowsToolCalls.ShouldBeFalse();
+        BoundConfig().GetSection("channelEndpoints").Get<ChannelEndpoint[]>()!
+            .Where(e => e.ShowsToolCalls).Select(e => e.ChannelId).ShouldBe(["signalr"]);
+    }
+
     [Fact]
     public void Bind_LemonadeChatOmitted_MeansTheFeatureIsOff()
     {

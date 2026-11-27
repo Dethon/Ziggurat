@@ -245,6 +245,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public bool ShowsReasoning { get; init; } = true;
 
+    public bool ShowsToolCalls { get; init; }
+
     public bool IsConnected { get; init; } = true;
 
     public string? ConversationIdToReturn { get; init; }

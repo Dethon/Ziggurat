@@ -368,23 +368,27 @@ public sealed class StreamingServiceTests : IDisposable
         messages[0].Content.ShouldBe("Answer");
     }
 
+    // A message's calls accumulate in order, and a call's answer folds into the call it answers.
     [Fact]
-    public async Task SendMessageAsync_AccumulatesToolCalls()
+    public async Task SendMessageAsync_AccumulatesToolCalls_FoldingEachAnswerIntoItsCall()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         var messageId = Guid.NewGuid().ToString();
         _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ToolCalls = "tool_1", MessageId = messageId },
-            new ChatStreamMessage { ToolCalls = "tool_2", MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Call("c1")], MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c1")], MessageId = messageId },
             new ChatStreamMessage { Content = "Result", MessageId = messageId },
             new ChatStreamMessage { IsComplete = true, MessageId = messageId }
         );
 
         await SendAndDrainAsync(topic);
 
-        var messages = MessagesFor(topic.TopicId);
-        messages[0].ToolCalls.ShouldBe("tool_1\ntool_2");
+        var tools = MessagesFor(topic.TopicId)[0].Tools!;
+        tools.Select(t => t.CallId).ShouldBe(["c1", "c2"]);
+        tools[0].Result.ShouldBe("found");
+        tools[1].HasAnswered.ShouldBeFalse();
     }
 
     [Fact]
@@ -397,7 +401,7 @@ public sealed class StreamingServiceTests : IDisposable
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "First part ", MessageId = "msg-1" },
-            new ChatStreamMessage { ToolCalls = "tool_a", MessageId = "msg-2" },
+            new ChatStreamMessage { Tools = [TestTools.Call("tool_a")], MessageId = "msg-2" },
             new ChatStreamMessage { Content = "second part", MessageId = "msg-1" },
             new ChatStreamMessage { Content = "msg2 text", MessageId = "msg-2" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
@@ -412,7 +416,7 @@ public sealed class StreamingServiceTests : IDisposable
         msg1.Content.ShouldBe("First part second part");
         msg2.ShouldNotBeNull();
         msg2.Content.ShouldBe("msg2 text");
-        msg2.ToolCalls.ShouldBe("tool_a");
+        msg2.Tools!.Single().CallId.ShouldBe("tool_a");
     }
 
     public enum TurnShape
@@ -455,7 +459,7 @@ public sealed class StreamingServiceTests : IDisposable
                 break;
             case TurnShape.ToolCallsOnlyThenContent:
                 _messagingService.EnqueueMessages(
-                    new ChatStreamMessage { ToolCalls = "search(\"query\")", MessageId = "msg-1" },
+                    new ChatStreamMessage { Tools = [TestTools.Call("search")], MessageId = "msg-1" },
                     new ChatStreamMessage { Content = "Found results", MessageId = "msg-2" },
                     new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
                 break;
@@ -483,7 +487,7 @@ public sealed class StreamingServiceTests : IDisposable
                 break;
             case TurnShape.ToolCallsOnlyThenContent:
                 messages.Count.ShouldBe(2);
-                messages[0].ToolCalls.ShouldBe("search(\"query\")");
+                messages[0].Tools!.Single().CallId.ShouldBe("search");
                 messages[0].Content.ShouldBeEmpty();
                 messages[1].Content.ShouldBe("Found results");
                 break;

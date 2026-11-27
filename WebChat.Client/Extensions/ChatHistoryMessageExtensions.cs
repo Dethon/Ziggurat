@@ -1,5 +1,4 @@
 using Domain.DTOs.WebChat;
-using WebChat.Client.Helpers;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Extensions;
@@ -25,11 +24,8 @@ public static class ChatHistoryMessageExtensions
             Versions = history.Versions,
             NoReply = history.NoReply,
             ToolsCalled = history.ToolsCalled,
-            // A reply that ran tools and said nothing (cut by a steer) shows them as it did while it
-            // streamed, so it is never an empty bubble.
-            ToolCalls = string.IsNullOrEmpty(history.Content) && history.ToolsCalled is { Count: > 0 } tools
-                ? string.Join(MessageFieldMerger.ToolCallsSeparator, tools)
-                : null,
+            Steps = history.Steps,
+            StepsAfter = history.StepsAfter,
             Model = history.Model,
             IsInterrupted = history.IsInterrupted,
             ContinuesPrevious = history.ContinuesPrevious

@@ -16,8 +16,10 @@
     private AgentCatalogEntry? _selectedAgent;
     private string? _removedAgentName;
     private StoredTopic? _topic;
-    private string? _carriedReasoning;
-    private string? _carriedToolCalls;
+    private StreamingContent? _streamingContent;
+
+    // What the reader opened of each reply's activity, kept across its rows being drawn again.
+    private readonly ActivityExpansion _expansion = new();
     private ElementReference _messagesArea;
     private string? _currentUserId;
     private IDisposable? _streamingContentSubscription;
@@ -31,6 +33,8 @@
             id =>
             {
                 _topicId = id;
+                _expansion.Clear();
+                _streamingContent = null;
                 _forceScrollToBottom = true; // Scroll to bottom when switching topics
                 UpdateMessages();
                 UpdateStreamingStatus();
@@ -71,124 +75,33 @@
             userId => _currentUserId = userId);
     }
 
+    // The page's rows: the stored messages, and the reply being written as the last of them, laid out
+    // as turns (TurnLayout) — so the reply streaming in and the same reply once kept are one row.
     private void UpdateMessages()
     {
         var raw = _topicId != null
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
-        var merged = MergeConsecutiveAssistantMessages(raw);
-
-        if (_isStreaming && merged.Count > 0
-            && merged[^1] is { Role: "assistant", Content: "" or null } last
-            && (last.Reasoning is not null || last.ToolCalls is not null))
-        {
-            _carriedReasoning = last.Reasoning;
-            _carriedToolCalls = last.ToolCalls;
-            _messages = merged.Take(merged.Count - 1).ToList();
-        }
-        else
-        {
-            _carriedReasoning = null;
-            _carriedToolCalls = null;
-            _messages = merged;
-        }
+        _messages = TurnLayout.Rows(_isStreaming && LiveMessage() is { } live ? [.. raw, live] : raw);
     }
 
-    // Merges consecutive assistant messages into a single bubble.
-    // Reasoning concatenated with "\n-----\n", tool calls with "\n".
-    // Content taken from whichever message has it. Empty trailing bubble kept (expecting more data).
-    internal static IReadOnlyList<ChatMessageModel> MergeConsecutiveAssistantMessages(
-        IReadOnlyList<ChatMessageModel> messages)
-    {
-        if (messages.Count <= 1)
+    private ChatMessageModel? LiveMessage() => _streamingContent is { HasContent: true } content
+        ? new ChatMessageModel
         {
-            return messages;
+            Role = "assistant",
+            Content = content.Content,
+            Reasoning = content.Reasoning,
+            Tools = content.Tools,
+            MessageId = content.CurrentMessageId
         }
+        : null;
 
-        var result = new List<ChatMessageModel>(messages.Count);
-        string? accReasoning = null;
-        string? accToolCalls = null;
-        string? accContent = null;
-        MessageVersions? accVersions = null;
-        bool? accInterrupted = null;
-        ChatMessageModel? anchor = null;
+    // The last row while a reply streams is that reply, whatever of it is kept already.
+    private bool IsLive(int index) =>
+        _isStreaming && index == _messages.Count - 1 && _messages[index] is { Role: "assistant", IsError: false, NoReply: false };
 
-        for (var i = 0; i < messages.Count; i++)
-        {
-            var message = messages[i];
-
-            if (message.Role != "assistant" || message.NoReply)
-            {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
-                result.Add(message);
-                continue;
-            }
-
-            // What followed a Continue is the rest of the reply before it, so it joins that bubble.
-            var continues = message.ContinuesPrevious && accContent is not null;
-            if (!string.IsNullOrEmpty(message.Content))
-            {
-                if (accContent is not null && !continues)
-                {
-                    // Previous message(s) already had content — flush them as a separate bubble
-                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
-                }
-
-                accContent = continues ? accContent + message.Content : message.Content;
-                accInterrupted = message.IsInterrupted;
-            }
-
-            accVersions ??= message.Versions;
-            accReasoning = MessageFieldMerger.Merge(
-                accReasoning, message.Reasoning, MessageFieldMerger.ReasoningSeparator);
-            accToolCalls = MessageFieldMerger.Merge(
-                accToolCalls, message.ToolCalls, MessageFieldMerger.ToolCallsSeparator);
-
-            // Prefer the message that carries content as anchor for MessageId/Timestamp; a continuation
-            // keeps the reply it continues as the bubble's own.
-            anchor = anchor is null || (!string.IsNullOrEmpty(message.Content) && !continues) ? message : anchor;
-
-            var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
-            if (!nextIsAssistant)
-            {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
-            }
-        }
-
-        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
-        return result;
-
-        static void Flush(
-            List<ChatMessageModel> result,
-            ref ChatMessageModel? anchor,
-            ref string? content,
-            ref string? reasoning,
-            ref string? toolCalls,
-            ref MessageVersions? versions,
-            ref bool? interrupted)
-        {
-            if (anchor is null)
-            {
-                return;
-            }
-
-            result.Add(anchor with
-            {
-                Content = content ?? "",
-                Reasoning = reasoning,
-                ToolCalls = toolCalls,
-                Versions = versions ?? anchor.Versions,
-                IsInterrupted = interrupted ?? anchor.IsInterrupted
-            });
-
-            anchor = null;
-            content = null;
-            reasoning = null;
-            toolCalls = null;
-            versions = null;
-            interrupted = null;
-        }
-    }
+    private bool AwaitsFirstWord =>
+        _isStreaming && (_messages.Count == 0 || !IsLive(_messages.Count - 1));
 
     private void UpdateStreamingStatus()
     {
@@ -198,6 +111,11 @@
         if (wasStreaming && !_isStreaming)
         {
             _isRetrying = false;
+            _streamingContent = null;
+        }
+
+        if (wasStreaming != _isStreaming)
+        {
             UpdateMessages();
         }
     }
@@ -217,9 +135,14 @@
         }
     }
 
-    private void OnStreamingContentChanged(StreamingContent? _)
+    private void OnStreamingContentChanged(StreamingContent? content)
     {
-        InvokeAsync(StateHasChanged);
+        InvokeAsync(() =>
+        {
+            _streamingContent = content;
+            UpdateMessages();
+            StateHasChanged();
+        });
     }
 
     public override void Dispose()
@@ -439,6 +362,59 @@
                 continue;
             }
 
+            if (message is { Role: "assistant", IsError: false, Activity: { } activity })
+            {
+                var live = IsLive(index);
+                var answered = !string.IsNullOrEmpty(message.Content);
+                if (activity.Count > 0)
+                {
+                    <TurnActivity
+                                  Steps="@activity"
+                                  Live="@live"
+                                  Answered="@answered"
+                                  GroupKey="@TurnLayout.KeyOf(message, index)"
+                                  Expansion="@_expansion" />
+                }
+
+                if (!answered && message.Attachments is not { Count: > 0 })
+                {
+                    // A reply cut before it answered keeps what a bubble would offer: its versions and
+                    // its actions, under the group.
+                    var actions = ActionsFor(message, index);
+                    if (!live && (actions.Count > 0 || message.Versions is not null))
+                    {
+                        <div class="activity-footer">
+                            @if (message.Versions is { } versions)
+                            {
+                                <VersionSwitcher Versions="@versions" Enabled="@MayRewrite"
+                                                 OnSwitch="@(i => HandleSwitchVersion(versions, i))" />
+                            }
+                            @if (actions.Count > 0)
+                            {
+                                <MessageActions Actions="@actions" OnAction="@(action => HandleAction(message, action))"
+                                                Models="@RerollModels" Tools="@(message.ToolsCalled ?? [])" />
+                            }
+                        </div>
+                    }
+
+                    continue;
+                }
+
+                <ChatMessage Message="@message"
+                             IsStreaming="@live"
+                             ShowRetry="@MessageActionsLogic.OffersRetry(_messages, index, _isStreaming, _currentUserId)"
+                             OnRetry="@(() => HandleRetry(index))"
+                             Actions="@ActionsFor(message, index)"
+                             RerollModels="@RerollModels"
+                             AgentModel="@AgentModel"
+                             MaySwitchVersions="@MayRewrite"
+                             OnSwitchVersion="@(i => HandleSwitchVersion(message.Versions!, i))"
+                             OnAction="@(action => HandleAction(message, action))"
+                             TopicOwnerId="@_topic?.OwnerId"
+                             TopicOwnerName="@_topic?.OwnerName" />
+                continue;
+            }
+
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
@@ -454,11 +430,10 @@
                          TopicOwnerName="@_topic?.OwnerName" />
         }
 
-        @if (_isStreaming && !string.IsNullOrEmpty(_topicId))
+        @if (AwaitsFirstWord)
         {
-            <StreamingMessageDisplay TopicId="@_topicId"
-                                     CarriedReasoning="@_carriedReasoning"
-                                     CarriedToolCalls="@_carriedToolCalls"/>
+            <TurnActivity Steps="@([])" Live="true" Answered="false"
+                          GroupKey="awaiting" Expansion="@_expansion" />
         }
     }
 </div>

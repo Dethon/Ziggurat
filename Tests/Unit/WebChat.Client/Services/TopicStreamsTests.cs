@@ -1,5 +1,6 @@
 using Domain.DTOs.WebChat;
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
@@ -170,13 +171,13 @@ public sealed class TopicStreamsTests : IDisposable
         lease.Append(Chunk("writing", "msg-1"));
 
         lease.StartMessage("msg-2");
-        lease.Append(new ChatStreamMessage { ToolCalls = "search()", MessageId = "msg-2" });
+        lease.Append(new ChatStreamMessage { Tools = [TestTools.Call("search")], MessageId = "msg-2" });
         lease.Complete();
 
         Messages().Count.ShouldBe(2);
         Messages()[0].Content.ShouldBe("writing");
-        Messages()[0].ToolCalls.ShouldBeNullOrEmpty();
-        Messages()[1].ToolCalls.ShouldBe("search()");
+        Messages()[0].Tools.ShouldBeNull();
+        Messages()[1].Tools!.Single().CallId.ShouldBe("search");
     }
 
     #endregion

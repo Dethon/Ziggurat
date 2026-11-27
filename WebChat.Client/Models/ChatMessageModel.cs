@@ -1,5 +1,6 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using WebChat.Client.Components.Chat;
 
 namespace WebChat.Client.Models;
 
@@ -8,7 +9,18 @@ public record ChatMessageModel
     public string Role { get; init; } = "user";
     public string Content { get; init; } = "";
     public string? Reasoning { get; init; }
-    public string? ToolCalls { get; init; }
+
+    // The tool calls this message made, as they streamed: a call and, under the same id, its answer.
+    public IReadOnlyList<ToolCallStep>? Tools { get; init; }
+
+    // What its turn did before and after its words, as the history keeps it (ChatHistoryMessage.Steps).
+    public IReadOnlyList<TurnStep>? Steps { get; init; }
+    public IReadOnlyList<TurnStep>? StepsAfter { get; init; }
+
+    // A row of the page (TurnLayout): everything its reply did before its answer, and the key its group
+    // is remembered by. Never set on a stored message.
+    public IReadOnlyList<ActivityStep>? Activity { get; init; }
+    public string? RunKey { get; init; }
     public bool IsError { get; init; }
 
     // The structured answer its turn asked for, by name (ChatHistoryMessage.ResponseFormat).
@@ -53,7 +65,9 @@ public record ChatMessageModel
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
-        !string.IsNullOrEmpty(ToolCalls) ||
+        Tools is { Count: > 0 } ||
+        Steps is { Count: > 0 } ||
+        StepsAfter is { Count: > 0 } ||
         !string.IsNullOrEmpty(Reasoning) ||
         Attachments is { Count: > 0 };
 }

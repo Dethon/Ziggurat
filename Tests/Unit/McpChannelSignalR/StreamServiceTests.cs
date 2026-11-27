@@ -53,6 +53,28 @@ public class StreamServiceTests : IDisposable
         msg.MessageId.ShouldBe("msg-1");
     }
 
+    // A tool call and its answer reach the page as steps of the message they were sent under.
+    [Theory]
+    [InlineData(ReplyContentType.ToolCall)]
+    [InlineData(ReplyContentType.ToolResult)]
+    public async Task WriteReplyAsync_AToolStep_IsWrittenAsThatStep(ReplyContentType kind)
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        var (channel, _) = _sut.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        var reader = channel.Subscribe();
+        var step = new ToolCallStep { CallId = "c1", Name = "mcp__x__glob", Arguments = "{}" };
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "100:200", ContentType = kind, IsComplete = false, MessageId = "msg-1",
+            Content = System.Text.Json.JsonSerializer.Serialize(step, ChannelProtocol.SerializerOptions)
+        });
+
+        var msg = await reader.ReadAsync();
+        msg.Tools.ShouldBe([step]);
+        (msg.MessageId, msg.Content).ShouldBe(("msg-1", null));
+    }
+
     // ADR-0035: a turn that finds no live session delivers by persistence alone. The miss is
     // the designed offline path, so it returns early and stays quiet — debug, never a warning
     // per chunk.

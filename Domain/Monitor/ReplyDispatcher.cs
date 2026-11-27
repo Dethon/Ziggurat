@@ -1,7 +1,10 @@
+using System.Text.Json;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.WebChat;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -27,9 +30,13 @@ internal class ReplyDispatcher(ILogger logger)
         foreach (var mapped in MapResponseUpdate(update))
         {
             var receipts = await Task.WhenAll(turn.Targets
-                .Where(target => mapped.ContentType != ReplyContentType.Reasoning || target.Channel.ShowsReasoning)
+                .Where(target => Shows(target.Channel, mapped.ContentType))
                 .Select(target => DeliverToTargetAsync(target, mapped, update.MessageId, turn, ct)));
-            deliveredContent |= mapped.ContentType != ReplyContentType.StreamComplete && receipts.Any(r => r is not null);
+
+            // A tool call is no reply yet: the first reply is still the first thing said.
+            deliveredContent |= mapped.ContentType is not (ReplyContentType.StreamComplete
+                                    or ReplyContentType.ToolCall or ReplyContentType.ToolResult)
+                                && receipts.Any(r => r is not null);
             returned.AddRange(receipts.SelectMany(r => r?.ReturnedTurnKeys ?? []));
             together = receipts.Select(r => r?.SteeredTogether).FirstOrDefault(keys => keys is { Count: > 0 }) ?? together;
         }
@@ -46,6 +53,13 @@ internal class ReplyDispatcher(ILogger logger)
 
         return new Delivery(deliveredContent, returned, together);
     }
+
+    private static bool Shows(IChannelConnection channel, ReplyContentType kind) => kind switch
+    {
+        ReplyContentType.Reasoning => channel.ShowsReasoning,
+        ReplyContentType.ToolCall or ReplyContentType.ToolResult => channel.ShowsToolCalls,
+        _ => true
+    };
 
     // The one place a reply's wire record is built. Everything a chunk says is decided above; the
     // conversation is the one part that belongs to the target rather than to the chunk, and the
@@ -87,6 +101,8 @@ internal class ReplyDispatcher(ILogger logger)
         }
     }
 
+    private static string Wire(ToolCallStep step) => JsonSerializer.Serialize(step, ChannelProtocol.SerializerOptions);
+
     private sealed record MappedChunk(string Content, ReplyContentType ContentType, bool IsComplete);
 
     private static IEnumerable<MappedChunk> MapResponseUpdate(AgentResponseUpdate update)
@@ -99,8 +115,11 @@ internal class ReplyDispatcher(ILogger logger)
                     => new MappedChunk(text.Text, ReplyContentType.Text, false),
                 TextReasoningContent reasoning when !string.IsNullOrEmpty(reasoning.Text)
                     => new MappedChunk(reasoning.Text, ReplyContentType.Reasoning, false),
-                // FunctionCallContent is intentionally skipped — tool calls are displayed
-                // by the approval flow (request_approval tool with mode=request or mode=notify)
+                // A call as the model wrote it, and its answer once it ran, shaped as a page reads them.
+                FunctionCallContent call
+                    => new MappedChunk(Wire(ToolSteps.Call(call)), ReplyContentType.ToolCall, false),
+                FunctionResultContent result
+                    => new MappedChunk(Wire(ToolSteps.Result(result)), ReplyContentType.ToolResult, false),
                 ErrorContent error
                     => new MappedChunk(error.Message, ReplyContentType.Error, false),
                 StreamCompleteContent

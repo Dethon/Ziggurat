@@ -138,6 +138,7 @@ public class ChannelAttachmentSourceTests
 
         public bool HostsReviewCopies => false;
         public bool ShowsReasoning => true;
+        public bool ShowsToolCalls => false;
 
         public bool IsConnected => true;
 

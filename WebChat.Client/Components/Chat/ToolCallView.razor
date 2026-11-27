@@ -1,0 +1,193 @@
+@using Domain.DTOs.WebChat
+@inject IJSRuntime Js
+
+@* One tool call: folded, its name, where it ran and what it was asked; opened, its arguments as fields
+   and its answer as what it is — a command's output, a failure, JSON or text. All of it is drawn as
+   text: a call's arguments and answer are whatever a model wrote or a page said. *@
+
+<div class="@CardClass">
+    <button type="button" class="tool-call-header" aria-expanded="@(Open ? "true" : "false")" @onclick="Toggle">
+        <span class="tool-call-name">@_name.Bare</span>
+        @if (_name.Server is { } server)
+        {
+            <span class="tool-call-server">@server</span>
+        }
+        <span class="tool-call-summary">@_summary</span>
+        <span class="tool-call-status" title="@StatusText">
+            @switch (Step.Outcome)
+            {
+                case null when Live:
+                    <span class="activity-spinner small" aria-hidden="true"></span>
+                    break;
+                case null:
+                    break;
+                case ToolCallOutcome.Done:
+                    <Icon Glyph="Icons.CheckStroked" Size="14" />
+                    break;
+                case ToolCallOutcome.Failed:
+                    <Icon Glyph="Icons.AlertCircle" Size="14" />
+                    break;
+                case ToolCallOutcome.Declined:
+                    <Icon Glyph="Icons.Ban" Size="14" />
+                    break;
+            }
+            <span class="visually-hidden">@StatusText</span>
+        </span>
+        <Icon Glyph="Icons.ChevronRight" Size="13" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
+    </button>
+
+    @if (Open)
+    {
+        <div class="tool-call-body">
+            @if (_fields.Count > 0)
+            {
+                <div class="tool-section">
+                    <div class="tool-section-label">Arguments</div>
+                    <dl class="tool-args">
+                        @foreach (var field in _fields)
+                        {
+                            <dt>@field.Key</dt>
+                            <dd>
+                                @if (field.Block)
+                                {
+                                    <pre class="tool-block">@field.Value</pre>
+                                }
+                                else
+                                {
+                                    <code>@field.Value</code>
+                                }
+                            </dd>
+                        }
+                    </dl>
+                </div>
+            }
+
+            <div class="tool-section">
+                <div class="tool-section-label">
+                    <span>Result</span>
+                    @if (Step.Result is not null)
+                    {
+                        <button type="button" class="tool-copy @(_copied ? "copied" : "")" title="Copy result" aria-label="Copy result"
+                                @onclick="CopyResult" @onclick:stopPropagation="true">
+                            <Icon Glyph="@(_copied ? Icons.CheckStroked : Icons.Copy)" Size="12" />
+                        </button>
+                    }
+                </div>
+                @switch (Step.Outcome == ToolCallOutcome.Declined ? null : ToolDisplay.ResultOf(Step))
+                {
+                    case null when Step.Outcome == ToolCallOutcome.Declined:
+                        <div class="tool-note declined">Turned down: this call was not run.</div>
+                        break;
+                    case null when Live:
+                        <div class="tool-note">Waiting for its answer…</div>
+                        break;
+                    case null:
+                        <div class="tool-note">No answer: the reply ended before this call finished.</div>
+                        break;
+                    case ToolDisplay.CommandOutput output:
+                        <div class="tool-terminal">
+                            <div class="terminal-meta">
+                                @if (output.ExitCode is { } exit)
+                                {
+                                    <span class="terminal-exit @(exit == 0 ? "ok" : "bad")">exit @exit</span>
+                                }
+                                @if (output.Detail is { } detail)
+                                {
+                                    <span>@detail</span>
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(output.Stdout))
+                            {
+                                <pre class="terminal-out">@output.Stdout</pre>
+                            }
+                            @if (!string.IsNullOrEmpty(output.Stderr))
+                            {
+                                <pre class="terminal-err">@output.Stderr</pre>
+                            }
+                            @if (string.IsNullOrEmpty(output.Stdout) && string.IsNullOrEmpty(output.Stderr))
+                            {
+                                <div class="terminal-empty">No output</div>
+                            }
+                        </div>
+                        break;
+                    case ToolDisplay.Failure failure:
+                        <div class="tool-failure">
+                            @if (failure.Code is { } errorCode)
+                            {
+                                <span class="tool-failure-code">@errorCode</span>
+                            }
+                            <p>@failure.Message</p>
+                            @if (failure.Hint is { } hint)
+                            {
+                                <p class="tool-failure-hint">@hint</p>
+                            }
+                        </div>
+                        break;
+                    case ToolDisplay.Json json:
+                        <pre class="tool-block tool-json">@json.Text</pre>
+                        break;
+                    case ToolDisplay.Text text:
+                        <pre class="tool-block @(Step.Outcome == ToolCallOutcome.Failed ? "tool-text-failed" : "")">@text.Value</pre>
+                        break;
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ToolCallStep Step { get; set; } = default!;
+
+    [Parameter] public bool Live { get; set; }
+
+    [Parameter, EditorRequired] public ActivityExpansion Expansion { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string ExpansionKey { get; set; } = "";
+
+    private ToolDisplay.ToolName _name = new("tool", null);
+    private string _summary = "";
+    private IReadOnlyList<ToolDisplay.Field> _fields = [];
+    private string? _arguments;
+    private bool _copied;
+
+    protected override void OnParametersSet()
+    {
+        _name = ToolDisplay.NameOf(Step.Name);
+        if (!ReferenceEquals(_arguments, Step.Arguments))
+        {
+            _arguments = Step.Arguments;
+            _summary = ToolDisplay.Summary(Step.Arguments);
+            _fields = ToolDisplay.Fields(Step.Arguments);
+        }
+    }
+
+    private bool Open => Expansion.IsOpen(ExpansionKey);
+
+    private void Toggle() => Expansion.Toggle(ExpansionKey);
+
+    private string CardClass => Step.Outcome switch
+    {
+        null => Live ? "tool-call running" : "tool-call unanswered",
+        ToolCallOutcome.Done => "tool-call done",
+        ToolCallOutcome.Failed => "tool-call failed",
+        _ => "tool-call declined"
+    } + (Open ? " open" : "");
+
+    private string StatusText => Step.Outcome switch
+    {
+        null => Live ? "Running" : "No answer",
+        ToolCallOutcome.Done => "Done",
+        ToolCallOutcome.Failed => "Failed",
+        _ => "Turned down"
+    };
+
+    private async Task CopyResult()
+    {
+        await Js.InvokeVoidAsync("clipboardHelper.copy", Step.Result ?? "");
+        _copied = true;
+        StateHasChanged();
+        await Task.Delay(1500);
+        _copied = false;
+        StateHasChanged();
+    }
+}
