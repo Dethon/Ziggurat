@@ -21,8 +21,9 @@ agent-name: Jonas
 model: deepseek/deepseek-v4.1-flash-1017
 reasoning-effort: high
 # The home's jonas runs the same model: relace garbles images, morph drops a tool's ref after the
-# first call (2026-10).
-provider-routing: {"ignore": ["relace", "morph"]}
+# first call (2026-10), open-inference answers in another model's voice and, deep in a long build,
+# takes the screenshots its own reads returned for the person's (2026-11).
+provider-routing: {"ignore": ["relace", "morph", "open-inference"]}
 servers: http://mcp-scheduling:8080/mcp, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp, http://mcp-idealista:8080/mcp, http://mcp-apps:8080/mcp, vault, sandbox, websearch, homeassistant, library, printer
 features: filesystem, subagents, memory
 whitelist: domain__filesystem*, mcp__websearch*, mcp__mcp-idealista*, domain__subagents*, domain__memory*

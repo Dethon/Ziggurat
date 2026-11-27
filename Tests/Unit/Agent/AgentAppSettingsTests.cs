@@ -139,10 +139,14 @@ public class AgentAppSettingsTests
     // out (pinned to it, 3 of 12 second calls kept it; DeepInfra 12 of 12), so the browser refuses
     // and the model retries to its ceiling. Four web scenarios went 0/4 on it (2026-10-19). Ignored
     // the same way, by both agents: nabu's throughput sort would otherwise prefer it.
+    // Open-inference answers jonas's model in another model's voice ("Thinking Process: 1. Analyze
+    // the Request") and, deep in a long app build, takes the screenshots its own file_reads returned
+    // for the person's: replaying a relatos round on it blamed the person 2 of 2, DeepInfra 0 of 2,
+    // and every other provider wrote the model's own terse reasoning (2026-11-27).
     [Fact]
-    public void Jonas_IgnoresTheProvidersThatGarblePhotographsAndDropToolArguments()
+    public void Jonas_IgnoresTheProvidersThatGarblePhotographsDropToolArgumentsOrLoseTheThread()
     {
-        Ignored("jonas").ShouldBe(["relace", "morph"]);
+        Ignored("jonas").ShouldBe(["relace", "morph", "open-inference"]);
     }
 
     [Fact]

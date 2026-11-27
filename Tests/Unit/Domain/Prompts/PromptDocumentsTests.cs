@@ -121,7 +121,7 @@ public class PromptDocumentsTests
         jonas.Name.ShouldBe("Jonas");
         jonas.Description.ShouldNotBeNullOrWhiteSpace();
         jonas.EnabledFeatures.ShouldBe(["filesystem", "subagents", "memory"]);
-        jonas.ProviderRouting.ShouldNotBeNull().Ignore.ShouldBe(["relace", "morph"]);
+        jonas.ProviderRouting.ShouldNotBeNull().Ignore.ShouldBe(["relace", "morph", "open-inference"]);
         jonas.UsesOutposts.ShouldBeTrue();
 
         var sugary = AgentTemplates.Named("sugary").ShouldNotBeNull();
