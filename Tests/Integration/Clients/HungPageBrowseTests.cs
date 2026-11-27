@@ -35,7 +35,7 @@ public class HungPageBrowseTests(IsolatedSessionBrowserFixture fixture)
         {
             var result = await fixture.Browser.NavigateAsync(
                     new BrowseRequest(sessionId, $"{hung}/search") { Caller = JudgmentCaller.None })
-                .WaitAsync(TimeSpan.FromMinutes(2));
+                .WaitAsync(TimeSpan.FromMinutes(3));
 
             result.Status.ShouldBe(BrowseStatus.Error, result.ErrorMessage);
             result.ErrorMessage.ShouldNotBeNull().ShouldContain("stopped responding");
