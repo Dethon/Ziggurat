@@ -316,13 +316,13 @@ window.chatScroll = {
         this.refresh();
     },
 
+    // Asked again when the frame comes: a jump made in between (TurnRailView) has stopped following, and
+    // a snap queued before it would cancel the jump.
     scrollToBottomIfSticky: function (element) {
-        if (!element) return;
-        if (this._stickyState) {
-            requestAnimationFrame(() => {
-                element.scrollTop = element.scrollHeight;
-            });
-        }
+        if (!element || !this._stickyState) return;
+        requestAnimationFrame(() => {
+            if (this._stickyState) element.scrollTop = element.scrollHeight;
+        });
     },
 
     // The pill: to the end, following it from there on.

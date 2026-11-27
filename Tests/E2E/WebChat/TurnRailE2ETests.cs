@@ -25,6 +25,12 @@ public sealed class TurnRailE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".turn-rail-mark")).ToHaveCountAsync(3);
         await Assertions.Expect(page.Locator(".scroll-to-end")).ToBeHiddenAsync();
 
+        // A streamed chunk's render queues a snap to the end while the end is followed; a jump in that
+        // same frame is still where the reader asked to go.
+        await page.EvaluateAsync(
+            "() => { const a = document.querySelector('.messages-area'); chatScroll.scrollToBottomIfSticky(a); chatScroll.scrollToTurn(0); }");
+        await WaitForQuestionAtTheTopAsync(page, words[0]);
+
         // Pointing at the middle of the rail previews the second turn: what was asked and its answer.
         var rail = (await track.BoundingBoxAsync())!;
         await track.HoverAsync(new LocatorHoverOptions { Position = new Position { X = 6, Y = rail.Height / 2 } });
@@ -65,6 +71,52 @@ public sealed class TurnRailE2ETests(WebChatE2EFixture fixture)
         var pill = (await page.Locator(".scroll-to-end").BoundingBoxAsync())!;
         await page.Touchscreen.TapAsync(pill.X + pill.Width / 2, pill.Y + pill.Height / 2);
         await WaitForTheEndAsync(page);
+    }
+
+    // A reply streaming in grows the conversation under the reader: a jump away from the end is not pulled
+    // back to it, and the pill follows the end again from where it lands.
+    [SkippableFact]
+    public async Task WhileAReplyStreams_AJumpStaysWhereItLanded_AndThePillFollowsTheEndAgain()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await page.SetViewportSizeAsync(1280, 640);
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var word = $"Rail{tag}Before";
+        await SendAsync(page, $"Reply with only the word {word}");
+        await WaitForAsync(page, () => AnswerTo(page, word), $"the answer {word}");
+        await IdleAsync(page);
+
+        // Every row but the last is stretched, so the conversation overflows and the reply streaming
+        // into the last one still grows it.
+        await page.AddStyleTagAsync(new PageAddStyleTagOptions { Content = ".messages-area > *:not(:last-child) { min-height: 420px; }" });
+        await SendAsync(page, $"Rail {tag}: write a very long and detailed story about a lighthouse keeper. Do not call any tools.");
+        var stop = page.Locator("[data-testid=composer-cancel]");
+        await stop.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content")).ToHaveCountAsync(2,
+            new LocatorAssertionsToHaveCountOptions { Timeout = 120_000 });
+
+        try
+        {
+            await Assertions.Expect(page.Locator(".turn-rail-mark")).ToHaveCountAsync(2);
+            await page.Locator(".turn-rail-track").ClickAsync(new LocatorClickOptions { Position = new Position { X = 6, Y = 1 } });
+            await WaitForQuestionAtTheTopAsync(page, word);
+            await WaitForGrowthAsync(page);
+            await WaitForQuestionAtTheTopAsync(page, word);
+
+            await page.Locator(".scroll-to-end").ClickAsync();
+            await WaitForTheEndAsync(page);
+            await WaitForGrowthAsync(page);
+            await WaitForTheEndAsync(page);
+        }
+        finally
+        {
+            await ClickThroughApprovalsAsync(page, stop);
+            await IdleAsync(page);
+        }
     }
 
     // Three answered turns, each row made tall so the conversation overflows whatever the viewport: the
@@ -108,6 +160,15 @@ public sealed class TurnRailE2ETests(WebChatE2EFixture fixture)
             """,
             word,
             new PageWaitForFunctionOptions { Timeout = 10_000 });
+
+    private static async Task WaitForGrowthAsync(IPage page)
+    {
+        var height = await page.EvaluateAsync<double>("() => document.querySelector('.messages-area').scrollHeight");
+        await page.WaitForFunctionAsync(
+            "height => document.querySelector('.messages-area').scrollHeight > height + 40",
+            height,
+            new PageWaitForFunctionOptions { Timeout = 60_000 });
+    }
 
     private static Task WaitForTheEndAsync(IPage page) =>
         page.WaitForFunctionAsync(
