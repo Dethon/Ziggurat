@@ -50,8 +50,16 @@ public static class ToolDisplay
         {
             0 => new ToolName(name, null),
             1 => new ToolName(parts[0], null),
-            _ => new ToolName(parts[^1], parts[^2])
+            _ => new ToolName(parts[^1], ServerLabel(parts[^2]))
         };
+    }
+
+    // A server's qualifier is its host, port and all (mcp-vault-8080): a person knows it as vault.
+    private static string ServerLabel(string qualifier)
+    {
+        var label = qualifier.StartsWith("mcp-", StringComparison.Ordinal) ? qualifier[4..] : qualifier;
+        var dash = label.LastIndexOf('-');
+        return dash > 0 && label[(dash + 1)..].All(char.IsAsciiDigit) ? label[..dash] : label;
     }
 
     public static string Summary(string? arguments)

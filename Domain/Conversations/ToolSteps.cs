@@ -13,9 +13,9 @@ namespace Domain.Conversations;
 // read (asked again several times as a turn is kept) stays small.
 public static class ToolSteps
 {
-    public const int MaxStringLength = 4000;
-    public const int MaxTextLength = 16000;
-    public const int MaxReasoningLength = 24000;
+    public const int MaxStringLength = 2000;
+    public const int MaxTextLength = 6000;
+    public const int MaxReasoningLength = 16000;
 
     public static ToolCallStep Call(FunctionCallContent call) => new()
     {
@@ -51,12 +51,12 @@ public static class ToolSteps
     // A string that is itself JSON (a tool that answers JSON text) is read as that JSON.
     private static JsonNode? NodeOf(object? result)
     {
-        var node = result switch
+        var node = Unwrapped(result switch
         {
             null => null,
             JsonNode n => n.DeepClone(),
             _ => JsonSerializer.SerializeToNode(result, AIJsonUtilities.DefaultOptions)
-        };
+        });
         if (node is JsonValue value && value.TryGetValue<string>(out var text)
             && text.TrimStart() is ['{', ..] or ['[', ..])
         {
@@ -71,6 +71,38 @@ public static class ToolSteps
         }
 
         return node;
+    }
+
+    // An MCP tool answers in content parts: MEAI's own as it runs ({"$type":"text","text":…}), and as the
+    // store kept them once read back ({"$type":"text","Text":…,"Annotations":null}). Either is its text, and
+    // a picture or a file is named by its type, never carried.
+    private static JsonNode? Unwrapped(JsonNode? node) => node switch
+    {
+        JsonObject part when PartOf(part) is { } text => JsonValue.Create(text),
+        JsonArray parts when parts.Count > 0 && parts.All(p => p is JsonObject o && o.ContainsKey("$type"))
+            => JsonValue.Create(string.Join("\n", parts.OfType<JsonObject>().Select(PartOf).OfType<string>())),
+        _ => node
+    };
+
+    private static string? PartOf(JsonObject part)
+    {
+        if (part["$type"] is not JsonValue type || !type.TryGetValue<string>(out var kind))
+        {
+            return null;
+        }
+
+        string? Field(string name) => part
+            .FirstOrDefault(p => string.Equals(p.Key, name, StringComparison.OrdinalIgnoreCase)).Value is JsonValue value
+                                     && value.TryGetValue<string>(out var text)
+            ? text
+            : null;
+
+        // A data part carries its type inside its data: URI rather than beside it.
+        var media = Field("mediaType")
+                    ?? (Field("uri") is ['d', 'a', 't', 'a', ':', ..] uri && uri.IndexOfAny([';', ',']) is var end and > 5
+                        ? uri[5..end]
+                        : null);
+        return kind == "text" ? Field("text") ?? "" : $"[{media ?? kind}]";
     }
 
     private static ToolCallOutcome OutcomeOf(JsonNode? node) => node switch

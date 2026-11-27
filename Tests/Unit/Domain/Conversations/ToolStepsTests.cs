@@ -130,4 +130,31 @@ public class ToolStepsTests
         steps.Select(s => s.CallId).ShouldBe(["c1", "c2"]);
         steps[0].Result.ShouldBe("a.txt");
     }
+
+    // An MCP tool answers in content parts. Live they are MEAI's TextContent; kept, they read back as the
+    // store wrote them (PascalCase, with nulls). Either way the step is the tool's own text, read as JSON.
+    [Fact]
+    public void AnAnswerInContentParts_IsItsText_LiveAndKeptAlike()
+    {
+        const string text = """{"entries":[],"total":0}""";
+        var live = ToolSteps.Result(new FunctionResultContent("c1", new TextContent(text)));
+        var kept = ToolSteps.Result(new FunctionResultContent("c1", JsonSerializer.SerializeToElement(
+            new Dictionary<string, object?> { ["$type"] = "text", ["Text"] = text, ["Annotations"] = null, ["AdditionalProperties"] = null })));
+        var several = ToolSteps.Result(new FunctionResultContent("c1",
+            new List<AIContent> { new TextContent(text) }));
+
+        live.Result.ShouldBe(kept.Result);
+        several.Result.ShouldBe(live.Result);
+        JsonDocument.Parse(live.Result!).RootElement.GetProperty("total").GetInt32().ShouldBe(0);
+    }
+
+    // A picture or a file in an answer is named, never its bytes.
+    [Fact]
+    public void AnAnswersPicture_IsNamed_NotItsBytes()
+    {
+        var step = ToolSteps.Result(new FunctionResultContent("c1",
+            new List<AIContent> { new TextContent("shot taken"), new DataContent(new byte[2048], "image/png") }));
+
+        step.Result.ShouldBe("shot taken\n[image/png]");
+    }
 }

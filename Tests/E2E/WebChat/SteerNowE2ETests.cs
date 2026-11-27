@@ -54,15 +54,15 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(page.Locator("[data-testid=composer-cancel]"))
                 .ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 180_000 });
 
-            // Split around the steer: the first reply, then the steer, then its answer; and the first
-            // reply never got to say what it was told to say after its tool, since the model was not
-            // asked again.
+            // Split around the steer: the first reply, cut after its tool, is a group of what it did with no
+            // answer; then the steer; then its answer. The first reply never got to say what it was told to
+            // say after its tool, since the model was not asked again.
             var said = await Conversation(page);
             var first = said.FindIndex(line => line.StartsWith("user:") && line.Contains($"Steer {tag}:"));
             var steered = said.IndexOf($"user: {steerWords}");
             first.ShouldBeGreaterThanOrEqualTo(0, string.Join("\n", said));
             steered.ShouldBeGreaterThan(first + 1, string.Join("\n", said));
-            said.Skip(first + 1).Take(steered - first - 1).ShouldAllBe(line => line.StartsWith("assistant:"));
+            said.Skip(first + 1).Take(steered - first - 1).ShouldBe(["activity: Used 1 tool"], string.Join("\n", said));
             said.Skip(steered + 1).ShouldContain(line => line.StartsWith("assistant:") && line.Contains($"STEER{tag}"));
             said.ShouldNotContain(line => line.Contains($"AFTER{tag}") && line.StartsWith("assistant:"));
             said.Count(line => line.Contains($"word STEER{tag}")).ShouldBe(1);
@@ -139,8 +139,8 @@ public class SteerNowE2ETests(WebChatE2EFixture fixture)
         first.ShouldBeGreaterThanOrEqualTo(0, all);
         one.ShouldBeGreaterThan(first, all);
         two.ShouldBe(one + 1, all);
-        said.Skip(first + 1).Take(one - first - 1).ShouldAllBe(line => line.StartsWith("assistant:"), all);
-        var answers = said.Skip(two + 1).ToList();
+        said.Skip(first + 1).Take(one - first - 1).ShouldBe(["activity: Used 1 tool"], all);
+        var answers = said.Skip(two + 1).Where(line => !line.StartsWith("activity:")).ToList();
         answers.ShouldHaveSingleItem(all).ShouldStartWith("assistant:", Case.Sensitive, all);
         answers[0].ShouldContain($"ONE{tag}", Case.Sensitive, all);
         answers[0].ShouldContain($"TWO{tag}", Case.Sensitive, all);
