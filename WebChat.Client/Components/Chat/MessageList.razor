@@ -82,10 +82,15 @@
         var raw = _topicId != null
             ? MessagesStore.State.MessagesByTopic.GetValueOrDefault(_topicId, [])
             : [];
-        _messages = TurnLayout.Rows(_isStreaming && LiveMessage() is { } live ? [.. raw, live] : raw);
+        _messages = TurnLayout.Rows(_isStreaming && LiveMessage(raw) is { } live ? [.. raw, live] : raw);
     }
 
-    private ChatMessageModel? LiveMessage() => _streamingContent is { HasContent: true } content
+    // A message the store holds is drawn from there: a kept message is never written through the live
+    // buffer again (a late chunk updates its bubble), so a live copy under its id is the sampled content
+    // of a moment ago, which would draw it twice until the next tick.
+    private ChatMessageModel? LiveMessage(IReadOnlyList<ChatMessageModel> stored) =>
+        _streamingContent is { HasContent: true } content
+        && (content.CurrentMessageId is null || stored.All(m => m.MessageId != content.CurrentMessageId))
         ? new ChatMessageModel
         {
             Role = "assistant",
