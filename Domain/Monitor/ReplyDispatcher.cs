@@ -13,7 +13,9 @@ namespace Domain.Monitor;
 
 // Internal because the turn is: this is the one place a reply's wire record is built, and it is
 // built out of the turn that produced the update.
-internal class ReplyDispatcher(ILogger logger)
+// readImages: where the pictures a tool showed the model rest, copied from there to a channel that draws
+// tool calls; none on a host keeping no read images, whose calls then name no pictures.
+internal class ReplyDispatcher(ILogger logger, IReadImageStore? readImages = null)
 {
     // What delivering one update came to: whether any of its content reached a target, the turn keys a
     // channel answered were handed back by a stop (ReplyReceipt), which the conversation must not run, and
@@ -70,11 +72,12 @@ internal class ReplyDispatcher(ILogger logger)
     {
         try
         {
+            var content = mapped.Answer is { } answer ? await ToolResultForAsync(answer, target, turn, ct) : mapped.Content;
             return await target.Channel.SendReplyAsync(
                 new SendReplyParams
                 {
                     ConversationId = target.ConversationId,
-                    Content = mapped.Content,
+                    Content = content,
                     ContentType = mapped.ContentType,
                     IsComplete = mapped.IsComplete,
                     MessageId = messageId,
@@ -103,7 +106,45 @@ internal class ReplyDispatcher(ILogger logger)
 
     private static string Wire(ToolCallStep step) => JsonSerializer.Serialize(step, ChannelProtocol.SerializerOptions);
 
-    private sealed record MappedChunk(string Content, ReplyContentType ContentType, bool IsComplete);
+    // A call's answer is written per target: the pictures it showed the model are copied to that target
+    // first, under the references its own conversation names them by (ToolImages), and the step names them.
+    // A picture whose bytes are gone, or that the channel would not keep, is left out rather than failing
+    // the answer.
+    private async Task<string> ToolResultForAsync(FunctionResultContent answer, DeliveryTarget target, Turn turn, CancellationToken ct)
+    {
+        var step = ToolSteps.Result(answer);
+        if (readImages is null || turn.Targets.Count == 0)
+        {
+            return Wire(step);
+        }
+
+        // The model's pictures are kept under the conversation the turn's context names, its first target's.
+        var keyedUnder = turn.Targets[0].ConversationId;
+
+        List<AttachmentReference> kept = [];
+        foreach (var image in ToolImages.Of(answer, target.ConversationId))
+        {
+            try
+            {
+                if (await readImages.GetAsync(keyedUnder, image.StoreKey, ct) is { } read)
+                {
+                    var reference = image.Reference with { SizeBytes = read.Bytes.LongLength };
+                    await target.Channel.StoreAttachmentAsync(target.ConversationId, reference, read.Bytes, ct);
+                    kept.Add(image.Reference);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Could not copy the picture {Key} to {ChannelId}", image.StoreKey, target.Channel.ChannelId);
+            }
+        }
+
+        return Wire(kept.Count > 0 ? step with { Images = kept } : step);
+    }
+
+    // Answer: a call's answer, whose wire record is written per target (ToolResultForAsync).
+    private sealed record MappedChunk(
+        string Content, ReplyContentType ContentType, bool IsComplete, FunctionResultContent? Answer = null);
 
     private static IEnumerable<MappedChunk> MapResponseUpdate(AgentResponseUpdate update)
     {
@@ -119,7 +160,7 @@ internal class ReplyDispatcher(ILogger logger)
                 FunctionCallContent call
                     => new MappedChunk(Wire(ToolSteps.Call(call)), ReplyContentType.ToolCall, false),
                 FunctionResultContent result
-                    => new MappedChunk(Wire(ToolSteps.Result(result)), ReplyContentType.ToolResult, false),
+                    => new MappedChunk("", ReplyContentType.ToolResult, false, result),
                 ErrorContent error
                     => new MappedChunk(error.Message, ReplyContentType.Error, false),
                 StreamCompleteContent

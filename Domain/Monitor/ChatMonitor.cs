@@ -51,7 +51,10 @@ public class ChatMonitor(
     // Who a built app's check asks as: the agent's own call token for the apps server, handed back for
     // the tool call that ran `./check`. Optional because its absence is safe: a monitor with none believes
     // no check, and every check's ask is refused.
-    CheckCallVerifier? checks = null)
+    CheckCallVerifier? checks = null,
+    // Where the pictures a tool showed the model rest, copied to a channel that draws tool calls.
+    // Optional: with none, a call names no pictures.
+    IReadImageStore? readImages = null)
 {
     // Whether a built app's check may ask at all: a host that registered no verifier refuses every one.
     internal bool BelievesChecks => checks is not null;
@@ -90,7 +93,7 @@ public class ChatMonitor(
     public const string StandingUnreadableErrorType = "StandingUnreadable";
 
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
-    private readonly ReplyDispatcher _replyDispatcher = new(logger);
+    private readonly ReplyDispatcher _replyDispatcher = new(logger, readImages);
 
     public async Task Monitor(CancellationToken cancellationToken)
     {

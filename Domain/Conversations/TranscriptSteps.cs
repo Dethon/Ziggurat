@@ -16,12 +16,14 @@ public static class TranscriptSteps
 
     public sealed record Placed(IReadOnlyList<TurnStep>? Before, IReadOnlyList<TurnStep>? After);
 
-    public static IReadOnlyDictionary<ChatMessage, Placed> Of(IReadOnlyList<ChatMessage> line)
+    // The conversation names the copies a chat keeps of the pictures a call showed the model (ToolImages);
+    // read without one, a call names none.
+    public static IReadOnlyDictionary<ChatMessage, Placed> Of(IReadOnlyList<ChatMessage> line, string? conversationId = null)
     {
         var shown = Transcript.Shown(line).ToHashSet(_byReference);
         var answers = line.SelectMany(m => m.Contents.OfType<FunctionResultContent>())
             .GroupBy(r => r.CallId)
-            .ToDictionary(g => g.Key, g => ToolSteps.Result(g.Last()));
+            .ToDictionary(g => g.Key, g => Answered(g.Last(), conversationId));
 
         var before = new Dictionary<ChatMessage, IReadOnlyList<TurnStep>>(_byReference);
         var after = new Dictionary<ChatMessage, IReadOnlyList<TurnStep>>(_byReference);
@@ -80,6 +82,11 @@ public static class TranscriptSteps
                 m => new Placed(before.GetValueOrDefault(m), after.GetValueOrDefault(m)),
                 _byReference);
     }
+
+    private static ToolCallStep Answered(FunctionResultContent result, string? conversationId) =>
+        conversationId is not null && ToolImages.Of(result, conversationId) is { Count: > 0 } images
+            ? ToolSteps.Result(result) with { Images = [.. images.Select(i => i.Reference)] }
+            : ToolSteps.Result(result);
 
     // A provider streams reasoning a token at a time, kept as one part each.
     private static string? ReasoningOf(ChatMessage message)

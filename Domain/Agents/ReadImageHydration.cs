@@ -33,11 +33,12 @@ internal static class ReadImageHydration
     // Two envelopes, each strict about its own shape. Asked in turn rather than merged into one
     // looser parse: the filesystem envelope's strictness is what stops a result that merely carries
     // a path being mistaken for an image read, and a shape that admitted both would spend it.
-    private static IEnumerable<ReadImageReference> Recognise(string callId, object? result)
+    internal static IEnumerable<ReadImageReference> Recognise(string callId, object? result)
     {
         if (FsImageReadResult.TryRead(result) is { Shown: true } file)
         {
-            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount, SizeBytes: file.SizeBytes ?? 0)];
+            return [new ReadImageReference(callId, file.FilePath, ReadImageOrigin.Mount, SizeBytes: file.SizeBytes ?? 0,
+                MediaType: file.MediaType)];
         }
 
         // A page result can carry several envelopes: view_image takes a list, and the bridge joins
@@ -53,7 +54,8 @@ internal static class ReadImageHydration
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
-                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page, SizeBytes: single.SizeBytes ?? 0)]
+                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page, SizeBytes: single.SizeBytes ?? 0,
+                    MediaType: single.MediaType)]
                 : [];
         }
 
@@ -65,7 +67,7 @@ internal static class ReadImageHydration
             .Select((envelope, index) => (Envelope: envelope, Index: index))
             .Where(e => e.Envelope is { Shown: true })
             .Select(e => new ReadImageReference(
-                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index, e.Envelope.SizeBytes ?? 0))
+                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index, e.Envelope.SizeBytes ?? 0, e.Envelope.MediaType))
             .ToList();
     }
 
@@ -117,7 +119,7 @@ internal static class ReadImageHydration
     // Where a page image's bytes rest. One call can answer with several pictures, so the index
     // within the call joins the call id that keys them all; a mount read is one image per call and
     // keeps the bare id. The bridge writes under the same rule.
-    private static string StoreKey(ReadImageReference read) =>
+    internal static string StoreKey(ReadImageReference read) =>
         read.Origin == ReadImageOrigin.Mount ? read.CallId : $"{read.CallId}#{read.Index}";
 
     // A copy of the tool message whose promised results carry their bytes — or, where the bytes
@@ -268,6 +270,7 @@ internal enum ReadImageOrigin
 
 // One image a tool result promised the model, and what to name if the bytes cannot be found — a
 // mount path, or the label the page's entry gave the picture. Its size is the envelope's, what the
-// picture cap weighs it by; an envelope naming none weighs nothing.
+// picture cap weighs it by; an envelope naming none weighs nothing. Its media type is the envelope's too,
+// what a copy of it shown to a person is kept as.
 internal sealed record ReadImageReference(
-    string CallId, string Name, ReadImageOrigin Origin, int Index = 0, long SizeBytes = 0);
+    string CallId, string Name, ReadImageOrigin Origin, int Index = 0, long SizeBytes = 0, string? MediaType = null);

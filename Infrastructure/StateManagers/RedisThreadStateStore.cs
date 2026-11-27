@@ -724,7 +724,7 @@ public sealed class RedisThreadStateStore(
             .GroupBy(x => x.Value, x => x.Key, _byReference)
             .ToDictionary(g => g.Key, g => g.ToList(), _byReference);
 
-        var steps = TranscriptSteps.Of(messages);
+        var steps = TranscriptSteps.Of(messages, $"{chatId}:{threadId}");
 
         var projected = readable
             .Select(m => new ChatHistoryMessage(

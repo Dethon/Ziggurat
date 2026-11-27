@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace Domain.DTOs.WebChat;
 
 // How a tool call answered: ran, ran and failed (a thrown call or an `ok:false` envelope), or never ran
@@ -29,6 +31,10 @@ public sealed record ToolCallStep
 
     public ToolCallOutcome? Outcome { get; init; }
 
+    // The pictures its answer showed the model, as the chat keeps copies of them (ToolImages); none on a
+    // call, nor on an answer that showed none.
+    public IReadOnlyList<AttachmentReference>? Images { get; init; }
+
     public bool HasAnswered => Outcome is not null;
 
     // The later step's fields over this one's: an answer keeps its call's name and arguments.
@@ -37,7 +43,8 @@ public sealed record ToolCallStep
         Name = later.Name ?? Name,
         Arguments = later.Arguments ?? Arguments,
         Result = later.Result ?? Result,
-        Outcome = later.Outcome ?? Outcome
+        Outcome = later.Outcome ?? Outcome,
+        Images = later.Images ?? Images
     };
 
     // A step folded into a list by its call: the call it answers updated in place, or appended. Doing it

@@ -124,4 +124,21 @@ public class TranscriptStepsTests
 
         TranscriptSteps.Of([User("hey"), answer]).ContainsKey(answer).ShouldBeFalse();
     }
+
+    // A call whose answer showed the model a picture names the copy the chat keeps of it.
+    [Fact]
+    public void ACallThatShowedAPicture_NamesItsCopy()
+    {
+        var answer = Assistant(new TextContent("a cat"));
+        var envelope = System.Text.Json.JsonSerializer.SerializeToElement(new global::Domain.DTOs.FileSystem.FsImageReadResult
+        {
+            FilePath = "/vault/cat.png", MediaType = "image/png", Shown = true
+        }, global::Domain.DTOs.FileSystem.FsResultContract.SerializerOptions);
+
+        var steps = TranscriptSteps.Of([User("show me"), Assistant(Call("c1", "file_read")), Tool("c1", envelope), answer], "42:7");
+
+        steps[answer].Before!.Single().Tool!.Images.ShouldHaveSingleItem().Id.ShouldBe("42-7/tool-c1");
+        TranscriptSteps.Of([User("show me"), Assistant(Call("c1", "file_read")), Tool("c1", envelope), answer])[answer]
+            .Before!.Single().Tool!.Images.ShouldBeNull();
+    }
 }
