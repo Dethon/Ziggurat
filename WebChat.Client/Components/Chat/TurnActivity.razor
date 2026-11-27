@@ -1,0 +1,154 @@
+@using WebChat.Client.Helpers
+
+@* Everything a reply did on its way to its answer — reasoning, words said before carrying on, every tool
+   call with its answer — as one quiet, foldable group above the answer rather than bubbles of its own.
+   Folded, it says what the reply is doing (live) or did; opened, it is the reply's steps in order. What
+   is open is the page's (ActivityExpansion), so a group stays as it was left when its reply ends. *@
+
+<section class="@SectionClass" aria-label="What the reply did">
+    <button type="button" class="activity-header" aria-expanded="@(Open ? "true" : "false")" @onclick="Toggle">
+        <span class="activity-icon">
+            @if (Live)
+            {
+                <span class="activity-spinner" aria-hidden="true"></span>
+            }
+            else if (_summary.Failed > 0)
+            {
+                <Icon Glyph="Icons.AlertCircle" Size="15" />
+            }
+            else
+            {
+                <Icon Glyph="Icons.Sparkles" Size="15" />
+            }
+        </span>
+        <span class="activity-title">@_summary.Title@(Live ? "…" : "")</span>
+        @if (Live && _summary.Preview is { } preview)
+        {
+            <span class="activity-preview">@preview</span>
+        }
+        else
+        {
+            @foreach (var name in _summary.ToolNames)
+            {
+                <span class="activity-chip">@name</span>
+            }
+        }
+        @if (_pictures.Count > 0)
+        {
+            <span class="activity-pictures" title="@PicturesLabel">
+                <Icon Glyph="Icons.Image" Size="13" />
+                @if (_pictures.Count > 1)
+                {
+                    @_pictures.Count
+                }
+                <span class="visually-hidden">@PicturesLabel</span>
+            </span>
+        }
+        <span class="activity-spacer"></span>
+        @if (_summary.Failed > 0)
+        {
+            <span class="activity-badge failed">@_summary.Failed failed</span>
+        }
+        @if (_summary.Ended is { } ended)
+        {
+            <span class="activity-badge">@ended</span>
+        }
+        <Icon Glyph="Icons.ChevronRight" Size="14" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
+    </button>
+
+    @if (Open)
+    {
+        <ol class="activity-steps">
+            @foreach (var (step, index) in Steps.Select((s, i) => (s, i)))
+            {
+                var key = StepKey(step, index);
+                @switch (step.Kind)
+                {
+                    case ActivityKind.Reasoning:
+                        var whole = Expansion.IsOpen(key);
+                        var long_ = (step.Text?.Length ?? 0) > ReasoningFold;
+                        <li class="activity-step reasoning">
+                            <span class="step-marker"><Icon Glyph="Icons.Lightbulb" Size="13" /></span>
+                            <div class="step-body">
+                                <div class="step-label">Thinking</div>
+                                <div class="reasoning-text @(long_ && !whole ? "folded" : "")">@step.Text</div>
+                                @if (long_)
+                                {
+                                    <button type="button" class="step-more" @onclick="() => Expansion.Toggle(key)">
+                                        @(whole ? "Show less" : "Show more")
+                                    </button>
+                                }
+                            </div>
+                        </li>
+                        break;
+                    case ActivityKind.Words:
+                        <li class="activity-step words">
+                            <span class="step-marker"><Icon Glyph="Icons.Note" Size="13" /></span>
+                            <div class="step-body step-words">@((MarkupString)ChatMarkdown.ToHtml(step.Text))</div>
+                        </li>
+                        break;
+                    default:
+                        <li class="activity-step tool">
+                            <span class="step-marker">
+                                <Icon Glyph="@(ToolDisplay.RunsACommand(step.Tool!) ? Icons.Terminal : Icons.Wrench)" Size="13" />
+                            </span>
+                            <div class="step-body">
+                                <ToolCallView Step="@(step.Tool!)" Live="@Live" Expansion="@Expansion" ExpansionKey="@key" />
+                            </div>
+                        </li>
+                        break;
+                }
+            }
+            @if (Live)
+            {
+                <li class="activity-step pending">
+                    <span class="step-marker"><span class="activity-spinner small" aria-hidden="true"></span></span>
+                    <div class="step-body step-pending">Working…</div>
+                </li>
+            }
+        </ol>
+    }
+</section>
+
+@code {
+    // Reasoning longer than this is folded to a few lines until asked for whole.
+    private const int ReasoningFold = 600;
+
+    [Parameter, EditorRequired] public IReadOnlyList<ActivityStep> Steps { get; set; } = [];
+
+    // The reply is still being written: the group says what it is doing now.
+    [Parameter] public bool Live { get; set; }
+
+    // The reply ended with an answer; one that did not was cut short (a steer, a stop).
+    [Parameter] public bool Answered { get; set; }
+
+    [Parameter, EditorRequired] public string GroupKey { get; set; } = "";
+
+    [Parameter, EditorRequired] public ActivityExpansion Expansion { get; set; } = default!;
+
+    private ActivitySummary _summary = ActivitySummary.Of([], false, false);
+    private IReadOnlyList<Domain.DTOs.Channel.AttachmentReference> _pictures = [];
+
+    protected override void OnParametersSet()
+    {
+        _summary = ActivitySummary.Of(Steps, Live, Answered);
+        var pictures = Steps.SelectMany(s => s.Tool?.Images ?? []).ToList();
+        // The same list keeps the same instance, so the strip does not mint its tickets again on every chunk.
+        if (!pictures.Select(p => p.Id).SequenceEqual(_pictures.Select(p => p.Id)))
+        {
+            _pictures = pictures;
+        }
+    }
+
+    private bool Open => Expansion.IsOpen(GroupKey);
+
+    private void Toggle() => Expansion.Toggle(GroupKey);
+
+    private string PicturesLabel => _pictures.Count == 1 ? "1 picture" : $"{_pictures.Count} pictures";
+
+    private string SectionClass =>
+        "turn-activity" + (Live ? " live" : "") + (Open ? " open" : "") + (_summary.Failed > 0 ? " has-failures" : "");
+
+    private string StepKey(ActivityStep step, int index) =>
+        step.Tool is { } tool ? $"{GroupKey}/call/{tool.CallId}" : $"{GroupKey}/step/{index}";
+}

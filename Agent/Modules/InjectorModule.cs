@@ -360,6 +360,7 @@ public static class InjectorModule
             {
                 HostsReviewCopies = endpoint.HostsReviewCopies,
                 ShowsReasoning = endpoint.ShowsReasoning,
+                ShowsToolCalls = endpoint.ShowsToolCalls,
                 Household = household,
                 HouseholdLemonadeModels = household.IsEvery ? () => HouseholdLemonadeModels(sp) : null
             };

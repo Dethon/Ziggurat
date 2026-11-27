@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 
 namespace WebChat.Client.State.Streaming;
 
@@ -13,7 +14,7 @@ public record StreamChunk(
     string TopicId,
     string? Content,
     string? Reasoning,
-    string? ToolCalls,
+    IReadOnlyList<ToolCallStep>? Tools,
     string? MessageId) : IAction;
 
 public record StreamCompleted(string TopicId) : IAction;
@@ -94,7 +95,7 @@ public sealed class StreamingStore : IDisposable
         {
             Content = chunk.Content ?? existing.Content,
             Reasoning = chunk.Reasoning ?? existing.Reasoning,
-            ToolCalls = chunk.ToolCalls ?? existing.ToolCalls,
+            Tools = chunk.Tools ?? existing.Tools,
             CurrentMessageId = chunk.MessageId ?? existing.CurrentMessageId
         };
 

@@ -48,6 +48,11 @@ public record ChatHistoryMessage(
     bool IsInterrupted = false,
 
     // The rest of the reply before it, after a Continue: drawn in that reply's bubble.
-    bool ContinuesPrevious = false);
+    bool ContinuesPrevious = false,
+
+    // What its turn did on the way to these words — reasoning, and each tool call with its answer — and,
+    // on a turn's last words, what it did after them (TranscriptSteps). None when it did nothing.
+    IReadOnlyList<TurnStep>? Steps = null,
+    IReadOnlyList<TurnStep>? StepsAfter = null);
 
 public sealed record MessageVersions(string Slot, int Index, int Count);

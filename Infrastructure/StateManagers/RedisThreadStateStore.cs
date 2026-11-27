@@ -724,6 +724,8 @@ public sealed class RedisThreadStateStore(
             .GroupBy(x => x.Value, x => x.Key, _byReference)
             .ToDictionary(g => g.Key, g => g.ToList(), _byReference);
 
+        var steps = TranscriptSteps.Of(messages, $"{chatId}:{threadId}");
+
         var projected = readable
             .Select(m => new ChatHistoryMessage(
                 wordlessIds.GetValueOrDefault(m) ?? m.MessageId,
@@ -740,7 +742,9 @@ public sealed class RedisThreadStateStore(
                 Model: m.Role == ChatRole.User ? null : m.GetModel(),
                 IsInterrupted: m.IsInterrupted() && !rest.ContainsKey(m)
                                && !(continues.TryGetValue(m, out var root) && !ReferenceEquals(rest[root][^1], m)),
-                ContinuesPrevious: continues.ContainsKey(m)))
+                ContinuesPrevious: continues.ContainsKey(m),
+                Steps: steps.GetValueOrDefault(m)?.Before,
+                StepsAfter: steps.GetValueOrDefault(m)?.After))
             .ToList();
 
         return WithVersions(conversation, readable, projected);

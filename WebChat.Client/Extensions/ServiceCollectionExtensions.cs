@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<StreamingStore>();
             services.AddScoped<ConnectionStore>();
             services.AddScoped<ApprovalStore>();
+            services.AddScoped<WebChat.Client.Components.Chat.ImageViewer>();
             services.AddScoped<AlertStore>();
             services.AddScoped<UserIdentityStore>();
             services.AddScoped<ToastStore>();

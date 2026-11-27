@@ -1,0 +1,173 @@
+@using WebChat.Client.Contracts
+@implements IDisposable
+@inject ImageViewer Viewer
+@inject IAttachmentService AttachmentService
+@inject IJSRuntime Js
+
+@* The page's one picture viewer: a thumbnail opens its message's pictures here, fitted to the screen.
+   A tap on the picture shows it at its own size; the arrows and keys step through the message's pictures;
+   Escape, the close button or a tap beside the picture closes it. Downloading is the toolbar's to offer,
+   never the tap's. *@
+
+@if (Viewer.Current is { } picture)
+{
+    <div class="image-viewer" role="dialog" aria-modal="true" aria-label="@picture.FileName" tabindex="-1"
+         @ref="_dialog" @onkeydown="OnKeyAsync">
+        <div class="image-viewer-toolbar">
+            <span class="image-viewer-name" title="@picture.FileName">@picture.FileName</span>
+            @if (Viewer.Count > 1)
+            {
+                <span class="image-viewer-count">@Viewer.Position / @Viewer.Count</span>
+            }
+            <span class="image-viewer-spacer"></span>
+            <button type="button" class="image-viewer-button" aria-label="Download" title="Download" @onclick="DownloadAsync">
+                <Icon Glyph="Icons.Download" Size="18" />
+            </button>
+            <button type="button" class="image-viewer-button" aria-label="Close" title="Close" @onclick="Viewer.Close">
+                <Icon Glyph="Icons.CloseStroked" Size="18" />
+            </button>
+        </div>
+
+        <div class="image-viewer-stage @(_zoomed ? "zoomed" : "")" @ref="_stage" @onclick="Viewer.Close">
+            @if (_url is { } url)
+            {
+                <img src="@url" alt="@picture.FileName" @onclick="ToggleZoom" @onclick:stopPropagation="true"
+                     @onerror="MintAgainAsync" />
+            }
+            else if (_failed)
+            {
+                <div class="image-viewer-note">This picture could not be opened.</div>
+            }
+            else
+            {
+                <span class="activity-spinner" aria-hidden="true"></span>
+            }
+        </div>
+
+        @if (Viewer.Count > 1)
+        {
+            <button type="button" class="image-viewer-nav prev" aria-label="Previous picture" @onclick="() => Viewer.Step(-1)">
+                <Icon Glyph="Icons.ChevronLeft" Size="22" />
+            </button>
+            <button type="button" class="image-viewer-nav next" aria-label="Next picture" @onclick="() => Viewer.Step(1)">
+                <Icon Glyph="Icons.ChevronRight" Size="22" />
+            </button>
+        }
+    </div>
+}
+
+@code {
+    private ElementReference _dialog;
+    private ElementReference _stage;
+    private bool _center;
+    private ViewedPicture? _shown;
+    private string? _url;
+    private bool _zoomed;
+    private bool _failed;
+    private bool _mintedAgain;
+    private bool _focus;
+
+    protected override void OnInitialized() => Viewer.Changed += OnChanged;
+
+    public void Dispose() => Viewer.Changed -= OnChanged;
+
+    private void OnChanged() => InvokeAsync(async () =>
+    {
+        var picture = Viewer.Current;
+        _focus = _shown is null && picture is not null;
+        if (picture != _shown)
+        {
+            _shown = picture;
+            _zoomed = false;
+            _failed = false;
+            _mintedAgain = false;
+            _url = picture?.Url;
+            StateHasChanged();
+            if (picture is not null && _url is null)
+            {
+                await MintAsync(picture);
+            }
+        }
+
+        StateHasChanged();
+    });
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus)
+        {
+            _focus = false;
+            await _dialog.FocusAsync();
+        }
+
+        if (_center)
+        {
+            _center = false;
+            await Js.InvokeVoidAsync("imageViewer.center", _stage);
+        }
+    }
+
+    private async Task MintAsync(ViewedPicture picture)
+    {
+        var download = await AttachmentService.CreateDownloadAsync(picture.AttachmentId);
+        if (picture != _shown)
+        {
+            return;
+        }
+
+        _url = download is { IsLive: true, Value: not null } ? download.Value.Url : null;
+        _failed = _url is null;
+        StateHasChanged();
+    }
+
+    // A thumbnail's address can run out while the page sat in the background: asked once more, then given up.
+    private async Task MintAgainAsync()
+    {
+        if (_shown is not { } picture || _mintedAgain)
+        {
+            _url = null;
+            _failed = true;
+            return;
+        }
+
+        _mintedAgain = true;
+        _url = null;
+        await MintAsync(picture);
+    }
+
+    private void ToggleZoom()
+    {
+        _zoomed = !_zoomed;
+        _center = _zoomed;
+    }
+
+    private async Task DownloadAsync()
+    {
+        if (_shown is not { } picture)
+        {
+            return;
+        }
+
+        var download = await AttachmentService.CreateDownloadAsync(picture.AttachmentId);
+        if (download is { IsLive: true, Value: not null })
+        {
+            await Js.InvokeVoidAsync("attachments.open", download.Value.Url, picture.FileName);
+        }
+    }
+
+    private void OnKeyAsync(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Escape":
+                Viewer.Close();
+                break;
+            case "ArrowLeft":
+                Viewer.Step(-1);
+                break;
+            case "ArrowRight":
+                Viewer.Step(1);
+                break;
+        }
+    }
+}

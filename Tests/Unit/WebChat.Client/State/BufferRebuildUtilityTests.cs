@@ -1,5 +1,6 @@
 using Domain.DTOs.WebChat;
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 
@@ -93,11 +94,16 @@ public sealed class BufferRebuildUtilityTests
             streaming.Reasoning.ShouldBe("Thinking...");
             streaming.Content.ShouldBe("Answer");
         })],
-        ["ToolCalls accumulate with newline separator", new List<ChatStreamMessage>
+        ["Tool calls accumulate, each answer folded into its call", new List<ChatStreamMessage>
         {
-            new() { ToolCalls = "tool_1", MessageId = "msg-1" },
-            new() { ToolCalls = "tool_2", MessageId = "msg-1" }
-        }, new Action<ChatMessageModel>(streaming => streaming.ToolCalls.ShouldBe("tool_1\ntool_2"))]
+            new() { Tools = [TestTools.Call("c1")], MessageId = "msg-1" },
+            new() { Tools = [TestTools.Call("c2")], MessageId = "msg-1" },
+            new() { Tools = [TestTools.Answer("c1")], MessageId = "msg-1" }
+        }, new Action<ChatMessageModel>(streaming =>
+        {
+            streaming.Tools!.Select(t => t.CallId).ShouldBe(["c1", "c2"]);
+            streaming.Tools![0].HasAnswered.ShouldBeTrue();
+        })]
     ];
 
     [Theory]
@@ -238,7 +244,7 @@ public sealed class BufferRebuildUtilityTests
             new List<ChatStreamMessage>
             {
                 new() { Reasoning = "Thinking...", MessageId = "msg-1", SequenceNumber = 1 },
-                new() { ToolCalls = "search(query)", MessageId = "msg-1", IsComplete = true, SequenceNumber = 2 },
+                new() { Tools = TestTools.Calls("search"), MessageId = "msg-1", IsComplete = true, SequenceNumber = 2 },
                 new()
                 {
                     Content = "Here is the answer", MessageId = "msg-1", IsComplete = true, SequenceNumber = 3
@@ -248,7 +254,7 @@ public sealed class BufferRebuildUtilityTests
             {
                 completed.Count.ShouldBe(1);
                 completed[0].Reasoning.ShouldBe("Thinking...");
-                completed[0].ToolCalls.ShouldBe("search(query)");
+                completed[0].Tools!.Single().CallId.ShouldBe("search");
                 completed[0].Content.ShouldBe("Here is the answer");
                 completed[0].MessageId.ShouldBe("msg-1");
                 streaming.HasContent.ShouldBeFalse();
@@ -258,13 +264,13 @@ public sealed class BufferRebuildUtilityTests
             "Same MessageId, last chunk not complete -> stays streaming",
             new List<ChatStreamMessage>
             {
-                new() { ToolCalls = "tool1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
+                new() { Tools = TestTools.Calls("tool1"), MessageId = "msg-1", IsComplete = true, SequenceNumber = 1 },
                 new() { Content = "partial answer", MessageId = "msg-1", SequenceNumber = 2 }
             },
             new Action<List<ChatMessageModel>, ChatMessageModel>((completed, streaming) =>
             {
                 completed.ShouldBeEmpty();
-                streaming.ToolCalls.ShouldBe("tool1");
+                streaming.Tools!.Single().CallId.ShouldBe("tool1");
                 streaming.Content.ShouldBe("partial answer");
                 streaming.MessageId.ShouldBe("msg-1");
             })
@@ -275,7 +281,7 @@ public sealed class BufferRebuildUtilityTests
             {
                 new()
                 {
-                    Reasoning = "R1", ToolCalls = "TC1", MessageId = "msg-1", IsComplete = true, SequenceNumber = 1
+                    Reasoning = "R1", Tools = TestTools.Calls("TC1"), MessageId = "msg-1", IsComplete = true, SequenceNumber = 1
                 },
                 new()
                 {
@@ -286,7 +292,7 @@ public sealed class BufferRebuildUtilityTests
             {
                 completed.Count.ShouldBe(2);
                 completed[0].Reasoning.ShouldBe("R1");
-                completed[0].ToolCalls.ShouldBe("TC1");
+                completed[0].Tools!.Single().CallId.ShouldBe("TC1");
                 completed[0].MessageId.ShouldBe("msg-1");
                 completed[1].Reasoning.ShouldBe("R2");
                 completed[1].Content.ShouldBe("Answer");
@@ -518,12 +524,14 @@ public sealed class BufferRebuildUtilityTests
         assert(result);
     }
 
+    // The history holds everything a kept turn did (its steps), so an anchor is drawn as the history has it
+    // and the buffer's copy of its reasoning is not laid on top a second time.
     [Fact]
-    public void ResumeFromBuffer_MergesReasoningIntoAnchor()
+    public void ResumeFromBuffer_AnAnchorIsDrawnAsTheHistoryHasIt()
     {
         var history = new List<ChatMessageModel>
         {
-            new() { Role = "assistant", Content = "A1", MessageId = "msg-1" }
+            new() { Role = "assistant", Content = "A1", MessageId = "msg-1", Steps = [new TurnStep(Reasoning: "Thought process")] }
         };
 
         var buffer = new List<ChatStreamMessage>
@@ -537,9 +545,56 @@ public sealed class BufferRebuildUtilityTests
 
         var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
 
-        result.MergedMessages.Count.ShouldBe(1);
-        result.MergedMessages[0].Content.ShouldBe("A1");
-        result.MergedMessages[0].Reasoning.ShouldBe("Thought process");
+        result.MergedMessages.ShouldHaveSingleItem().ShouldBe(history[0]);
+    }
+
+    // A kept turn's calls are in the history under the reply they led to; the buffer still carries them
+    // under the calling message's own id, which no bubble has. Drawn again, they would show twice.
+    [Fact]
+    public void ResumeFromBuffer_CallsTheHistoryHolds_AreNotDrawnAgain()
+    {
+        var call = TestTools.Call("c1").Merge(TestTools.Answer("c1"));
+        var history = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "go" },
+            new() { Role = "assistant", Content = "done", MessageId = "msg-2", Steps = [new TurnStep(Tool: call)] }
+        };
+
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Tools = [TestTools.Call("c1")], SequenceNumber = 1 },
+            new() { MessageId = "tool-1", Tools = [TestTools.Answer("c1")], SequenceNumber = 2 },
+            new() { MessageId = "msg-2", Content = "done", IsComplete = true, SequenceNumber = 3 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, history, null, null);
+
+        result.MergedMessages.Count.ShouldBe(2);
+        result.MergedMessages[1].Content.ShouldBe("done");
+        result.StreamingMessage.HasContent.ShouldBeFalse();
+    }
+
+    // A page that drew a call before its wire dropped holds it unanswered; the buffer it resumes from has
+    // the call's answer since. The answer is new — dropped as a call the page knows, the call would wait
+    // for ever.
+    [Fact]
+    public void ResumeFromBuffer_AnAnswerToACallThePageDrewUnanswered_IsDrawn()
+    {
+        var page = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "go" },
+            new() { Role = "assistant", MessageId = "msg-1", Tools = [TestTools.Call("c1")] }
+        };
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Tools = [TestTools.Call("c1")], SequenceNumber = 1 },
+            new() { MessageId = "tool-1", Tools = [TestTools.Answer("c1")], SequenceNumber = 2 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, null, null);
+
+        var drawn = result.MergedMessages.SelectMany(m => m.Tools ?? []).Concat(result.StreamingMessage.Tools ?? []);
+        drawn.ShouldContain(t => t.CallId == "c1" && t.HasAnswered);
     }
 
     [Fact]

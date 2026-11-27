@@ -22,6 +22,11 @@ public interface IChannelConnection : IHouseholdChannel
     // pulled, so a reasoning delta it would only drop is a round trip its answer waits behind.
     bool ShowsReasoning { get; }
 
+    // Whether the channel draws a reply's tool calls and their answers (declared per endpoint in config;
+    // the chat client alone). Off unless declared: a channel server that does not know these kinds of
+    // reply refuses the whole send_reply.
+    bool ShowsToolCalls { get; }
+
     // Whether the channel's server is connected now. A fan-out mints the agent's own topic for an
     // attach-only target only while it is: a topic nothing will attach to is an empty one left in
     // somebody's sidebar.

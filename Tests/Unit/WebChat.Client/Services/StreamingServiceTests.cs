@@ -368,23 +368,79 @@ public sealed class StreamingServiceTests : IDisposable
         messages[0].Content.ShouldBe("Answer");
     }
 
+    // A message's calls accumulate in order, and a call's answer folds into the call it answers.
     [Fact]
-    public async Task SendMessageAsync_AccumulatesToolCalls()
+    public async Task SendMessageAsync_AccumulatesToolCalls_FoldingEachAnswerIntoItsCall()
     {
         var topic = CreateTopic();
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         var messageId = Guid.NewGuid().ToString();
         _messagingService.EnqueueMessages(
-            new ChatStreamMessage { ToolCalls = "tool_1", MessageId = messageId },
-            new ChatStreamMessage { ToolCalls = "tool_2", MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Call("c1")], MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = messageId },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c1")], MessageId = messageId },
             new ChatStreamMessage { Content = "Result", MessageId = messageId },
             new ChatStreamMessage { IsComplete = true, MessageId = messageId }
         );
 
         await SendAndDrainAsync(topic);
 
-        var messages = MessagesFor(topic.TopicId);
-        messages[0].ToolCalls.ShouldBe("tool_1\ntool_2");
+        var tools = MessagesFor(topic.TopicId)[0].Tools!;
+        tools.Select(t => t.CallId).ShouldBe(["c1", "c2"]);
+        tools[0].Result.ShouldBe("found");
+        tools[1].HasAnswered.ShouldBeFalse();
+    }
+
+    // A turn's tool answers all come under one id (the tool loop mints it once per turn), each after its own
+    // model message: every call is answered where it was drawn, live and once the turn is kept.
+    [Fact]
+    public async Task SendMessageAsync_EveryRoundsAnswersUnderOneId_AnswerEachCall()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Reasoning = "first", MessageId = "gen-1" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c1")], MessageId = "gen-1" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c1")], MessageId = "tools" },
+            new ChatStreamMessage { Reasoning = "second", MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c2")], MessageId = "tools" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c3")], MessageId = "gen-3" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c3")], MessageId = "tools" },
+            new ChatStreamMessage { Content = "Done", MessageId = "gen-4" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "gen-4" });
+
+        await SendAndDrainAsync(topic);
+
+        var rows = global::WebChat.Client.Components.Chat.TurnLayout.Rows(MessagesFor(topic.TopicId));
+        var calls = rows.Single(r => r.Role == "assistant").Activity!.Where(s => s.Tool is not null).Select(s => s.Tool!).ToList();
+        calls.Select(c => (c.CallId, c.Name is not null, c.HasAnswered)).ShouldBe([("c1", true, true), ("c2", true, true), ("c3", true, true)]);
+    }
+
+    // A page that picked the reply up mid-turn (a reload, a resume) drew the turn's answers message from the
+    // buffer; the next answer under its id adds to what it drew rather than replacing it, or every earlier
+    // call is left waiting for an answer it had.
+    [Fact]
+    public async Task SendMessageAsync_AnAnswerUnderAnIdThePageDrewBeforeThisStream_AddsToIt()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+        [
+            new ChatMessageModel { Role = "user", Content = "go" },
+            new ChatMessageModel { Role = "assistant", MessageId = "gen-1", Tools = [TestTools.Call("c1")] },
+            new ChatMessageModel { Role = "assistant", MessageId = "tools", Tools = [TestTools.Answer("c1")] }
+        ]));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c2")], MessageId = "tools" },
+            new ChatStreamMessage { Content = "Done", MessageId = "gen-3" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "gen-3" });
+
+        await SendAndDrainAsync(topic);
+
+        var rows = global::WebChat.Client.Components.Chat.TurnLayout.Rows(MessagesFor(topic.TopicId));
+        rows.Single(r => r.Role == "assistant").Activity!.Select(s => (s.Tool!.CallId, s.Tool.HasAnswered))
+            .ShouldBe([("c1", true), ("c2", true)]);
     }
 
     [Fact]
@@ -397,7 +453,7 @@ public sealed class StreamingServiceTests : IDisposable
         _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
         _messagingService.EnqueueMessages(
             new ChatStreamMessage { Content = "First part ", MessageId = "msg-1" },
-            new ChatStreamMessage { ToolCalls = "tool_a", MessageId = "msg-2" },
+            new ChatStreamMessage { Tools = [TestTools.Call("tool_a")], MessageId = "msg-2" },
             new ChatStreamMessage { Content = "second part", MessageId = "msg-1" },
             new ChatStreamMessage { Content = "msg2 text", MessageId = "msg-2" },
             new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
@@ -412,7 +468,7 @@ public sealed class StreamingServiceTests : IDisposable
         msg1.Content.ShouldBe("First part second part");
         msg2.ShouldNotBeNull();
         msg2.Content.ShouldBe("msg2 text");
-        msg2.ToolCalls.ShouldBe("tool_a");
+        msg2.Tools!.Single().CallId.ShouldBe("tool_a");
     }
 
     public enum TurnShape
@@ -455,7 +511,7 @@ public sealed class StreamingServiceTests : IDisposable
                 break;
             case TurnShape.ToolCallsOnlyThenContent:
                 _messagingService.EnqueueMessages(
-                    new ChatStreamMessage { ToolCalls = "search(\"query\")", MessageId = "msg-1" },
+                    new ChatStreamMessage { Tools = [TestTools.Call("search")], MessageId = "msg-1" },
                     new ChatStreamMessage { Content = "Found results", MessageId = "msg-2" },
                     new ChatStreamMessage { IsComplete = true, MessageId = "msg-2" });
                 break;
@@ -483,7 +539,7 @@ public sealed class StreamingServiceTests : IDisposable
                 break;
             case TurnShape.ToolCallsOnlyThenContent:
                 messages.Count.ShouldBe(2);
-                messages[0].ToolCalls.ShouldBe("search(\"query\")");
+                messages[0].Tools!.Single().CallId.ShouldBe("search");
                 messages[0].Content.ShouldBeEmpty();
                 messages[1].Content.ShouldBe("Found results");
                 break;

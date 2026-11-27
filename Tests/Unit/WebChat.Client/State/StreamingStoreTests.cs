@@ -1,4 +1,5 @@
 using Shouldly;
+using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.State;
 using WebChat.Client.State.Streaming;
 
@@ -30,13 +31,13 @@ public class StreamingStoreTests : IDisposable
     {
         // The service accumulates and sends full values in each chunk
         _dispatcher.Dispatch(new StreamStarted("topic-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", "Thinking ", "tool1()", "msg-1"));
-        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", "Thinking about this", "tool1()\ntool2()", "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello", "Thinking ", TestTools.Calls("tool1"), "msg-1"));
+        _dispatcher.Dispatch(new StreamChunk("topic-1", "Hello World", "Thinking about this", TestTools.Calls("tool1", "tool2"), "msg-1"));
 
         var content = _store.State.StreamingByTopic["topic-1"];
         content.Content.ShouldBe("Hello World");
         content.Reasoning.ShouldBe("Thinking about this");
-        content.ToolCalls.ShouldBe("tool1()\ntool2()");
+        content.Tools!.Select(t => t.CallId).ShouldBe(["tool1", "tool2"]);
     }
 
     [Fact]

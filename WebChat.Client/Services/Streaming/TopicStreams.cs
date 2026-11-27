@@ -379,7 +379,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
         var isNew =
             after.Content.Length > before.Content.Length ||
             (after.Reasoning?.Length ?? 0) > (before.Reasoning?.Length ?? 0) ||
-            (after.ToolCalls?.Length ?? 0) > (before.ToolCalls?.Length ?? 0);
+            StreamSeen.ToolProgress(after.Tools) > StreamSeen.ToolProgress(before.Tools);
 
         return new Grown(new StreamAppend(after, isNew), stream.CurrentMessageId);
     }
@@ -396,7 +396,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
     {
         Content = first.Content + second.Content,
         Reasoning = Joined(first.Reasoning, second.Reasoning, ""),
-        ToolCalls = Joined(first.ToolCalls, second.ToolCalls, "\n"),
+        Tools = second.Tools is null ? first.Tools : ToolCallStep.Upsert(first.Tools, second.Tools),
         MessageId = second.MessageId ?? first.MessageId,
         Timestamp = second.Timestamp ?? first.Timestamp
     };
@@ -415,7 +415,7 @@ public sealed class TopicStreams(IDispatcher dispatcher, MessagesStore messagesS
 
         var message = grown.Append.Message;
         dispatcher.Dispatch(new StreamChunk(
-            topicId, message.Content, message.Reasoning, message.ToolCalls, grown.MessageId));
+            topicId, message.Content, message.Reasoning, message.Tools, grown.MessageId));
     }
 
     private void Commit(string topicId, ChatMessageModel message, string? messageId)

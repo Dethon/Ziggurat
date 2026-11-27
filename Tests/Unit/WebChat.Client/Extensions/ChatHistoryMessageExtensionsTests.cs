@@ -22,14 +22,17 @@ public class ChatHistoryMessageExtensionsTests
         new ChatHistoryMessage("m1", "assistant", "{}", null, null, ResponseFormat: "meal_estimate").ToChatMessageModel()
             .ResponseFormat.ShouldBe("meal_estimate");
 
-    // A reply cut by a steer may have said nothing: reloaded, it shows the tools it ran where it would
-    // have spoken, as the bubble showed them while it streamed. A reply with words keeps its words alone.
+    // What a turn did is kept with the reply it led to, so a reload draws its reasoning and its calls.
     [Fact]
-    public void ToChatMessageModel_AReplyThatSaidNothing_ShowsTheToolsItRan()
+    public void ToChatMessageModel_CarriesWhatItsTurnDid()
     {
-        new ChatHistoryMessage("m1", "assistant", "", null, null, ToolsCalled: ["web_search", "web_browse"])
-            .ToChatMessageModel().ToolCalls.ShouldBe("web_search\nweb_browse");
-        new ChatHistoryMessage("m2", "assistant", "Found it", null, null, ToolsCalled: ["web_search"])
-            .ToChatMessageModel().ToolCalls.ShouldBeNull();
+        var call = new ToolCallStep { CallId = "c1", Name = "web_search", Arguments = "{}", Result = "ok", Outcome = ToolCallOutcome.Done };
+        var model = new ChatHistoryMessage("m1", "assistant", "", null, null,
+                Steps: [new TurnStep(Reasoning: "think")], StepsAfter: [new TurnStep(Tool: call)])
+            .ToChatMessageModel();
+
+        model.Steps!.Single().Reasoning.ShouldBe("think");
+        model.StepsAfter!.Single().Tool.ShouldBe(call);
+        model.HasContent.ShouldBeTrue();
     }
 }

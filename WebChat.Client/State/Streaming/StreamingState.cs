@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Domain.DTOs.WebChat;
 
 namespace WebChat.Client.State.Streaming;
 
@@ -6,12 +7,12 @@ public sealed record StreamingContent
 {
     public string Content { get; init; } = "";
     public string? Reasoning { get; init; }
-    public string? ToolCalls { get; init; }
+    public IReadOnlyList<ToolCallStep>? Tools { get; init; }
     public string? CurrentMessageId { get; init; }
 
     public bool HasContent =>
         !string.IsNullOrEmpty(Content) ||
-        !string.IsNullOrEmpty(ToolCalls) ||
+        Tools is { Count: > 0 } ||
         !string.IsNullOrEmpty(Reasoning);
 }
 

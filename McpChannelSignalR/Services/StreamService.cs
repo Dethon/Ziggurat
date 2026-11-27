@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -104,8 +105,17 @@ public sealed class StreamService(
             ReplyContentType.Reasoning => new ChatStreamMessage { Reasoning = content, MessageId = effectiveMessageId },
             ReplyContentType.Error => new ChatStreamMessage { Error = content, IsComplete = true },
             ReplyContentType.StreamComplete => new ChatStreamMessage { IsComplete = true, MessageId = effectiveMessageId },
+            ReplyContentType.ToolCall or ReplyContentType.ToolResult => ToolStepOf(content) is { } step
+                ? new ChatStreamMessage { Tools = [step], MessageId = effectiveMessageId }
+                : null,
             _ => new ChatStreamMessage { Content = content, MessageId = effectiveMessageId }
         };
+
+        if (message is null)
+        {
+            logger.LogWarning("WriteReply: a {ContentType} for {TopicId} that is no tool step was dropped", contentType, topicId);
+            return;
+        }
 
         if (HeldForSteer(topicId, p.TurnKey, message, isComplete))
         {
@@ -137,6 +147,18 @@ public sealed class StreamService(
         // A turn an agent started (a schedule's, attached to the topic while a person's turn runs) ending
         // gives up its own place and is no end of the turn a steer was sent into.
         CompleteStream(topicId, startsSteers: p.AgentInitiated != true, p.TurnKey);
+    }
+
+    private static ToolCallStep? ToolStepOf(string content)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<ToolCallStep>(content, ChannelProtocol.SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private bool IsJoined(string topicId, string? turnKey)

@@ -272,14 +272,14 @@ public sealed class TopicStreamFlowTests
 
         var replyEnding = client.Service<TopicStreams>().Snapshot("topic-1").Completion!;
         transport.Raise("OnApprovalResolved", new ApprovalResolvedNotification("topic-1", "approval-1"));
-        reply.Write(new ChatStreamMessage { ToolCalls = "glob()", MessageId = "m-1" });
+        reply.Write(new ChatStreamMessage { Tools = TestTools.Calls("glob"), MessageId = "m-1" });
         reply.Write(new ChatStreamMessage { Content = "Done", MessageId = "m-1" });
         reply.Release();
 
         await replyEnding;
         var message = AssistantMessages(client).ShouldHaveSingleItem();
         message.Content.ShouldBe("Done");
-        message.ToolCalls.ShouldBe("glob()");
+        message.Tools!.Single().CallId.ShouldBe("glob");
     }
 
     private static IReadOnlyList<ChatMessageModel> AssistantMessages(ScriptedChatClient client) =>

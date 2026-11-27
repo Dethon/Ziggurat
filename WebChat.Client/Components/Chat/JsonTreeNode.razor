@@ -1,0 +1,179 @@
+@using System.Text.Json
+
+@if (IsContainer)
+{
+    var count = Count;
+    <div class="json-node">
+        @if (count == 0)
+        {
+            <div class="json-line">
+                <span class="json-spacer"></span>
+                <KeyLabel Key="@Key" Index="@Index" />
+                <span class="json-brace">@(IsObject ? "{}" : "[]")</span>
+            </div>
+        }
+        else
+        {
+            <button type="button" class="json-line json-toggle" aria-expanded="@(Open ? "true" : "false")" @onclick="() => _open = !Open">
+                <Icon Glyph="Icons.ChevronRight" Size="11" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
+                <KeyLabel Key="@Key" Index="@Index" />
+                <span class="json-brace">@(IsObject ? "{" : "[")</span>
+                @if (!Open)
+                {
+                    <span class="json-summary">@Summary(count)</span>
+                    <span class="json-brace">@(IsObject ? "}" : "]")</span>
+                }
+            </button>
+            @if (Open)
+            {
+                <div class="json-children">
+                    @if (IsObject)
+                    {
+                        @foreach (var property in Value.EnumerateObject())
+                        {
+                            <JsonTreeNode Key="@property.Name" Value="@property.Value" Depth="@(Depth + 1)" OpenDepth="@OpenDepth" />
+                        }
+                    }
+                    else
+                    {
+                        @foreach (var (item, index) in Value.EnumerateArray().Take(Math.Min(_shownItems, count)).Select((v, i) => (v, i)))
+                        {
+                            <JsonTreeNode Index="@index" Value="@item" Depth="@(Depth + 1)" OpenDepth="@OpenDepth" />
+                        }
+                        @if (count > _shownItems)
+                        {
+                            <button type="button" class="json-more" @onclick="() => _shownItems += ItemsPerPage">
+                                Show @Math.Min(ItemsPerPage, count - _shownItems) more of @(count - _shownItems)
+                            </button>
+                        }
+                        @if (LeftOut is { } leftOut && count <= _shownItems)
+                        {
+                            <div class="json-line json-left-out"><span class="json-spacer"></span>… @leftOut more not shown</div>
+                        }
+                    }
+                </div>
+                <div class="json-line json-close"><span class="json-brace">@(IsObject ? "}" : "]")</span></div>
+            }
+        }
+    </div>
+}
+else if (Value.ValueKind == JsonValueKind.String && Value.GetString() is { } text && IsBlock(text))
+{
+    <div class="json-node">
+        <div class="json-line">
+            <span class="json-spacer"></span>
+            <KeyLabel Key="@Key" Index="@Index" />
+        </div>
+        <pre class="json-text">@text</pre>
+    </div>
+}
+else
+{
+    <div class="json-line">
+        <span class="json-spacer"></span>
+        <KeyLabel Key="@Key" Index="@Index" />
+        @switch (Value.ValueKind)
+        {
+            case JsonValueKind.String when LinkOf(Value.GetString()) is { } link:
+                <a class="json-string json-link" href="@link" target="_blank" rel="noopener noreferrer nofollow">@Value.GetString()</a>
+                break;
+            case JsonValueKind.String:
+                <span class="json-string">"@Value.GetString()"</span>
+                break;
+            case JsonValueKind.Number:
+                <span class="json-number">@Value.GetRawText()</span>
+                break;
+            case JsonValueKind.True or JsonValueKind.False:
+                <span class="json-bool">@Value.GetRawText()</span>
+                break;
+            default:
+                <span class="json-null">null</span>
+                break;
+        }
+    </div>
+}
+
+@code {
+    private const int ItemsPerPage = 50;
+    private const int OpensUpTo = 20;
+    private const int PreviewLength = 90;
+    private const int InlineLength = 120;
+
+    [Parameter] public string? Key { get; set; }
+
+    [Parameter] public int? Index { get; set; }
+
+    [Parameter, EditorRequired] public JsonElement Value { get; set; }
+
+    [Parameter] public int Depth { get; set; }
+
+    [Parameter] public int OpenDepth { get; set; } = 2;
+
+    private bool? _open;
+    private int _shownItems = ItemsPerPage;
+
+    private bool IsObject => Value.ValueKind == JsonValueKind.Object;
+
+    private bool IsContainer => Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array;
+
+    // A list the tool's answer was too long to carry whole ends on a line saying how many more there were
+    // (ToolSteps); that line is no item of it.
+    private int Count => IsObject ? Value.EnumerateObject().Count() : Value.GetArrayLength() - (LeftOut is null ? 0 : 1);
+
+    private string? LeftOut =>
+        Value.ValueKind == JsonValueKind.Array && Value.GetArrayLength() > 0
+        && Value[Value.GetArrayLength() - 1] is { ValueKind: JsonValueKind.String } last
+        && last.GetString() is ['…', ' ', .. var rest] && rest.EndsWith(" more items", StringComparison.Ordinal)
+            ? rest[..^" more items".Length]
+            : null;
+
+    // Open to the starting depth, unless it is long: a long list waits to be asked, its folded line
+    // already previewing its first items.
+    private bool Open => _open ?? (Depth < OpenDepth && Count <= OpensUpTo);
+
+    // Folded, an object reads as its first members and a list as how many it holds and its first items,
+    // as a browser's console previews them.
+    private string Summary(int count) => IsObject
+        ? Preview(Value.EnumerateObject().Select(p => $"{p.Name}: {Short(p.Value)}"), count)
+        : $"{count} {(count == 1 ? "item" : "items")}{(LeftOut is { } more ? $", {more} more not shown" : "")}"
+          + (Value.EnumerateArray().Take(count).All(v => v.ValueKind is not (JsonValueKind.Object or JsonValueKind.Array))
+              ? " · " + Preview(Value.EnumerateArray().Take(count).Select(Short), count)
+              : "");
+
+    private static string Preview(IEnumerable<string> parts, int count)
+    {
+        var shown = "";
+        var taken = 0;
+        foreach (var part in parts)
+        {
+            var next = shown.Length == 0 ? part : $"{shown}, {part}";
+            if (next.Length > PreviewLength && taken > 0)
+            {
+                break;
+            }
+
+            shown = next.Length > PreviewLength ? next[..PreviewLength] + "…" : next;
+            taken++;
+        }
+
+        return taken < count ? $"{shown}, …" : shown;
+    }
+
+    private static string Short(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Object => "{…}",
+        JsonValueKind.Array => $"[{value.GetArrayLength()}]",
+        JsonValueKind.String when value.GetString() is { } text =>
+            $"\"{(text.Length > 40 ? text[..40] + "…" : text).ReplaceLineEndings(" ")}\"",
+        _ => value.GetRawText()
+    };
+
+    private static bool IsBlock(string text) => text.Length > InlineLength || text.Contains('\n');
+
+    // Only a string that is one http(s) address, nothing around it, is a link.
+    private static string? LinkOf(string? text) =>
+        text is { Length: < 2048 } && !text.Any(char.IsWhiteSpace)
+        && Uri.TryCreate(text, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri.AbsoluteUri
+            : null;
+}

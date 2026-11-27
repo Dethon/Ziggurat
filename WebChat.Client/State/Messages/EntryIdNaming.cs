@@ -34,6 +34,8 @@ public static class EntryIdNaming
             last = at;
             result.Add(message with
             {
+                // A message that drew no words takes the history's: the line said for a call turned down.
+                Content = string.IsNullOrEmpty(message.Content) ? history[at].Content : message.Content,
                 EntryId = history[at].EntryId,
                 Versions = history[at].Versions,
                 ToolsCalled = history[at].ToolsCalled,

@@ -324,7 +324,7 @@ public sealed class StreamingService(
                 }
                 else if (chunk is { UserMessage: null, ApprovalRequest: null, MessageId: not null }
                          && (!string.IsNullOrEmpty(chunk.Content) || !string.IsNullOrEmpty(chunk.Reasoning)
-                             || !string.IsNullOrEmpty(chunk.ToolCalls)))
+                             || chunk.Tools is { Count: > 0 }))
                 {
                     said.Add(chunk);
                 }
@@ -448,9 +448,9 @@ public sealed class StreamingService(
         StreamLease lease,
         Outgoing? sending = null)
     {
-        // The agent's stream can interleave chunks from different assistant messages: a later
-        // message's tool-call display races ahead of an earlier message's content (which lags
-        // via send_reply), so MessageIds bounce instead of arriving contiguously. We keep the
+        // The stream can come back to a message it left: a tool call's answer comes under its own id
+        // between two of the model's messages, a message is closed off when a person's message is
+        // drawn and then carries on, and older agents raced tool-call text ahead of words. We keep the
         // message we were writing under its MessageId so a revisit can continue appending, and
         // we route late chunks for an already-committed MessageId through UpdateMessage
         // (merging the bubble in place) instead of a fresh AddMessage that AddMessageWithDedup
@@ -527,7 +527,7 @@ public sealed class StreamingService(
 
                 if (chunk.MessageId != currentMessageId && currentMessageId is not null)
                 {
-                    var finished = lease.StartMessage(chunk.MessageId, Stashed(stash, chunk.MessageId));
+                    var finished = lease.StartMessage(chunk.MessageId, Resumed(topic.TopicId, stash, chunk.MessageId));
                     if (finished is not null)
                     {
                         stash[currentMessageId] = finished;
@@ -647,8 +647,15 @@ public sealed class StreamingService(
         }
     }
 
-    private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>
-        messageId is not null ? stash.GetValueOrDefault(messageId) : null;
+    // What a message the stream comes back to already holds: as this reader last wrote it, else as the page
+    // drew it before this reader began (a resume's rebuild, a reload mid-turn). A turn's tool answers all come
+    // under one id, so started afresh, each new answer would replace every earlier one.
+    private ChatMessageModel? Resumed(string topicId, Dictionary<string, ChatMessageModel> stash, string? messageId) =>
+        messageId is null ? null
+        : stash.GetValueOrDefault(messageId)
+          ?? (messagesStore.State.IsFinalized(topicId, messageId)
+              ? messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []).LastOrDefault(m => m.MessageId == messageId)
+              : null);
 
     private static ChatMessageModel CreateErrorMessage(string content) => new()
     {

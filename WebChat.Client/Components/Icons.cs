@@ -206,6 +206,37 @@ public static class Icons
         """,
         1.5);
 
+    // A reply's activity: a tool call, a command run on a machine, a thought, words said on the way, and
+    // how a call came out.
+    public static readonly IconGlyph Wrench = Stroked(
+        """<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />""");
+
+    public static readonly IconGlyph Terminal = Stroked(
+        """<polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />""");
+
+    public static readonly IconGlyph Lightbulb = Stroked(
+        """<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" />""");
+
+    public static readonly IconGlyph Note = Stroked(
+        """<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />""");
+
+    public static readonly IconGlyph AlertCircle = Stroked(
+        """<circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />""");
+
+    public static readonly IconGlyph Ban = Stroked(
+        """<circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />""");
+
+    // A picture opened in place, and kept.
+    public static readonly IconGlyph Expand = Stroked(
+        """<polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />""");
+
+    // A call that showed the model a picture, named in a folded title.
+    public static readonly IconGlyph Image = Stroked(
+        """<rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" />""");
+
+    public static readonly IconGlyph Download = Stroked(
+        """<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />""");
+
     private static IconGlyph Filled(string body, string viewBox = "0 0 24 24") =>
         new($"""<path d="{body}" />""", viewBox);
 

@@ -1,0 +1,15 @@
+@* A JSON member's name, or an array item's place, before its value. *@
+@if (Key is not null)
+{
+    <span class="json-label"><span class="json-key">@Key</span><span class="json-colon">:</span></span>
+}
+else if (Index is { } index)
+{
+    <span class="json-label"><span class="json-index">@index</span><span class="json-colon">:</span></span>
+}
+
+@code {
+    [Parameter] public string? Key { get; set; }
+
+    [Parameter] public int? Index { get; set; }
+}

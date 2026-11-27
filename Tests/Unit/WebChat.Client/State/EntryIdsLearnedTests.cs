@@ -43,6 +43,30 @@ public class EntryIdsLearnedTests : IDisposable
         messages[2].CorrelationId.ShouldBe("c1");
     }
 
+    // A reply that ended on a call the person turned down streamed no words: the history draws the line
+    // said in its place under the id its answer streamed by, so once it is kept the page shows it too, as a
+    // reload would.
+    [Fact]
+    public void AStreamedMessageThatDrewNoWords_TakesTheWordsTheHistoryHasForIt()
+    {
+        var declined = new ToolCallStep { CallId = "c1", Result = "rejected", Outcome = ToolCallOutcome.Declined };
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "delete it", CorrelationId = "c1" },
+            new ChatMessageModel { Role = "assistant", MessageId = "t1", Tools = [declined] }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "delete it", "e1"),
+            History("assistant", "delete was not run: it was turned down.", "e2", "t1")
+        ]));
+
+        var reply = _store.State.MessagesByTopic["t"][1];
+        (reply.Content, reply.EntryId).ShouldBe(("delete was not run: it was turned down.", "e2"));
+        reply.Tools.ShouldBe([declined]);
+    }
+
     // Another person's turn in a shared topic that no wire brought here — begun and answered while this
     // page's own send held the topic — is in the history: it goes in where the history has it, and
     // nothing the page drew is taken away, its own message not yet stored included.

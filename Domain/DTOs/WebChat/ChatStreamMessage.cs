@@ -6,7 +6,11 @@ public record ChatStreamMessage
 {
     public string? Content { get; init; }
     public string? Reasoning { get; init; }
-    public string? ToolCalls { get; init; }
+
+    // The reply's tool calls and their answers under this message id, each folded by its call id
+    // (ToolCallStep.Upsert): a call, then its answer under the same id. A page from before, which read a
+    // ToolCalls text here instead, draws no calls.
+    public IReadOnlyList<ToolCallStep>? Tools { get; init; }
     public bool IsComplete { get; init; }
     public string? Error { get; init; }
     public string? MessageId { get; init; }

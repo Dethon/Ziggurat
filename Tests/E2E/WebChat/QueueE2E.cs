@@ -48,12 +48,15 @@ public static class QueueE2E
     public static async Task<bool> AnswerTo(IPage page, string word) =>
         (await Conversation(page)).Any(line => line.StartsWith("assistant:") && line.Contains(word));
 
-    // The conversation as the page draws it, top to bottom: whose each message is and its words.
+    // The conversation as the page draws it, top to bottom: whose each message is and its words, and each
+    // reply's activity group by its title.
     public static async Task<List<string>> Conversation(IPage page) =>
-        [.. await page.Locator(".chat-message").EvaluateAllAsync<string[]>(
+        [.. await page.Locator(".chat-message, .turn-activity").EvaluateAllAsync<string[]>(
             """
-            nodes => nodes.map(n => (n.classList.contains('user') ? 'user: ' : 'assistant: ')
-                + (n.querySelector('.message-content')?.innerText ?? '').trim())
+            nodes => nodes.map(n => n.classList.contains('turn-activity')
+                ? 'activity: ' + (n.querySelector('.activity-title')?.innerText ?? '').trim()
+                : (n.classList.contains('user') ? 'user: ' : 'assistant: ')
+                    + (n.querySelector('.message-content')?.innerText ?? '').trim())
             """)];
 
     // Waits on the turn, turning down any approval that would hold a turn open meanwhile.

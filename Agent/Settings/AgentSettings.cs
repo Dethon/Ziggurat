@@ -150,4 +150,8 @@ public record ChannelEndpoint
 
     // False for a channel that never shows the model's reasoning (voice), so none is sent to it.
     public bool ShowsReasoning { get; init; } = true;
+
+    // True for a channel that draws a reply's tool calls and their answers (the chat client). Off by
+    // default, unlike reasoning: a server that does not know those kinds of reply refuses them.
+    public bool ShowsToolCalls { get; init; }
 }
