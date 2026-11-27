@@ -64,6 +64,11 @@ public static partial class HouseholdSections
         {
             yield return $"The language '{language}' is not a language tag, such as es or en-GB.";
         }
+
+        if (settings.MaxToolRounds is < 1 or > HouseholdSettings.MaxToolRoundsLimit)
+        {
+            yield return $"The tool rounds per turn must be 1–{HouseholdSettings.MaxToolRoundsLimit:N0}, or empty for no limit.";
+        }
     }
 
     private static IEnumerable<string> AgentsProblems(AgentsSection section)
@@ -256,16 +261,19 @@ public static partial class HouseholdSections
     private static partial Regex LanguageTag();
 }
 
-// The household's own name, the zone its dates and schedules are read in, and the language its
-// agents answer in unless a conversation says otherwise (none: they follow the conversation).
+// The household's own name, the zone its dates and schedules are read in, the language its
+// agents answer in unless a conversation says otherwise (none: they follow the conversation), and how
+// many rounds of tool calls one turn may run (none: as many as its model asks for).
 [PublicAPI]
 public sealed record HouseholdSettings
 {
     public const int NameLength = 200;
+    public const int MaxToolRoundsLimit = 10_000;
 
     public string Name { get; init; } = "";
     public string TimeZone { get; init; } = "";
     public string? Language { get; init; }
+    public int? MaxToolRounds { get; init; }
 }
 
 // The household's agents and the one a channel that names none reaches (the shared Telegram bot's

@@ -357,6 +357,37 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         _households.Add(Household, isHome: false, Settings(), Agents("Sign every reply."));
         (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 20 }, Agents("Rhyme."));
+        (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+    }
+
+    // A long job's turn runs every round of calls its model asks for: a fixed cap of 50 stopped a
+    // playtesting turn three times mid-work, with no word, and its person had to say "continue".
+    [Fact]
+    public async Task AHouseholdThatCapsNoToolRounds_RunsEveryRoundItsModelAsksFor()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        _model.Script([.. Enumerable.Repeat(FakeOpenRouter.CallingToolNamed("recall", """{"note":"n"}"""), 60)]);
+
+        await TurnAsync("jonas", Household, Approving());
+
+        _model.Requests[^1].ToolOutputs.Count.ShouldBe(60);
+    }
+
+    // An owner who wants a bound sets it, and the turn runs that many rounds of calls and no more: the
+    // model's last ask is offered no tools to call.
+    [Fact]
+    public async Task AHouseholdsCapOnToolRounds_RunsThatManyRounds()
+    {
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 3 }, new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        _model.Script([.. Enumerable.Repeat(FakeOpenRouter.CallingToolNamed("recall", """{"note":"n"}"""), 3)]);
+
+        await TurnAsync("jonas", Household, Approving());
+
+        _model.Requests[^1].ToolOutputs.Count.ShouldBe(3);
+        _model.Requests[^1].ToolNames.ShouldBeEmpty();
     }
 
     // A worker's profile is the deployment's, and names the vault for every household; one spawned for
@@ -618,6 +649,14 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")]).ToListAsync();
 
         return _model.Requests[^1].SystemPrompt.ShouldNotBeNull();
+    }
+
+    private static IToolApprovalHandler Approving()
+    {
+        var approves = new Mock<IToolApprovalHandler>();
+        approves.Setup(a => a.RequestApprovalAsync(It.IsAny<ApprovalAsk>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolApprovalResult.Approved);
+        return approves.Object;
     }
 
     private string _deploymentKey = "deployment-key";

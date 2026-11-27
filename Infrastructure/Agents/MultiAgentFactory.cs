@@ -139,7 +139,8 @@ public sealed class MultiAgentFactory(
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
             spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key,
-            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)]);
+            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)],
+            spec.MaxToolRounds);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -177,7 +178,8 @@ public sealed class MultiAgentFactory(
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
             spec.AgentId,
-            spec.Payer);
+            spec.Payer,
+            spec.MaxToolRounds);
 
         return new McpAgent(
             spec,

@@ -59,6 +59,7 @@ internal static class AgentSpecProjection
             // reaches here.
             Key = household?.Payer?.Key,
             TimeZone = household?.TimeZone,
+            MaxToolRounds = household?.MaxToolRounds,
             WithheldServers = household?.WithheldServers ?? [],
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
@@ -160,6 +161,7 @@ internal static class AgentSpecProjection
             // And on its key: a worker's calls are its parent household's as much as its parent's are.
             Key = spawn.Key,
             TimeZone = spawn.TimeZone,
+            MaxToolRounds = spawn.MaxToolRounds,
             // And the own servers its profile names that its parent does not: withheld at the turn as a
             // server the household never set up is, so the worker neither dials nor names them.
             WithheldServers =

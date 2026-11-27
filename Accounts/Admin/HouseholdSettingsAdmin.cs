@@ -6,7 +6,7 @@ using Domain.Editing;
 
 namespace Accounts.Admin;
 
-// The household's name, time zone and language, read and saved by its owners over the settings
+// The household's name, time zone, language and tool rounds per turn, read and saved by its owners over the settings
 // section — through the same save and the same rules as the operator's set-household-config, so a
 // value is held to one standard whoever sets it, and a save is announced, so the agent reads it on
 // the household's next turn.
@@ -39,6 +39,7 @@ public static class HouseholdSettingsAdmin
                 return AdminSections.Conflict("The settings were not saved.", merged, path => path[0] switch
                 {
                     "timeZone" => "the time zone",
+                    "maxToolRounds" => "the tool rounds per turn",
                     var field => $"the {field}"
                 });
             }
@@ -62,7 +63,8 @@ public static class HouseholdSettingsAdmin
         var changed = AdminLog.Changed(
             ("name", before?.Name != after.Name),
             ("time zone", before?.TimeZone != after.TimeZone),
-            ("language", before?.Language != after.Language));
+            ("language", before?.Language != after.Language),
+            ("tool rounds per turn", before?.MaxToolRounds != after.MaxToolRounds));
         return changed.Count == 0 ? "Saved the settings unchanged" : $"Changed the {string.Join(", ", changed)}";
     }
 }

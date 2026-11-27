@@ -86,7 +86,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         IToolInvocationObserver? observer = null,
         IExecScreen? execScreen = null,
         string? agentId = null,
-        ModelPayer? payer = null)
+        ModelPayer? payer = null,
+        int? maxToolRounds = null)
         : base(innerClient)
     {
         _observer = observer;
@@ -103,7 +104,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         _conversationId = conversationId;
 
         IncludeDetailedErrors = true;
-        MaximumIterationsPerRequest = 50;
+        // The household's bound, or none: a long job (an app built and playtested) runs well past any
+        // fixed count, and a turn cut off there stops mid-work with no word.
+        MaximumIterationsPerRequest = maxToolRounds ?? int.MaxValue;
         // Every call of a message is handed over at once; which of them actually run at once is
         // decided call by call, by what each says it touches (WrittenOrder). It must stay on for
         // steering too: a steered turn's Terminate on the sequential path would leave the batch's

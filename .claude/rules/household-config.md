@@ -38,7 +38,7 @@ document's problems name the field, never its value, which may be a key.
 
 | Section | Record | Notes |
 |---|---|---|
-| `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation) |
+| `settings` | `HouseholdSettings` | `name`, `timeZone`, `language` (none: follow the conversation), `maxToolRounds` (1–`MaxToolRoundsLimit`; none: no bound) |
 | `agents` | `AgentsSection` | `defaultAgent`; entries `{ id, template, name, customInstructions }` **or** `{ id, definition }` (a full `AgentDefinition`, **no** `telegramBotToken`) |
 | `keys` | `KeysSection` | `openRouter`, `idealista`, `braveSearch`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` **or** `{ throughKit: true }`, never both |
 | `features` | `FeaturesSection` | seven bools; default all on but Idealista and `apps`, which only the operator sets (an owner's save keeps the stored value, `HouseholdFeaturesAdmin`) |
@@ -147,6 +147,11 @@ Built per turn from the household's view (`HouseholdAgents.Of` over `HouseholdAg
   stamp beside a household-zone prompt gives the model two clocks. A write's bare `runAt` is read in the
   same zone (`McpAgent.Zone` → `ThreadSession`'s `localZone`), as the scheduling server reads it. Language
   fills every agent that pins none; the household's name is not in the prompt.
+- **A turn's tool rounds are the household's `maxToolRounds`, unbounded by default** (user, 2026-11-27):
+  `AgentSpec.MaxToolRounds` → `ToolApprovalChatClient`'s `MaximumIterationsPerRequest` (none is
+  `int.MaxValue`), a worker's its parent's (`SpawnContext.MaxToolRounds`), part of `AgentAsBuilt`. A fixed
+  50 stopped a long app-building turn three times mid-work with no word. At the bound the model's last ask
+  is offered no tools (the library's `PrepareOptionsForLastIteration`).
 - **The features withhold** their `SharedServers` address from every definition — the household's, a
   person's registered agent's — and every worker (`SpawnContext.WithheldServers`). Only the household's
   own agents' endpoints present deployment credentials.
