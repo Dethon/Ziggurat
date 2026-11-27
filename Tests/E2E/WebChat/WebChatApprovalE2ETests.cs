@@ -46,11 +46,8 @@ public class WebChatApprovalE2ETests(WebChatE2EFixture fixture)
             var cancelButton = page.Locator("[data-testid=composer-cancel]");
             await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
 
-            // Any assistant bubble with rendered text is the answer. Whether the answer shares the
-            // tool call's bubble depends on the message ids the agent's chunks carry, so don't
-            // assume it is the first one. A bubble holding only a tool call still renders a
-            // .message-content div; it can hold whitespace (so `:not(:empty)` matches it) while
-            // collapsing to zero height, which is why the match must also be visible.
+            // Any assistant bubble with rendered text is the answer; the tool call is drawn in the
+            // reply's activity group above it, never a bubble of its own.
             var assistantMessage = page.Locator(".chat-message.assistant .message-content:not(:empty):visible").First;
             await Assertions.Expect(assistantMessage)
                 .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });

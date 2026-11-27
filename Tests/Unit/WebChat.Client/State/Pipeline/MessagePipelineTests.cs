@@ -109,7 +109,7 @@ public sealed class MessagePipelineTests
             ],
             new ChatMessageModel { Role = "assistant" });
 
-        _pipeline.ResumeFromBuffer(result, "topic-1", null);
+        _pipeline.ResumeFromBuffer(result, "topic-1");
 
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(2);
@@ -126,7 +126,7 @@ public sealed class MessagePipelineTests
         var streaming = new ChatMessageModel { Role = "assistant", Content = "Streaming..." };
         GivenAResumedReply("topic-1", streaming, "msg-1");
 
-        _pipeline.ResumeFromBuffer(new BufferResumeResult([], streaming), "topic-1", "msg-1");
+        _pipeline.ResumeFromBuffer(new BufferResumeResult([], streaming), "topic-1");
 
         var buffered = _streamingStore.State.StreamingByTopic.GetValueOrDefault("topic-1");
         buffered.ShouldNotBeNull();
@@ -141,7 +141,7 @@ public sealed class MessagePipelineTests
             [new ChatMessageModel { Role = "user", Content = "Q1" }],
             new ChatMessageModel { Role = "assistant" });
 
-        _pipeline.ResumeFromBuffer(result, "topic-1", null);
+        _pipeline.ResumeFromBuffer(result, "topic-1");
 
         var messages = _messagesStore.State.MessagesByTopic["topic-1"];
         messages.Count.ShouldBe(1);

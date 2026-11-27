@@ -17,7 +17,7 @@ public interface IMessagePipeline
     // a conversation that has none.
     IReadOnlyList<ChatMessageModel>? MessagesFor(string topicId);
 
-    void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId);
+    void ResumeFromBuffer(BufferResumeResult result, string topicId);
 
     bool WasSentByThisClient(string? correlationId);
 

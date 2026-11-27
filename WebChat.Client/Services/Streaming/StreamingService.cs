@@ -448,9 +448,9 @@ public sealed class StreamingService(
         StreamLease lease,
         Outgoing? sending = null)
     {
-        // The agent's stream can interleave chunks from different assistant messages: a later
-        // message's tool-call display races ahead of an earlier message's content (which lags
-        // via send_reply), so MessageIds bounce instead of arriving contiguously. We keep the
+        // The stream can come back to a message it left: a tool call's answer comes under its own id
+        // between two of the model's messages, a message is closed off when a person's message is
+        // drawn and then carries on, and older agents raced tool-call text ahead of words. We keep the
         // message we were writing under its MessageId so a revisit can continue appending, and
         // we route late chunks for an already-committed MessageId through UpdateMessage
         // (merging the bubble in place) instead of a fresh AddMessage that AddMessageWithDedup

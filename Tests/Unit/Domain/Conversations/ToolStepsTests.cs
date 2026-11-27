@@ -157,4 +157,22 @@ public class ToolStepsTests
 
         step.Result.ShouldBe("shot taken\n[image/png]");
     }
+
+    // A long listing (a glob, a search, a page's links) stays JSON a page can lay out: it keeps its first
+    // items and says how many more there were, rather than being cut mid-document.
+    [Fact]
+    public void ALongListing_KeepsItsFirstItems_AndStaysJson()
+    {
+        var entries = Enumerable.Range(0, 3000).Select(i => new { path = $"/vault/notes/file-{i:D4}.md", size = i }).ToList();
+        var result = JsonSerializer.SerializeToElement(new { entries, total = 3000 });
+
+        var shown = ToolSteps.Result(new FunctionResultContent("c1", result)).Result!;
+
+        shown.Length.ShouldBeLessThanOrEqualTo(ToolSteps.MaxTextLength);
+        var json = JsonDocument.Parse(shown).RootElement;
+        json.GetProperty("total").GetInt32().ShouldBe(3000);
+        var kept = json.GetProperty("entries").EnumerateArray().ToList();
+        kept[0].GetProperty("path").GetString().ShouldBe("/vault/notes/file-0000.md");
+        kept[^1].GetString()!.ShouldMatch(@"^… \d[\d,]* more items$");
+    }
 }

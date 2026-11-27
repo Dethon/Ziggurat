@@ -87,7 +87,7 @@ public sealed class MessagePipeline(
     public IReadOnlyList<ChatMessageModel>? MessagesFor(string topicId) =>
         messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId);
 
-    public void ResumeFromBuffer(BufferResumeResult result, string topicId, string? currentMessageId)
+    public void ResumeFromBuffer(BufferResumeResult result, string topicId)
     {
         logger.LogDebug(
             "Pipeline.ResumeFromBuffer: topic={TopicId}, mergedCount={MergedCount}, hasStreaming={HasStreaming}",
@@ -100,15 +100,8 @@ public sealed class MessagePipeline(
             return;
         }
 
-        // A message the history already holds was kept whole, with everything its turn did: the history's
-        // bubble is it, and the stream's copy would draw its reasoning and calls a second time.
-        if (!string.IsNullOrEmpty(currentMessageId)
-            && (MessagesFor(topicId) ?? []).Any(m => m.MessageId == currentMessageId))
-        {
-            return;
-        }
-
-        // The resumed stream was opened with this same message as its accumulator, so showing
+        // What the page already shows was stripped from the stream's copy (BufferRebuildUtility), so what is
+        // left is what it has not drawn. The resumed stream was opened with this same message as its accumulator, so showing
         // it is the module's to do — this only says that no committed bubble owns it.
         topicStreams.PublishCurrent(topicId);
     }

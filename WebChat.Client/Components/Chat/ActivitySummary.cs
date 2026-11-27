@@ -2,8 +2,10 @@ namespace WebChat.Client.Components.Chat;
 
 // What a reply's activity says in one line, folded: while it runs, what it is doing now and the latest
 // of it; once over, what it did — how many tools, which, and how many of them failed.
+// Ended: a reply that stopped before it answered, by what stopped it — a call the person turned down, or
+// a steer or a stop (interrupted).
 public sealed record ActivitySummary(
-    string Title, string? Preview, int Tools, int Failed, IReadOnlyList<string> ToolNames, bool Interrupted)
+    string Title, string? Preview, int Tools, int Failed, IReadOnlyList<string> ToolNames, string? Ended)
 {
     private const int PreviewLength = 140;
     private const int NamesShown = 3;
@@ -17,7 +19,10 @@ public sealed record ActivitySummary(
         return new ActivitySummary(
             live ? Doing(steps) : Did(steps, tools.Count),
             live ? PreviewOf(steps.LastOrDefault()) : null,
-            tools.Count, failed, shown, !live && !answered);
+            tools.Count, failed, shown,
+            live || answered ? null
+            : tools.LastOrDefault()?.Outcome is Domain.DTOs.WebChat.ToolCallOutcome.Declined ? "Turned down"
+            : "Interrupted");
     }
 
     private static string Doing(IReadOnlyList<ActivityStep> steps) => steps.LastOrDefault() switch

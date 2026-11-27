@@ -114,7 +114,7 @@ public sealed class StreamResumeService(
             return false;
         }
 
-        pipeline.ResumeFromBuffer(result, topic.TopicId, state.CurrentMessageId);
+        pipeline.ResumeFromBuffer(result, topic.TopicId);
 
         // A wire that cannot be opened leaves the caller to end the stream, which keeps what
         // was just shown as a message rather than taking it back off the screen.

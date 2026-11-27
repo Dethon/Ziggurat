@@ -57,6 +57,77 @@ public class TurnActivityE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // A page opened while the reply waits on its call (a reload, another device) draws the reply as it
+    // stands: one live group with the call running, drawn once, which its answer then completes.
+    [SkippableFact]
+    public async Task AReloadMidTurn_DrawsTheRunningCallOnce_AndItsAnswerWhenItComes()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+        var topic = $"Midway {tag}";
+
+        try
+        {
+            await HoldOnAnApprovalAsync(page, $"{topic}: {ToolDemand}");
+            await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+            await OpenTopicPastTheOverlayAsync(page, topic);
+
+            // The approval's overlay covers the page, so presses are dispatched on the controls.
+            var group = page.Locator(".turn-activity.live");
+            await Assertions.Expect(group).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
+            await group.Locator(".activity-header").DispatchEventAsync("click");
+            var call = group.Locator(".tool-call");
+            await Assertions.Expect(call).ToHaveCountAsync(1);
+            await Assertions.Expect(call).ToHaveClassAsync(new Regex(@"\brunning\b"));
+
+            await page.Locator(".btn-approve").ClickAsync();
+            await IdleAsync(page);
+
+            var done = page.Locator(".turn-activity").Last;
+            await Assertions.Expect(done.Locator(".tool-call")).ToHaveCountAsync(1);
+            await Assertions.Expect(done.Locator(".tool-call")).ToHaveClassAsync(new Regex(@"\bdone\b"));
+            (await Conversation(page)).Last().ShouldStartWith("assistant: Done");
+        }
+        finally
+        {
+            await DrainPendingApprovalsAsync(page);
+        }
+    }
+
+    // A call the person turned down ends the reply on it: the group shows the call declined, and the line
+    // said in its place follows once the turn is kept, as a reload draws it.
+    [SkippableFact]
+    public async Task ACallTurnedDown_IsDeclinedInItsGroup_WithTheLineSaidInItsPlace()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+        var topic = $"Declined {tag}";
+
+        try
+        {
+            await HoldOnAnApprovalAsync(page, $"{topic}: {ToolDemand}");
+            await page.Locator(".btn-reject").ClickAsync();
+            await IdleAsync(page);
+
+            var group = page.Locator(".turn-activity").Last;
+            await Assertions.Expect(group.Locator(".activity-title")).ToHaveTextAsync("Used 1 tool");
+            await group.Locator(".activity-header").ClickAsync();
+            await Assertions.Expect(group.Locator(".tool-call")).ToHaveClassAsync(new Regex(@"\bdeclined\b"));
+            await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").Last)
+                .ToContainTextAsync("was not run: it was turned down", new LocatorAssertionsToContainTextOptions { Timeout = 60_000 });
+        }
+        finally
+        {
+            await DrainPendingApprovalsAsync(page);
+        }
+    }
+
     // The last group opened, and its call opened: the call's name, arguments and answer as drawn.
     private static async Task<string> OpenedGroupAsync(IPage page)
     {

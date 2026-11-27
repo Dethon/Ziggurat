@@ -114,7 +114,10 @@ public static class ToolSteps
         _ => ToolCallOutcome.Done
     };
 
-    // Text stays text; anything else is its JSON with long strings cut, and the whole cut at the ceiling.
+    // Text stays text; anything else stays JSON, tightened step by step — fewer items of each list, shorter
+    // strings — until it fits, and cut at the ceiling only when even the tightest does not.
+    private static readonly (int Items, int Chars)[] _tightenings = [(int.MaxValue, MaxStringLength), (50, 1000), (20, 400), (8, 160)];
+
     private static string? Shape(JsonNode? node)
     {
         if (node is null)
@@ -127,24 +130,37 @@ public static class ToolSteps
             return Cut(text, MaxTextLength);
         }
 
-        return Cut(Shortened(node).ToJsonString(), MaxTextLength);
+        var tightest = "";
+        foreach (var (items, chars) in _tightenings)
+        {
+            tightest = Shortened(node.DeepClone(), items, chars).ToJsonString();
+            if (tightest.Length <= MaxTextLength)
+            {
+                return tightest;
+            }
+        }
+
+        return Cut(tightest, MaxTextLength);
     }
 
-    private static JsonNode Shortened(JsonNode node)
+    private static JsonNode Shortened(JsonNode node, int items, int chars)
     {
         switch (node)
         {
             case JsonObject obj:
                 foreach (var key in obj.Select(p => p.Key).ToList())
                 {
-                    obj[key] = obj[key] is { } child ? Shortened(child.DeepClone()) : null;
+                    obj[key] = obj[key] is { } child ? Shortened(child.DeepClone(), items, chars) : null;
                 }
 
                 return obj;
             case JsonArray array:
-                return new JsonArray([.. array.Select(child => child is null ? null : Shortened(child.DeepClone()))]);
-            case JsonValue value when value.TryGetValue<string>(out var text) && text.Length > MaxStringLength:
-                return JsonValue.Create(Cut(text, MaxStringLength));
+                var kept = array.Take(items).Select(child => child is null ? null : Shortened(child.DeepClone(), items, chars));
+                return array.Count <= items
+                    ? new JsonArray([.. kept])
+                    : new JsonArray([.. kept, JsonValue.Create($"… {array.Count - items:N0} more items")]);
+            case JsonValue value when value.TryGetValue<string>(out var text) && text.Length > chars:
+                return JsonValue.Create(Cut(text, chars));
             default:
                 return node;
         }

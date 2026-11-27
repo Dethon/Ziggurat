@@ -214,8 +214,7 @@ public sealed class ApprovalService(
 
     // Taking the prompt off every browser showing it is the whole of this push, so it goes to the
     // browsers that may see the topic and no others — or, for a question offered to a person, to
-    // that person's. What an approval let through is written into the topic's stream, once, by
-    // RequestApprovalAsync.
+    // that person's. The call itself, and its answer, stream with the reply as every call does.
     private async Task NotifyResolvedAsync(ApprovalContext context, string approvalId, bool answeredElsewhere)
     {
         if (context is { Offered: true, Asker: { } asker })

@@ -32,16 +32,19 @@ public sealed class ActivitySummaryTests
             Tool("c3", "mcp__y__read", ToolCallOutcome.Done)
         ], live: false, answered: true);
 
-        (summary.Title, summary.Tools, summary.Failed, summary.Interrupted).ShouldBe(("Used 3 tools", 3, 1, false));
+        (summary.Title, summary.Tools, summary.Failed, summary.Ended).ShouldBe(("Used 3 tools", 3, 1, null));
         summary.ToolNames.ShouldBe(["glob", "read"]);
         summary.Preview.ShouldBeNull();
     }
 
     [Fact]
-    public void AReplyCutBeforeItAnswered_IsInterrupted()
+    public void AReplyCutBeforeItAnswered_SaysWhatCutIt()
     {
         ActivitySummary.Of([Tool("c1", "glob", ToolCallOutcome.Done)], live: false, answered: false)
-            .ShouldSatisfyAllConditions(s => s.Title.ShouldBe("Used 1 tool"), s => s.Interrupted.ShouldBeTrue());
+            .ShouldSatisfyAllConditions(s => s.Title.ShouldBe("Used 1 tool"), s => s.Ended.ShouldBe("Interrupted"));
+        ActivitySummary.Of([Tool("c1", "delete", ToolCallOutcome.Declined)], live: false, answered: false)
+            .Ended.ShouldBe("Turned down");
+        ActivitySummary.Of([Tool("c1", "glob")], live: true, answered: false).Ended.ShouldBeNull();
     }
 
     [Fact]

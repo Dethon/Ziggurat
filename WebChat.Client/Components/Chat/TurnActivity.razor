@@ -38,9 +38,9 @@
         {
             <span class="activity-badge failed">@_summary.Failed failed</span>
         }
-        @if (_summary.Interrupted)
+        @if (_summary.Ended is { } ended)
         {
-            <span class="activity-badge">Interrupted</span>
+            <span class="activity-badge">@ended</span>
         }
         <Icon Glyph="Icons.ChevronRight" Size="14" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
     </button>
