@@ -28,7 +28,8 @@ namespace McpServerApps.Checks;
 //   in the page, where the app's own code runs; the page reaches only its origin, the CDNs and its
 //   manifest's `connect` origins — anything else, a navigation onto the deployment's network included, is
 //   aborted and reported.
-// - **Checks past a quota are refused, not queued**; one past its deadline is stopped and says so.
+// - **A check past a limit waits for a slot**, inside its own deadline, which runs from when it was
+//   asked; one past its deadline is stopped and says so.
 public sealed class AppChecks(AppsSettings settings, AppSessions sessions, BuiltAppStore store, TimeProvider clock, ILogger<AppChecks> logger)
 {
     public const string LatestDirectory = "latest";
@@ -53,6 +54,9 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
     private readonly Dictionary<string, int> _byHousehold = new(StringComparer.Ordinal);
     private int _running;
 
+    // Checks waiting for a slot, each woken to look again whenever one is let go.
+    private readonly List<TaskCompletionSource> _waiting = [];
+
     // How many checks are running now, every household's.
     internal int Running
     {
@@ -65,16 +69,20 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
     }
 
+    // The deadline runs from the ask, a wait for a slot included: the page reads on the call's token,
+    // which has the deadline's length left when it arrives and no more.
     public async Task<CheckOutcome> RunAsync(BuiltApp app, CheckRequest request, CancellationToken ct)
     {
-        if (Admit(app.HouseholdId) is { } refused)
+        var asked = clock.GetUtcNow();
+        var deadlineAt = asked + settings.Checks.Deadline;
+        if (await AdmitAsync(app.HouseholdId, deadlineAt, ct) is { } refused)
         {
             return refused;
         }
 
         try
         {
-            return new CheckOutcome.Ran(await CheckAsync(app, request, ct));
+            return new CheckOutcome.Ran(await CheckAsync(app, request, asked, deadlineAt, ct));
         }
         finally
         {
@@ -82,26 +90,63 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         }
     }
 
-    private CheckOutcome.Refused? Admit(string household)
+    // Waits for a slot until the deadline, then is refused naming the limit that kept it out.
+    private async Task<CheckOutcome.Refused?> AdmitAsync(string household, DateTimeOffset deadlineAt, CancellationToken ct)
+    {
+        using var deadline = new CancellationTokenSource(Remaining(deadlineAt), clock);
+        using var waiting = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        while (true)
+        {
+            TaskCompletionSource woken;
+            CheckOutcome.Refused full;
+            lock (_gate)
+            {
+                if (TryTake(household) is not { } kept)
+                {
+                    return null;
+                }
+
+                full = kept;
+                woken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _waiting.Add(woken);
+            }
+
+            try
+            {
+                await woken.Task.WaitAsync(waiting.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                return full;
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    _waiting.Remove(woken);
+                }
+            }
+        }
+    }
+
+    // Under the gate: takes a slot, or names the limit that is full.
+    private CheckOutcome.Refused? TryTake(string household)
     {
         var limits = settings.Checks;
-        lock (_gate)
+        var mine = _byHousehold.GetValueOrDefault(household);
+        if (mine >= limits.PerHousehold)
         {
-            var mine = _byHousehold.GetValueOrDefault(household);
-            if (mine >= limits.PerHousehold)
-            {
-                return new CheckOutcome.Refused("concurrent checks per household", limits.PerHousehold);
-            }
-
-            if (_running >= limits.Total)
-            {
-                return new CheckOutcome.Refused("concurrent checks on this server", limits.Total);
-            }
-
-            _byHousehold[household] = mine + 1;
-            _running++;
-            return null;
+            return new CheckOutcome.Refused("concurrent checks per household", limits.PerHousehold);
         }
+
+        if (_running >= limits.Total)
+        {
+            return new CheckOutcome.Refused("concurrent checks on this server", limits.Total);
+        }
+
+        _byHousehold[household] = mine + 1;
+        _running++;
+        return null;
     }
 
     private void Release(string household)
@@ -113,10 +158,16 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             {
                 _byHousehold.Remove(household);
             }
+
+            _waiting.ForEach(waiter => waiter.TrySetResult());
         }
     }
 
-    private async Task<CheckReport> CheckAsync(BuiltApp app, CheckRequest request, CancellationToken ct)
+    private TimeSpan Remaining(DateTimeOffset deadlineAt) =>
+        deadlineAt - clock.GetUtcNow() is var left && left > TimeSpan.Zero ? left : TimeSpan.Zero;
+
+    private async Task<CheckReport> CheckAsync(
+        BuiltApp app, CheckRequest request, DateTimeOffset asked, DateTimeOffset deadlineAt, CancellationToken ct)
     {
         var started = clock.GetUtcNow();
         var limits = settings.Checks;
@@ -127,11 +178,12 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         var run = Path.Combine(checks, $"run-{Guid.NewGuid():N}");
         Directory.CreateDirectory(run);
         var session = sessions.OpenCheck(
-            app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, request.Household, started + limits.Deadline);
+            app.Author, new AppOrigin(app.Id, Preview: true), request.CallToken, request.Household, deadlineAt);
         var reachable = new HashSet<string>([address, .. settings.Cdns, .. request.Manifest.Connect], StringComparer.OrdinalIgnoreCase);
-        using var deadline = new CancellationTokenSource(limits.Deadline, clock);
+        using var deadline = new CancellationTokenSource(Remaining(deadlineAt), clock);
         using var stopped = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
         var viewports = new List<ViewportRun>();
+        var iconShown = false;
         string? failure = null;
         try
         {
@@ -146,6 +198,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             }
 
             await ShowIconAsync(browser, AppIcon.Svg(request.Manifest, IconDrawing(app, request.Manifest)), run, stopped.Token);
+            iconShown = true;
         }
         catch (Exception ex) when (stopped.IsCancellationRequested)
         {
@@ -171,10 +224,13 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             App = app.Slug,
             Origin = $"https://{host}",
             Path = request.Path,
+            AskedAt = asked,
             StartedAt = started,
             FinishedAt = clock.GetUtcNow(),
             Deadline = limits.Deadline,
             DeadlineHit = deadline.IsCancellationRequested,
+            Unopened = [.. request.Viewports.Skip(viewports.Count).Select(v => v.Name)],
+            IconShown = iconShown,
             Error = failure,
             Viewports = [.. viewports.Select(v => v.Report())]
         };
@@ -306,6 +362,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
 
         await Task.WhenAll(seen.Refusals);
         await Task.WhenAll(seen.FailedAsks);
+        seen.Finished = true;
     }
 
     // The icon the preview would install with, drawn by the check's own browser from the server's own SVG
@@ -556,6 +613,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
         public string? Screenshot { get; set; }
         public string? Accessibility { get; set; }
         public bool Settled { get; set; }
+        public bool Finished { get; set; }
         public string? Error { get; set; }
 
         // Chromium logs every answer of 400 or worse as an error, at the address asked ("<url>:0:0"); for a
@@ -571,6 +629,7 @@ public sealed class AppChecks(AppsSettings settings, AppSessions sessions, Built
             Height = viewport.Height,
             Screenshot = Screenshot,
             Settled = Settled,
+            Finished = Finished,
             Error = Error,
             Console = [.. Console.Where(entry => !IsRefusalsOwn(entry)).Take(MaxEntries)],
             FailedRequests = [.. Failed.Take(MaxEntries)],
@@ -616,12 +675,19 @@ public sealed record CheckReport
     // The preview's address as a person opens it, through the proxy.
     public required string Origin { get; init; }
     public required string Path { get; init; }
+
+    // When the check was asked for; it started later when it waited for a slot.
+    public required DateTimeOffset AskedAt { get; init; }
     public required DateTimeOffset StartedAt { get; init; }
     public required DateTimeOffset FinishedAt { get; init; }
     public required TimeSpan Deadline { get; init; }
 
     // Stopped there: a viewport the check did not finish has only what it saw by then, or none.
     public required bool DeadlineHit { get; init; }
+
+    // The viewports asked for that the deadline left unopened, and whether the icon was drawn.
+    public IReadOnlyList<string> Unopened { get; init; } = [];
+    public bool IconShown { get; init; }
     public string? Error { get; init; }
     public required IReadOnlyList<ViewportReport> Viewports { get; init; }
 }
@@ -635,6 +701,9 @@ public sealed record ViewportReport
 
     // Whether the network went quiet within Checks:Settle before the page was shown.
     public required bool Settled { get; init; }
+
+    // Whether everything was asked of it before the deadline: assertions not run are missing.
+    public bool Finished { get; init; }
     public string? Error { get; init; }
     public required IReadOnlyList<ConsoleEntry> Console { get; init; }
     public required IReadOnlyList<FailedRequest> FailedRequests { get; init; }

@@ -216,8 +216,8 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
         return outcome switch
         {
             CheckOutcome.Refused { Limit: var limit, Value: var value } => AppsFileSystem.Quota<FsExecResult>(limit, value,
-                "Another check is running; tell the person, and check again once it has finished."),
-            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report),
+                "Other checks ran for the whole of this one's deadline, waiting for a slot; check again once they have finished."),
+            CheckOutcome.Ran { Report: var report } => Exec(cwd, CheckSummary(app, report, assertions.Length),
                 report.Error ?? "", report.DeadlineHit || report.Error is not null || report.Viewports.Any(v => v.Assertions.Any(a => !a.Passed)) ? 1 : 0),
             _ => throw new InvalidOperationException("A check runs or is refused.")
         };
@@ -256,7 +256,7 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
 
     // Counts per viewport, then what went wrong, so a fix needs no read of the report: a viewport that saw
     // exactly what one before it saw names that one instead of saying it all again.
-    private static string CheckSummary(BuiltApp app, CheckReport report)
+    private static string CheckSummary(BuiltApp app, CheckReport report, int assertions)
     {
         var detailed = new List<(string Viewport, IReadOnlyList<string> Lines)>();
         var lines = report.Viewports.SelectMany(v =>
@@ -265,17 +265,43 @@ public sealed class AppActions(BuiltAppStore store, AppChecks checks, string app
                          + $"{v.PolicyViolations.Count} policy violations, {v.RefusedReads.Count} refused reads, "
                          + $"{v.FailedAsks.Count} failed asks, assertions "
                          + $"{v.Assertions.Count(a => a.Passed)} passed and {v.Assertions.Count(a => !a.Passed)} failed"
-                         + (v.Settled ? "" : " (the page never went quiet)");
+                         + (v.Settled ? "" : " (the page never went quiet)")
+                         + (v.Finished || !report.DeadlineHit ? "" : $" (cut short at the deadline: {Unrun(v, assertions)})");
             var details = CheckDetails(v, new Uri(report.Origin).Host);
             var same = details.Count == 0 ? null : detailed.FirstOrDefault(d => d.Lines.SequenceEqual(details)).Viewport;
             detailed.Add((v.Name, details));
             return same is not null ? [counts, $"  the same as {same}"] : (IEnumerable<string>)[counts, .. details];
         }).ToList();
-        var stopped = report.DeadlineHit ? $"stopped at its deadline of {report.Deadline.TotalSeconds:0} s; " : "";
-        return $"checked the preview of {app.Slug} at {report.Path}: {stopped}\n{string.Join("\n", lines)}\n"
+        var waited = report.StartedAt - report.AskedAt;
+        var waitedFor = waited >= TimeSpan.FromSeconds(1) ? $"waited {waited.TotalSeconds:0} s for another check to finish; " : "";
+        var stopped = report.DeadlineHit ? $"stopped at its deadline of {Spoken(report.Deadline)}; " : "";
+        var cut = report.DeadlineHit ? lines.Concat(Cut(report)).ToList() : lines;
+        return $"checked the preview of {app.Slug} at {report.Path}: {waitedFor}{stopped}\n{string.Join("\n", cut)}\n"
                + $"screenshots, the home-screen icon as it installs ({string.Join(", ", AppChecks.IconSizes.Select(AppChecks.IconFile))}) and "
                + $"{AppChecks.ReportFile} are in /{app.Slug}/{AppsFileSystem.ChecksOutput}/{AppChecks.LatestDirectory}/ (file_read shows a picture)\n";
     }
+
+    // What the deadline left undone, and how to fit a check inside it.
+    private static IEnumerable<string> Cut(CheckReport report)
+    {
+        if (report.Unopened.Count > 0)
+        {
+            yield return $"- never opened: {string.Join(", ", report.Unopened)}";
+        }
+
+        if (!report.IconShown)
+        {
+            yield return "- the home-screen icon was not drawn";
+        }
+
+        yield return "  to fit: check one --viewport at a time, or make the slow assertions quicker";
+    }
+
+    private static string Unrun(ViewportReport viewport, int assertions) =>
+        viewport.Screenshot is null ? "before its screenshot" : $"{viewport.Assertions.Count} of {assertions} assertions ran";
+
+    private static string Spoken(TimeSpan span) =>
+        span < TimeSpan.FromMinutes(1) || span.Seconds != 0 ? $"{span.TotalSeconds:0} s" : $"{span.TotalMinutes:0} min";
 
     private const int MaxDetailLines = 12;
     private const int MaxDetailLength = 240;

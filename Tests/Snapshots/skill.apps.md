@@ -1,4 +1,4 @@
-# apps — description 96 / 110 tokens, body 2524 / 2530 tokens, served by mcp-apps
+# apps — description 96 / 110 tokens, body 2530 / 2530 tokens, served by mcp-apps
 
 ================================================================================================
 
@@ -89,9 +89,9 @@ if (meals.length === 0) throw new Error('no meals listed');
 return `${meals.length} meals`;
 ```
 
-Exit 1 means an assertion failed or the check did not finish. A check past the household's limit is refused, never queued.
+Exit 1 means an assertion failed or the check did not finish; past the household's limit it waits. Run it bare: piped, the sandbox's timeout applies.
 
-A check's asks are real and counted, answering within the check's 30 seconds. Each viewport reloads the page, so an ask on load runs once per viewport and may outlast settling: test asks from an assertion that awaits them, with one `--viewport`.
+A check's asks are real and counted, answering within the check's 5 minutes. Each viewport reloads the page, so an ask on load runs once per viewport and may outlast settling: test asks from an assertion that awaits them, with one `--viewport`.
 
 ### Publishing and after
 

@@ -290,7 +290,7 @@ public class AppsSkillTests
     public void AFailedAsksEntry_IsNamedAsTheReportWritesIt()
     {
         _body.ShouldContain("`failedAsks`");
-        Section("Checking").ShouldContain($"within the check's {ShippedSettings().Checks.Deadline.TotalSeconds:0} seconds");
+        Section("Checking").ShouldContain($"within the check's {ShippedSettings().Checks.Deadline.TotalMinutes:0} minutes");
         Ticked(Paragraph("- A failed ask's entry"))
             .ShouldBeSubsetOf(JsonNames(typeof(FailedAsk)));
     }

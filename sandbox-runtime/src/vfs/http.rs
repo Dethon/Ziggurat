@@ -19,6 +19,12 @@ pub struct HttpBridge {
 /// rather than one the unit gives up on.
 pub const REVOKE_WITHIN: Duration = Duration::from_secs(10);
 
+/// An action runs as long as what it does: an app's `./check` takes up to its deadline (five minutes),
+/// past the 120 s every other operation is bounded by. The command's own timeout, at most the sandbox's
+/// `MaxTimeoutSeconds` (1800), is what ends a stuck one, so this is that ceiling
+/// (`DeploymentConformanceTests.ABridgedAction_OutlastsTheLongestAction`).
+pub const ACTION_WITHIN: Duration = Duration::from_secs(1800);
+
 impl HttpBridge {
     pub fn new(url: &str, token: &str) -> Self {
         let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -117,7 +123,7 @@ impl Bridge for HttpBridge {
 
     fn action(&self, path: &str, argv: &[String]) -> Result<ActionOutput, Errno> {
         let body = serde_json::to_vec(&serde_json::json!({ "argv": argv })).map_err(|_| libc::EIO)?;
-        let bytes = self.post_with_type("action", &[("path", path)], &body, "application/json")?;
+        let bytes = self.send("action", &[("path", path)], &body, "application/json", Some(ACTION_WITHIN))?;
         serde_json::from_slice(&bytes).map_err(|_| libc::EIO)
     }
 

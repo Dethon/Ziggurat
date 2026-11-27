@@ -951,6 +951,22 @@ public class DeploymentConformanceTests
         new global::McpServerApps.Settings.AppCheckSettings().Deadline.ShouldBe(deadline);
     }
 
+    // An app's ./check piped in a sandbox command is an action the sandbox's bridge waits on: its bound
+    // must outlast the check's deadline, and covers the longest command the sandbox runs.
+    [Fact]
+    public void ABridgedAction_OutlastsTheLongestAction()
+    {
+        var http = File.ReadAllText(Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), "sandbox-runtime", "src", "vfs", "http.rs"));
+        var within = TimeSpan.FromSeconds(int.Parse(
+            Regex.Match(http, @"ACTION_WITHIN: Duration = Duration::from_secs\((\d+)\)").Groups[1].Value, CultureInfo.InvariantCulture));
+        var deadline = TimeSpan.Parse(
+            ShippedSetting("McpServerApps", "Checks", "Deadline").GetString()!, CultureInfo.InvariantCulture);
+        var longest = TimeSpan.FromSeconds(ShippedSetting("McpServerSandbox", "MaxTimeoutSeconds").GetInt32());
+
+        within.ShouldBeGreaterThan(deadline);
+        within.ShouldBeGreaterThanOrEqualTo(longest);
+    }
+
     // A check runs the agent's code in a browser, so the browser runs where nothing is to be had: a
     // container of its own holding no secret, setting, volume, port or capability, unprivileged, on a
     // network it shares with the apps server alone, under Chromium's own sandbox (its syscall filter lets

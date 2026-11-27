@@ -143,23 +143,25 @@ public record AppErrorSettings
     public int PerSessionPerMinute { get; init; } = 30;
 }
 
-// How far a check (`./check`, Checks/AppChecks) may go. Checks past a limit are refused, never queued: the
-// agent hears the limit's name and value and tells the person rather than waiting on somebody else's.
+// How far a check (`./check`, Checks/AppChecks) may go. A check past a limit waits for a slot within its
+// deadline, and only then is refused naming the limit: two people building apps in one household refused
+// each other's checks, and the agent guessed at sleeps.
 public record AppCheckSettings
 {
-    // How long one check runs, every viewport included, before its browser is closed and its report says
-    // so. At most the agent's call token refresh margin (callTokens:refreshMargin, 30 s): the page reads as
-    // the check's person on the token of the call that ran it, which has at least that much life left when
-    // it arrives (DeploymentConformanceTests).
-    public TimeSpan Deadline { get; init; } = TimeSpan.FromSeconds(30);
+    // How long one check runs from when it is asked, a wait for a slot and every viewport included, before
+    // its browser is closed and its report says so. At most the agent's call token refresh margin
+    // (callTokens:refreshMargin, 5 min): the page reads as the check's person on the token of the call that
+    // ran it, which has at least that much life left when it arrives (DeploymentConformanceTests). A game's
+    // two viewports with its own slow assertions ran past 30 s.
+    public TimeSpan Deadline { get; init; } = TimeSpan.FromMinutes(5);
 
     // How long a loaded page may take to go quiet on the network before it is shown as it is: a page
     // that polls never does.
     public TimeSpan Settle { get; init; } = TimeSpan.FromSeconds(5);
 
     // Each runs its own Chromium, so these bound the browser's memory as much as their fairness.
-    public int PerHousehold { get; init; } = 1;
-    public int Total { get; init; } = 2;
+    public int PerHousehold { get; init; } = 3;
+    public int Total { get; init; } = 6;
 
     public CheckBrowserSettings Browser { get; init; } = new();
 }

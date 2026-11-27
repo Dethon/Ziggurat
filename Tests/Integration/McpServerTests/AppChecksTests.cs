@@ -476,11 +476,12 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
         dialled.ShouldBe(0);
     }
 
-    // Each check runs a browser of its own, so a household runs one at a time and the server a few: one
-    // past either limit is refused at once, naming the limit and its value, never queued behind the others.
+    // Each check runs a browser of its own, so a household runs a few at a time and the server a few
+    // more: one past either limit waits for a slot, within its own deadline, rather than being refused
+    // (two people building apps in one household refused each other, and the agent guessed at sleeps).
     // The running checks are held open by a read the agent has not answered yet.
     [Fact]
-    public async Task AChecksPastTheHouseholdsOrTheServersLimit_AreRefused_NotQueued()
+    public async Task AChecksPastTheHouseholdsOrTheServersLimit_WaitForASlot_AndSaySo()
     {
         var third = new Account("household-third", "user-third");
         await using var agent = await HeldAgent.StartAsync();
@@ -496,20 +497,22 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
 
         var hers = server.ExecAsync(AppsServer.Her, "/glucose", "./check --viewport 800x600");
         await Eventually.Until(() => agent.Held == 1, "her check's page is reading");
-
-        var his = await server.ExecAsync(AppsServer.Him, "/glucose", "./check");
-        his["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", his.ToJsonString());
-        his["message"]!.GetValue<string>().ShouldContain("concurrent checks per household is 1");
-
+        var his = server.ExecAsync(AppsServer.Him, "/glucose", "./check --viewport 800x600");
         var neighbours = server.ExecAsync(AppsServer.Neighbour, "/glucose", "./check --viewport 800x600");
         await Eventually.Until(() => agent.Held == 2, "the neighbour's check's page is reading");
-        var thirds = await server.ExecAsync(third, "/glucose", "./check");
-        thirds["errorCode"]!.GetValue<string>().ShouldBe("permission_denied", thirds.ToJsonString());
-        thirds["message"]!.GetValue<string>().ShouldContain("concurrent checks on this server is 2");
+        var thirds = server.ExecAsync(third, "/glucose", "./check --viewport 800x600");
+        await Eventually.Settle();
+        (his.IsCompleted, thirds.IsCompleted, agent.Held).ShouldBe((false, false, 2));
 
         agent.Release();
-        (await hers)["exitCode"]!.GetValue<int>().ShouldBe(0);
-        (await neighbours)["exitCode"]!.GetValue<int>().ShouldBe(0);
+
+        foreach (var ran in await Task.WhenAll(hers, his, neighbours, thirds))
+        {
+            ran["exitCode"]!.GetValue<int>().ShouldBe(0, ran.ToJsonString());
+        }
+
+        (await his)["stdout"]!.GetValue<string>().ShouldContain("waited ");
+        (await hers)["stdout"]!.GetValue<string>().ShouldNotContain("waited ");
     }
 
     // A page that never finishes is stopped at the check's deadline, its browser closed, and the report
@@ -529,6 +532,11 @@ public sealed class AppChecksTests(PlaywrightBrowserServer browserServer) : ICla
 
         ran["exitCode"]!.GetValue<int>().ShouldBe(1, ran.ToJsonString());
         ran["stdout"]!.GetValue<string>().ShouldContain("stopped at its deadline of 3 s");
+        // What the deadline left undone, so the agent knows what to cut rather than guessing.
+        ran["stdout"]!.GetValue<string>().ShouldContain("390x844: 0 console errors");
+        ran["stdout"]!.GetValue<string>().ShouldContain("(cut short at the deadline: 0 of 1 assertions ran)");
+        ran["stdout"]!.GetValue<string>().ShouldContain("- never opened: 1280x800");
+        ran["stdout"]!.GetValue<string>().ShouldContain("- the home-screen icon was not drawn");
         var report = await ReportAsync(server, "glucose");
         report["deadlineHit"]!.GetValue<bool>().ShouldBeTrue();
         report["viewports"]!.AsArray().ShouldAllBe(v => v!["assertions"]!.AsArray().Count == 0);

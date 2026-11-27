@@ -324,7 +324,7 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
   naming a person** (`CheckCallVerifier`: its `SigningKeyStore`, audience
   `TokenAudiences.CallTo(sharedServers.apps)`; the guest, nobody, another server's, or both headers are
   401 for a read; for an ask, both together, or any of those, is refused `not-verified`,
-  `person-assertions.md`, "The one exception"). Nothing is minted, so `Checks:Deadline` is at most the agent's `callTokens:refreshMargin`
+  `person-assertions.md`, "The one exception"). Nothing is minted, so `Checks:Deadline` (5 min, user 2026-11-27: a game's checks ran past 30 s) is at most the agent's `callTokens:refreshMargin`
   (`DeploymentConformanceTests`).
 - **The browser** (`CheckBrowser`): full Chromium (the headless shell ignores the secure-origin flag), **one
   per check**, **always in Chromium's sandbox** — no `--no-sandbox` fallback; a host that cannot sandbox
@@ -349,8 +349,13 @@ A built app reads the household as its viewer (wire in `Domain/Apps/AppReads`; t
   Assertion files (`checks/*.js`) are read here as text and evaluated in the page, so nothing of the app
   runs outside the page.
 - **Output** goes under `BuiltAppStore.ChecksDirectory` (never committed, served or counted), swapped in
-  whole as `latest/`, shown read-only at `/<slug>/.checks/latest/`. Concurrency limits (`PerHousehold`,
-  `Total`) refuse `permission_denied`, never queue; the deadline closes the browser.
+  whole as `latest/`, shown read-only at `/<slug>/.checks/latest/`. **A check past a concurrency limit
+  (`PerHousehold` 3, `Total` 6) waits for a slot** (user, 2026-11-27: two builders in one household refused
+  each other), within its deadline, which runs from the ask; only a wait that outlasts it is refused
+  `permission_denied` naming the limit, and the summary says how long it waited. The deadline closes the
+  browser; the summary names a viewport cut short (how many assertions ran), those never opened and an
+  icon not drawn. Piped in a sandbox command, `./check` is a bridged action: `ACTION_WITHIN`
+  (`sandbox-runtime/src/vfs/http.rs`) outlasts the deadline (`DeploymentConformanceTests`).
 
 ## Runtime errors
 
