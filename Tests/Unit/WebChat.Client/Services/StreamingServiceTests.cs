@@ -391,6 +391,58 @@ public sealed class StreamingServiceTests : IDisposable
         tools[1].HasAnswered.ShouldBeFalse();
     }
 
+    // A turn's tool answers all come under one id (the tool loop mints it once per turn), each after its own
+    // model message: every call is answered where it was drawn, live and once the turn is kept.
+    [Fact]
+    public async Task SendMessageAsync_EveryRoundsAnswersUnderOneId_AnswerEachCall()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Reasoning = "first", MessageId = "gen-1" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c1")], MessageId = "gen-1" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c1")], MessageId = "tools" },
+            new ChatStreamMessage { Reasoning = "second", MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c2")], MessageId = "tools" },
+            new ChatStreamMessage { Tools = [TestTools.Call("c3")], MessageId = "gen-3" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c3")], MessageId = "tools" },
+            new ChatStreamMessage { Content = "Done", MessageId = "gen-4" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "gen-4" });
+
+        await SendAndDrainAsync(topic);
+
+        var rows = global::WebChat.Client.Components.Chat.TurnLayout.Rows(MessagesFor(topic.TopicId));
+        var calls = rows.Single(r => r.Role == "assistant").Activity!.Where(s => s.Tool is not null).Select(s => s.Tool!).ToList();
+        calls.Select(c => (c.CallId, c.Name is not null, c.HasAnswered)).ShouldBe([("c1", true, true), ("c2", true, true), ("c3", true, true)]);
+    }
+
+    // A page that picked the reply up mid-turn (a reload, a resume) drew the turn's answers message from the
+    // buffer; the next answer under its id adds to what it drew rather than replacing it, or every earlier
+    // call is left waiting for an answer it had.
+    [Fact]
+    public async Task SendMessageAsync_AnAnswerUnderAnIdThePageDrewBeforeThisStream_AddsToIt()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+        [
+            new ChatMessageModel { Role = "user", Content = "go" },
+            new ChatMessageModel { Role = "assistant", MessageId = "gen-1", Tools = [TestTools.Call("c1")] },
+            new ChatMessageModel { Role = "assistant", MessageId = "tools", Tools = [TestTools.Answer("c1")] }
+        ]));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Tools = [TestTools.Call("c2")], MessageId = "gen-2" },
+            new ChatStreamMessage { Tools = [TestTools.Answer("c2")], MessageId = "tools" },
+            new ChatStreamMessage { Content = "Done", MessageId = "gen-3" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "gen-3" });
+
+        await SendAndDrainAsync(topic);
+
+        var rows = global::WebChat.Client.Components.Chat.TurnLayout.Rows(MessagesFor(topic.TopicId));
+        rows.Single(r => r.Role == "assistant").Activity!.Select(s => (s.Tool!.CallId, s.Tool.HasAnswered))
+            .ShouldBe([("c1", true), ("c2", true)]);
+    }
+
     [Fact]
     public async Task SendMessageAsync_InterleavedMessageIds_PreservesAllContentPerMessage()
     {

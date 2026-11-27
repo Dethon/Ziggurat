@@ -574,6 +574,29 @@ public sealed class BufferRebuildUtilityTests
         result.StreamingMessage.HasContent.ShouldBeFalse();
     }
 
+    // A page that drew a call before its wire dropped holds it unanswered; the buffer it resumes from has
+    // the call's answer since. The answer is new — dropped as a call the page knows, the call would wait
+    // for ever.
+    [Fact]
+    public void ResumeFromBuffer_AnAnswerToACallThePageDrewUnanswered_IsDrawn()
+    {
+        var page = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "go" },
+            new() { Role = "assistant", MessageId = "msg-1", Tools = [TestTools.Call("c1")] }
+        };
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { MessageId = "msg-1", Tools = [TestTools.Call("c1")], SequenceNumber = 1 },
+            new() { MessageId = "tool-1", Tools = [TestTools.Answer("c1")], SequenceNumber = 2 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, null, null);
+
+        var drawn = result.MergedMessages.SelectMany(m => m.Tools ?? []).Concat(result.StreamingMessage.Tools ?? []);
+        drawn.ShouldContain(t => t.CallId == "c1" && t.HasAnswered);
+    }
+
     [Fact]
     public void ResumeFromBuffer_StripsStreamingMessageContentAgainstHistory()
     {

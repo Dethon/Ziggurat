@@ -527,7 +527,7 @@ public sealed class StreamingService(
 
                 if (chunk.MessageId != currentMessageId && currentMessageId is not null)
                 {
-                    var finished = lease.StartMessage(chunk.MessageId, Stashed(stash, chunk.MessageId));
+                    var finished = lease.StartMessage(chunk.MessageId, Resumed(topic.TopicId, stash, chunk.MessageId));
                     if (finished is not null)
                     {
                         stash[currentMessageId] = finished;
@@ -647,8 +647,15 @@ public sealed class StreamingService(
         }
     }
 
-    private static ChatMessageModel? Stashed(Dictionary<string, ChatMessageModel> stash, string? messageId) =>
-        messageId is not null ? stash.GetValueOrDefault(messageId) : null;
+    // What a message the stream comes back to already holds: as this reader last wrote it, else as the page
+    // drew it before this reader began (a resume's rebuild, a reload mid-turn). A turn's tool answers all come
+    // under one id, so started afresh, each new answer would replace every earlier one.
+    private ChatMessageModel? Resumed(string topicId, Dictionary<string, ChatMessageModel> stash, string? messageId) =>
+        messageId is null ? null
+        : stash.GetValueOrDefault(messageId)
+          ?? (messagesStore.State.IsFinalized(topicId, messageId)
+              ? messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, []).LastOrDefault(m => m.MessageId == messageId)
+              : null);
 
     private static ChatMessageModel CreateErrorMessage(string content) => new()
     {

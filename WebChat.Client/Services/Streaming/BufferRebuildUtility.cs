@@ -291,8 +291,9 @@ public static class BufferRebuildUtility
     }
 
     // The calls and reasoning the page's messages already show, from the history (a reply's steps) or a
-    // stream (a message's own): a resumed buffer's copy of one is no new step.
-    private sealed record KnownSteps(IReadOnlySet<string> CallIds, IReadOnlySet<string> Reasoning)
+    // stream (a message's own): a resumed buffer's copy of one is no new step. A call is known as far as it
+    // got: its answer is new to a page that drew it unanswered, which is what a dropped wire leaves.
+    private sealed record KnownSteps(IReadOnlyDictionary<string, bool> Calls, IReadOnlySet<string> Reasoning)
     {
         public static KnownSteps Of(IReadOnlyList<ChatMessageModel> messages)
         {
@@ -302,14 +303,19 @@ public static class BufferRebuildUtility
                     .Append(new TurnStep(Reasoning: m.Reasoning)))
                 .ToList();
             return new KnownSteps(
-                steps.Select(s => s.Tool?.CallId).OfType<string>().ToHashSet(),
+                steps.Select(s => s.Tool).OfType<ToolCallStep>()
+                    .GroupBy(t => t.CallId)
+                    .ToDictionary(g => g.Key, g => g.Any(t => t.HasAnswered)),
                 steps.Select(s => s.Reasoning).OfType<string>().ToHashSet());
         }
 
         public ChatMessageModel Without(ChatMessageModel message) => message with
         {
-            Tools = message.Tools?.Where(t => !CallIds.Contains(t.CallId)).ToList() is { Count: > 0 } tools ? tools : null,
+            Tools = message.Tools?.Where(IsNew).ToList() is { Count: > 0 } tools ? tools : null,
             Reasoning = message.Reasoning is { } reasoning && Reasoning.Contains(reasoning) ? null : message.Reasoning
         };
+
+        private bool IsNew(ToolCallStep tool) =>
+            !Calls.TryGetValue(tool.CallId, out var answered) || tool.HasAnswered && !answered;
     }
 }

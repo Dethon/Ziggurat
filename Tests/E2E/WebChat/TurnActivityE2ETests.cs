@@ -97,6 +97,43 @@ public class TurnActivityE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // A page that drew a call and left the conversation mid-turn (another conversation opened, a phone
+    // backgrounded, a reconnect) picks the reply up again from its stream: the call's answer, written
+    // while it was away, completes the call it drew rather than leaving it waiting.
+    [SkippableFact]
+    public async Task LeavingAndComingBackMidTurn_TheCallIsAnsweredWhereItWasDrawn()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+        var topic = $"Away {tag}";
+
+        try
+        {
+            await HoldOnAnApprovalAsync(page, $"{topic}: {ToolDemand}");
+            await Assertions.Expect(page.Locator(".turn-activity.live .activity-title"))
+                .ToContainTextAsync("Running", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+
+            await page.Locator("button[aria-label='New chat']:visible").First.DispatchEventAsync("click");
+            await Assertions.Expect(page.Locator(".turn-activity")).ToHaveCountAsync(0);
+            await page.Locator(".btn-approve").ClickAsync();
+            await OpenTopicPastTheOverlayAsync(page, topic);
+            await IdleAsync(page);
+
+            var group = page.Locator(".turn-activity").Last;
+            await group.Locator(".activity-header").ClickAsync();
+            await Assertions.Expect(group.Locator(".tool-call")).ToHaveCountAsync(1);
+            await Assertions.Expect(group.Locator(".tool-call")).ToHaveClassAsync(new Regex(@"\bdone\b"));
+            (await Conversation(page)).Last().ShouldStartWith("assistant: Done");
+        }
+        finally
+        {
+            await DrainPendingApprovalsAsync(page);
+        }
+    }
+
     // A call the person turned down ends the reply on it: the group shows the call declined, and the line
     // said in its place follows once the turn is kept, as a reload draws it.
     [SkippableFact]
