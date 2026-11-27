@@ -47,6 +47,9 @@ public static class WebBrowsingSkill
     public static readonly PromptClaim PartialContentIsFetchedOnce =
         _document.Claim("web-browsing.partial-content-is-fetched-once");
 
+    public static readonly PromptClaim AScreenshotIsForWhatTextCannotShow =
+        _document.Claim("web-browsing.a-screenshot-is-for-what-text-cannot-show");
+
     public static readonly PromptClaim AsMeOnlyForThePersonsAccount =
         _document.Claim("web-browsing.as-me-only-for-the-persons-account");
 

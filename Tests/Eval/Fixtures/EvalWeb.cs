@@ -56,6 +56,13 @@ public sealed class EvalWeb : IAsyncDisposable
 
     public const string Raffle2025Total = "1.577";
 
+    // Drawn on a canvas and written nowhere else: the page's text names the chart and none of its
+    // figures, and a canvas is no picture view_image can be handed. Only a look at the page itself
+    // shows which month peaked and by how much.
+    public const string VolunteersPeakMonth = "marzo";
+
+    public const string VolunteersPeak = "37";
+
     // Printed only by the materials form's confirmation, and only when every field went in.
     public const string MaterialsCode = "M-2210";
 
@@ -118,6 +125,8 @@ public sealed class EvalWeb : IAsyncDisposable
     public string MaterialsUrl => $"{BaseUrl}/taller/materiales";
 
     public string OrdersUrl => $"{BaseUrl}/tienda/cuenta/pedidos";
+
+    public string VolunteersUrl => $"{BaseUrl}/huerto/voluntarios";
 
     // What the site was told, for a scenario that wants to know the form was submitted rather than
     // described.
@@ -219,6 +228,7 @@ public sealed class EvalWeb : IAsyncDisposable
         app.MapGet("/archivo/ed-b12", () =>
             Html(ArchivedEdition("2025", Raffle2025Total)));
         app.MapGet("/taller/materiales", () => Html(MaterialsForm()));
+        app.MapGet("/huerto/voluntarios", () => Html(VolunteersChart()));
         // The orders are the person's own: without the shop's session cookie the page is its
         // sign-in wall, and with it the list. The form posts nowhere that logs anyone in — a
         // model typing into it gets the wall back.
@@ -308,6 +318,33 @@ public sealed class EvalWeb : IAsyncDisposable
             <p><strong>Deja reposar el gazpacho {RestingMinutes} minutos en la nevera antes de
             servirlo.</strong> Ese reposo es lo que junta los sabores; servirlo recién triturado lo
             deja plano.</p>
+            """);
+
+    // The figures travel as a list the script draws from, so they reach the canvas and no text
+    // node: a browse reads the heading and the caption, never a month's count.
+    private static string VolunteersChart() =>
+        Page("Voluntarios del huerto — Cuaderno de barrio", $$"""
+            <h1>Voluntarios del huerto</h1>
+            <p>Cuántos vecinos vinieron a echar una mano al huerto comunitario cada mes de este
+            año. Gracias a todos los que os acercasteis.</p>
+            <canvas id="grafica" width="900" height="420"></canvas>
+            <script>
+              const months = ['enero', 'febrero', '{{VolunteersPeakMonth}}', 'abril', 'mayo', 'junio'];
+              const counts = [14, 22, {{VolunteersPeak}}, 29, 18, 11];
+              const ctx = document.getElementById('grafica').getContext('2d');
+              ctx.fillStyle = '#fff';
+              ctx.fillRect(0, 0, 900, 420);
+              ctx.font = '22px sans-serif';
+              ctx.textAlign = 'center';
+              months.forEach((month, i) => {
+                const x = 60 + i * 140, height = counts[i] * 8;
+                ctx.fillStyle = '#3a7d44';
+                ctx.fillRect(x, 360 - height, 90, height);
+                ctx.fillStyle = '#222';
+                ctx.fillText(String(counts[i]), x + 45, 350 - height);
+                ctx.fillText(month, x + 45, 395);
+              });
+            </script>
             """);
 
     private static string Museum() =>
@@ -668,6 +705,11 @@ internal sealed class FakeSearch(string baseUrl) : HttpMessageHandler
             // No totals in the snippet, and no edition urls either: the pages behind the archive
             // are reachable only through its own buttons.
             "Lo recaudado en cada edición de la rifa solidaria, una página por año."),
+        new(["huerto", "voluntarios"],
+            "Voluntarios del huerto — Cuaderno de barrio",
+            $"{baseUrl}/huerto/voluntarios",
+            // No month and no count: the figures are only in the chart.
+            "La gráfica de los vecinos que vinieron a echar una mano al huerto comunitario."),
         new(["materiales", "lote"],
             "Materiales del taller — Cuaderno de barrio",
             $"{baseUrl}/taller/materiales",
