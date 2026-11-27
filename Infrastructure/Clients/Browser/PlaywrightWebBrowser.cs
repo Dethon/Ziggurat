@@ -1048,6 +1048,9 @@ public class PlaywrightWebBrowser(
         }
     }
 
+    public Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default) =>
+        throw new NotImplementedException();
+
     public async Task CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
         await _sessions.CloseAsync(sessionId);

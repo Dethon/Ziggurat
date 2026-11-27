@@ -54,7 +54,7 @@ internal static class ReadImageHydration
         if (text is null)
         {
             return PageImageResult.TryRead(result) is { Shown: true } single
-                ? [new ReadImageReference(callId, single.Label, ReadImageOrigin.Page, SizeBytes: single.SizeBytes ?? 0,
+                ? [new ReadImageReference(callId, single.Label, OriginOf(single), SizeBytes: single.SizeBytes ?? 0,
                     MediaType: single.MediaType)]
                 : [];
         }
@@ -67,9 +67,12 @@ internal static class ReadImageHydration
             .Select((envelope, index) => (Envelope: envelope, Index: index))
             .Where(e => e.Envelope is { Shown: true })
             .Select(e => new ReadImageReference(
-                callId, e.Envelope!.Label, ReadImageOrigin.Page, e.Index, e.Envelope.SizeBytes ?? 0, e.Envelope.MediaType))
+                callId, e.Envelope!.Label, OriginOf(e.Envelope), e.Index, e.Envelope.SizeBytes ?? 0, e.Envelope.MediaType))
             .ToList();
     }
+
+    private static ReadImageOrigin OriginOf(PageImageResult envelope) =>
+        envelope.Screenshot is true ? ReadImageOrigin.Screenshot : ReadImageOrigin.Page;
 
     // The text the bridge's Flatten left on the message, whichever shape carries it now. Live, a
     // multi-block result is a joined string and a single block stays the list it arrived in; after
@@ -243,14 +246,21 @@ internal static class ReadImageHydration
     //
     // Where to ask again differs by origin, and that is the whole difference: a mount still holds
     // the file, while a page's refs died with the session that issued them.
-    private static string Placeholder(ReadImageReference read) =>
-        read.Origin == ReadImageOrigin.Mount
-            ? $"[The image you read from {read.Name} is no longer in view. Read the file again if "
-              + "you still need to look at it — it is still on the mount. Don't describe what it "
-              + "contained from memory.]"
-            : $"[The image \"{read.Name}\" is no longer in view. Browse the page again and ask for "
-              + "it by its new ref if you still need to look at it. Don't describe what it "
-              + "contained from memory.]";
+    private static string Placeholder(ReadImageReference read) => read.Origin switch
+    {
+        ReadImageOrigin.Mount =>
+            $"[The image you read from {read.Name} is no longer in view. Read the file again if "
+            + "you still need to look at it — it is still on the mount. Don't describe what it "
+            + "contained from memory.]",
+        ReadImageOrigin.Screenshot =>
+            $"[The {read.Name} is no longer in view. Take another with web_screenshot if you still "
+            + "need to look — it will show the page as it is then, not as it was. Don't describe "
+            + "what it contained from memory.]",
+        _ =>
+            $"[The image \"{read.Name}\" is no longer in view. Browse the page again and ask for "
+            + "it by its new ref if you still need to look at it. Don't describe what it "
+            + "contained from memory.]"
+    };
 
     private static string NoVisionPlaceholder(ReadImageReference read) =>
         $"[The image {Describe(read)} was not shown: the model running this turn does not accept "
@@ -265,7 +275,10 @@ internal static class ReadImageHydration
 internal enum ReadImageOrigin
 {
     Mount,
-    Page
+    Page,
+
+    // A picture of the page itself: no ref to ask for again, only another screenshot to take.
+    Screenshot
 }
 
 // One image a tool result promised the model, and what to name if the bytes cannot be found — a

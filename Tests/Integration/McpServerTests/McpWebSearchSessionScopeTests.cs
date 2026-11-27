@@ -222,6 +222,9 @@ public class McpWebSearchSessionScopeTests : IAsyncLifetime
             ImageFetchRequest request, CancellationToken ct = default) =>
             Task.FromResult(new ImageFetchResult(request.SessionId, []));
 
+        public Task<ScreenshotResult> ScreenshotAsync(ScreenshotRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new ScreenshotResult(request.SessionId, ScreenshotStatus.SessionNotFound));
+
         public Task CloseSessionAsync(string sessionId, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

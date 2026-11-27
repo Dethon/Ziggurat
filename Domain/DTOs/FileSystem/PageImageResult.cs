@@ -27,6 +27,11 @@ public sealed record PageImageResult
 
     public string? Note { get; init; }
 
+    // A picture of the page itself rather than one of its pictures. Nothing on the page lists it,
+    // so seeing it again means taking another -- which shows the page as it is then, not as it was.
+    // Null rather than false so a page picture's envelope stays the shape it always was.
+    public bool? Screenshot { get; init; }
+
     public static PageImageResult? TryRead(object? result)
     {
         try
