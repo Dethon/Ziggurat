@@ -36,6 +36,14 @@
         <Icon Glyph="Icons.ChevronRight" Size="13" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
     </button>
 
+    @if (Step.Images is { Count: > 0 } images)
+    {
+        @* What the model saw, in view whether or not the call is opened. *@
+        <div class="tool-call-images">
+            <MessageAttachments Attachments="@images" />
+        </div>
+    }
+
     @if (Open)
     {
         <div class="tool-call-body">
@@ -48,7 +56,11 @@
                         {
                             <dt>@field.Key</dt>
                             <dd>
-                                @if (field.Block)
+                                @if (field.Json is { } json)
+                                {
+                                    <JsonTree Value="@json" OpenDepth="1" />
+                                }
+                                else if (field.Block)
                                 {
                                     <pre class="tool-block">@field.Value</pre>
                                 }
@@ -124,7 +136,7 @@
                         </div>
                         break;
                     case ToolDisplay.Json json:
-                        <pre class="tool-block tool-json">@json.Text</pre>
+                        <JsonTree Value="@json.Value" />
                         break;
                     case ToolDisplay.Text text:
                         <pre class="tool-block @(Step.Outcome == ToolCallOutcome.Failed ? "tool-text-failed" : "")">@text.Value</pre>

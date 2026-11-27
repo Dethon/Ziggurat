@@ -45,6 +45,14 @@
         <Icon Glyph="Icons.ChevronRight" Size="14" Class="@(Open ? "toggle-icon open" : "toggle-icon")" />
     </button>
 
+    @if (!Open && _pictures.Count > 0)
+    {
+        @* Folded, the group still shows what the model looked at. *@
+        <div class="activity-images">
+            <MessageAttachments Attachments="@_pictures" />
+        </div>
+    }
+
     @if (Open)
     {
         <ol class="activity-steps">
@@ -116,8 +124,18 @@
     [Parameter, EditorRequired] public ActivityExpansion Expansion { get; set; } = default!;
 
     private ActivitySummary _summary = ActivitySummary.Of([], false, false);
+    private IReadOnlyList<Domain.DTOs.Channel.AttachmentReference> _pictures = [];
 
-    protected override void OnParametersSet() => _summary = ActivitySummary.Of(Steps, Live, Answered);
+    protected override void OnParametersSet()
+    {
+        _summary = ActivitySummary.Of(Steps, Live, Answered);
+        var pictures = Steps.SelectMany(s => s.Tool?.Images ?? []).ToList();
+        // The same list keeps the same instance, so the strip does not mint its tickets again on every chunk.
+        if (!pictures.Select(p => p.Id).SequenceEqual(_pictures.Select(p => p.Id)))
+        {
+            _pictures = pictures;
+        }
+    }
 
     private bool Open => Expansion.IsOpen(GroupKey);
 

@@ -2837,6 +2837,191 @@ h1, h2, h3 {
     color: var(--success);
 }
 
+/* The pictures a call showed the model: under its card, and on its group while folded. */
+.tool-call-images {
+    padding: 0 0.65rem 0.6rem;
+}
+
+.tool-call-images .message-attachments,
+.activity-images .message-attachments {
+    margin: 0;
+}
+
+.tool-call-images .attachment-thumbnail img {
+    max-width: 180px;
+    max-height: 140px;
+    border: 1px solid var(--border-light);
+}
+
+.activity-images {
+    padding: 0 0.8rem 0.55rem;
+}
+
+.activity-images .attachment-thumbnail img {
+    max-width: 72px;
+    max-height: 56px;
+    border-radius: 6px;
+    border: 1px solid var(--border-light);
+}
+
+/* JSON as a tree (JsonTree): folds, and each kind of value told apart in either theme. */
+.turn-activity {
+    --json-key: #8a5a2b;
+    --json-string: #3d7a4f;
+    --json-number: #b4501e;
+    --json-literal: #7b52b9;
+    --json-punct: var(--text-muted);
+}
+
+[data-theme="dark"] .turn-activity {
+    --json-key: #d9a86c;
+    --json-string: #94cf9f;
+    --json-number: #f39b6b;
+    --json-literal: #b9a0ee;
+}
+
+.json-tree {
+    max-height: 26rem;
+    overflow: auto;
+    padding: 0.45rem 0.55rem;
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    border-radius: 8px;
+    font-family: var(--activity-mono);
+    font-size: 0.72rem;
+    line-height: 1.55;
+}
+
+.tool-args .json-tree {
+    max-height: 14rem;
+}
+
+.json-children {
+    margin-left: 0.55rem;
+    padding-left: 0.6rem;
+    border-left: 1px dashed var(--border-color);
+}
+
+.json-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.json-toggle {
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 4px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.json-toggle:hover {
+    background: var(--accent-subtle);
+}
+
+.json-toggle:focus-visible,
+.json-more:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.json-toggle .toggle-icon {
+    align-self: center;
+    color: var(--text-muted);
+}
+
+.json-spacer {
+    flex: 0 0 11px;
+}
+
+.json-label {
+    white-space: nowrap;
+}
+
+.json-left-out {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.json-key {
+    color: var(--json-key);
+    white-space: nowrap;
+}
+
+.json-index {
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.json-colon,
+.json-brace {
+    color: var(--json-punct);
+}
+
+.json-summary {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0 0.35rem;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    font-size: 0.65rem;
+}
+
+.json-string {
+    color: var(--json-string);
+}
+
+.json-link {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--json-string) 40%, transparent);
+    text-underline-offset: 2px;
+}
+
+.json-number {
+    color: var(--json-number);
+}
+
+.json-bool,
+.json-null {
+    color: var(--json-literal);
+}
+
+.json-text {
+    max-height: 12rem;
+    margin: 0.1rem 0 0.25rem calc(11px + 0.3rem);
+    padding: 0.35rem 0.5rem;
+    overflow: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-light);
+    border-radius: 6px;
+    color: var(--json-string);
+    font-family: inherit;
+    font-size: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.json-more {
+    margin: 0.15rem 0 0.15rem calc(11px + 0.3rem);
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
 /* A reply cut before it answered keeps its versions and actions under its group. */
 .activity-footer {
     align-self: flex-start;

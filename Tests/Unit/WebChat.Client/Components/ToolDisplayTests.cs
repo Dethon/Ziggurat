@@ -35,7 +35,7 @@ public sealed class ToolDisplayTests
 
         fields.Select(f => (f.Key, f.Block)).ShouldBe([("path", false), ("content", true), ("options", true)]);
         fields[0].Value.ShouldBe("/a.txt");
-        fields[2].Value.ShouldContain("\"force\": true");
+        fields[2].Json!.Value.GetProperty("force").GetBoolean().ShouldBeTrue();
     }
 
     [Fact]
@@ -59,7 +59,8 @@ public sealed class ToolDisplayTests
     [Fact]
     public void JsonReadsIndented_AndTextAsItIs()
     {
-        ToolDisplay.ResultOf(Answered("""{"n":2}""")).ShouldBeOfType<ToolDisplay.Json>().Text.ShouldContain("\n");
+        ToolDisplay.ResultOf(Answered("""{"n":2}""")).ShouldBeOfType<ToolDisplay.Json>().Value.GetProperty("n").GetInt32().ShouldBe(2);
+        ToolDisplay.ResultOf(Answered("""[1,2]""")).ShouldBeOfType<ToolDisplay.Json>();
         ToolDisplay.ResultOf(Answered("plain words")).ShouldBe(new ToolDisplay.Text("plain words"));
         ToolDisplay.ResultOf(new ToolCallStep { CallId = "c1" }).ShouldBeNull();
     }

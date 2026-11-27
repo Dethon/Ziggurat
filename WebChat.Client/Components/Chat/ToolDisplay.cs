@@ -12,7 +12,8 @@ public static class ToolDisplay
 {
     public sealed record ToolName(string Bare, string? Server);
 
-    public sealed record Field(string Key, string Value, bool Block);
+    // Json: an argument that is an object or a list, drawn as a tree rather than as its text.
+    public sealed record Field(string Key, string Value, bool Block, JsonElement? Json = null);
 
     public abstract record ResultView;
 
@@ -20,7 +21,7 @@ public static class ToolDisplay
 
     public sealed record Failure(string? Code, string Message, string? Hint) : ResultView;
 
-    public sealed record Json(string Text) : ResultView;
+    public sealed record Json(JsonElement Value) : ResultView;
 
     public sealed record Text(string Value) : ResultView;
 
@@ -119,7 +120,7 @@ public static class ToolDisplay
             }
         }
 
-        return json.ValueKind == JsonValueKind.String ? new Text(json.GetString() ?? "") : new Json(Pretty(json));
+        return json.ValueKind == JsonValueKind.String ? new Text(json.GetString() ?? "") : new Json(json);
     }
 
     // Whether a call ran a command, which reads as a terminal rather than a tool.
@@ -161,10 +162,9 @@ public static class ToolDisplay
             return new Field(property.Name, text, text.Contains('\n') || text.Length > InlineLength);
         }
 
-        var value = property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array
-            ? Pretty(property.Value)
-            : property.Value.GetRawText();
-        return new Field(property.Name, value, property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array);
+        return property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+            ? new Field(property.Name, Pretty(property.Value), true, property.Value)
+            : new Field(property.Name, property.Value.GetRawText(), false);
     }
 
     private static string? StringOf(JsonElement json, string name) =>

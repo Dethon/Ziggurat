@@ -1,0 +1,17 @@
+@using System.Text.Json
+
+@* JSON a tool answered or was called with, as a tree a person can read: objects and arrays fold, two
+   levels open to start; strings, numbers, booleans and null are told apart. Every value is drawn as
+   text — it is whatever a model wrote or a page said — and a string that is one web address alone
+   becomes a link. *@
+
+<div class="json-tree">
+    <JsonTreeNode Value="@Value" Depth="0" OpenDepth="@OpenDepth" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public JsonElement Value { get; set; }
+
+    // How many levels are open before anyone opens more.
+    [Parameter] public int OpenDepth { get; set; } = 2;
+}

@@ -1,4 +1,7 @@
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
@@ -7,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using ModelContextProtocol;
+using Moq;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelSignalR;
@@ -21,6 +25,8 @@ public sealed class StoreAttachmentToolTests : IDisposable
     private readonly AttachmentStore _store;
     private readonly AttachmentService _attachments;
     private readonly IServiceProvider _services;
+    private readonly Mock<IThreadStateStore> _threads = new();
+    private readonly Mock<IAgentCatalog> _catalog = new();
 
     public StoreAttachmentToolTests()
     {
@@ -36,6 +42,8 @@ public sealed class StoreAttachmentToolTests : IDisposable
         _services = new ServiceCollection()
             .AddSingleton(_attachments)
             .AddSingleton(_sessions)
+            .AddSingleton(_threads.Object)
+            .AddSingleton(_catalog.Object)
             .BuildServiceProvider();
     }
 
@@ -72,6 +80,22 @@ public sealed class StoreAttachmentToolTests : IDisposable
 
         _attachments.MintDownload("11-22/aaa", "default", "0123456789abcdef0123456789abcdef").ShouldBeNull();
         _attachments.MintDownload("11-22/aaa", "household", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
+    }
+
+    // With no page open on the topic (a fire, a reply nobody is watching) the topic itself says where it
+    // is kept: a copy then kept in the default space would be refused to everyone reading it elsewhere.
+    [Fact]
+    public async Task ACopyForATopicNoPageHasOpen_IsKeptInTheTopicsSpace()
+    {
+        _catalog.Setup(c => c.GetAll()).Returns([new AgentCatalogEntry("jonas", "Jonas", null)]);
+        _threads.Setup(t => t.GetTopicByChatIdAndThreadIdAsync("jonas", 11, 22, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopicMetadata("topic-1", 11, 22, "jonas", "Pictures", DateTimeOffset.UtcNow, null, "household"));
+
+        await StoreAsync("11-22/tool-c1", [1, 2, 3], "image/png", "cat.png");
+
+        _attachments.MintDownload("11-22/tool-c1", "default", "0123456789abcdef0123456789abcdef").ShouldBeNull();
+        _attachments.MintDownload("11-22/tool-c1", "household", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
+        _store.Find("11-22/tool-c1")!.Conversation.AgentId.ShouldBe("jonas");
     }
 
     // The tool names its own file: one that already rests here — a person's upload, or the same

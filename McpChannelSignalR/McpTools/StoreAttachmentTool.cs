@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using Domain.Agents;
+using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
 using ModelContextProtocol;
@@ -37,11 +40,39 @@ public sealed class StoreAttachmentTool
         }
 
         // The topic's space, as an upload takes its ticket's: a review copy is minted in the default
-        // space, but a topic moved elsewhere keeps its files beside it.
-        // Under the agent the topic's session holds it by, as an upload is.
+        // space, but a topic moved elsewhere keeps its files beside it. Under the agent the topic is
+        // held by, as an upload is: the open page's session says both, and with no page open (a fire, a
+        // reply nobody watches, a tool's picture) the topic itself does, else it was the home's default.
         var session = services.GetRequiredService<SessionService>().GetSessionByConversationId(conversationId);
+        var (agentId, space) = session is not null
+            ? (session.AgentId, session.SpaceSlug)
+            : await TopicOfAsync(services, conversationId, cancellationToken) is { } topic
+                ? (topic.AgentId, topic.SpaceSlug)
+                : (null, null);
         var refusal = await services.GetRequiredService<AttachmentService>().KeepCopyAsync(
-            new AgentKey(conversationId, session?.AgentId), session?.SpaceSlug, attachmentId, fileName, mediaType, bytes, cancellationToken);
+            new AgentKey(conversationId, agentId), space, attachmentId, fileName, mediaType, bytes, cancellationToken);
         return refusal is null ? "ok" : throw new McpException(refusal);
+    }
+
+    // The topic over a conversation, asked of each registered agent as a download's check asks it.
+    private static async Task<TopicMetadata?> TopicOfAsync(
+        IServiceProvider services, string conversationId, CancellationToken ct)
+    {
+        if (ConversationIdentity.Parse(conversationId) is not { } conversation
+            || services.GetService<IThreadStateStore>() is not { } threads
+            || services.GetService<IAgentCatalog>() is not { } catalog)
+        {
+            return null;
+        }
+
+        foreach (var agent in catalog.GetAll() ?? [])
+        {
+            if (await threads.GetTopicByChatIdAndThreadIdAsync(agent.Id, conversation.ChatId, conversation.ThreadId, ct) is { } topic)
+            {
+                return topic;
+            }
+        }
+
+        return null;
     }
 }
