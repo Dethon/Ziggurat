@@ -18,6 +18,7 @@ internal sealed class FakePage
         fake.Mock.SetupGet(p => p.IsClosed).Returns(() => fake.Closed);
         fake.Mock.SetupGet(p => p.Url).Returns(() => fake.Url);
         fake.Mock.Setup(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()))
+            .Callback(() => fake.Closed = true)
             .Returns(Task.CompletedTask);
         return fake;
     }

@@ -12,6 +12,7 @@ using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Tunnels;
 using Microsoft.Extensions.AI;
@@ -139,6 +140,70 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var error = ToolErrorResult.FromEnvelope(JsonNode.Parse((await answer.WaitAsync(TimeSpan.FromSeconds(10)))!.ToString()!));
         error.ShouldNotBeNull().ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         error.Message.ShouldContain("vault went offline");
+    }
+
+    // A person's stop cancels the turn, and the turn's token is what a tool call waits on: the
+    // cancel has to reach the server's tool through the tunnel, or a stopped turn leaves its work
+    // running there with nobody waiting for it.
+    [Fact]
+    public async Task ACallItsTurnCancels_IsCancelledOnTheServer()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await using var agent = await DialAsync(_relay, "vault");
+        var call = Guid.NewGuid().ToString("N");
+        var wait = agent.Tools.OfType<AIFunction>().Single(t => t.Name == "mcp__vault__wait");
+        using var turn = new CancellationTokenSource();
+
+        var answer = wait.InvokeAsync(new AIFunctionArguments { ["call"] = call }, turn.Token).AsTask();
+        await Eventually.Until(() => TunnelledServer.WaitTools.IsWaiting(call), "the call reaches the server");
+        await turn.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(answer.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Eventually.Until(() => TunnelledServer.WaitTools.WasCancelled(call), "the cancel reaches the server's tool");
+    }
+
+    // The whole way from a stop: the turn's token cancelled while the agent waits on a call it
+    // made, and the household's server sees its own token fire for that call.
+    [Fact]
+    public async Task ATurnCancelledWhileItsToolRuns_CancelsTheCallOnTheServer()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await ConnectedAsync(_relay, "vault");
+        var call = Guid.NewGuid().ToString("N");
+        var model = new Mock<IChatClient>();
+        model
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(() => new List<ChatResponseUpdate>
+            {
+                new()
+                {
+                    Role = ChatRole.Assistant,
+                    Contents = [new FunctionCallContent("c1", "mcp__vault__wait", new Dictionary<string, object?> { ["call"] = call })]
+                }
+            }.ToAsyncEnumerable());
+        await using var agent = new McpAgent(
+            TestAgentSpec.Default with { TenantId = _household, McpServerEndpoints = [McpServerEndpoint.OwnServer("vault")] },
+            new ToolApprovalChatClient(model.Object, Mock.Of<IToolApprovalHandler>(), "conv-1", ["mcp__vault__*"]),
+            Mock.Of<IThreadStateStore>(),
+            _metrics,
+            TimeProvider.System,
+            [],
+            [],
+            callTokens: new CallTokens(_keys, TimeProvider.System),
+            ownServers: _relay.OwnServers);
+        var session = await agent.CreateSessionAsync();
+        using var stop = new CancellationTokenSource();
+
+        var turn = agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "wait")], session, cancellationToken: stop.Token)
+            .ToListAsync().AsTask();
+        await Eventually.Until(() => TunnelledServer.WaitTools.IsWaiting(call), "the agent's call reaches the server");
+        await stop.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(turn.WaitAsync(TimeSpan.FromSeconds(10)));
+        await Eventually.Until(() => TunnelledServer.WaitTools.WasCancelled(call), "the stop reaches the server's tool");
     }
 
     // A turn that waited — on an approval, say — while its server's tunnel dropped and opened again

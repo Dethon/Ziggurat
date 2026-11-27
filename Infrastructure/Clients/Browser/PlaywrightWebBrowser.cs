@@ -18,7 +18,8 @@ public class PlaywrightWebBrowser(
     TimeSpan? idleTimeout = null,
     ModalDismisser? modalDismisser = null,
     IMetricsPublisher? metricsPublisher = null,
-    IPersonStateStore? personStates = null)
+    IPersonStateStore? personStates = null,
+    TimeSpan? workDeadline = null)
     : IWebBrowser, IHandoffBrowser, IPersonContexts, IAsyncDisposable
 {
     private IPlaywright? _playwright;
@@ -36,7 +37,8 @@ public class PlaywrightWebBrowser(
     private readonly BrowserSessionManager _sessions = new(
         idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
         pruneInterval: TimeSpan.FromMinutes(5),
-        tabCap: tabCap);
+        tabCap: tabCap,
+        workDeadline: workDeadline);
     private readonly ModalDismisser _modalDismisser = modalDismisser ?? new ModalDismisser();
     private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
     private readonly AccessibilitySnapshotService _snapshotService = new();
@@ -151,12 +153,19 @@ public class PlaywrightWebBrowser(
             TabOutcome<BrowseResult>.Ran ran => ran.Result,
             TabOutcome<BrowseResult>.Closed closed => CreateErrorResult(request.SessionId, closed.Url,
                 "The page's tab was closed while it was being read. Browse it again."),
+            TabOutcome<BrowseResult>.Unresponsive hung => CreateErrorResult(request.SessionId, hung.Url,
+                UnresponsiveMessage(hung.Url)),
             TabOutcome<BrowseResult>.AcquireExhausted => CreateErrorResult(request.SessionId, request.Url,
                 "The session is replacing tabs faster than this browse can hold one. Try again."),
             _ => CreateErrorResult(request.SessionId, request.Url,
                 $"Unexpected tab outcome: {outcome.GetType().Name}")
         };
     }
+
+    // A page that hung once tends to hang again: its own script holds its thread.
+    private static string UnresponsiveMessage(string url) =>
+        $"The page at {url} stopped responding, so its tab was closed. Browsing it again is likely "
+        + "to hang the same way; prefer another source.";
 
     private async Task<BrowseResult> BrowsePageAsync(
         BrowseRequest request, TabWorkContext ctx, CancellationToken ct, bool mayAskAgain = true)
@@ -248,7 +257,7 @@ public class PlaywrightWebBrowser(
             }
         }
 
-        var html = await page.ContentAsync();
+        var html = await PageReads.ContentAsync(page);
         var captchaRetries = 0;
         while (ContainsCaptcha(html) && captchaRetries < MaxCaptchaRetries)
         {
@@ -276,7 +285,7 @@ public class PlaywrightWebBrowser(
             var reloaded = await page.ReloadAsync(new PageReloadOptions
             { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
             response = reloaded ?? response;
-            html = await page.ContentAsync();
+            html = await PageReads.ContentAsync(page);
             captchaRetries++;
         }
 
@@ -331,7 +340,7 @@ public class PlaywrightWebBrowser(
         // left unlisted on exactly the pages scrollToLoad targets.
         await ctx.StampAsync(start => StripDomNoiseAsync(page, start));
 
-        html = await page.ContentAsync();
+        html = await PageReads.ContentAsync(page);
         var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
 
         var status = navigationTimedOut || processed.IsPartial
@@ -394,7 +403,7 @@ public class PlaywrightWebBrowser(
             var outcome = await _sessions.OnCurrentTabAsync(sessionId, StampPolicy.None,
                 async ctx =>
                 {
-                    var html = await ctx.Page.ContentAsync();
+                    var html = await PageReads.ContentAsync(ctx.Page);
                     // Only the page's content is processed here; nothing is judged, so nobody is asked.
                     var request = new BrowseRequest(SessionId: sessionId, Url: ctx.UrlBefore) { Caller = JudgmentCaller.None };
                     var processed = await HtmlProcessor.ProcessAsync(request, html, ct);
@@ -424,6 +433,8 @@ public class PlaywrightWebBrowser(
                 TabOutcome<BrowseResult>.Ran ran => ran.Result,
                 TabOutcome<BrowseResult>.Closed closed => CreateErrorResult(sessionId, closed.Url,
                     $"That tab has been closed. Browse {closed.Url} again."),
+                TabOutcome<BrowseResult>.Unresponsive hung => CreateErrorResult(sessionId, hung.Url,
+                    UnresponsiveMessage(hung.Url)),
                 _ => new BrowseResult(sessionId, "", BrowseStatus.SessionNotFound,
                     null, null, 0, false, null, null, null, "No active browser session found")
             };
@@ -454,6 +465,8 @@ public class PlaywrightWebBrowser(
                 TabOutcome<SnapshotResult>.Closed closed => new SnapshotResult(
                     request.SessionId, null, null, 0,
                     $"That tab has been closed. Browse {closed.Url} again for fresh refs."),
+                TabOutcome<SnapshotResult>.Unresponsive hung => new SnapshotResult(
+                    request.SessionId, null, null, 0, UnresponsiveMessage(hung.Url)),
                 TabOutcome<SnapshotResult>.AddressedTabGone gone => new SnapshotResult(
                     request.SessionId, null, null, 0,
                     $"The page at {gone.Url} is no longer open in this session. Browse it again for fresh refs."),
@@ -512,6 +525,9 @@ public class PlaywrightWebBrowser(
                 TabOutcome<WebActionResult>.Closed closed => new WebActionResult(
                     request.SessionId, WebActionStatus.RefClosed,
                     null, false, null, null, null, RefUrl: closed.Url),
+                TabOutcome<WebActionResult>.Unresponsive hung => new WebActionResult(
+                    request.SessionId, WebActionStatus.Error,
+                    hung.Url, false, null, null, UnresponsiveMessage(hung.Url)),
                 _ => new WebActionResult(request.SessionId, WebActionStatus.SessionNotFound,
                     null, false, null, null, "Session not found. Use web_browse first.")
             };
@@ -1023,6 +1039,11 @@ public class PlaywrightWebBrowser(
                     images.Add(new FetchedImage(imageRef, null, null,
                         ImageFetchStatus.RefClosed, Url: closed.Url));
                     break;
+                case TabOutcome<FetchedImage>.Unresponsive hung:
+                    // The hung page's tab is closed now, which is what the closed wall says.
+                    images.Add(new FetchedImage(imageRef, null, null,
+                        ImageFetchStatus.RefClosed, Url: hung.Url));
+                    break;
                 default:
                     // No session, or none of its tabs left to answer from: the whole request is
                     // missing its session, as it always was.
@@ -1063,6 +1084,9 @@ public class PlaywrightWebBrowser(
                 TabOutcome<ScreenshotResult>.Ran ran => ran.Result,
                 TabOutcome<ScreenshotResult>.Closed closed => new ScreenshotResult(
                     request.SessionId, ScreenshotStatus.TabClosed, Url: closed.Url),
+                TabOutcome<ScreenshotResult>.Unresponsive hung => new ScreenshotResult(
+                    request.SessionId, ScreenshotStatus.Error, Url: hung.Url,
+                    ErrorMessage: UnresponsiveMessage(hung.Url)),
                 _ => new ScreenshotResult(request.SessionId, ScreenshotStatus.SessionNotFound)
             };
         }
