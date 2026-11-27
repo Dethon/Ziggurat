@@ -37,6 +37,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IMetricsPublisher _metricsPublisher;
     private readonly string _conversationId;
     private readonly IToolInvocationObserver? _observer;
+    private readonly int? _maxToolRounds;
     private readonly IExecScreen? _execScreen;
     private readonly string? _agentId;
     private readonly ModelPayer _payer;
@@ -107,6 +108,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         // The household's bound, or none: a long job (an app built and playtested) runs well past any
         // fixed count, and a turn cut off there stops mid-work with no word.
         MaximumIterationsPerRequest = maxToolRounds ?? int.MaxValue;
+        _maxToolRounds = maxToolRounds;
         // Every call of a message is handed over at once; which of them actually run at once is
         // decided call by call, by what each says it touches (WrittenOrder). It must stay on for
         // steering too: a steered turn's Terminate on the sequential path would leave the batch's
@@ -363,6 +365,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         CancellationToken cancellationToken = default)
     {
         var response = await base.GetResponseAsync(messages, options, cancellationToken);
+        if (NotRun(response.Messages.SelectMany(m => m.Contents)) is { } notRun)
+        {
+            response.Messages.Add(new ChatMessage(ChatRole.Tool, notRun.Contents));
+        }
+
         ObserveTurn(options);
         return response;
     }
@@ -372,13 +379,42 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         ChatOptions? options = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        var contents = new List<AIContent>();
         await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
         {
+            contents.AddRange(update.Contents);
             yield return update;
+        }
+
+        if (NotRun(contents) is { } notRun)
+        {
+            yield return notRun;
         }
 
         // After the stream, not before it: the route is only known once a provider has answered.
         ObserveTurn(options);
+    }
+
+    // At the household's bound the library offers the last ask no tools and runs no call it writes
+    // anyway, and returns it with no result: kept so, the next turn read it as done (a file it never
+    // wrote). Each is answered as not run, and why.
+    private ChatResponseUpdate? NotRun(IEnumerable<AIContent> contents)
+    {
+        if (_maxToolRounds is not { } limit)
+        {
+            return null;
+        }
+
+        var seen = contents.ToList();
+        var answered = seen.OfType<FunctionResultContent>().Select(r => r.CallId).ToHashSet(StringComparer.Ordinal);
+        var unrun = seen.OfType<FunctionCallContent>().Where(c => !answered.Contains(c.CallId)).ToList();
+        return unrun.Count == 0
+            ? null
+            : new ChatResponseUpdate(ChatRole.Tool,
+            [
+                .. unrun.Select(call => new FunctionResultContent(call.CallId,
+                    $"Not run: this turn reached its household's limit of {limit} rounds of tool calls. Say where the work stands; the person can ask you to go on."))
+            ]);
     }
 
     private void ObserveTurn(ChatOptions? options) =>

@@ -390,6 +390,30 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests[^1].ToolNames.ShouldBeEmpty();
     }
 
+    // At the cap the model's last ask is offered no tools, and a call it writes anyway is never run: it is
+    // answered so, rather than kept with no result, which told the next turn a file was written that never
+    // was.
+    [Fact]
+    public async Task ACallWrittenPastTheCap_IsAnsweredAsNotRun()
+    {
+        _households.Add(Household, isHome: false, Settings() with { MaxToolRounds = 2 }, new AgentsSection(), ownServers: ["vault"]);
+        Connect(true);
+        string? recall = null;
+        const string note = """{"note":"n"}""";
+        _model.Script(
+            request => FakeOpenRouter.CallingTool(recall = FakeModelReplies.ToolNamed(request, "recall")!, note),
+            FakeOpenRouter.CallingToolNamed("recall", note),
+            _ => FakeOpenRouter.CallingTool(recall!, note));
+        await using var agent = await Factory().CreateAsync(
+            new AgentKey("conv-1", "jonas"), "fran", "jonas", Approving(), tenantId: Household);
+
+        var updates = await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")]).ToListAsync();
+
+        var results = updates.SelectMany(u => u.Contents).OfType<FunctionResultContent>().ToList();
+        results.Count.ShouldBe(3);
+        results[^1].Result!.ToString()!.ShouldContain("Not run: this turn reached its household's limit of 2 rounds of tool calls");
+    }
+
     // A worker's profile is the deployment's, and names the vault for every household; one spawned for
     // a household that never set it up reaches it no more than its parent does, and names nothing.
     [Theory]

@@ -151,7 +151,8 @@ Built per turn from the household's view (`HouseholdAgents.Of` over `HouseholdAg
   `AgentSpec.MaxToolRounds` → `ToolApprovalChatClient`'s `MaximumIterationsPerRequest` (none is
   `int.MaxValue`), a worker's its parent's (`SpawnContext.MaxToolRounds`), part of `AgentAsBuilt`. A fixed
   50 stopped a long app-building turn three times mid-work with no word. At the bound the model's last ask
-  is offered no tools (the library's `PrepareOptionsForLastIteration`).
+  is offered no tools (the library's `PrepareOptionsForLastIteration`), and a call it writes anyway is
+  answered "Not run: … limit of N rounds" (`ToolApprovalChatClient.NotRun`), never kept without a result.
 - **The features withhold** their `SharedServers` address from every definition — the household's, a
   person's registered agent's — and every worker (`SpawnContext.WithheldServers`). Only the household's
   own agents' endpoints present deployment credentials.
